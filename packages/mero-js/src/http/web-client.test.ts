@@ -187,6 +187,21 @@ describe('WebHttpClient - New Throwing Behavior', () => {
       expect(result).toBeInstanceOf(ArrayBuffer);
     });
 
+    it('should parse blob when parse override is blob', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'application/octet-stream' }),
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data', { parse: 'blob' });
+      expect(result).toBeInstanceOf(Blob);
+    });
+
     it('should honor parse override', async () => {
       const responses = [
         createMockResponse(

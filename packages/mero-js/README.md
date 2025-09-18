@@ -41,7 +41,7 @@ try {
 
 ### Parsing Defaults & Override
 
-Each method accepts optional `{ parse?: 'json'|'text'|'arrayBuffer'|'response' }`:
+Each method accepts optional `{ parse?: 'json'|'text'|'blob'|'arrayBuffer'|'response' }`:
 
 **Default parsing rules:**
 
