@@ -61,7 +61,7 @@ export async function withRetry<T>(
 ): Promise<T> {
   const { attempts = 3 } = options;
 
-  let lastError: Error;
+  let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -102,7 +102,7 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError;
+  throw lastError || new Error('Retry failed without error');
 }
 
 // Helper to create a retry-enabled HTTP client method
