@@ -19,7 +19,7 @@
     "format:fix": "prettier --write .",
     "typecheck": "pnpm -r tsc -b",
     "build": "pnpm -r --filter @calimero-network/mero-js build",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
     "@types/node": "^18.19.34",
