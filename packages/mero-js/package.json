@@ -3,16 +3,16 @@
   "version": "1.0.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
-  "main": "lib/index.js",
-  "module": "lib/index.mjs",
-  "types": "lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
-      "import": "./lib/index.mjs",
-      "require": "./lib/index.js"
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.browser.mjs",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
     }
   },
+  "sideEffects": false,
   "private": true,
   "dependencies": {},
   "devDependencies": {
@@ -26,7 +26,7 @@
     "vitest": "^1.0.0"
   },
   "scripts": {
-    "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=lib/index.mjs && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=lib/index.js",
+    "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=dist/index.mjs && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.cjs && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -35,11 +35,11 @@
     "tsc": "tsc -b",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write .",
-    "clean": "pnpm rimraf lib",
+    "clean": "pnpm rimraf dist",
     "dev": "echo 'Mero.js package not yet implemented'"
   },
   "files": [
-    "lib"
+    "dist"
   ],
   "keywords": [
     "calimero",

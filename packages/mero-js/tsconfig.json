@@ -5,8 +5,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./lib",
+    "outDir": "./dist",
     "rootDir": "./src",
+    "noEmit": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -16,5 +17,5 @@
     "jsx": "preserve"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "lib", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

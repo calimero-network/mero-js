@@ -1,2 +1,2 @@
 # Run formatting and linting fixes on staged files only
-pnpm lint-staged --no-stash --config .lintstagedrc.json
+pnpm lint-staged
