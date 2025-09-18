@@ -27,4 +27,6 @@ README.md text eol=lf
 *.jpeg binary
 *.gif binary
 *.ico binary
-*.svg binary
+
+# SVG files (treat as text for diff viewing)
+*.svg text eol=lf
