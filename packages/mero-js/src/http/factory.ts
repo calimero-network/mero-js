@@ -23,7 +23,7 @@ export function createBrowserHttpClient(options: {
     onTokenRefresh: options.onTokenRefresh,
     defaultHeaders: options.defaultHeaders,
     timeoutMs: options.timeoutMs,
-    credentials: options.credentials ?? 'same-origin',
+    credentials: options.credentials, // No default credentials
     defaultAbortSignal: options.defaultAbortSignal,
   };
 

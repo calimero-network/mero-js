@@ -4,14 +4,47 @@ import { combineSignals, createTimeoutSignal } from './signal-utils';
 
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
+  public readonly name = 'HTTPError';
+  public readonly status: number;
+  public readonly statusText: string;
+  public readonly url: string;
+  public readonly headers: Headers;
+  public readonly bodyText?: string;
+
   constructor(
-    public status: number,
-    public statusText: string,
-    public body?: string,
-    public headers?: Headers,
+    status: number,
+    statusText: string,
+    url: string,
+    headers: Headers,
+    bodyText?: string,
   ) {
     super(`HTTP ${status} ${statusText}`);
-    this.name = 'HTTPError';
+    this.status = status;
+    this.statusText = statusText;
+    this.url = url;
+    this.headers = headers;
+    this.bodyText = bodyText;
+  }
+
+  toJSON(): {
+    status: number;
+    statusText: string;
+    url: string;
+    headers: Record<string, string>;
+    bodyText?: string;
+  } {
+    const headersObj: Record<string, string> = {};
+    this.headers.forEach((value, key) => {
+      headersObj[key] = value;
+    });
+
+    return {
+      status: this.status,
+      statusText: this.statusText,
+      url: this.url,
+      headers: headersObj,
+      bodyText: this.bodyText,
+    };
   }
 }
 
@@ -21,10 +54,12 @@ const GENERIC_ERROR: ErrorResponse = {
   message: 'Something went wrong',
 };
 
-// Helper function to safely extract text from response
+// Helper function to safely extract text from response with 64KB limit
 async function safeText(res: Response): Promise<string | undefined> {
   try {
-    return await res.text();
+    const text = await res.text();
+    // Cap at 64KB as per specification
+    return text.length > 65536 ? text.substring(0, 65536) : text;
   } catch {
     return undefined;
   }
@@ -32,14 +67,6 @@ async function safeText(res: Response): Promise<string | undefined> {
 
 export class WebHttpClient implements HttpClient {
   private transport: Transport;
-  private isRefreshing = false;
-  private refreshPromise: Promise<void> | null = null;
-  private failedQueue: Array<{
-    resolve: (value: ResponseData<any>) => void;
-    reject: (reason: Error) => void;
-    path: string;
-    init: RequestInit;
-  }> = [];
 
   constructor(transport: Transport) {
     this.transport = {
@@ -52,7 +79,7 @@ export class WebHttpClient implements HttpClient {
   private async makeRequest<T>(
     path: string,
     init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  ): Promise<T> {
     // Use URL constructor for proper URL handling
     const url = new URL(path, this.transport.baseUrl).toString();
 
@@ -100,124 +127,43 @@ export class WebHttpClient implements HttpClient {
         credentials: init.credentials ?? this.transport.credentials,
       });
 
-      // No need to clear timeout - AbortSignal handles cleanup
-
-      // Handle HTTP errors by throwing HTTPError (for retry compatibility)
+      // Handle HTTP errors by throwing HTTPError
       if (!response.ok) {
-        const text = await safeText(response);
-        const authError = response.headers.get('x-auth-error');
-
-        // Handle 401 errors with specific auth error types
-        if (response.status === 401) {
-          switch (authError) {
-            case 'missing_token':
-              throw new HTTPError(
-                response.status,
-                response.statusText,
-                text,
-                response.headers,
-              );
-            case 'token_expired':
-              // Attempt token refresh
-              try {
-                return await this.handleTokenRefresh(path, init);
-              } catch (refreshError) {
-                throw new HTTPError(
-                  response.status,
-                  response.statusText,
-                  text,
-                  response.headers,
-                );
-              }
-            case 'token_revoked':
-              throw new HTTPError(
-                response.status,
-                response.statusText,
-                text,
-                response.headers,
-              );
-            case 'invalid_token':
-              throw new HTTPError(
-                response.status,
-                response.statusText,
-                text,
-                response.headers,
-              );
-            default:
-              throw new HTTPError(
-                response.status,
-                response.statusText,
-                text,
-                response.headers,
-              );
-          }
-        }
-
-        // Handle other HTTP errors by throwing HTTPError
+        const bodyText = await safeText(response);
         throw new HTTPError(
           response.status,
           response.statusText,
-          text,
+          url,
           response.headers,
+          bodyText,
         );
       }
 
       // Handle successful responses with enhanced parsing
       const parseMode = init.parse || this.detectParseMode(response);
-      const data = await this.parseResponse<T>(response, parseMode);
-
-      return {
-        data,
-        error: null,
-      };
+      return await this.parseResponse<T>(response, parseMode);
     } catch (error) {
-      // No need to clear timeout - AbortSignal handles cleanup
-
+      // Re-throw HTTPError as-is
       if (error instanceof HTTPError) {
-        // Convert HTTPError back to ResponseData format for public API
-        return {
-          data: null,
-          error: {
-            code: error.status,
-            message: error.message,
-          },
-        };
+        throw error;
       }
 
+      // Handle abort and timeout errors
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          return {
-            data: null,
-            error: {
-              code: 408,
-              message: 'Request timeout',
-            },
-          };
+          throw error; // Let withRetry handle this
         }
 
         if (error.name === 'TimeoutError') {
-          return {
-            data: null,
-            error: {
-              code: 408,
-              message: 'Request timeout',
-            },
-          };
+          throw error; // Let withRetry handle this
         }
 
-        return {
-          data: null,
-          error: {
-            code: 500,
-            message: error.message || 'Network error',
-          },
-        };
+        // Network errors (TypeError) should be re-thrown for withRetry
+        throw error;
       }
 
-      return {
-        data: null,
-        error: GENERIC_ERROR,
-      };
+      // Unknown error
+      throw new Error('Unknown error occurred');
     }
   }
 
@@ -275,91 +221,8 @@ export class WebHttpClient implements HttpClient {
     }
   }
 
-  private async handleTokenRefresh<T>(
-    path: string,
-    init: RequestOptions,
-  ): Promise<ResponseData<T>> {
-    // If refresh is already in progress, wait for it and retry
-    if (this.refreshPromise) {
-      await this.refreshPromise;
-      // Retry the original request after refresh completes
-      return this.makeRequest<T>(path, init);
-    }
-
-    // If refresh is already in progress, queue this request
-    if (this.isRefreshing) {
-      return new Promise((resolve, reject) => {
-        this.failedQueue.push({
-          resolve,
-          reject,
-          path,
-          init,
-        });
-      });
-    }
-
-    try {
-      this.isRefreshing = true;
-
-      // Create shared refresh promise
-      this.refreshPromise = this.performTokenRefresh();
-
-      // Wait for refresh to complete
-      await this.refreshPromise;
-
-      // Process queued requests only after successful refresh
-      this.processQueue(null);
-
-      // Retry original request
-      return this.makeRequest<T>(path, init);
-    } catch (error) {
-      this.isRefreshing = false;
-      this.refreshPromise = null;
-      this.processQueue(error as Error);
-      throw error;
-    } finally {
-      this.isRefreshing = false;
-      this.refreshPromise = null;
-    }
-  }
-
-  private async performTokenRefresh(): Promise<void> {
-    // Get current tokens
-    const currentToken = await this.transport.getAuthToken?.();
-    if (!currentToken) {
-      throw new Error('No current token available for refresh');
-    }
-
-    // Attempt to refresh token
-    // Note: This is a simplified approach. In a real implementation,
-    // you'd need to implement the actual token refresh logic
-    // or inject an auth client that handles this
-
-    // For now, we'll just simulate a successful refresh
-    // In a full implementation, you'd call your auth service here
-    // and update the token via onTokenRefresh callback
-
-    // Simulate refresh delay
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  private processQueue(error: Error | null) {
-    this.failedQueue.forEach(({ resolve, reject, path, init }) => {
-      if (error) {
-        reject(error);
-      } else {
-        // Retry the request
-        this.makeRequest(path, init).then(resolve).catch(reject);
-      }
-    });
-    this.failedQueue = [];
-  }
-
   // HTTP method implementations
-  async get<T>(
-    path: string,
-    init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  async get<T>(path: string, init: RequestOptions = {}): Promise<T> {
     return this.makeRequest<T>(path, { ...init, method: 'GET' });
   }
 
@@ -367,7 +230,7 @@ export class WebHttpClient implements HttpClient {
     path: string,
     body?: unknown,
     init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  ): Promise<T> {
     // Don't set Content-Type for FormData - let the browser handle it
     const headers =
       body instanceof FormData
@@ -394,7 +257,7 @@ export class WebHttpClient implements HttpClient {
     path: string,
     body?: unknown,
     init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  ): Promise<T> {
     const headers =
       body instanceof FormData
         ? { ...(init.headers ?? {}) }
@@ -416,10 +279,7 @@ export class WebHttpClient implements HttpClient {
     });
   }
 
-  async delete<T>(
-    path: string,
-    init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  async delete<T>(path: string, init: RequestOptions = {}): Promise<T> {
     return this.makeRequest<T>(path, { ...init, method: 'DELETE' });
   }
 
@@ -427,7 +287,7 @@ export class WebHttpClient implements HttpClient {
     path: string,
     body?: unknown,
     init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  ): Promise<T> {
     const headers =
       body instanceof FormData
         ? { ...(init.headers ?? {}) }
@@ -452,24 +312,23 @@ export class WebHttpClient implements HttpClient {
   async head<T>(
     path: string,
     init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
-    const res = await this.makeRequest(path, {
+  ): Promise<{ headers: Record<string, string>; status: number }> {
+    const response = await this.makeRequest<Response>(path, {
       ...init,
       method: 'HEAD',
       parse: 'response',
     });
-    if (res.error) return res;
-    const r = res.data as Response;
-    const hdrs: Record<string, string> = {};
-    r.headers.forEach((v, k) => (hdrs[k] = v));
-    return { data: { headers: hdrs, status: r.status } as T, error: null };
+
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+
+    return { headers, status: response.status };
   }
 
   // Generic request method (alias for the private makeRequest method)
-  async request<T>(
-    path: string,
-    init: RequestOptions = {},
-  ): Promise<ResponseData<T>> {
+  async request<T>(path: string, init: RequestOptions = {}): Promise<T> {
     return this.makeRequest<T>(path, init);
   }
 }

@@ -15,6 +15,107 @@ A lightweight, universal JavaScript SDK for Calimero that works in both browser 
 - 🔄 **Smart Retry**: Distinguishes user aborts vs timeouts for intelligent retry logic
 - 🎯 **Advanced Cancellation**: Signal combination and proper timeout handling
 
+## Behavior
+
+### Error Model (Throwing)
+
+The client **throws** `HTTPError` on any `!response.ok` status. Network/timeout/abort errors are re-thrown as-is:
+
+```typescript
+try {
+  const data = await httpClient.get('/api/data');
+  // Success - data is the parsed response
+} catch (error) {
+  if (error instanceof HTTPError) {
+    console.log(`HTTP ${error.status}: ${error.statusText}`);
+    console.log('URL:', error.url);
+    console.log('Headers:', error.headers);
+    console.log('Body:', error.bodyText); // Up to 64KB
+  } else if (error.name === 'TimeoutError') {
+    // Request timed out
+  } else if (error.name === 'AbortError') {
+    // Request was cancelled
+  }
+}
+```
+
+### Parsing Defaults & Override
+
+Each method accepts optional `{ parse?: 'json'|'text'|'arrayBuffer'|'response' }`:
+
+**Default parsing rules:**
+
+- `Content-Type: application/json` → parse as JSON
+- `Content-Type: text/*` → parse as text
+- Other types → parse as `arrayBuffer`
+
+**Override:**
+
+```typescript
+// Get raw Response object
+const response = await httpClient.get('/api/data', { parse: 'response' });
+```
+
+### Retry Policy (`withRetry`)
+
+The `withRetry` helper retries on:
+
+- `HTTPError` with status `429` or `>= 500`
+- `TimeoutError` (internal timeouts)
+- `TypeError` (network failures)
+
+**Never retries:**
+
+- `AbortError` (user/caller aborts)
+
+```typescript
+import { withRetry } from '@calimero-network/mero-js';
+
+const data = await withRetry(
+  (attempt) => httpClient.get('/api/data'),
+  { attempts: 3 }, // Default: 3 attempts
+);
+```
+
+### Signal Composition
+
+The client combines caller signals with internal timeouts:
+
+```typescript
+const userSignal = new AbortController().signal;
+const data = await httpClient.get('/api/data', {
+  signal: userSignal,
+  timeoutMs: 5000,
+});
+```
+
+### Header Precedence & Authorization
+
+- **Caller headers win**: Request-level headers override client defaults
+- **Authorization rules**: Only set `Authorization: Bearer ${token}` if caller didn't provide any `authorization` header (case-insensitive)
+
+### FormData Handling
+
+For `FormData` bodies, the client does **not** set `content-type` (lets browser/undici add the boundary):
+
+```typescript
+const formData = new FormData();
+formData.append('file', file);
+await httpClient.post('/api/upload', formData);
+// No content-type header is set by the client
+```
+
+### Credentials
+
+No implicit `same-origin` default. Credentials are only set if explicitly provided:
+
+```typescript
+const client = createBrowserHttpClient({
+  baseUrl: 'https://api.example.com',
+  credentials: 'include', // Only if you want to include credentials
+});
+```
+
 ## Installation
 
 ```bash
@@ -36,9 +137,11 @@ const httpClient = createBrowserHttpClient({
 });
 
 // Make requests
-const response = await httpClient.get<{ message: string }>('/api/hello');
-if (response.data) {
-  console.log(response.data.message);
+try {
+  const data = await httpClient.get<{ message: string }>('/api/hello');
+  console.log(data.message);
+} catch (error) {
+  console.error('Request failed:', error);
 }
 ```
 
@@ -55,7 +158,8 @@ const httpClient = createNodeHttpClient({
   getAuthToken: async () => process.env.ACCESS_TOKEN,
 });
 
-const response = await httpClient.get<{ message: string }>('/api/hello');
+const data = await httpClient.get<{ message: string }>('/api/hello');
+console.log(data.message);
 ```
 
 ### Universal Usage
@@ -140,16 +244,22 @@ interface RequestOptions extends RequestInit {
 
 ### Response Format
 
-All methods return a `ResponseData<T>` object:
+All methods return the parsed data directly or throw errors:
 
 ```typescript
-type ResponseData<T> =
-  | { data: T; error: null } // Success
-  | { data: null; error: ErrorResponse }; // Error
+// Success - returns parsed data
+const data: T = await httpClient.get<T>('/api/data');
 
-interface ErrorResponse {
-  code?: number;
-  message: string;
+// Error - throws HTTPError or other errors
+try {
+  const data = await httpClient.get('/api/data');
+} catch (error) {
+  if (error instanceof HTTPError) {
+    console.log(`HTTP ${error.status}: ${error.statusText}`);
+    console.log('URL:', error.url);
+    console.log('Headers:', error.headers);
+    console.log('Body:', error.bodyText);
+  }
 }
 ```
 
@@ -174,25 +284,32 @@ const httpClient = createHttpClient(transport);
 
 ```typescript
 try {
-  const response = await httpClient.get('/api/data');
-
-  if (response.data) {
-    // Success
-    console.log(response.data);
-  } else {
-    // API Error
-    console.error('API Error:', response.error.message);
-  }
+  const data = await httpClient.get('/api/data');
+  // Success - data is the parsed response
+  console.log(data);
 } catch (error) {
-  // Network or other errors
-  console.error('Request failed:', error);
+  if (error instanceof HTTPError) {
+    // HTTP error (4xx, 5xx)
+    console.error(`HTTP ${error.status}: ${error.statusText}`);
+    console.error('URL:', error.url);
+    console.error('Body:', error.bodyText);
+  } else if (error.name === 'TimeoutError') {
+    // Request timed out
+    console.error('Request timed out');
+  } else if (error.name === 'AbortError') {
+    // Request was cancelled
+    console.error('Request was cancelled');
+  } else {
+    // Network or other errors
+    console.error('Request failed:', error);
+  }
 }
 ```
 
 ### Custom Headers
 
 ```typescript
-const response = await httpClient.post('/api/data', body, {
+const data = await httpClient.post('/api/data', body, {
   headers: {
     'Content-Type': 'application/json',
     'X-Custom-Header': 'value',
@@ -208,7 +325,7 @@ const abortController = new AbortController();
 // Cancel request after 5 seconds
 setTimeout(() => abortController.abort(), 5000);
 
-const response = await httpClient.get('/api/slow-endpoint', {
+const data = await httpClient.get('/api/slow-endpoint', {
   signal: abortController.signal,
 });
 ```
@@ -220,7 +337,7 @@ const formData = new FormData();
 formData.append('file', fileInput.files[0]);
 formData.append('name', 'John Doe');
 
-const response = await httpClient.post('/api/upload', formData);
+const data = await httpClient.post('/api/upload', formData);
 // Content-Type is automatically set to multipart/form-data
 ```
 
@@ -228,12 +345,12 @@ const response = await httpClient.post('/api/upload', formData);
 
 ```typescript
 // Explicit parsing
-const jsonResponse = await httpClient.get('/api/data', { parse: 'json' });
-const textResponse = await httpClient.get('/api/text', { parse: 'text' });
-const blobResponse = await httpClient.get('/api/file', { parse: 'blob' });
+const jsonData = await httpClient.get('/api/data', { parse: 'json' });
+const textData = await httpClient.get('/api/text', { parse: 'text' });
+const blobData = await httpClient.get('/api/file', { parse: 'blob' });
 
 // Auto-detection based on Content-Type (default)
-const autoResponse = await httpClient.get('/api/data');
+const autoData = await httpClient.get('/api/data');
 ```
 
 ### Retry with Exponential Backoff
@@ -241,20 +358,9 @@ const autoResponse = await httpClient.get('/api/data');
 ```typescript
 import { withRetry } from '@calimero-network/mero-js';
 
-const response = await withRetry(
-  () => httpClient.get('/api/unreliable-endpoint'),
-  {
-    attempts: 3,
-    baseDelayMs: 1000,
-    backoffFactor: 2,
-    retryCondition: (error, attempt) => {
-      // Smart retry logic - distinguishes user abort vs timeout
-      if (error.name === 'AbortError') return false; // Don't retry user cancellation
-      if (error.name === 'TimeoutError') return true; // Retry timeouts
-      if (error.status >= 500) return true; // Retry server errors
-      return false; // Don't retry client errors
-    },
-  },
+const data = await withRetry(
+  (attempt) => httpClient.get('/api/unreliable-endpoint'),
+  { attempts: 3 }, // Default: 3 attempts
 );
 ```
 
@@ -268,7 +374,7 @@ const userSignal = new AbortController().signal;
 const timeoutSignal = createTimeoutSignal(5000);
 const combinedSignal = combineSignals([userSignal, timeoutSignal]);
 
-const response = await httpClient.get('/api/endpoint', {
+const data = await httpClient.get('/api/endpoint', {
   signal: combinedSignal,
 });
 ```
@@ -282,7 +388,7 @@ const httpClient = createBrowserHttpClient({
 });
 
 // For APIs that require credentials
-const response = await httpClient.get('/api/protected', {
+const data = await httpClient.get('/api/protected', {
   credentials: 'include',
 });
 ```
@@ -293,7 +399,7 @@ If you're migrating from an Axios-based client:
 
 1. **Replace imports**: Use the factory functions instead of direct class instantiation
 2. **Update method signatures**: Methods now use `RequestInit` instead of custom options
-3. **Handle responses**: Use the `ResponseData<T>` format instead of Axios response objects
+3. **Handle responses**: Methods now return parsed data directly or throw errors (no more `ResponseData<T>`)
 4. **Token management**: Use the `getAuthToken` and `onTokenRefresh` callbacks
 
 ## Browser Support

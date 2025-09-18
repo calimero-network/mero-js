@@ -1,10 +1,6 @@
 // Retry helper for HTTP requests
 export interface RetryOptions {
   attempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-  backoffFactor?: number;
-  retryCondition?: (error: Error, attempt: number) => boolean;
 }
 
 // Default retry condition - retry on network errors and 5xx status codes
@@ -31,53 +27,37 @@ function defaultRetryCondition(error: Error, attempt: number): boolean {
 }
 
 // Calculate delay with exponential backoff and jitter
-function calculateDelay(
-  attempt: number,
-  baseDelayMs: number,
-  maxDelayMs: number,
-  backoffFactor: number,
-): number {
-  const delay = baseDelayMs * Math.pow(backoffFactor, attempt);
-  const cappedDelay = Math.min(delay, maxDelayMs);
+function calculateDelay(attempt: number): number {
+  const baseDelayMs = 250; // Base 250ms as per spec
+  const delay = baseDelayMs * Math.pow(2, attempt - 1);
 
   // Add ±20% jitter to reduce stampedes
-  const jitter = (Math.random() - 0.5) * 0.4 * cappedDelay;
-  return Math.max(0, cappedDelay + jitter);
+  const jitter = (Math.random() - 0.5) * 0.4 * delay;
+  return Math.max(0, delay + jitter);
 }
 
-// Retry helper function
+// Retry helper function with new signature
 export async function withRetry<T>(
-  fn: () => Promise<T>,
+  fn: (attempt: number) => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
-  const {
-    attempts = 3,
-    baseDelayMs = 1000,
-    maxDelayMs = 10000,
-    backoffFactor = 2,
-    retryCondition = defaultRetryCondition,
-  } = options;
+  const { attempts = 3 } = options;
 
   let lastError: Error;
 
-  for (let attempt = attempts - 1; attempt >= 0; attempt--) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await fn();
+      return await fn(attempt);
     } catch (error) {
       lastError = error as Error;
 
       // Check if we should retry (this handles the last attempt check)
-      if (!retryCondition(lastError, attempt)) {
+      if (!defaultRetryCondition(lastError, attempts - attempt)) {
         throw lastError;
       }
 
       // Calculate delay
-      let delayMs = calculateDelay(
-        attempts - attempt - 1,
-        baseDelayMs,
-        maxDelayMs,
-        backoffFactor,
-      );
+      let delayMs = calculateDelay(attempt);
 
       // Check for Retry-After header if it's an HTTP error
       type HasHeaders = { headers?: Headers };
@@ -92,10 +72,9 @@ export async function withRetry<T>(
           // If it's a date, calculate the difference
           const date = new Date(retryAfter);
           if (!isNaN(date.getTime())) {
-            delayMs = Math.max(
-              delayMs,
-              Math.max(0, date.getTime() - Date.now()),
-            );
+            const waitTime = Math.max(0, date.getTime() - Date.now());
+            // Cap wait at 60s per attempt as per spec
+            delayMs = Math.max(delayMs, Math.min(waitTime, 60000));
           }
         }
       }
