@@ -1,9 +1,0 @@
-{
-  "packages/**/*.{ts,tsx,js,jsx}": ["prettier --write", "eslint --fix"],
-  "examples/**/*.{ts,tsx,js,jsx}": ["prettier --write"],
-  "*.{ts,tsx,js,jsx}": ["prettier --write"],
-  "*.json": ["prettier --write"],
-  "*.md": ["prettier --write"],
-  "*.{yml,yaml}": ["prettier --write"],
-  "*.{css,scss,html}": ["prettier --write"]
-}

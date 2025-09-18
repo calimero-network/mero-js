@@ -20,6 +20,7 @@
     "typecheck": "pnpm -r tsc",
     "build": "pnpm -r --filter @calimero-network/mero-js build",
     "test": "pnpm -r test",
+    "lint-staged": "lint-staged",
     "prepare": "husky"
   },
   "devDependencies": {
