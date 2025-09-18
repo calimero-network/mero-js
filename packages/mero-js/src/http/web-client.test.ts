@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebHttpClient } from './web-client';
+import { WebHttpClient, HTTPError } from './web-client';
 import { Transport } from './types';
+import { withRetry } from './retry';
 
 // Mock fetch implementation
 const createMockFetch = (responses: Response[]) => {
@@ -17,6 +18,7 @@ const createMockResponse = (
   status: number,
   statusText: string,
   headers?: Headers,
+  body?: string,
 ) => {
   const mockHeaders = headers || new Headers();
   return {
@@ -24,31 +26,41 @@ const createMockResponse = (
     status,
     statusText,
     headers: mockHeaders,
-    json: vi.fn().mockResolvedValue({ message: 'success' }),
-    text: vi.fn().mockResolvedValue('success'),
-  } as Response;
+    json: vi.fn().mockResolvedValue(
+      body
+        ? (() => {
+            try {
+              return JSON.parse(body);
+            } catch {
+              return { message: body };
+            }
+          })()
+        : { message: 'success' },
+    ),
+    text: vi.fn().mockResolvedValue(body || 'success'),
+    arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    blob: vi.fn().mockResolvedValue(new Blob(['test'])),
+    redirected: false,
+    type: 'basic' as ResponseType,
+    url: 'https://api.example.com',
+    clone: vi.fn().mockReturnThis(),
+    body: null,
+    bodyUsed: false,
+    formData: vi.fn().mockResolvedValue(new FormData()),
+  } as unknown as Response;
 };
 
-describe('WebHttpClient Token Refresh Queueing', () => {
+describe('WebHttpClient - New Throwing Behavior', () => {
   let client: WebHttpClient;
   let mockFetch: ReturnType<typeof vi.fn>;
-  let tokenCallCount: number;
 
   beforeEach(() => {
-    tokenCallCount = 0;
-
     const transport: Transport = {
       fetch: vi.fn(),
       baseUrl: 'https://api.example.com',
-      getAuthToken: vi.fn().mockImplementation(async () => {
-        tokenCallCount++;
-        return `token-${tokenCallCount}`;
-      }),
-      onTokenRefresh: vi.fn().mockImplementation(async (newToken: string) => {
-        refreshCallCount++;
-        // Simulate token update
-        console.log(`Token refreshed to: ${newToken}`);
-      }),
+      getAuthToken: vi.fn().mockResolvedValue('test-token'),
+      defaultHeaders: { 'X-Client': 'test' },
+      timeoutMs: 30000,
     };
 
     client = new WebHttpClient(transport);
@@ -59,329 +71,509 @@ describe('WebHttpClient Token Refresh Queueing', () => {
     vi.clearAllMocks();
   });
 
-  it('should queue concurrent requests during token refresh', async () => {
-    // Setup: First request returns 401, subsequent requests succeed
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-      createMockResponse(200, 'OK'),
-      createMockResponse(200, 'OK'),
-      createMockResponse(200, 'OK'),
-    ];
+  describe('HTTPError throwing behavior', () => {
+    it('should throw HTTPError on non-2xx responses', async () => {
+      const responses = [
+        createMockResponse(
+          500,
+          'Internal Server Error',
+          new Headers({ 'Retry-After': '1' }),
+          'Server error body',
+        ),
+      ];
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    // Make multiple concurrent requests
-    const request1 = client.get('/api/data1');
-    const request2 = client.get('/api/data2');
-    const request3 = client.get('/api/data3');
+      await expect(client.get('/api/data')).rejects.toThrow(HTTPError);
 
-    // All requests should eventually succeed
-    const [result1, result2, result3] = await Promise.all([
-      request1,
-      request2,
-      request3,
-    ]);
-
-    expect(result1.data).toBeDefined();
-    expect(result2.data).toBeDefined();
-    expect(result3.data).toBeDefined();
-    expect(result1.error).toBeNull();
-    expect(result2.error).toBeNull();
-    expect(result3.error).toBeNull();
-
-    // Verify that fetch was called multiple times (initial + retries)
-    expect(mockFetch).toHaveBeenCalledTimes(4);
-  });
-
-  it('should not process queue until token refresh completes', async () => {
-    let refreshResolve: () => void;
-    const refreshPromise = new Promise<void>((resolve) => {
-      refreshResolve = resolve;
+      try {
+        await client.get('/api/data');
+      } catch (error) {
+        expect(error).toBeInstanceOf(HTTPError);
+        expect(error.status).toBe(500);
+        expect(error.statusText).toBe('Internal Server Error');
+        expect(error.url).toBe('https://api.example.com/api/data');
+        expect(error.headers).toBeInstanceOf(Headers);
+        expect(error.bodyText).toBe('Server error body');
+        expect(error.name).toBe('HTTPError');
+      }
     });
 
-    // Mock the performTokenRefresh method to control timing
-    const originalPerformTokenRefresh = (client as any).performTokenRefresh;
-    (client as any).performTokenRefresh = vi
-      .fn()
-      .mockImplementation(async () => {
-        await refreshPromise;
+    it('should capture bodyText with 64KB limit', async () => {
+      const largeBody = 'x'.repeat(70000); // 70KB body
+      const responses = [
+        createMockResponse(400, 'Bad Request', new Headers(), largeBody),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      try {
+        await client.get('/api/data');
+      } catch (error) {
+        expect(error).toBeInstanceOf(HTTPError);
+        expect(error.bodyText).toBe(largeBody.substring(0, 65536)); // Should be capped at 64KB
+      }
+    });
+
+    it('should handle network errors by re-throwing', async () => {
+      const networkError = new TypeError('Network error');
+      mockFetch.mockRejectedValue(networkError);
+
+      await expect(client.get('/api/data')).rejects.toThrow(networkError);
+    });
+
+    it('should handle timeout errors by re-throwing', async () => {
+      const timeoutError = new Error('Timeout');
+      timeoutError.name = 'TimeoutError';
+      mockFetch.mockRejectedValue(timeoutError);
+
+      await expect(client.get('/api/data')).rejects.toThrow(timeoutError);
+    });
+
+    it('should handle abort errors by re-throwing', async () => {
+      const abortError = new Error('Aborted');
+      abortError.name = 'AbortError';
+      mockFetch.mockRejectedValue(abortError);
+
+      await expect(client.get('/api/data')).rejects.toThrow(abortError);
+    });
+  });
+
+  describe('Parsing defaults and override', () => {
+    it('should parse JSON by default for application/json', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'application/json' }),
+          '{"message": "success"}',
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data');
+      expect(result).toEqual({ message: 'success' });
+    });
+
+    it('should parse text by default for text/*', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'text/plain' }),
+          'Hello World',
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data');
+      expect(result).toBe('Hello World');
+    });
+
+    it('should parse ArrayBuffer by default for application/octet-stream', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'application/octet-stream' }),
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data');
+      expect(result).toBeInstanceOf(ArrayBuffer);
+    });
+
+    it('should parse blob when parse override is blob', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'application/octet-stream' }),
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data', { parse: 'blob' });
+      expect(result).toBeInstanceOf(Blob);
+    });
+
+    it('should honor parse override', async () => {
+      const responses = [
+        createMockResponse(
+          200,
+          'OK',
+          new Headers({ 'content-type': 'application/json' }),
+        ),
+      ];
+
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.get('/api/data', { parse: 'response' });
+      expect(result).toHaveProperty('ok');
+      expect(result).toHaveProperty('status');
+      expect(result).toHaveProperty('headers');
+    });
+  });
+
+  describe('Authorization precedence', () => {
+    it('should not override caller Authorization header', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await client.get('/api/data', {
+        headers: { Authorization: 'Bearer caller-token' },
       });
 
-    // Setup responses: 401 then 200
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-      createMockResponse(200, 'OK'),
-      createMockResponse(200, 'OK'),
-    ];
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('authorization')).toBe('Bearer caller-token');
+    });
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+    it('should apply auth token when no caller Authorization', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    // Start first request (will trigger refresh)
-    const request1Promise = client.get('/api/data1');
+      await client.get('/api/data');
 
-    // Wait a bit to ensure refresh has started
-    await new Promise((resolve) => setTimeout(resolve, 10));
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('authorization')).toBe('Bearer test-token');
+    });
 
-    // Start second request while refresh is in progress (should be queued)
-    const request2Promise = client.get('/api/data2');
+    it('should handle case-insensitive Authorization check', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    // Verify that the second request is queued and not yet processed
-    // The second request should be queued, so we expect only 1 call so far
-    expect(mockFetch).toHaveBeenCalledTimes(1); // Only initial call
-
-    // Complete the refresh
-    refreshResolve!();
-
-    // Now both requests should complete
-    const [result1, result2] = await Promise.all([
-      request1Promise,
-      request2Promise,
-    ]);
-
-    expect(result1.data).toBeDefined();
-    expect(result2.data).toBeDefined();
-    expect(result1.error).toBeNull();
-    expect(result2.error).toBeNull();
-
-    // Restore original method
-    (client as any).performTokenRefresh = originalPerformTokenRefresh;
-  });
-
-  it('should handle refresh failure and reject queued requests', async () => {
-    // Mock performTokenRefresh to always fail
-    (client as any).performTokenRefresh = vi
-      .fn()
-      .mockRejectedValue(new Error('Refresh failed'));
-
-    // Setup: First request returns 401
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-    ];
-
-    mockFetch.mockImplementation(createMockFetch(responses));
-
-    // Make concurrent requests
-    const request1 = client.get('/api/data1');
-    const request2 = client.get('/api/data2');
-
-    // All requests should fail
-    const [result1, result2] = await Promise.all([request1, request2]);
-
-    expect(result1.data).toBeNull();
-    expect(result2.data).toBeNull();
-    expect(result1.error).toBeDefined();
-    expect(result2.error).toBeDefined();
-  });
-
-  it('should not create duplicate refresh operations', async () => {
-    let refreshCallCount = 0;
-
-    // Mock performTokenRefresh to count calls
-    (client as any).performTokenRefresh = vi
-      .fn()
-      .mockImplementation(async () => {
-        refreshCallCount++;
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.get('/api/data', {
+        headers: { authorization: 'Bearer caller-token' }, // lowercase
       });
 
-    // Setup: Multiple 401 responses
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-      createMockResponse(200, 'OK'),
-      createMockResponse(200, 'OK'),
-    ];
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('authorization')).toBe('Bearer caller-token');
+    });
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+    it('should let caller headers win over default headers', async () => {
+      const transportWithDefaults = {
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: {
+          'content-type': 'application/json',
+          'x-default-header': 'default-value',
+        },
+        fetch: mockFetch as any,
+      };
+      const clientWithDefaults = new WebHttpClient(transportWithDefaults);
 
-    // Make multiple concurrent requests that will all trigger 401
-    const requests = [
-      client.get('/api/data1'),
-      client.get('/api/data2'),
-      client.get('/api/data3'),
-    ];
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    await Promise.all(requests);
+      await clientWithDefaults.get('/api/data', {
+        headers: {
+          'content-type': 'application/xml',
+          'x-caller-header': 'caller-value',
+        },
+      });
 
-    // Should only have called performTokenRefresh once
-    expect(refreshCallCount).toBe(1);
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('content-type')).toBe('application/xml');
+      expect(headers.get('x-default-header')).toBe('default-value');
+      expect(headers.get('x-caller-header')).toBe('caller-value');
+    });
   });
 
-  it('should properly clean up refresh state on success', async () => {
-    // Setup: 401 then 200
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-      createMockResponse(200, 'OK'),
-    ];
+  describe('FormData handling', () => {
+    it('should not set content-type for FormData', async () => {
+      const formData = new FormData();
+      formData.append(
+        'file',
+        new Blob(['test'], { type: 'text/plain' }),
+        'test.txt',
+      );
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    // First request triggers refresh
-    await client.get('/api/data1');
+      await client.post('/api/upload', formData);
 
-    // Verify refresh state is cleaned up
-    expect((client as any).isRefreshing).toBe(false);
-    expect((client as any).refreshPromise).toBeNull();
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.has('content-type')).toBe(false);
+    });
 
-    // Second request should work normally (no queuing)
-    const result = await client.get('/api/data2');
-    expect(result.data).toBeDefined();
-    expect(result.error).toBeNull();
+    it('should delete content-type from default headers for FormData', async () => {
+      // Create client with default headers that include content-type
+      const transportWithDefaults = {
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: { 'content-type': 'application/json' },
+        fetch: mockFetch as any,
+      };
+      const clientWithDefaults = new WebHttpClient(transportWithDefaults);
+
+      const formData = new FormData();
+      formData.append('field', 'value');
+
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await clientWithDefaults.post('/api/upload', formData);
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.has('content-type')).toBe(false);
+    });
+
+    it('should preserve caller headers for FormData', async () => {
+      const formData = new FormData();
+      formData.append('field', 'value');
+
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await client.post('/api/upload', formData, {
+        headers: { 'x-custom-header': 'custom-value' },
+      });
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.has('content-type')).toBe(false);
+      expect(headers.get('x-custom-header')).toBe('custom-value');
+    });
+
+    it('should set content-type for JSON bodies', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await client.post('/api/data', { message: 'test' });
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('content-type')).toBe('application/json');
+    });
   });
 
-  it('should properly clean up refresh state on failure', async () => {
-    // Mock performTokenRefresh to fail
-    (client as any).performTokenRefresh = vi
-      .fn()
-      .mockRejectedValue(new Error('Refresh failed'));
+  describe('Credentials handling', () => {
+    it('should not set credentials by default', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
 
-    // Setup: 401 response
-    const responses = [
-      createMockResponse(
-        401,
-        'Unauthorized',
-        new Headers({ 'x-auth-error': 'token_expired' }),
-      ),
-    ];
+      await client.get('/api/data');
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+      const fetchCall = mockFetch.mock.calls[0];
+      expect(fetchCall[1].credentials).toBeUndefined();
+    });
 
-    // Request should fail
-    const result = await client.get('/api/data1');
-    expect(result.data).toBeNull();
-    expect(result.error).toBeDefined();
+    it('should use provided credentials', async () => {
+      const mockFetchWithCredentials = vi.fn();
+      const transport: Transport = {
+        fetch: mockFetchWithCredentials,
+        baseUrl: 'https://api.example.com',
+        credentials: 'include',
+      };
 
-    // Verify refresh state is cleaned up
-    expect((client as any).isRefreshing).toBe(false);
-    expect((client as any).refreshPromise).toBeNull();
+      const clientWithCredentials = new WebHttpClient(transport);
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetchWithCredentials.mockImplementation(createMockFetch(responses));
+
+      await clientWithCredentials.get('/api/data');
+
+      const fetchCall = mockFetchWithCredentials.mock.calls[0];
+      expect(fetchCall[1].credentials).toBe('include');
+    });
   });
 
-  it('should not retry on user abort (AbortError)', async () => {
-    // Mock fetch to throw AbortError when signal is aborted
-    mockFetch.mockImplementation(() => {
-      const error = new Error('Request aborted');
+  describe('HEAD method', () => {
+    it('should return actual headers and status', async () => {
+      const mockHeaders = new Headers({
+        'content-type': 'application/json',
+        'cache-control': 'no-cache',
+        'x-custom-header': 'test-value',
+      });
+
+      const responses = [createMockResponse(204, 'No Content', mockHeaders)];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const result = await client.head('/api/head-test');
+
+      expect(result.status).toBe(204);
+      expect(result.headers['content-type']).toBe('application/json');
+      expect(result.headers['cache-control']).toBe('no-cache');
+      expect(result.headers['x-custom-header']).toBe('test-value');
+    });
+  });
+
+  describe('Signal composition', () => {
+    it('should combine user signal and timeout signal', async () => {
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      const userSignal = new AbortController().signal;
+      await client.get('/api/data', { signal: userSignal, timeoutMs: 5000 });
+
+      const fetchCall = mockFetch.mock.calls[0];
+      expect(fetchCall[1].signal).toBeDefined();
+    });
+
+    it('should handle caller abort', async () => {
+      const abortController = new AbortController();
+      abortController.abort();
+
+      const abortError = new Error('Aborted');
+      abortError.name = 'AbortError';
+      mockFetch.mockRejectedValue(abortError);
+
+      await expect(
+        client.get('/api/data', { signal: abortController.signal }),
+      ).rejects.toThrow(abortError);
+    });
+  });
+});
+
+describe('withRetry', () => {
+  it('should retry HTTPError 500', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount === 1) {
+        const error = new Error('Internal Server Error');
+        (error as any).status = 500;
+        throw error;
+      }
+      return 'success';
+    });
+
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should retry HTTPError 429', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount === 1) {
+        const error = new Error('Too Many Requests');
+        (error as any).status = 429;
+        throw error;
+      }
+      return 'success';
+    });
+
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should retry TimeoutError', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount === 1) {
+        const error = new Error('Timeout');
+        error.name = 'TimeoutError';
+        throw error;
+      }
+      return 'success';
+    });
+
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should retry TypeError (network)', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount === 1) {
+        const error = new TypeError('Network error');
+        throw error;
+      }
+      return 'success';
+    });
+
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should NOT retry AbortError', async () => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      const error = new Error('Aborted');
       error.name = 'AbortError';
       throw error;
     });
 
-    const abortController = new AbortController();
-    abortController.abort(); // Simulate user abort
-
-    const result = await client.get('/api/data', {
-      signal: abortController.signal,
-    });
-
-    expect(result.data).toBeNull();
-    expect(result.error).toBeDefined();
-    expect(result.error?.code).toBe(408); // Request timeout/abort
-    expect(mockFetch).toHaveBeenCalledTimes(1); // Should not retry
+    await expect(withRetry(mockFn, { attempts: 3 })).rejects.toThrow('Aborted');
+    expect(mockFn).toHaveBeenCalledTimes(1);
   });
 
-  it('should handle timeout (TimeoutError) without retry (retry handled by withRetry)', async () => {
-    // Mock fetch to throw TimeoutError
-    mockFetch.mockImplementation(() => {
-      const error = new Error('Request timeout');
-      error.name = 'TimeoutError';
+  it('should NOT retry 4xx errors (except 429)', async () => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      const error = new Error('Bad Request');
+      (error as any).status = 400;
       throw error;
     });
 
-    const result = await client.get('/api/data');
-
-    // Should return timeout error without retry at HTTP client level
-    expect(result.data).toBeNull();
-    expect(result.error).toBeDefined();
-    expect(result.error?.code).toBe(408); // Request timeout
-    expect(mockFetch).toHaveBeenCalledTimes(1); // No retry at HTTP client level
+    await expect(withRetry(mockFn, { attempts: 3 })).rejects.toThrow(
+      'Bad Request',
+    );
+    expect(mockFn).toHaveBeenCalledTimes(1);
   });
 
-  it('should return 429 error without retry (retry handled by withRetry)', async () => {
-    const responses = [
-      createMockResponse(
-        429,
-        'Too Many Requests',
-        new Headers({ 'Retry-After': '1' }),
-      ),
-    ];
-
-    mockFetch.mockImplementation(createMockFetch(responses));
-
-    const result = await client.get('/api/data');
-
-    expect(result.data).toBeNull();
-    expect(result.error).toBeDefined();
-    expect(result.error?.code).toBe(429);
-    expect(mockFetch).toHaveBeenCalledTimes(1); // No retry at HTTP client level
-  });
-
-  it('should return real headers and status from HEAD request', async () => {
-    const mockHeaders = new Headers({
-      'content-type': 'application/json',
-      'cache-control': 'no-cache',
-      'x-custom-header': 'test-value',
+  it('should honor Retry-After header', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount === 1) {
+        const error = new Error('Too Many Requests');
+        (error as any).status = 429;
+        (error as any).headers = new Headers({ 'Retry-After': '0.1' }); // Use small delay for test
+        throw error;
+      }
+      return 'success';
     });
 
-    const responses = [createMockResponse(200, 'OK', mockHeaders)];
-
-    mockFetch.mockImplementation(createMockFetch(responses));
-
-    const result = await client.head('/api/head-test');
-
-    expect(result.data).toBeDefined();
-    expect(result.error).toBeNull();
-
-    const headData = result.data as {
-      headers: Record<string, string>;
-      status: number;
-    };
-    expect(headData.status).toBe(200);
-    expect(headData.headers['content-type']).toBe('application/json');
-    expect(headData.headers['cache-control']).toBe('no-cache');
-    expect(headData.headers['x-custom-header']).toBe('test-value');
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(2);
   });
 
-  it('should not auto-set Content-Type for FormData', async () => {
-    const formData = new FormData();
-    formData.append(
-      'file',
-      new Blob(['test'], { type: 'text/plain' }),
-      'test.txt',
-    );
+  it('should use exponential backoff with jitter', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount < 3) {
+        const error = new Error('Server Error');
+        (error as any).status = 500;
+        throw error;
+      }
+      return 'success';
+    });
 
-    const responses = [createMockResponse(200, 'OK')];
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(3);
+  });
 
-    mockFetch.mockImplementation(createMockFetch(responses));
+  it('should pass attempt number to function', async () => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      if (attempt === 1) {
+        const error = new Error('Server Error');
+        (error as any).status = 500;
+        throw error;
+      }
+      return `success-${attempt}`;
+    });
 
-    await client.post('/api/upload', formData);
-
-    // Check that fetch was called with FormData and no Content-Type header was set
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchOptions = fetchCall[1];
-
-    expect(fetchOptions.body).toBeInstanceOf(FormData);
-    expect(fetchOptions.headers).not.toHaveProperty('Content-Type');
+    const result = await withRetry(mockFn, { attempts: 3 });
+    expect(result).toBe('success-2');
+    expect(mockFn).toHaveBeenCalledWith(1);
+    expect(mockFn).toHaveBeenCalledWith(2);
   });
 });

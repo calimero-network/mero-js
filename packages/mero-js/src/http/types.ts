@@ -31,25 +31,16 @@ export interface RequestOptions extends RequestInit {
 }
 
 export interface HttpClient {
-  get<T>(path: string, init?: RequestOptions): Promise<ResponseData<T>>;
-  post<T>(
+  get<T>(path: string, init?: RequestOptions): Promise<T>;
+  post<T>(path: string, body?: unknown, init?: RequestOptions): Promise<T>;
+  put<T>(path: string, body?: unknown, init?: RequestOptions): Promise<T>;
+  delete<T>(path: string, init?: RequestOptions): Promise<T>;
+  patch<T>(path: string, body?: unknown, init?: RequestOptions): Promise<T>;
+  head<T>(
     path: string,
-    body?: unknown,
     init?: RequestOptions,
-  ): Promise<ResponseData<T>>;
-  put<T>(
-    path: string,
-    body?: unknown,
-    init?: RequestOptions,
-  ): Promise<ResponseData<T>>;
-  delete<T>(path: string, init?: RequestOptions): Promise<ResponseData<T>>;
-  patch<T>(
-    path: string,
-    body?: unknown,
-    init?: RequestOptions,
-  ): Promise<ResponseData<T>>;
-  head<T>(path: string, init?: RequestOptions): Promise<ResponseData<T>>;
-  request<T>(path: string, init?: RequestOptions): Promise<ResponseData<T>>;
+  ): Promise<{ headers: Record<string, string>; status: number }>;
+  request<T>(path: string, init?: RequestOptions): Promise<T>;
 }
 
 // Legacy compatibility types (for gradual migration)

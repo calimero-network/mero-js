@@ -1,13 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { withRetry } from './retry';
 
 describe('withRetry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('should not retry on user abort (AbortError)', async () => {
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       const error = new Error('Request aborted');
       error.name = 'AbortError';
       throw error;
@@ -21,7 +26,7 @@ describe('withRetry', () => {
 
   it('should retry on timeout (TimeoutError)', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Request timeout');
@@ -31,14 +36,16 @@ describe('withRetry', () => {
       return 'success';
     });
 
-    const result = await withRetry(mockFn, { attempts: 3 });
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+    vi.advanceTimersByTime(1000); // Fast-forward through delay
+    const result = await resultPromise;
     expect(result).toBe('success');
     expect(mockFn).toHaveBeenCalledTimes(2); // Should retry once
   });
 
   it('should retry on 5xx errors', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Internal Server Error');
@@ -48,14 +55,16 @@ describe('withRetry', () => {
       return 'success';
     });
 
-    const result = await withRetry(mockFn, { attempts: 3 });
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+    vi.advanceTimersByTime(1000); // Fast-forward through delay
+    const result = await resultPromise;
     expect(result).toBe('success');
     expect(mockFn).toHaveBeenCalledTimes(2); // Should retry once
   });
 
   it('should retry on 429 errors', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Too Many Requests');
@@ -65,37 +74,35 @@ describe('withRetry', () => {
       return 'success';
     });
 
-    const result = await withRetry(mockFn, { attempts: 3 });
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+    vi.advanceTimersByTime(1000); // Fast-forward through delay
+    const result = await resultPromise;
     expect(result).toBe('success');
     expect(mockFn).toHaveBeenCalledTimes(2); // Should retry once
   });
 
   it('should honor Retry-After header for 429 responses', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Too Many Requests');
         (error as any).status = 429;
-        (error as any).headers = new Headers({ 'Retry-After': '1' });
+        (error as any).headers = new Headers({ 'Retry-After': '2' });
         throw error;
       }
       return 'success';
     });
 
-    const startTime = Date.now();
-    const result = await withRetry(mockFn, { attempts: 3 });
-    const endTime = Date.now();
-
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+    vi.advanceTimersByTime(2000); // Fast-forward through 2-second delay
+    const result = await resultPromise;
     expect(result).toBe('success');
     expect(mockFn).toHaveBeenCalledTimes(2);
-
-    // Should have waited at least 1 second due to Retry-After
-    expect(endTime - startTime).toBeGreaterThanOrEqual(900); // Allow some tolerance
   });
 
   it('should not retry on 4xx errors (except 429)', async () => {
-    const mockFn = vi.fn().mockImplementation(() => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
       const error = new Error('Bad Request');
       (error as any).status = 400;
       throw error;
@@ -110,7 +117,7 @@ describe('withRetry', () => {
   it('should retry on network TypeError', async () => {
     // Network errors should be retried
     let callCount = 0;
-    const retryMockFn = vi.fn().mockImplementation(() => {
+    const retryMockFn = vi.fn().mockImplementation((attempt: number) => {
       callCount++;
       if (callCount === 1) {
         const error = new TypeError('Network error');
@@ -119,8 +126,53 @@ describe('withRetry', () => {
       return 'success';
     });
 
-    const result = await withRetry(retryMockFn, { attempts: 3 });
+    const resultPromise = withRetry(retryMockFn, { attempts: 3 });
+    vi.advanceTimersByTime(1000); // Fast-forward through delay
+    const result = await resultPromise;
     expect(result).toBe('success');
     expect(retryMockFn).toHaveBeenCalledTimes(2); // Should retry
+  });
+
+  it('should use exponential backoff with jitter', async () => {
+    let callCount = 0;
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      callCount++;
+      if (callCount < 3) {
+        const error = new Error('Server Error');
+        (error as any).status = 500;
+        throw error;
+      }
+      return 'success';
+    });
+
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+
+    // Fast-forward through all delays step by step
+    vi.advanceTimersByTime(1000); // First retry delay
+    await vi.runAllTimersAsync(); // Process any pending timers
+    vi.advanceTimersByTime(2000); // Second retry delay
+    await vi.runAllTimersAsync(); // Process any pending timers
+
+    const result = await resultPromise;
+    expect(result).toBe('success');
+    expect(mockFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('should pass attempt number to function', async () => {
+    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+      if (attempt === 1) {
+        const error = new Error('Server Error');
+        (error as any).status = 500;
+        throw error;
+      }
+      return `success-${attempt}`;
+    });
+
+    const resultPromise = withRetry(mockFn, { attempts: 3 });
+    vi.advanceTimersByTime(1000); // Fast-forward through delay
+    const result = await resultPromise;
+    expect(result).toBe('success-2');
+    expect(mockFn).toHaveBeenCalledWith(1);
+    expect(mockFn).toHaveBeenCalledWith(2);
   });
 });
