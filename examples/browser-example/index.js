@@ -22,7 +22,9 @@ const httpClient = createBrowserHttpClient({
     'User-Agent': 'MyApp/1.0',
   },
   timeoutMs: 10000, // 10 seconds
-  credentials: 'include', // Include cookies for CORS requests
+  credentials: 'include', // Include cookies and credentials for CORS requests
+  // Options: 'omit' (default), 'same-origin', 'include'
+  // 'include' sends cookies even for cross-origin requests (requires server CORS config)
 });
 
 // Example usage
