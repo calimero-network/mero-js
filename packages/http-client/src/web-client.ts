@@ -1,4 +1,4 @@
-import { ResponseData, ErrorResponse } from './types/api-response';
+// ErrorResponse import removed as it's not used
 import { HttpClient, Transport, RequestOptions, ResponseParser } from './types';
 import { combineSignals, createTimeoutSignal } from './signal-utils';
 
@@ -33,11 +33,11 @@ export class HTTPError extends Error {
   }
 }
 
-// Generic error response
-const GENERIC_ERROR: ErrorResponse = {
-  code: 500,
-  message: 'Something went wrong',
-};
+// Generic error response (currently unused but kept for future use)
+// const GENERIC_ERROR: ErrorResponse = {
+//   code: 500,
+//   message: 'Something went wrong',
+// };
 
 // Helper function to safely extract text from response with 64KB limit
 async function safeText(res: Response): Promise<string | undefined> {
@@ -302,7 +302,7 @@ export class WebHttpClient implements HttpClient {
     });
   }
 
-  async head<T>(
+  async head(
     path: string,
     init: RequestOptions = {},
   ): Promise<{ headers: Record<string, string>; status: number }> {

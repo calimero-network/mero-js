@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { withRetry } from './retry';
 
+// Error types for testing
+interface ErrorWithStatus extends Error {
+  status: number;
+}
+
+interface ErrorWithHeaders extends Error {
+  status: number;
+  headers: Headers;
+}
+
 describe('withRetry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -12,7 +22,7 @@ describe('withRetry', () => {
   });
 
   it('should not retry on user abort (AbortError)', async () => {
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       const error = new Error('Request aborted');
       error.name = 'AbortError';
       throw error;
@@ -26,7 +36,7 @@ describe('withRetry', () => {
 
   it('should retry on timeout (TimeoutError)', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Request timeout');
@@ -45,11 +55,11 @@ describe('withRetry', () => {
 
   it('should retry on 5xx errors', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Internal Server Error');
-        (error as any).status = 500;
+        (error as ErrorWithStatus).status = 500;
         throw error;
       }
       return 'success';
@@ -64,11 +74,11 @@ describe('withRetry', () => {
 
   it('should retry on 429 errors', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Too Many Requests');
-        (error as any).status = 429;
+        (error as ErrorWithStatus).status = 429;
         throw error;
       }
       return 'success';
@@ -83,12 +93,14 @@ describe('withRetry', () => {
 
   it('should honor Retry-After header for 429 responses', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         const error = new Error('Too Many Requests');
-        (error as any).status = 429;
-        (error as any).headers = new Headers({ 'Retry-After': '2' });
+        (error as ErrorWithStatus).status = 429;
+        (error as ErrorWithHeaders).headers = new Headers({
+          'Retry-After': '2',
+        });
         throw error;
       }
       return 'success';
@@ -102,9 +114,9 @@ describe('withRetry', () => {
   });
 
   it('should not retry on 4xx errors (except 429)', async () => {
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       const error = new Error('Bad Request');
-      (error as any).status = 400;
+      (error as ErrorWithStatus).status = 400;
       throw error;
     });
 
@@ -117,7 +129,7 @@ describe('withRetry', () => {
   it('should retry on network TypeError', async () => {
     // Network errors should be retried
     let callCount = 0;
-    const retryMockFn = vi.fn().mockImplementation((attempt: number) => {
+    const retryMockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         const error = new TypeError('Network error');
@@ -135,11 +147,11 @@ describe('withRetry', () => {
 
   it('should use exponential backoff with jitter', async () => {
     let callCount = 0;
-    const mockFn = vi.fn().mockImplementation((attempt: number) => {
+    const mockFn = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount < 3) {
         const error = new Error('Server Error');
-        (error as any).status = 500;
+        (error as ErrorWithStatus).status = 500;
         throw error;
       }
       return 'success';
@@ -162,7 +174,7 @@ describe('withRetry', () => {
     const mockFn = vi.fn().mockImplementation((attempt: number) => {
       if (attempt === 1) {
         const error = new Error('Server Error');
-        (error as any).status = 500;
+        (error as ErrorWithStatus).status = 500;
         throw error;
       }
       return `success-${attempt}`;

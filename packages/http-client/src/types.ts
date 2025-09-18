@@ -1,4 +1,4 @@
-import { ResponseData } from './types/api-response';
+// ResponseData import removed as it's not used in this file
 
 // Web Standards based types
 export type FetchLike = (
@@ -36,7 +36,7 @@ export interface HttpClient {
   put<T>(path: string, body?: unknown, init?: RequestOptions): Promise<T>;
   delete<T>(path: string, init?: RequestOptions): Promise<T>;
   patch<T>(path: string, body?: unknown, init?: RequestOptions): Promise<T>;
-  head<T>(
+  head(
     path: string,
     init?: RequestOptions,
   ): Promise<{ headers: Record<string, string>; status: number }>;

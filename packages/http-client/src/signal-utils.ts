@@ -6,9 +6,12 @@ export function combineSignals(
   if (list.length === 0) return undefined;
 
   // Prefer native any(), but fall back if unavailable or it throws
-  if (typeof (AbortSignal as any).any === 'function') {
+  const AbortSignalAny = AbortSignal as {
+    any?: (signals: AbortSignal[]) => AbortSignal;
+  };
+  if (typeof AbortSignalAny.any === 'function') {
     try {
-      return (AbortSignal as any).any(list);
+      return AbortSignalAny.any(list);
     } catch {
       // Fall through to manual implementation
     }
