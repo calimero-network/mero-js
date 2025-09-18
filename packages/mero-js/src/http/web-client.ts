@@ -195,6 +195,16 @@ export class WebHttpClient implements HttpClient {
           };
         }
 
+        if (error.name === 'TimeoutError') {
+          return {
+            data: null,
+            error: {
+              code: 408,
+              message: 'Request timeout',
+            },
+          };
+        }
+
         return {
           data: null,
           error: {

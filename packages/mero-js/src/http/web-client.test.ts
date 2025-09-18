@@ -279,4 +279,109 @@ describe('WebHttpClient Token Refresh Queueing', () => {
     expect((client as any).isRefreshing).toBe(false);
     expect((client as any).refreshPromise).toBeNull();
   });
+
+  it('should not retry on user abort (AbortError)', async () => {
+    // Mock fetch to throw AbortError when signal is aborted
+    mockFetch.mockImplementation(() => {
+      const error = new Error('Request aborted');
+      error.name = 'AbortError';
+      throw error;
+    });
+
+    const abortController = new AbortController();
+    abortController.abort(); // Simulate user abort
+
+    const result = await client.get('/api/data', {
+      signal: abortController.signal,
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
+    expect(result.error?.code).toBe(408); // Request timeout/abort
+    expect(mockFetch).toHaveBeenCalledTimes(1); // Should not retry
+  });
+
+  it('should handle timeout (TimeoutError) without retry (retry handled by withRetry)', async () => {
+    // Mock fetch to throw TimeoutError
+    mockFetch.mockImplementation(() => {
+      const error = new Error('Request timeout');
+      error.name = 'TimeoutError';
+      throw error;
+    });
+
+    const result = await client.get('/api/data');
+
+    // Should return timeout error without retry at HTTP client level
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
+    expect(result.error?.code).toBe(408); // Request timeout
+    expect(mockFetch).toHaveBeenCalledTimes(1); // No retry at HTTP client level
+  });
+
+  it('should return 429 error without retry (retry handled by withRetry)', async () => {
+    const responses = [
+      createMockResponse(
+        429,
+        'Too Many Requests',
+        new Headers({ 'Retry-After': '1' }),
+      ),
+    ];
+
+    mockFetch.mockImplementation(createMockFetch(responses));
+
+    const result = await client.get('/api/data');
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
+    expect(result.error?.code).toBe(429);
+    expect(mockFetch).toHaveBeenCalledTimes(1); // No retry at HTTP client level
+  });
+
+  it('should return real headers and status from HEAD request', async () => {
+    const mockHeaders = new Headers({
+      'content-type': 'application/json',
+      'cache-control': 'no-cache',
+      'x-custom-header': 'test-value',
+    });
+
+    const responses = [createMockResponse(200, 'OK', mockHeaders)];
+
+    mockFetch.mockImplementation(createMockFetch(responses));
+
+    const result = await client.head('/api/head-test');
+
+    expect(result.data).toBeDefined();
+    expect(result.error).toBeNull();
+
+    const headData = result.data as {
+      headers: Record<string, string>;
+      status: number;
+    };
+    expect(headData.status).toBe(200);
+    expect(headData.headers['content-type']).toBe('application/json');
+    expect(headData.headers['cache-control']).toBe('no-cache');
+    expect(headData.headers['x-custom-header']).toBe('test-value');
+  });
+
+  it('should not auto-set Content-Type for FormData', async () => {
+    const formData = new FormData();
+    formData.append(
+      'file',
+      new Blob(['test'], { type: 'text/plain' }),
+      'test.txt',
+    );
+
+    const responses = [createMockResponse(200, 'OK')];
+
+    mockFetch.mockImplementation(createMockFetch(responses));
+
+    await client.post('/api/upload', formData);
+
+    // Check that fetch was called with FormData and no Content-Type header was set
+    const fetchCall = mockFetch.mock.calls[0];
+    const fetchOptions = fetchCall[1];
+
+    expect(fetchOptions.body).toBeInstanceOf(FormData);
+    expect(fetchOptions.headers).not.toHaveProperty('Content-Type');
+  });
 });

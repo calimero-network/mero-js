@@ -19,9 +19,10 @@ function defaultRetryCondition(error: Error, attempt: number): boolean {
   if (name === 'TimeoutError') return true;
   if (name === 'AbortError') return false;
 
-  // HTTP 5xx (including HTTPError from web-client)
+  // HTTP 5xx and 429 (including HTTPError from web-client)
   if ('status' in (error as any) && typeof (error as any).status === 'number') {
-    return (error as any).status >= 500;
+    const status = (error as any).status;
+    return status >= 500 || status === 429;
   }
   // Network TypeError (DNS/reset) is reasonably retryable
   if (name === 'TypeError') return true;
