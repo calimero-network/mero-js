@@ -6,7 +6,7 @@ This is the monorepo for **Mero.js** - Pure JavaScript SDK for Calimero.
 
 - **`@calimero-network/mero-js`** - The main SDK package
 - **`@calimero-network/mero-js-browser-example`** - Browser-specific usage example
-- **`@calimero-network/mero-js-node-example`** - Node.js-specific usage example  
+- **`@calimero-network/mero-js-node-example`** - Node.js-specific usage example
 - **`@calimero-network/mero-js-universal-example`** - Universal usage example (works in both browser and Node.js)
 
 ## 🚀 Quick Start
@@ -98,6 +98,7 @@ Each example is an independent package that depends on the main SDK:
 2. **Run the example**: `pnpm example:<name>`
 
 Examples are designed to be:
+
 - **Independent**: Each has its own package.json and dependencies
 - **Self-contained**: Can be run individually
 - **Environment-specific**: Browser example for browsers, Node.js example for Node.js, etc.
