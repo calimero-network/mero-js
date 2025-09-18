@@ -30,27 +30,10 @@ async function safeText(res: Response): Promise<string | undefined> {
   }
 }
 
-// Helper function to safely extract JSON from response
-async function safeJson<T>(res: Response): Promise<T | undefined> {
-  try {
-    return (await res.json()) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-// Helper function to convert Headers to Record<string, string>
-function headersToRecord(headers: Headers): Record<string, string> {
-  const record: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    record[key] = value;
-  });
-  return record;
-}
-
 export class WebHttpClient implements HttpClient {
   private transport: Transport;
   private isRefreshing = false;
+  private refreshPromise: Promise<void> | null = null;
   private failedQueue: Array<{
     resolve: (value: ResponseData<any>) => void;
     reject: (reason: Error) => void;
@@ -73,32 +56,18 @@ export class WebHttpClient implements HttpClient {
     // Use URL constructor for proper URL handling
     const url = new URL(path, this.transport.baseUrl).toString();
 
-    // Merge headers
-    const headers: Record<string, string> = {
-      ...(this.transport.defaultHeaders ?? {}),
-    };
-
-    // Handle different header types
+    // Merge headers using Headers API for proper case-insensitive handling
+    const headers = new Headers(this.transport.defaultHeaders);
     if (init.headers) {
-      if (init.headers instanceof Headers) {
-        init.headers.forEach((value, key) => {
-          headers[key] = value;
-        });
-      } else if (Array.isArray(init.headers)) {
-        init.headers.forEach(([key, value]) => {
-          headers[key] = value;
-        });
-      } else {
-        Object.assign(headers, init.headers);
-      }
+      new Headers(init.headers).forEach((v, k) => headers.set(k, v));
     }
 
-    // Add auth token if available (respect user-provided Authorization header)
-    if (this.transport.getAuthToken && !headers['Authorization']) {
+    // Only add auth if caller didn't set it (case-insensitive check)
+    if (this.transport.getAuthToken && !headers.has('authorization')) {
       try {
         const token = await this.transport.getAuthToken();
         if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
+          headers.set('authorization', `Bearer ${token}`);
         }
       } catch (error) {
         // If token retrieval fails, continue without auth
@@ -128,13 +97,12 @@ export class WebHttpClient implements HttpClient {
         ...init,
         headers,
         signal: combinedSignal,
-        credentials:
-          init.credentials ?? this.transport.credentials ?? 'same-origin',
+        credentials: init.credentials ?? this.transport.credentials,
       });
 
       // No need to clear timeout - AbortSignal handles cleanup
 
-      // Handle HTTP errors
+      // Handle HTTP errors by throwing HTTPError (for retry compatibility)
       if (!response.ok) {
         const text = await safeText(response);
         const authError = response.headers.get('x-auth-error');
@@ -143,61 +111,55 @@ export class WebHttpClient implements HttpClient {
         if (response.status === 401) {
           switch (authError) {
             case 'missing_token':
-              return {
-                data: null,
-                error: {
-                  code: 401,
-                  message: 'No access token found.',
-                },
-              };
+              throw new HTTPError(
+                response.status,
+                response.statusText,
+                text,
+                response.headers,
+              );
             case 'token_expired':
               // Attempt token refresh
               try {
                 return await this.handleTokenRefresh(path, init);
               } catch (refreshError) {
-                return {
-                  data: null,
-                  error: {
-                    code: 401,
-                    message: 'Session expired. Please log in again.',
-                  },
-                };
+                throw new HTTPError(
+                  response.status,
+                  response.statusText,
+                  text,
+                  response.headers,
+                );
               }
             case 'token_revoked':
-              return {
-                data: null,
-                error: {
-                  code: 401,
-                  message: 'Session was revoked. Please log in again.',
-                },
-              };
+              throw new HTTPError(
+                response.status,
+                response.statusText,
+                text,
+                response.headers,
+              );
             case 'invalid_token':
-              return {
-                data: null,
-                error: {
-                  code: 401,
-                  message: 'Invalid authentication. Please log in again.',
-                },
-              };
+              throw new HTTPError(
+                response.status,
+                response.statusText,
+                text,
+                response.headers,
+              );
             default:
-              return {
-                data: null,
-                error: {
-                  code: 401,
-                  message: text || 'Authentication failed',
-                },
-              };
+              throw new HTTPError(
+                response.status,
+                response.statusText,
+                text,
+                response.headers,
+              );
           }
         }
 
-        // Handle other HTTP errors
-        return {
-          data: null,
-          error: {
-            code: response.status,
-            message: text || response.statusText || 'Request failed',
-          },
-        };
+        // Handle other HTTP errors by throwing HTTPError
+        throw new HTTPError(
+          response.status,
+          response.statusText,
+          text,
+          response.headers,
+        );
       }
 
       // Handle successful responses with enhanced parsing
@@ -211,8 +173,29 @@ export class WebHttpClient implements HttpClient {
     } catch (error) {
       // No need to clear timeout - AbortSignal handles cleanup
 
+      if (error instanceof HTTPError) {
+        // Convert HTTPError back to ResponseData format for public API
+        return {
+          data: null,
+          error: {
+            code: error.status,
+            message: error.message,
+          },
+        };
+      }
+
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
+          return {
+            data: null,
+            error: {
+              code: 408,
+              message: 'Request timeout',
+            },
+          };
+        }
+
+        if (error.name === 'TimeoutError') {
           return {
             data: null,
             error: {
@@ -296,6 +279,13 @@ export class WebHttpClient implements HttpClient {
     path: string,
     init: RequestOptions,
   ): Promise<ResponseData<T>> {
+    // If refresh is already in progress, wait for it and retry
+    if (this.refreshPromise) {
+      await this.refreshPromise;
+      // Retry the original request after refresh completes
+      return this.makeRequest<T>(path, init);
+    }
+
     // If refresh is already in progress, queue this request
     if (this.isRefreshing) {
       return new Promise((resolve, reject) => {
@@ -311,32 +301,46 @@ export class WebHttpClient implements HttpClient {
     try {
       this.isRefreshing = true;
 
-      // Get current tokens
-      const currentToken = await this.transport.getAuthToken?.();
-      if (!currentToken) {
-        throw new Error('No current token available for refresh');
-      }
+      // Create shared refresh promise
+      this.refreshPromise = this.performTokenRefresh();
 
-      // Attempt to refresh token
-      // Note: This is a simplified approach. In a real implementation,
-      // you'd need to implement the actual token refresh logic
-      // or inject an auth client that handles this
+      // Wait for refresh to complete
+      await this.refreshPromise;
 
-      // For now, we'll just retry the original request
-      // In a full implementation, you'd call your auth service here
-
-      // Process queued requests
+      // Process queued requests only after successful refresh
       this.processQueue(null);
 
       // Retry original request
       return this.makeRequest<T>(path, init);
     } catch (error) {
       this.isRefreshing = false;
+      this.refreshPromise = null;
       this.processQueue(error as Error);
       throw error;
     } finally {
       this.isRefreshing = false;
+      this.refreshPromise = null;
     }
+  }
+
+  private async performTokenRefresh(): Promise<void> {
+    // Get current tokens
+    const currentToken = await this.transport.getAuthToken?.();
+    if (!currentToken) {
+      throw new Error('No current token available for refresh');
+    }
+
+    // Attempt to refresh token
+    // Note: This is a simplified approach. In a real implementation,
+    // you'd need to implement the actual token refresh logic
+    // or inject an auth client that handles this
+
+    // For now, we'll just simulate a successful refresh
+    // In a full implementation, you'd call your auth service here
+    // and update the token via onTokenRefresh callback
+
+    // Simulate refresh delay
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private processQueue(error: Error | null) {
@@ -449,24 +453,16 @@ export class WebHttpClient implements HttpClient {
     path: string,
     init: RequestOptions = {},
   ): Promise<ResponseData<T>> {
-    const response = await this.makeRequest<T>(path, {
+    const res = await this.makeRequest(path, {
       ...init,
       method: 'HEAD',
+      parse: 'response',
     });
-
-    // For HEAD requests, return headers and status
-    if (response.data) {
-      const headResponse = {
-        headers: headersToRecord(new Headers(init.headers)),
-        status: 200, // This would need to be extracted from the actual response
-      };
-      return {
-        data: headResponse as T,
-        error: null,
-      };
-    }
-
-    return response;
+    if (res.error) return res;
+    const r = res.data as Response;
+    const hdrs: Record<string, string> = {};
+    r.headers.forEach((v, k) => (hdrs[k] = v));
+    return { data: { headers: hdrs, status: r.status } as T, error: null };
   }
 
   // Generic request method (alias for the private makeRequest method)

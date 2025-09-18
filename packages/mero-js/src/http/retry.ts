@@ -19,9 +19,10 @@ function defaultRetryCondition(error: Error, attempt: number): boolean {
   if (name === 'TimeoutError') return true;
   if (name === 'AbortError') return false;
 
-  // HTTP 5xx
+  // HTTP 5xx and 429 (including HTTPError from web-client)
   if ('status' in (error as any) && typeof (error as any).status === 'number') {
-    return (error as any).status >= 500;
+    const status = (error as any).status;
+    return status >= 500 || status === 429;
   }
   // Network TypeError (DNS/reset) is reasonably retryable
   if (name === 'TypeError') return true;
@@ -42,26 +43,6 @@ function calculateDelay(
   // Add ±20% jitter to reduce stampedes
   const jitter = (Math.random() - 0.5) * 0.4 * cappedDelay;
   return Math.max(0, cappedDelay + jitter);
-}
-
-// Extract Retry-After header value
-function getRetryAfterMs(response: Response): number | null {
-  const retryAfter = response.headers.get('Retry-After');
-  if (!retryAfter) return null;
-
-  // If it's a number, treat as seconds
-  const seconds = parseInt(retryAfter, 10);
-  if (!isNaN(seconds)) {
-    return seconds * 1000;
-  }
-
-  // If it's a date, calculate the difference
-  const date = new Date(retryAfter);
-  if (!isNaN(date.getTime())) {
-    return Math.max(0, date.getTime() - Date.now());
-  }
-
-  return null;
 }
 
 // Retry helper function
@@ -99,10 +80,23 @@ export async function withRetry<T>(
       );
 
       // Check for Retry-After header if it's an HTTP error
-      if ('response' in lastError && lastError.response instanceof Response) {
-        const retryAfterMs = getRetryAfterMs(lastError.response);
-        if (retryAfterMs !== null) {
-          delayMs = Math.max(delayMs, retryAfterMs);
+      type HasHeaders = { headers?: Headers };
+      const hdrs = (lastError as HasHeaders).headers;
+      const retryAfter = hdrs?.get?.('Retry-After');
+      if (retryAfter) {
+        // If it's a number, treat as seconds
+        const seconds = parseInt(retryAfter, 10);
+        if (!isNaN(seconds)) {
+          delayMs = Math.max(delayMs, seconds * 1000);
+        } else {
+          // If it's a date, calculate the difference
+          const date = new Date(retryAfter);
+          if (!isNaN(date.getTime())) {
+            delayMs = Math.max(
+              delayMs,
+              Math.max(0, date.getTime() - Date.now()),
+            );
+          }
         }
       }
 
