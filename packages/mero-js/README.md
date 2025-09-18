@@ -338,7 +338,7 @@ formData.append('file', fileInput.files[0]);
 formData.append('name', 'John Doe');
 
 const data = await httpClient.post('/api/upload', formData);
-// Content-Type is automatically set to multipart/form-data
+// Content-Type is set by the browser/undici with proper boundary
 ```
 
 ### Response Parsing
