@@ -45,7 +45,7 @@ mero-js/
 ├── packages/
 │   └── mero-js/           # Main SDK package
 │       ├── src/           # Source code
-│       ├── lib/           # Built output
+│       ├── dist/          # Built output
 │       ├── package.json   # Package configuration
 │       └── README.md      # Package documentation
 ├── examples/
