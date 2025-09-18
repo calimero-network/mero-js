@@ -107,12 +107,7 @@ describe('withRetry', () => {
     expect(mockFn).toHaveBeenCalledTimes(1); // Should not retry
   });
 
-  it('should not retry on network TypeError', async () => {
-    const mockFn = vi.fn().mockImplementation(() => {
-      const error = new TypeError('Network error');
-      throw error;
-    });
-
+  it('should retry on network TypeError', async () => {
     // Network errors should be retried
     let callCount = 0;
     const retryMockFn = vi.fn().mockImplementation(() => {
