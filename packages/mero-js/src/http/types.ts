@@ -66,7 +66,7 @@ export interface HeadResponse {
   status: number;
 }
 
-export interface RequestOptions {
+export interface LegacyRequestOptions {
   responseType?: 'arraybuffer' | 'blob' | 'json';
 }
 
