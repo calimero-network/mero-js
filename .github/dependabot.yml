@@ -1,0 +1,119 @@
+version: 2
+updates:
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # npm dependencies (root package)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "@typescript-eslint/*"
+          - "eslint*"
+          - "prettier*"
+          - "typescript*"
+          - "vitest*"
+          - "husky*"
+          - "rimraf*"
+          - "esbuild*"
+
+  # npm dependencies (mero-js package)
+  - package-ecosystem: "npm"
+    directory: "/packages/mero-js"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "@typescript-eslint/*"
+          - "eslint*"
+          - "prettier*"
+          - "typescript*"
+          - "vitest*"
+          - "husky*"
+          - "rimraf*"
+          - "esbuild*"
+
+  # npm dependencies (example packages)
+  - package-ecosystem: "npm"
+    directory: "/examples/browser-example"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/examples/node-example"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/examples/universal-example"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "xilosada"
+    assignees:
+      - "xilosada"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

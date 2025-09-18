@@ -1,0 +1,7 @@
+# Run comprehensive checks before push
+echo "🔍 Running pre-push checks..."
+pnpm format
+pnpm lint
+pnpm typecheck
+pnpm test
+echo "✅ All pre-push checks passed!"

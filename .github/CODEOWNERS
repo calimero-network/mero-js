@@ -1,0 +1,30 @@
+# Global code owners
+* @xilosada
+
+# GitHub Actions workflows
+/.github/workflows/ @xilosada
+
+# Configuration files
+/.github/ @xilosada
+/.editorconfig @xilosada
+/.gitattributes @xilosada
+/.gitignore @xilosada
+/.npmrc @xilosada
+/prettier.config.cjs @xilosada
+/tsconfig.base.json @xilosada
+
+# Root package configuration
+/package.json @xilosada
+/pnpm-lock.yaml @xilosada
+/pnpm-workspace.yaml @xilosada
+
+# Main package
+/packages/mero-js/ @xilosada
+
+# Examples
+/examples/ @xilosada
+
+# Documentation
+/README.md @xilosada
+/LICENSE @xilosada
+/SECURITY.md @xilosada

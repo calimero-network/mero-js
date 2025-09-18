@@ -38,7 +38,9 @@ async function example() {
   try {
     const environment = typeof window !== 'undefined' ? 'Browser' : 'Node.js';
     console.log(`🌍 Universal Example - Mero.js HTTP Client (${environment})`);
-    console.log('This example works in both browser and Node.js environments\n');
+    console.log(
+      'This example works in both browser and Node.js environments\n',
+    );
 
     // GET request
     console.log('1️⃣ Testing GET request...');
@@ -51,17 +53,21 @@ async function example() {
 
     // POST request with custom headers
     console.log('\n2️⃣ Testing POST request with custom headers...');
-    const postResponse = await httpClient.post('/post', {
-      name: 'Universal User',
-      email: 'user@example.com',
-      environment: environment,
-      timestamp: new Date().toISOString(),
-    }, {
-      headers: {
-        'X-Custom-Header': 'custom-value',
-        'X-Environment': environment,
+    const postResponse = await httpClient.post(
+      '/post',
+      {
+        name: 'Universal User',
+        email: 'user@example.com',
+        environment: environment,
+        timestamp: new Date().toISOString(),
       },
-    });
+      {
+        headers: {
+          'X-Custom-Header': 'custom-value',
+          'X-Environment': environment,
+        },
+      },
+    );
 
     if (postResponse.data) {
       console.log('✅ POST request successful:', postResponse.data.json);
@@ -124,13 +130,15 @@ async function example() {
     if (errorResponse.data) {
       console.log('❌ Expected error but got success');
     } else {
-      console.log('✅ Error handling working (500 error caught):', errorResponse.error.message);
+      console.log(
+        '✅ Error handling working (500 error caught):',
+        errorResponse.error.message,
+      );
     }
 
     console.log('\n🎉 Universal example completed successfully!');
     console.log('💡 This example demonstrates cross-platform usage patterns.');
     console.log(`🖥️  Currently running in: ${environment}`);
-
   } catch (error) {
     console.error('❌ Example failed:', error);
   }

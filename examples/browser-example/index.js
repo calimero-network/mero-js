@@ -1,7 +1,11 @@
 // Browser example - using native fetch
 // Note: This example is designed for browser environments only
 // To use in a browser, build the main package first: npm run build
-import { createBrowserHttpClient, withRetry, combineSignals } from '@calimero-network/mero-js';
+import {
+  createBrowserHttpClient,
+  withRetry,
+  combineSignals,
+} from '@calimero-network/mero-js';
 
 // Create HTTP client for browser environment
 const httpClient = createBrowserHttpClient({
@@ -18,14 +22,18 @@ const httpClient = createBrowserHttpClient({
     'User-Agent': 'MyApp/1.0',
   },
   timeoutMs: 10000, // 10 seconds
-  credentials: 'include', // Include cookies for CORS requests
+  credentials: 'include', // Include cookies and credentials for CORS requests
+  // Options: 'omit' (default), 'same-origin', 'include'
+  // 'include' sends cookies even for cross-origin requests (requires server CORS config)
 });
 
 // Example usage
 async function example() {
   try {
     console.log('🌐 Browser Example - Mero.js HTTP Client');
-    console.log('Note: This example uses localStorage and is designed for browser environments\n');
+    console.log(
+      'Note: This example uses localStorage and is designed for browser environments\n',
+    );
 
     // GET request with custom parsing
     console.log('1️⃣ Testing GET request...');
@@ -76,10 +84,13 @@ async function example() {
     console.log('\n4️⃣ Testing Signal combination...');
     const userController = new AbortController();
     const timeoutController = new AbortController();
-    
+
     setTimeout(() => timeoutController.abort(), 1000);
-    
-    const combinedSignal = combineSignals([userController.signal, timeoutController.signal]);
+
+    const combinedSignal = combineSignals([
+      userController.signal,
+      timeoutController.signal,
+    ]);
 
     try {
       const combinedResponse = await httpClient.get('/delay/2', {
@@ -97,20 +108,17 @@ async function example() {
 
     // Request with retry (won't retry on user abort)
     console.log('\n5️⃣ Testing Retry functionality...');
-    const retryResponse = await withRetry(
-      () => httpClient.get('/get'),
-      {
-        attempts: 3,
-        baseDelayMs: 100,
-        backoffFactor: 2,
-        retryCondition: (error, attempt) => {
-          // Custom retry logic - won't retry on user abort
-          if (error.name === 'AbortError') return false; // User cancelled
-          if (error.name === 'TimeoutError') return true; // Timeout is retryable
-          return attempt < 2; // Retry once
-        },
+    const retryResponse = await withRetry(() => httpClient.get('/get'), {
+      attempts: 3,
+      baseDelayMs: 100,
+      backoffFactor: 2,
+      retryCondition: (error, attempt) => {
+        // Custom retry logic - won't retry on user abort
+        if (error.name === 'AbortError') return false; // User cancelled
+        if (error.name === 'TimeoutError') return true; // Timeout is retryable
+        return attempt < 2; // Retry once
       },
-    );
+    });
 
     if (retryResponse.data) {
       console.log('✅ Retry functionality working');
@@ -119,8 +127,9 @@ async function example() {
     }
 
     console.log('\n🎉 Browser example completed successfully!');
-    console.log('💡 To use this in a real browser, include the built library and run this code.');
-
+    console.log(
+      '💡 To use this in a real browser, include the built library and run this code.',
+    );
   } catch (error) {
     console.error('❌ Example failed:', error);
   }

@@ -1,0 +1,10 @@
+# Check commit message format (optional - can be removed if not needed)
+commit_regex='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf|revert)(\(.+\))?: .{1,72}'
+
+if ! grep -qE "$commit_regex" "$1"; then
+    echo "❌ Invalid commit message format!"
+    echo "Format: type(scope): description"
+    echo "Types: feat, fix, docs, style, refactor, test, chore, ci, build, perf, revert"
+    echo "Example: feat: add user authentication"
+    exit 1
+fi
