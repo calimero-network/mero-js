@@ -93,12 +93,16 @@ async function example() {
     if (errorResponse.data) {
       console.log('❌ Expected error but got success');
     } else {
-      console.log('✅ Error handling working (404 error caught):', errorResponse.error.message);
+      console.log(
+        '✅ Error handling working (404 error caught):',
+        errorResponse.error.message,
+      );
     }
 
     console.log('\n🎉 Node.js example completed successfully!');
-    console.log('💡 This example demonstrates Node.js-specific usage patterns.');
-
+    console.log(
+      '💡 This example demonstrates Node.js-specific usage patterns.',
+    );
   } catch (error) {
     console.error('❌ Example failed:', error);
   }
