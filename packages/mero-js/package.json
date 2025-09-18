@@ -27,10 +27,14 @@
   },
   "scripts": {
     "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=lib/index.mjs && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=lib/index.js",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "eslint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "tsc": "tsc -b",
+    "prettier": "prettier --check .",
+    "prettier:fix": "prettier --write .",
     "clean": "pnpm rimraf lib",
     "dev": "echo 'Mero.js package not yet implemented'"
   },

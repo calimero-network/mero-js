@@ -15,11 +15,11 @@
   "scripts": {
     "lint": "pnpm -r eslint .",
     "lint:fix": "pnpm -r eslint . --fix",
-    "format": "prettier --check .",
-    "format:fix": "prettier --write .",
-    "typecheck": "pnpm -r tsc -b",
+    "format": "pnpm -r prettier --check .",
+    "format:fix": "pnpm -r prettier --write .",
+    "typecheck": "pnpm -r tsc",
     "build": "pnpm -r --filter @calimero-network/mero-js build",
-    "test": "vitest run --passWithNoTests",
+    "test": "pnpm -r test",
     "prepare": "husky"
   },
   "devDependencies": {

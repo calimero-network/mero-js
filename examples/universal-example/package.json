@@ -9,8 +9,11 @@
     "build": "echo 'No build needed for this example'",
     "dev": "node --watch index.js",
     "lint": "echo 'No linting needed for this example'",
+    "eslint": "echo 'No eslint needed for this example'",
     "test": "echo 'No tests for this example'",
-    "typecheck": "echo 'No typecheck needed for this example'"
+    "typecheck": "echo 'No typecheck needed for this example'",
+    "tsc": "echo 'No tsc needed for this example'",
+    "prettier": "echo 'No prettier needed for this example'"
   },
   "dependencies": {
     "@calimero-network/mero-js": "workspace:*"
