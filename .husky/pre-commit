@@ -1,3 +1,2 @@
-# Run formatting and linting fixes before commit
-pnpm format:fix
-pnpm lint:fix
+# Run formatting and linting fixes on staged files only
+pnpm lint-staged
