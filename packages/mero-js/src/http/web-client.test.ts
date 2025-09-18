@@ -33,11 +33,9 @@ describe('WebHttpClient Token Refresh Queueing', () => {
   let client: WebHttpClient;
   let mockFetch: ReturnType<typeof vi.fn>;
   let tokenCallCount: number;
-  let refreshCallCount: number;
 
   beforeEach(() => {
     tokenCallCount = 0;
-    refreshCallCount = 0;
 
     const transport: Transport = {
       fetch: vi.fn(),

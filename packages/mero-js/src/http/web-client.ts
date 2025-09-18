@@ -30,24 +30,6 @@ async function safeText(res: Response): Promise<string | undefined> {
   }
 }
 
-// Helper function to safely extract JSON from response
-async function safeJson<T>(res: Response): Promise<T | undefined> {
-  try {
-    return (await res.json()) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-// Helper function to convert Headers to Record<string, string>
-function headersToRecord(headers: Headers): Record<string, string> {
-  const record: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    record[key] = value;
-  });
-  return record;
-}
-
 export class WebHttpClient implements HttpClient {
   private transport: Transport;
   private isRefreshing = false;
@@ -289,13 +271,9 @@ export class WebHttpClient implements HttpClient {
   ): Promise<ResponseData<T>> {
     // If refresh is already in progress, wait for it and retry
     if (this.refreshPromise) {
-      try {
-        await this.refreshPromise;
-        // Retry the original request after refresh completes
-        return this.makeRequest<T>(path, init);
-      } catch (error) {
-        throw error;
-      }
+      await this.refreshPromise;
+      // Retry the original request after refresh completes
+      return this.makeRequest<T>(path, init);
     }
 
     // If refresh is already in progress, queue this request

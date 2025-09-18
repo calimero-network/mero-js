@@ -23,6 +23,15 @@
     "lint-staged": "lint-staged",
     "prepare": "husky"
   },
+  "lint-staged": {
+    "**/*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "**/*.{json,md,yml,yaml,css,scss,html}": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
