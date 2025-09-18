@@ -29,7 +29,7 @@
     "vitest": "^1.0.0"
   },
   "scripts": {
-    "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=dist/index.mjs && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.cjs && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs",
+    "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
