@@ -1,4 +1,4 @@
-import { ResponseData } from '../types/api-response';
+import { ResponseData } from './types/api-response';
 
 // Web Standards based types
 export type FetchLike = (

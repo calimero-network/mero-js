@@ -2,10 +2,7 @@
 // This will contain the pure JavaScript SDK without React dependencies
 
 // HTTP client module (Web Standards based)
-export * from './http';
-
-// Types
-export * from './types';
+export * from '@calimero-network/http-client';
 
 // Main SDK class (coming soon)
 export const placeholder =

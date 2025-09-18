@@ -124,3 +124,6 @@ bundle-analyzer-report.html
 # Local development
 .local
 node_modules/
+
+# Data directory (Calimero node data)
+data/

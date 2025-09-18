@@ -1,4 +1,4 @@
-import { ResponseData, ErrorResponse } from '../types/api-response';
+import { ResponseData, ErrorResponse } from './types/api-response';
 import { HttpClient, Transport, RequestOptions, ResponseParser } from './types';
 import { combineSignals, createTimeoutSignal } from './signal-utils';
 
