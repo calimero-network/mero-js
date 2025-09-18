@@ -1,0 +1,25 @@
+{
+  "name": "@calimero-network/mero-js-universal-example",
+  "version": "1.0.0",
+  "description": "Universal example for Mero.js (works in both browser and Node.js)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "echo 'No build needed for this example'",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@calimero-network/mero-js": "workspace:*"
+  },
+  "keywords": [
+    "calimero",
+    "mero",
+    "universal",
+    "browser",
+    "nodejs",
+    "example"
+  ],
+  "author": "Calimero Ltd",
+  "license": "MIT"
+}
