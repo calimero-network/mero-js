@@ -1,0 +1,23 @@
+{
+  "name": "@calimero-network/mero-js-node-example",
+  "version": "1.0.0",
+  "description": "Node.js example for Mero.js",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "echo 'No build needed for this example'",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@calimero-network/mero-js": "workspace:*"
+  },
+  "keywords": [
+    "calimero",
+    "mero",
+    "nodejs",
+    "example"
+  ],
+  "author": "Calimero Ltd",
+  "license": "MIT"
+}
