@@ -19,13 +19,15 @@
     "format:fix": "prettier --write .",
     "typecheck": "pnpm -r tsc -b",
     "build": "pnpm -r --filter @calimero-network/mero-js build",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "eslint": "^8.57.0",
+    "husky": "^9.0.11",
     "prettier": "3.3.2",
     "typescript": "^4.9.5",
     "vitest": "^1.0.0"

@@ -1,0 +1,3 @@
+# Run formatting and linting fixes before commit
+pnpm format:fix
+pnpm lint:fix
