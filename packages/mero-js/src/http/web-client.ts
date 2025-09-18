@@ -23,16 +23,11 @@ export class HTTPError extends Error {
     headers: Record<string, string>;
     bodyText?: string;
   } {
-    const headersObj: Record<string, string> = {};
-    this.headers.forEach((value, key) => {
-      headersObj[key] = value;
-    });
-
     return {
       status: this.status,
       statusText: this.statusText,
       url: this.url,
-      headers: headersObj,
+      headers: headersToRecord(this.headers),
       bodyText: this.bodyText,
     };
   }
@@ -53,6 +48,15 @@ async function safeText(res: Response): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+// Helper function to convert Headers to Record<string, string>
+function headersToRecord(headers: Headers): Record<string, string> {
+  const record: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    record[key] = value;
+  });
+  return record;
 }
 
 export class WebHttpClient implements HttpClient {
@@ -309,12 +313,10 @@ export class WebHttpClient implements HttpClient {
       parse: 'response',
     });
 
-    const headers: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
-
-    return { headers, status: response.status };
+    return {
+      headers: headersToRecord(response.headers),
+      status: response.status,
+    };
   }
 
   // Generic request method (alias for the private makeRequest method)
