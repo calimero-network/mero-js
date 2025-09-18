@@ -3,6 +3,19 @@ export interface RetryOptions {
   attempts?: number;
 }
 
+// Error types for retry logic
+interface ErrorWithName extends Error {
+  name: string;
+}
+
+interface ErrorWithStatus extends Error {
+  status: number;
+}
+
+interface ErrorWithHeaders extends Error {
+  headers?: Headers;
+}
+
 // Default retry condition - retry on network errors and 5xx status codes
 function defaultRetryCondition(error: Error, attempt: number): boolean {
   // Don't retry on the last attempt
@@ -11,13 +24,18 @@ function defaultRetryCondition(error: Error, attempt: number): boolean {
   // Distinguish timeout vs. user abort:
   // - Timeout: name === 'TimeoutError' (per spec/platforms)
   // - User abort: name === 'AbortError'
-  const name = (error as any)?.name;
+  const errorWithName = error as ErrorWithName;
+  const name = errorWithName?.name;
   if (name === 'TimeoutError') return true;
   if (name === 'AbortError') return false;
 
   // HTTP 5xx and 429 (including HTTPError from web-client)
-  if ('status' in (error as any) && typeof (error as any).status === 'number') {
-    const status = (error as any).status;
+  const errorWithStatus = error as ErrorWithStatus;
+  if (
+    'status' in errorWithStatus &&
+    typeof errorWithStatus.status === 'number'
+  ) {
+    const status = errorWithStatus.status;
     return status >= 500 || status === 429;
   }
   // Network TypeError (DNS/reset) is reasonably retryable
@@ -60,8 +78,8 @@ export async function withRetry<T>(
       let delayMs = calculateDelay(attempt);
 
       // Check for Retry-After header if it's an HTTP error
-      type HasHeaders = { headers?: Headers };
-      const hdrs = (lastError as HasHeaders).headers;
+      const errorWithHeaders = lastError as ErrorWithHeaders;
+      const hdrs = errorWithHeaders.headers;
       const retryAfter = hdrs?.get?.('Retry-After');
       if (retryAfter) {
         // If it's a number, treat as seconds
@@ -84,11 +102,11 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError!;
+  throw lastError;
 }
 
 // Helper to create a retry-enabled HTTP client method
-export function createRetryableMethod<T extends any[], R>(
+export function createRetryableMethod<T extends unknown[], R>(
   method: (...args: T) => Promise<R>,
   retryOptions: RetryOptions = {},
 ) {

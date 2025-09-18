@@ -20,6 +20,8 @@
     "typecheck": "pnpm -r tsc",
     "build": "pnpm -r --filter @calimero-network/mero-js build",
     "test": "pnpm -r test",
+    "test:e2e": "echo 'E2E tests not yet implemented'",
+    "test:e2e-auth": "echo 'E2E auth tests not yet implemented'",
     "lint-staged": "lint-staged",
     "prepare": "run-p prepare:*",
     "prepare:husky": "husky",
