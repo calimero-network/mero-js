@@ -14,6 +14,8 @@ jobs:
         node: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
