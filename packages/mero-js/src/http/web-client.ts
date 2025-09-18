@@ -115,8 +115,7 @@ export class WebHttpClient implements HttpClient {
         ...init,
         headers,
         signal: combinedSignal,
-        credentials:
-          init.credentials ?? this.transport.credentials,
+        credentials: init.credentials ?? this.transport.credentials,
       });
 
       // No need to clear timeout - AbortSignal handles cleanup
@@ -351,9 +350,9 @@ export class WebHttpClient implements HttpClient {
     // For now, we'll just simulate a successful refresh
     // In a full implementation, you'd call your auth service here
     // and update the token via onTokenRefresh callback
-    
+
     // Simulate refresh delay
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   private processQueue(error: Error | null) {
@@ -466,11 +465,15 @@ export class WebHttpClient implements HttpClient {
     path: string,
     init: RequestOptions = {},
   ): Promise<ResponseData<T>> {
-    const res = await this.makeRequest(path, { ...init, method: 'HEAD', parse: 'response' });
+    const res = await this.makeRequest(path, {
+      ...init,
+      method: 'HEAD',
+      parse: 'response',
+    });
     if (res.error) return res;
     const r = res.data as Response;
     const hdrs: Record<string, string> = {};
-    r.headers.forEach((v, k) => hdrs[k] = v);
+    r.headers.forEach((v, k) => (hdrs[k] = v));
     return { data: { headers: hdrs, status: r.status } as T, error: null };
   }
 

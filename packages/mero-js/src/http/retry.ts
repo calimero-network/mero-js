@@ -44,7 +44,6 @@ function calculateDelay(
   return Math.max(0, cappedDelay + jitter);
 }
 
-
 // Retry helper function
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -92,7 +91,10 @@ export async function withRetry<T>(
           // If it's a date, calculate the difference
           const date = new Date(retryAfter);
           if (!isNaN(date.getTime())) {
-            delayMs = Math.max(delayMs, Math.max(0, date.getTime() - Date.now()));
+            delayMs = Math.max(
+              delayMs,
+              Math.max(0, date.getTime() - Date.now()),
+            );
           }
         }
       }

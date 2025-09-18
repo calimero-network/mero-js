@@ -13,7 +13,11 @@ const createMockFetch = (responses: Response[]) => {
 };
 
 // Mock Response implementation
-const createMockResponse = (status: number, statusText: string, headers?: Headers) => {
+const createMockResponse = (
+  status: number,
+  statusText: string,
+  headers?: Headers,
+) => {
   const mockHeaders = headers || new Headers();
   return {
     ok: status >= 200 && status < 300,
@@ -34,7 +38,7 @@ describe('WebHttpClient Token Refresh Queueing', () => {
   beforeEach(() => {
     tokenCallCount = 0;
     refreshCallCount = 0;
-    
+
     const transport: Transport = {
       fetch: vi.fn(),
       baseUrl: 'https://api.example.com',
@@ -60,7 +64,11 @@ describe('WebHttpClient Token Refresh Queueing', () => {
   it('should queue concurrent requests during token refresh', async () => {
     // Setup: First request returns 401, subsequent requests succeed
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
       createMockResponse(200, 'OK'),
       createMockResponse(200, 'OK'),
       createMockResponse(200, 'OK'),
@@ -74,7 +82,11 @@ describe('WebHttpClient Token Refresh Queueing', () => {
     const request3 = client.get('/api/data3');
 
     // All requests should eventually succeed
-    const [result1, result2, result3] = await Promise.all([request1, request2, request3]);
+    const [result1, result2, result3] = await Promise.all([
+      request1,
+      request2,
+      request3,
+    ]);
 
     expect(result1.data).toBeDefined();
     expect(result2.data).toBeDefined();
@@ -95,13 +107,19 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
     // Mock the performTokenRefresh method to control timing
     const originalPerformTokenRefresh = (client as any).performTokenRefresh;
-    (client as any).performTokenRefresh = vi.fn().mockImplementation(async () => {
-      await refreshPromise;
-    });
+    (client as any).performTokenRefresh = vi
+      .fn()
+      .mockImplementation(async () => {
+        await refreshPromise;
+      });
 
     // Setup responses: 401 then 200
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
       createMockResponse(200, 'OK'),
       createMockResponse(200, 'OK'),
     ];
@@ -110,10 +128,10 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
     // Start first request (will trigger refresh)
     const request1Promise = client.get('/api/data1');
-    
+
     // Wait a bit to ensure refresh has started
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     // Start second request while refresh is in progress (should be queued)
     const request2Promise = client.get('/api/data2');
 
@@ -123,9 +141,12 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
     // Complete the refresh
     refreshResolve!();
-    
+
     // Now both requests should complete
-    const [result1, result2] = await Promise.all([request1Promise, request2Promise]);
+    const [result1, result2] = await Promise.all([
+      request1Promise,
+      request2Promise,
+    ]);
 
     expect(result1.data).toBeDefined();
     expect(result2.data).toBeDefined();
@@ -138,11 +159,17 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
   it('should handle refresh failure and reject queued requests', async () => {
     // Mock performTokenRefresh to always fail
-    (client as any).performTokenRefresh = vi.fn().mockRejectedValue(new Error('Refresh failed'));
+    (client as any).performTokenRefresh = vi
+      .fn()
+      .mockRejectedValue(new Error('Refresh failed'));
 
     // Setup: First request returns 401
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
     ];
 
     mockFetch.mockImplementation(createMockFetch(responses));
@@ -162,17 +189,27 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
   it('should not create duplicate refresh operations', async () => {
     let refreshCallCount = 0;
-    
+
     // Mock performTokenRefresh to count calls
-    (client as any).performTokenRefresh = vi.fn().mockImplementation(async () => {
-      refreshCallCount++;
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    (client as any).performTokenRefresh = vi
+      .fn()
+      .mockImplementation(async () => {
+        refreshCallCount++;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
 
     // Setup: Multiple 401 responses
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
       createMockResponse(200, 'OK'),
       createMockResponse(200, 'OK'),
     ];
@@ -195,7 +232,11 @@ describe('WebHttpClient Token Refresh Queueing', () => {
   it('should properly clean up refresh state on success', async () => {
     // Setup: 401 then 200
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
       createMockResponse(200, 'OK'),
     ];
 
@@ -216,11 +257,17 @@ describe('WebHttpClient Token Refresh Queueing', () => {
 
   it('should properly clean up refresh state on failure', async () => {
     // Mock performTokenRefresh to fail
-    (client as any).performTokenRefresh = vi.fn().mockRejectedValue(new Error('Refresh failed'));
+    (client as any).performTokenRefresh = vi
+      .fn()
+      .mockRejectedValue(new Error('Refresh failed'));
 
     // Setup: 401 response
     const responses = [
-      createMockResponse(401, 'Unauthorized', new Headers({ 'x-auth-error': 'token_expired' })),
+      createMockResponse(
+        401,
+        'Unauthorized',
+        new Headers({ 'x-auth-error': 'token_expired' }),
+      ),
     ];
 
     mockFetch.mockImplementation(createMockFetch(responses));
