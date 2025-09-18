@@ -123,3 +123,4 @@ bundle-analyzer-report.html
 
 # Local development
 .local
+node_modules/
