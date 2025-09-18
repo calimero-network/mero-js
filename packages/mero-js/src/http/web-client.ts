@@ -4,26 +4,16 @@ import { combineSignals, createTimeoutSignal } from './signal-utils';
 
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
-  public readonly name = 'HTTPError';
-  public readonly status: number;
-  public readonly statusText: string;
-  public readonly url: string;
-  public readonly headers: Headers;
-  public readonly bodyText?: string;
+  name = 'HTTPError' as const;
 
   constructor(
-    status: number,
-    statusText: string,
-    url: string,
-    headers: Headers,
-    bodyText?: string,
+    public status: number,
+    public statusText: string,
+    public url: string,
+    public headers: Headers,
+    public bodyText?: string, // cap at ~64KB
   ) {
     super(`HTTP ${status} ${statusText}`);
-    this.status = status;
-    this.statusText = statusText;
-    this.url = url;
-    this.headers = headers;
-    this.bodyText = bodyText;
   }
 
   toJSON(): {
