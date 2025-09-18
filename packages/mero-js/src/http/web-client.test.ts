@@ -257,6 +257,34 @@ describe('WebHttpClient - New Throwing Behavior', () => {
       const headers = fetchCall[1].headers as Headers;
       expect(headers.get('authorization')).toBe('Bearer caller-token');
     });
+
+    it('should let caller headers win over default headers', async () => {
+      const transportWithDefaults = {
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: {
+          'content-type': 'application/json',
+          'x-default-header': 'default-value',
+        },
+        fetch: mockFetch as any,
+      };
+      const clientWithDefaults = new WebHttpClient(transportWithDefaults);
+
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await clientWithDefaults.get('/api/data', {
+        headers: {
+          'content-type': 'application/xml',
+          'x-caller-header': 'caller-value',
+        },
+      });
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.get('content-type')).toBe('application/xml');
+      expect(headers.get('x-default-header')).toBe('default-value');
+      expect(headers.get('x-caller-header')).toBe('caller-value');
+    });
   });
 
   describe('FormData handling', () => {
@@ -276,6 +304,45 @@ describe('WebHttpClient - New Throwing Behavior', () => {
       const fetchCall = mockFetch.mock.calls[0];
       const headers = fetchCall[1].headers as Headers;
       expect(headers.has('content-type')).toBe(false);
+    });
+
+    it('should delete content-type from default headers for FormData', async () => {
+      // Create client with default headers that include content-type
+      const transportWithDefaults = {
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: { 'content-type': 'application/json' },
+        fetch: mockFetch as any,
+      };
+      const clientWithDefaults = new WebHttpClient(transportWithDefaults);
+
+      const formData = new FormData();
+      formData.append('field', 'value');
+
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await clientWithDefaults.post('/api/upload', formData);
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.has('content-type')).toBe(false);
+    });
+
+    it('should preserve caller headers for FormData', async () => {
+      const formData = new FormData();
+      formData.append('field', 'value');
+
+      const responses = [createMockResponse(200, 'OK')];
+      mockFetch.mockImplementation(createMockFetch(responses));
+
+      await client.post('/api/upload', formData, {
+        headers: { 'x-custom-header': 'custom-value' },
+      });
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const headers = fetchCall[1].headers as Headers;
+      expect(headers.has('content-type')).toBe(false);
+      expect(headers.get('x-custom-header')).toBe('custom-value');
     });
 
     it('should set content-type for JSON bodies', async () => {

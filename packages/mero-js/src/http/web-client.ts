@@ -78,9 +78,15 @@ export class WebHttpClient implements HttpClient {
     const url = new URL(path, this.transport.baseUrl).toString();
 
     // Merge headers using Headers API for proper case-insensitive handling
+    // Caller headers always win over default headers
     const headers = new Headers(this.transport.defaultHeaders);
     if (init.headers) {
       new Headers(init.headers).forEach((v, k) => headers.set(k, v));
+    }
+
+    // Delete content-type for FormData to let runtime set boundary
+    if (init.body instanceof FormData) {
+      headers.delete('content-type');
     }
 
     // Only add auth if caller didn't set it (case-insensitive check)
@@ -225,19 +231,16 @@ export class WebHttpClient implements HttpClient {
     body?: unknown,
     init: RequestOptions = {},
   ): Promise<T> {
-    // Don't set Content-Type for FormData - let the browser handle it
-    const headers =
-      body instanceof FormData
-        ? { ...(init.headers ?? {}) }
-        : {
-            'Content-Type': 'application/json',
-            ...(init.headers ?? {}),
-          };
-
     return this.makeRequest<T>(path, {
       ...init,
       method: 'POST',
-      headers,
+      headers:
+        body instanceof FormData
+          ? init.headers
+          : {
+              'Content-Type': 'application/json',
+              ...(init.headers ?? {}),
+            },
       body:
         body instanceof FormData
           ? body
@@ -252,18 +255,16 @@ export class WebHttpClient implements HttpClient {
     body?: unknown,
     init: RequestOptions = {},
   ): Promise<T> {
-    const headers =
-      body instanceof FormData
-        ? { ...(init.headers ?? {}) }
-        : {
-            'Content-Type': 'application/json',
-            ...(init.headers ?? {}),
-          };
-
     return this.makeRequest<T>(path, {
       ...init,
       method: 'PUT',
-      headers,
+      headers:
+        body instanceof FormData
+          ? init.headers
+          : {
+              'Content-Type': 'application/json',
+              ...(init.headers ?? {}),
+            },
       body:
         body instanceof FormData
           ? body
@@ -282,18 +283,16 @@ export class WebHttpClient implements HttpClient {
     body?: unknown,
     init: RequestOptions = {},
   ): Promise<T> {
-    const headers =
-      body instanceof FormData
-        ? { ...(init.headers ?? {}) }
-        : {
-            'Content-Type': 'application/json',
-            ...(init.headers ?? {}),
-          };
-
     return this.makeRequest<T>(path, {
       ...init,
       method: 'PATCH',
-      headers,
+      headers:
+        body instanceof FormData
+          ? init.headers
+          : {
+              'Content-Type': 'application/json',
+              ...(init.headers ?? {}),
+            },
       body:
         body instanceof FormData
           ? body
