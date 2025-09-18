@@ -36,8 +36,8 @@
     "eslint": "eslint .",
     "typecheck": "tsc --noEmit",
     "tsc": "tsc -b",
-    "prettier": "prettier --check .",
-    "prettier:fix": "prettier --write .",
+    "prettier": "prettier --check \"src/**/*.{ts,js,json,md}\"",
+    "prettier:fix": "prettier --write \"src/**/*.{ts,js,json,md}\"",
     "clean": "pnpm rimraf dist",
     "dev": "echo 'HTTP client package ready'"
   },
