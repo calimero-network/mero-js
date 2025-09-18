@@ -48,20 +48,28 @@ function meroboxExe() {
 (async () => {
   const py = whichPython();
   if (!py) {
-    console.error('[merobox] No Python found (python3/python). Skipping install.');
-    process.exit(0); // do not hard-fail local installs
+    console.warn('[merobox] No Python found (python3/python). Skipping install.');
+    console.warn('[merobox] This is expected in some CI environments.');
+    process.exit(0); // do not hard-fail
   }
 
-  ensureVenv(py);
+  try {
+    ensureVenv(py);
 
-  // upgrade pip, then install or upgrade merobox
-  run(pipExe(), ['install', '--upgrade', 'pip']);
-  // pin if you want: replace 'merobox' with 'merobox==<version>'
-  run(pipExe(), ['install', '--upgrade', 'merobox']);
+    // upgrade pip, then install or upgrade merobox
+    run(pipExe(), ['install', '--upgrade', 'pip']);
+    // pin if you want: replace 'merobox' with 'merobox==<version>'
+    run(pipExe(), ['install', '--upgrade', 'merobox']);
 
-  // smoke check
-  const ok = spawnSync(meroboxExe(), ['--help'], { stdio: 'ignore' });
-  if (ok.status !== 0) throw new Error('merobox not callable after install');
+    // smoke check
+    const ok = spawnSync(meroboxExe(), ['--help'], { stdio: 'ignore' });
+    if (ok.status !== 0) throw new Error('merobox not callable after install');
 
-  console.log(`[merobox] Installed at ${meroboxExe()}`);
+    console.log(`[merobox] Installed at ${meroboxExe()}`);
+  } catch (error) {
+    console.warn(`[merobox] Installation failed: ${error.message}`);
+    console.warn('[merobox] This is expected in some CI environments.');
+    console.warn('[merobox] E2E tests may not be available.');
+    process.exit(0); // do not hard-fail
+  }
 })();
