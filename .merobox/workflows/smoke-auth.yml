@@ -1,0 +1,12 @@
+name: 'JS SDK smoke (auth)'
+description: 'Start 1 node with auth-service and expose nip.io'
+auth_service: true
+nodes:
+  count: 1
+  base_port: 2428
+  base_rpc_port: 2528
+
+steps:
+  - name: Wait for startup
+    type: wait
+    seconds: 5

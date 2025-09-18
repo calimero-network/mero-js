@@ -21,7 +21,11 @@
     "build": "pnpm -r --filter @calimero-network/mero-js build",
     "test": "pnpm -r test",
     "lint-staged": "lint-staged",
-    "prepare": "husky"
+    "prepare": "run-p prepare:*",
+    "prepare:husky": "husky",
+    "prepare:merobox": "node ./scripts/install-merobox.mjs",
+    "merobox": "node ./bin/merobox.cjs",
+    "e2e:workflow:auth": "node ./scripts/run-e2e.mjs ./.merobox/workflows/smoke-auth.yml"
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx}": [
@@ -39,6 +43,7 @@
     "eslint": "^8.57.0",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.0",
+    "npm-run-all": "^4.1.5",
     "prettier": "3.3.2",
     "typescript": "^4.9.5",
     "vitest": "^1.0.0"
