@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnpm-store/
 .pnpm-debug.log*
 
@@ -7,10 +8,15 @@ node_modules/
 dist/
 lib/
 build/
+**/dist/
+**/lib/
+**/build/
 *.tsbuildinfo
 
 # Package-specific build outputs
 packages/*/lib/
+packages/*/dist/
+packages/*/build/
 
 # Environment variables
 .env
