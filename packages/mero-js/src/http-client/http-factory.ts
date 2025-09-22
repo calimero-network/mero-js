@@ -1,5 +1,5 @@
 import { WebHttpClient } from './web-client';
-import { Transport, HttpClient } from './types';
+import { Transport, HttpClient } from './http-types';
 
 // Factory function to create HTTP client with sensible defaults
 export function createHttpClient(transport: Transport): HttpClient {

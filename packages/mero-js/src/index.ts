@@ -2,8 +2,10 @@
 // This will contain the pure JavaScript SDK without React dependencies
 
 // HTTP client module (Web Standards based)
-export * from '@calimero-network/http-client';
+export * from './http-client';
 
-// Main SDK class (coming soon)
-export const placeholder =
-  'Mero.js package - Web Standards HTTP client ready, other modules coming soon';
+// Auth API client
+export * from './auth-api';
+
+// Admin API client
+export * from './admin-api';

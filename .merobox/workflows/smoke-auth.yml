@@ -5,8 +5,13 @@ nodes:
   count: 1
   base_port: 2428
   base_rpc_port: 2528
+  image: core-node:latest
 
 steps:
-  - name: Wait for startup
-    type: wait
-    seconds: 5
+- name: "Repeat Operations"
+  type: "repeat"
+  count: 1000
+  steps:
+    - name: Wait for startup
+      type: wait
+      seconds: 5
