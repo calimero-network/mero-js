@@ -24,7 +24,7 @@ function run(cmd, args, opts = {}) {
 
   try {
     // install or upgrade merobox using pipx
-    run(pipx, ['install', '--upgrade', 'merobox']);
+    run(pipx, ['install', '--force', 'merobox']);
 
     // smoke check
     const ok = spawnSync('merobox', ['--help'], { stdio: 'ignore' });
