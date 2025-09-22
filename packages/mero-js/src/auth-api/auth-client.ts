@@ -87,9 +87,7 @@ export class AuthApiClient {
     return this.httpClient.get<ChallengeResponse>('/auth/challenge');
   }
 
-  async validateToken(
-    token: string,
-  ): Promise<{
+  async validateToken(token: string): Promise<{
     valid: boolean;
     headers: Record<string, string>;
     status: number;
