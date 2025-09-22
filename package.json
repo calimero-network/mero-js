@@ -18,16 +18,17 @@
     "format": "pnpm -r prettier --check .",
     "format:fix": "pnpm -r prettier --write .",
     "typecheck": "pnpm -r tsc",
-    "build": "pnpm -r --filter @calimero-network/http-client build && pnpm -r --filter @calimero-network/mero-js build",
+    "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "test:e2e": "echo 'E2E tests not yet implemented'",
-    "test:e2e-auth": "echo 'E2E auth tests not yet implemented'",
+    "test:e2e": "pnpm --filter @calimero-network/mero-js test:e2e",
+    "test:e2e:watch": "pnpm --filter @calimero-network/mero-js test:e2e:watch",
+    "test:e2e:auth": "pnpm --filter @calimero-network/mero-js test:e2e:auth",
+    "test:e2e:examples": "pnpm --filter @calimero-network/mero-js test:e2e:examples",
     "lint-staged": "lint-staged",
     "prepare": "run-p prepare:*",
     "prepare:husky": "husky",
     "prepare:merobox": "node ./scripts/install-merobox.mjs",
-    "merobox": "node ./bin/merobox.cjs",
-    "e2e:workflow:auth": "node ./scripts/run-e2e.mjs ./.merobox/workflows/smoke-auth.yml"
+    "merobox": "node ./bin/merobox.cjs"
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx}": [
