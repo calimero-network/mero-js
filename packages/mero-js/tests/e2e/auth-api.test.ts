@@ -1,21 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import {
-  createAuthApiClientFromHttpClient,
-  createBrowserHttpClient,
-} from '@calimero-network/mero-js';
+import { MeroJs } from '@calimero-network/mero-js';
 
 // Test configuration
 const AUTH_CONFIG = {
   baseUrl: process.env.AUTH_API_BASE_URL || 'http://localhost',
-  getAuthToken: async () => {
-    return process.env.AUTH_API_TOKEN || 'test-token';
+  credentials: {
+    username: 'admin',
+    password: 'admin123',
   },
   timeoutMs: 10000,
 };
 
 describe('Auth API E2E Tests', () => {
-  let authClient: ReturnType<typeof createAuthApiClientFromHttpClient>;
-  let authToken: string;
+  let meroJs: MeroJs;
 
   beforeAll(async () => {
     console.log('🚀 Starting merobox environment...');
@@ -46,37 +43,18 @@ describe('Auth API E2E Tests', () => {
     console.log('⏳ Waiting for services to start...');
     await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds
 
-    console.log('🔧 Creating Auth API client...');
+    console.log('🔧 Creating MeroJs SDK...');
     console.log('Auth API URL:', AUTH_CONFIG.baseUrl);
 
-    // Create real HTTP client for e2e tests
-    const authHttpClient = createBrowserHttpClient({
-      baseUrl: AUTH_CONFIG.baseUrl,
-      getAuthToken: async () => authToken, // Will be set after first token generation
-      timeoutMs: AUTH_CONFIG.timeoutMs,
-    });
+    // Create MeroJs SDK instance
+    meroJs = new MeroJs(AUTH_CONFIG);
 
-    authClient = createAuthApiClientFromHttpClient(authHttpClient, AUTH_CONFIG);
+    // Authenticate (this creates the root key on first use)
+    console.log('🔑 Authenticating with MeroJs SDK...');
+    const tokenData = await meroJs.authenticate();
 
-    // Generate the first token (this creates the root key)
-    console.log('🔑 Creating first root key via /auth/token...');
-    const requestBody = {
-      auth_method: 'user_password',
-      public_key: 'username',
-      client_name: 'e2e-test-client',
-      permissions: ['admin'],
-      timestamp: Math.floor(Date.now() / 1000),
-      provider_data: {
-        username: 'admin',
-        password: 'admin123',
-      },
-    };
-    console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
-    const tokenResponse = await authClient.generateTokens(requestBody);
-
-    console.log('✅ Token response:', JSON.stringify(tokenResponse, null, 2));
-    authToken = tokenResponse.data.access_token;
-    console.log('🎫 Stored auth token:', authToken);
+    console.log('✅ Authentication successful!');
+    console.log('🎫 Token expires at:', new Date(tokenData.expires_at));
   }, 120000); // 2 minute timeout for beforeAll
 
   afterAll(async () => {
@@ -126,7 +104,7 @@ describe('Auth API E2E Tests', () => {
     it('should check auth service health', async () => {
       console.log('🏥 Checking Auth API health...');
 
-      const health = await authClient.getHealth();
+      const health = await meroJs.auth.getHealth();
       console.log('✅ Auth API health:', JSON.stringify(health, null, 2));
 
       expect(health).toBeDefined();
@@ -137,7 +115,7 @@ describe('Auth API E2E Tests', () => {
     it('should get service identity', async () => {
       console.log('🔍 Getting service identity...');
 
-      const identity = await authClient.getIdentity();
+      const identity = await meroJs.auth.getIdentity();
       console.log('✅ Service identity:', JSON.stringify(identity, null, 2));
 
       expect(identity).toBeDefined();
@@ -148,7 +126,7 @@ describe('Auth API E2E Tests', () => {
     it('should get available providers', async () => {
       console.log('🔌 Getting available providers...');
 
-      const providers = await authClient.getProviders();
+      const providers = await meroJs.auth.getProviders();
       console.log(
         '✅ Available providers:',
         JSON.stringify(providers, null, 2),
@@ -164,7 +142,9 @@ describe('Auth API E2E Tests', () => {
     it('should validate the generated token', async () => {
       console.log('🔐 Validating generated token...');
 
-      const validation = await authClient.validateToken(authToken);
+      const validation = await meroJs.auth.validateToken(
+        meroJs.getTokenData()!.access_token,
+      );
       console.log('✅ Token validation:', JSON.stringify(validation, null, 2));
 
       expect(validation).toBeDefined();
@@ -176,7 +156,7 @@ describe('Auth API E2E Tests', () => {
     it('should list root keys', async () => {
       console.log('🔑 Listing root keys...');
 
-      const rootKeys = await authClient.listRootKeys();
+      const rootKeys = await meroJs.auth.listRootKeys();
       console.log('✅ Root keys:', JSON.stringify(rootKeys, null, 2));
 
       expect(rootKeys).toBeDefined();
@@ -188,11 +168,11 @@ describe('Auth API E2E Tests', () => {
       console.log('🔑 Getting key permissions...');
 
       // Get the first key ID from the list
-      const rootKeys = await authClient.listRootKeys();
+      const rootKeys = await meroJs.auth.listRootKeys();
       const firstKeyId = rootKeys[0]?.key_id;
 
       if (firstKeyId) {
-        const permissions = await authClient.getKeyPermissions(firstKeyId);
+        const permissions = await meroJs.auth.getKeyPermissions(firstKeyId);
         console.log(
           '✅ Key permissions:',
           JSON.stringify(permissions, null, 2),
@@ -214,7 +194,7 @@ describe('Auth API E2E Tests', () => {
       console.log('🔄 Refreshing access token...');
 
       // Generate a new token to get a refresh token for testing
-      const tokenResponse = await authClient.generateTokens({
+      const tokenResponse = await meroJs.auth.generateTokens({
         auth_method: 'user_password',
         public_key: 'test-public-key-refresh',
         client_name: 'e2e-test-client-refresh',
@@ -226,7 +206,7 @@ describe('Auth API E2E Tests', () => {
       });
 
       try {
-        const refreshResponse = await authClient.refreshToken({
+        const refreshResponse = await meroJs.auth.refreshToken({
           access_token: tokenResponse.data.access_token,
           refresh_token: tokenResponse.data.refresh_token,
         });
