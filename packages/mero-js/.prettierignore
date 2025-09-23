@@ -1,0 +1,17 @@
+# Build artifacts
+dist/
+lib/
+*.d.ts
+*.js.map
+*.mjs.map
+
+# Node modules
+node_modules/
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# OS files
+.DS_Store
+Thumbs.db

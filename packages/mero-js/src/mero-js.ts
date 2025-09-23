@@ -1,6 +1,12 @@
 import { createBrowserHttpClient } from './http-client';
 import { createAuthApiClientFromHttpClient } from './auth-api';
 import { createAdminApiClientFromHttpClient } from './admin-api';
+import {
+  createDefaultTokenStorage,
+  createTokenStorage,
+  type TokenStorage,
+  type TokenStorageConfig,
+} from './token-storage';
 import type { AuthApiClient } from './auth-api';
 import type { AdminApiClient } from './admin-api';
 import type { HttpClient } from './http-client';
@@ -15,6 +21,11 @@ export interface MeroJsConfig {
   };
   /** Custom HTTP client timeout in milliseconds */
   timeoutMs?: number;
+  /** Token storage configuration */
+  tokenStorage?: {
+    type?: 'memory' | 'localStorage' | 'file';
+    config?: TokenStorageConfig;
+  };
 }
 
 export interface TokenData {
@@ -31,7 +42,7 @@ export class MeroJs {
   private httpClient: HttpClient;
   private authClient: AuthApiClient;
   private adminClient: AdminApiClient;
-  private tokenData: TokenData | null = null;
+  private tokenStorage: TokenStorage;
   private refreshPromise: Promise<TokenData> | null = null;
 
   constructor(config: MeroJsConfig) {
@@ -39,6 +50,18 @@ export class MeroJs {
       timeoutMs: 10000,
       ...config,
     };
+
+    // Initialize token storage
+    if (config.tokenStorage?.type) {
+      this.tokenStorage = createTokenStorage(
+        config.tokenStorage.type,
+        config.tokenStorage.config,
+      );
+    } else {
+      this.tokenStorage = createDefaultTokenStorage(
+        config.tokenStorage?.config,
+      );
+    }
 
     // Create HTTP client with token management
     this.httpClient = createBrowserHttpClient({
@@ -114,13 +137,14 @@ export class MeroJs {
 
       const response = await this.authClient.generateTokens(requestBody);
 
-      this.tokenData = {
+      const tokenData = {
         access_token: response.data.access_token,
         refresh_token: response.data.refresh_token,
         expires_at: Date.now() + 24 * 60 * 60 * 1000, // Default to 24 hours
       };
 
-      return this.tokenData;
+      await this.tokenStorage.setToken(tokenData);
+      return tokenData;
     } catch (error) {
       throw new Error(
         `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -132,24 +156,26 @@ export class MeroJs {
    * Get a valid token, refreshing if necessary
    */
   private async getValidToken(): Promise<TokenData | null> {
-    if (!this.tokenData) {
+    const tokenData = await this.tokenStorage.getToken();
+    if (!tokenData) {
       return null;
     }
 
     // Check if token is expired (with 5 minute buffer)
     const bufferTime = 5 * 60 * 1000; // 5 minutes
-    if (Date.now() >= this.tokenData.expires_at - bufferTime) {
+    if (Date.now() >= tokenData.expires_at - bufferTime) {
       return await this.refreshToken();
     }
 
-    return this.tokenData;
+    return tokenData;
   }
 
   /**
    * Refresh the access token using the refresh token
    */
   private async refreshToken(): Promise<TokenData> {
-    if (!this.tokenData?.refresh_token) {
+    const tokenData = await this.tokenStorage.getToken();
+    if (!tokenData?.refresh_token) {
       throw new Error('No refresh token available');
     }
 
@@ -173,21 +199,23 @@ export class MeroJs {
    */
   private async performTokenRefresh(): Promise<TokenData> {
     try {
+      const tokenData = await this.tokenStorage.getToken();
       const response = await this.authClient.refreshToken({
-        access_token: this.tokenData!.access_token,
-        refresh_token: this.tokenData!.refresh_token,
+        access_token: tokenData!.access_token,
+        refresh_token: tokenData!.refresh_token,
       });
 
-      this.tokenData = {
+      const newTokenData = {
         access_token: response.data.access_token,
         refresh_token: response.data.refresh_token,
         expires_at: Date.now() + 24 * 60 * 60 * 1000, // Default to 24 hours
       };
 
-      return this.tokenData;
+      await this.tokenStorage.setToken(newTokenData);
+      return newTokenData;
     } catch (error) {
       // If refresh fails, clear the token and require re-authentication
-      this.clearToken();
+      await this.clearToken();
       throw new Error(
         `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -197,22 +225,23 @@ export class MeroJs {
   /**
    * Clear the current token
    */
-  public clearToken(): void {
-    this.tokenData = null;
+  public async clearToken(): Promise<void> {
+    await this.tokenStorage.clearToken();
   }
 
   /**
    * Check if the SDK is authenticated
    */
-  public isAuthenticated(): boolean {
-    return this.tokenData !== null;
+  public async isAuthenticated(): Promise<boolean> {
+    const tokenData = await this.tokenStorage.getToken();
+    return tokenData !== null;
   }
 
   /**
    * Get the current token data (for debugging)
    */
-  public getTokenData(): TokenData | null {
-    return this.tokenData;
+  public async getTokenData(): Promise<TokenData | null> {
+    return await this.tokenStorage.getToken();
   }
 }
 

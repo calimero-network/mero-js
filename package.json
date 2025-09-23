@@ -23,6 +23,7 @@
     "test:e2e": "pnpm --filter @calimero-network/mero-js test:e2e",
     "test:e2e:watch": "pnpm --filter @calimero-network/mero-js test:e2e:watch",
     "test:e2e:auth": "pnpm --filter @calimero-network/mero-js test:e2e:auth",
+    "test:e2e:admin": "pnpm --filter @calimero-network/mero-js test:e2e:admin",
     "test:e2e:examples": "pnpm --filter @calimero-network/mero-js test:e2e:examples",
     "lint-staged": "lint-staged",
     "prepare": "run-p prepare:*",
