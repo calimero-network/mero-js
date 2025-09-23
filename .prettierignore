@@ -1,51 +1,20 @@
-# Dependencies
-node_modules/
-.pnpm-store/
-
-# Build outputs
+# Build artifacts
 dist/
-build/
-out/
-
-# Generated files
-*.d.ts.map
+lib/
+*.d.ts
 *.js.map
 *.mjs.map
-*.cjs.map
 
-# Lock files
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
+# Node modules
+node_modules/
 
-# Logs
-*.log
-logs/
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# IDE files
-.vscode/
-.idea/
+# Test artifacts
+coverage/
+.nyc_output/
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Git
-.git/
-
-# Merobox
-.merobox/
+# Data directories
 data/
-
-# Coverage
-coverage/
-.nyc_output/
-
-# Temporary files
-tmp/
-temp/
