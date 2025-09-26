@@ -1,4 +1,4 @@
-import { createBrowserHttpClient } from './http-client';
+import { createBrowserHttpClient, createNodeHttpClient } from './http-client';
 import { createAuthApiClientFromHttpClient } from './auth-api';
 import { createAdminApiClientFromHttpClient } from './admin-api';
 import {
@@ -64,31 +64,34 @@ export class MeroJs {
     }
 
     // Create HTTP client with token management
-    this.httpClient = createBrowserHttpClient({
-      baseUrl: this.config.baseUrl,
-      getAuthToken: async () => {
-        const token = await this.getValidToken();
-        return token?.access_token || '';
-      },
-      timeoutMs: this.config.timeoutMs,
-    });
+    // Use appropriate HTTP client based on environment
+    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+    this.httpClient = isNode 
+      ? createNodeHttpClient({
+          baseUrl: this.config.baseUrl,
+          getAuthToken: async () => {
+            const token = await this.tokenStorage.getToken();
+            return token?.access_token || '';
+          },
+          timeoutMs: this.config.timeoutMs,
+        })
+      : createBrowserHttpClient({
+          baseUrl: this.config.baseUrl,
+          getAuthToken: async () => {
+            const token = await this.tokenStorage.getToken();
+            return token?.access_token || '';
+          },
+          timeoutMs: this.config.timeoutMs,
+        });
 
     // Create API clients
     this.authClient = createAuthApiClientFromHttpClient(this.httpClient, {
       baseUrl: this.config.baseUrl,
-      getAuthToken: async () => {
-        const token = await this.getValidToken();
-        return token?.access_token || '';
-      },
       timeoutMs: this.config.timeoutMs,
     });
 
     this.adminClient = createAdminApiClientFromHttpClient(this.httpClient, {
       baseUrl: this.config.baseUrl,
-      getAuthToken: async () => {
-        const token = await this.getValidToken();
-        return token?.access_token || '';
-      },
       timeoutMs: this.config.timeoutMs,
     });
 
@@ -135,7 +138,24 @@ export class MeroJs {
         },
       };
 
-      const response = await this.authClient.generateTokens(requestBody);
+      // Create a temporary HTTP client with no auth for the initial token request
+      const tempIsNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+      const tempHttpClient = tempIsNode 
+        ? createNodeHttpClient({
+            baseUrl: this.config.baseUrl,
+            timeoutMs: this.config.timeoutMs,
+          })
+        : createBrowserHttpClient({
+            baseUrl: this.config.baseUrl,
+            timeoutMs: this.config.timeoutMs,
+          });
+      
+      const tempAuthClient = createAuthApiClientFromHttpClient(tempHttpClient, {
+        baseUrl: this.config.baseUrl,
+        timeoutMs: this.config.timeoutMs,
+      });
+      
+      const response = await tempAuthClient.generateTokens(requestBody);
 
       const tokenData = {
         access_token: response.data.access_token,

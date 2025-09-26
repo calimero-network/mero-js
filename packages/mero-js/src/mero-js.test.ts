@@ -72,9 +72,10 @@ const mockAdminClient = {
   getApplication: vi.fn(),
 };
 
-vi.mock('./http-client', () => ({
-  createBrowserHttpClient: vi.fn(() => mockHttpClient),
-}));
+  vi.mock('./http-client', () => ({
+    createBrowserHttpClient: vi.fn(() => mockHttpClient),
+    createNodeHttpClient: vi.fn(() => mockHttpClient),
+  }));
 
 vi.mock('./auth-api', () => ({
   createAuthApiClientFromHttpClient: vi.fn(() => mockAuthClient),
@@ -378,7 +379,7 @@ describe('MeroJs SDK', () => {
 
   describe('HTTP Client Integration', () => {
     it('should pass auth token to HTTP client', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createNodeHttpClient } = await import('./http-client');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
@@ -403,14 +404,14 @@ describe('MeroJs SDK', () => {
       mockTokenStorage.getToken.mockResolvedValue(authResult);
 
       // Verify HTTP client was created with getAuthToken function
-      expect(createBrowserHttpClient).toHaveBeenCalledWith({
+      expect(createNodeHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
         timeoutMs: 10000,
       });
 
       // Test that getAuthToken returns the token
-      const getAuthToken = (createBrowserHttpClient as any).mock.calls[0][0]
+      const getAuthToken = (createNodeHttpClient as any).mock.calls[0][0]
         .getAuthToken;
       const token = await getAuthToken();
       expect(token).toBe('mock-access-token');
@@ -477,13 +478,13 @@ describe('MeroJs SDK', () => {
 
   describe('Configuration', () => {
     it('should use default timeout when not provided', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createNodeHttpClient } = await import('./http-client');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
       });
 
-      expect(createBrowserHttpClient).toHaveBeenCalledWith({
+      expect(createNodeHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
         timeoutMs: 10000,
@@ -491,14 +492,14 @@ describe('MeroJs SDK', () => {
     });
 
     it('should use custom timeout when provided', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createNodeHttpClient } = await import('./http-client');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
         timeoutMs: 30000,
       });
 
-      expect(createBrowserHttpClient).toHaveBeenCalledWith({
+      expect(createNodeHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
         timeoutMs: 30000,

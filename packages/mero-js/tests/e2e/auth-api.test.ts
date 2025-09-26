@@ -3,7 +3,7 @@ import { MeroJs } from '@calimero-network/mero-js';
 
 // Test configuration
 const AUTH_CONFIG = {
-  baseUrl: process.env.AUTH_API_BASE_URL || 'http://localhost',
+  baseUrl: process.env.AUTH_API_BASE_URL || 'http://node1.127.0.0.1.nip.io',
   credentials: {
     username: 'admin',
     password: 'admin123',
@@ -141,14 +141,18 @@ describe('Auth API E2E Tests', () => {
   describe('Authentication Flow', () => {
     it('should validate the generated token', async () => {
       console.log('🔐 Validating generated token...');
+      const tokenData = await meroJs.getTokenData();
+      console.log('🔍 Token data:', JSON.stringify(tokenData, null, 2));
+      console.log('🔍 Access token:', tokenData?.access_token);
 
       const validation = await meroJs.auth.validateToken(
-        meroJs.getTokenData()!.access_token,
+        tokenData!.access_token,
       );
       console.log('✅ Token validation:', JSON.stringify(validation, null, 2));
 
       expect(validation).toBeDefined();
       expect(validation.valid).toBe(true);
+      expect(validation.status).toBe(200);
     });
   });
 

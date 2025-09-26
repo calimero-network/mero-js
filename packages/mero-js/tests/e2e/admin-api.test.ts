@@ -5,7 +5,7 @@ import { join } from 'path';
 
 // Test configuration
 const ADMIN_CONFIG = {
-  baseUrl: process.env.ADMIN_API_BASE_URL || 'http://localhost',
+  baseUrl: process.env.ADMIN_API_BASE_URL || 'http://node1.127.0.0.1.nip.io',
   credentials: {
     username: 'admin',
     password: 'admin123',
