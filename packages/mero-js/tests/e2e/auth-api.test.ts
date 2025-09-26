@@ -27,21 +27,21 @@ describe('Auth API E2E Tests', () => {
     });
 
     // Add error handling for merobox process
-    meroboxProcess.on('error', (error) => {
+    meroboxProcess.on('error', error => {
       console.error('❌ Merobox process error:', error);
     });
 
-    meroboxProcess.stderr.on('data', (data) => {
+    meroboxProcess.stderr.on('data', data => {
       console.error('❌ Merobox stderr:', data.toString());
     });
 
-    meroboxProcess.stdout.on('data', (data) => {
+    meroboxProcess.stdout.on('data', data => {
       console.log('📝 Merobox stdout:', data.toString());
     });
 
     // Wait for services to be ready
     console.log('⏳ Waiting for services to start...');
-    await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds
+    await new Promise(resolve => setTimeout(resolve, 60000)); // Wait 60 seconds
 
     console.log('🔧 Creating MeroJs SDK...');
     console.log('Auth API URL:', AUTH_CONFIG.baseUrl);
@@ -70,14 +70,14 @@ describe('Auth API E2E Tests', () => {
       });
 
       // Wait for nuke to complete with timeout
-      await new Promise((resolve) => {
+      await new Promise(resolve => {
         const timeout = setTimeout(() => {
           console.warn('⚠️ Merobox cleanup timeout, killing process...');
           nukeProcess.kill('SIGTERM');
           resolve(void 0);
         }, 90000); // 90 second timeout
 
-        nukeProcess.on('close', (code) => {
+        nukeProcess.on('close', code => {
           clearTimeout(timeout);
           if (code === 0) {
             console.log('✅ Merobox cleanup completed successfully');
@@ -87,7 +87,7 @@ describe('Auth API E2E Tests', () => {
             resolve(void 0); // Don't fail the test for cleanup issues
           }
         });
-        nukeProcess.on('error', (error) => {
+        nukeProcess.on('error', error => {
           clearTimeout(timeout);
           console.warn('⚠️ Merobox cleanup failed:', error);
           resolve(void 0); // Don't fail the test for cleanup issues
@@ -129,7 +129,7 @@ describe('Auth API E2E Tests', () => {
       const providers = await meroJs.auth.getProviders();
       console.log(
         '✅ Available providers:',
-        JSON.stringify(providers, null, 2),
+        JSON.stringify(providers, null, 2)
       );
 
       expect(providers).toBeDefined();
@@ -146,7 +146,7 @@ describe('Auth API E2E Tests', () => {
       console.log('🔍 Access token:', tokenData?.access_token);
 
       const validation = await meroJs.auth.validateToken(
-        tokenData!.access_token,
+        tokenData!.access_token
       );
       console.log('✅ Token validation:', JSON.stringify(validation, null, 2));
 
@@ -179,7 +179,7 @@ describe('Auth API E2E Tests', () => {
         const permissions = await meroJs.auth.getKeyPermissions(firstKeyId);
         console.log(
           '✅ Key permissions:',
-          JSON.stringify(permissions, null, 2),
+          JSON.stringify(permissions, null, 2)
         );
 
         expect(permissions).toBeDefined();
@@ -217,7 +217,7 @@ describe('Auth API E2E Tests', () => {
 
         console.log(
           '✅ Token refresh:',
-          JSON.stringify(refreshResponse, null, 2),
+          JSON.stringify(refreshResponse, null, 2)
         );
 
         expect(refreshResponse).toBeDefined();

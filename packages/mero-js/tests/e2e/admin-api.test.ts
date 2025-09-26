@@ -31,21 +31,21 @@ describe('Admin API E2E Tests - Full Flow', () => {
     });
 
     // Add error handling for merobox process
-    meroboxProcess.on('error', (error) => {
+    meroboxProcess.on('error', error => {
       console.error('❌ Merobox process error:', error);
     });
 
-    meroboxProcess.stderr.on('data', (data) => {
+    meroboxProcess.stderr.on('data', data => {
       console.error('❌ Merobox stderr:', data.toString());
     });
 
-    meroboxProcess.stdout.on('data', (data) => {
+    meroboxProcess.stdout.on('data', data => {
       console.log('📝 Merobox stdout:', data.toString());
     });
 
     // Wait for services to be ready
     console.log('⏳ Waiting for services to start...');
-    await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds
+    await new Promise(resolve => setTimeout(resolve, 60000)); // Wait 60 seconds
 
     console.log('🔧 Creating MeroJs SDK...');
     console.log('Admin API URL:', ADMIN_CONFIG.baseUrl);
@@ -74,14 +74,14 @@ describe('Admin API E2E Tests - Full Flow', () => {
       });
 
       // Wait for nuke to complete with timeout
-      await new Promise((resolve) => {
+      await new Promise(resolve => {
         const timeout = setTimeout(() => {
           console.warn('⚠️ Merobox cleanup timeout, killing process...');
           nukeProcess.kill('SIGTERM');
           resolve(void 0);
         }, 90000); // 90 second timeout
 
-        nukeProcess.on('close', (code) => {
+        nukeProcess.on('close', code => {
           clearTimeout(timeout);
           if (code === 0) {
             console.log('✅ Merobox cleanup completed successfully');
@@ -91,7 +91,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
             resolve(void 0); // Don't fail the test for cleanup issues
           }
         });
-        nukeProcess.on('error', (error) => {
+        nukeProcess.on('error', error => {
           clearTimeout(timeout);
           console.warn('⚠️ Merobox cleanup failed:', error);
           resolve(void 0); // Don't fail the test for cleanup issues
@@ -122,7 +122,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
         console.log(
           '✅ Application installed successfully:',
-          JSON.stringify(installResult, null, 2),
+          JSON.stringify(installResult, null, 2)
         );
 
         expect(installResult).toBeDefined();
@@ -135,7 +135,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         // This might fail if the endpoint is not implemented yet
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -147,7 +147,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         const applicationsResponse = await meroJs.admin.listApplications();
         console.log(
           '✅ Applications list:',
-          JSON.stringify(applicationsResponse, null, 2),
+          JSON.stringify(applicationsResponse, null, 2)
         );
 
         expect(applicationsResponse).toBeDefined();
@@ -156,7 +156,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
         if (installedAppId) {
           const installedApp = applicationsResponse.apps.find(
-            (app: any) => app.id === installedAppId,
+            (app: any) => app.id === installedAppId
           );
           expect(installedApp).toBeDefined();
           console.log('✅ Found our installed application:', installedApp);
@@ -165,7 +165,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ List applications failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -177,7 +177,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
       if (!installedAppId) {
         console.log(
-          '⚠️ No installed application ID available, skipping context creation',
+          '⚠️ No installed application ID available, skipping context creation'
         );
         return;
       }
@@ -198,7 +198,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
         console.log(
           '✅ Context created successfully:',
-          JSON.stringify(contextResult, null, 2),
+          JSON.stringify(contextResult, null, 2)
         );
 
         expect(contextResult).toBeDefined();
@@ -210,7 +210,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ Context creation failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -222,7 +222,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         const contextsResponse = await meroJs.admin.getContexts();
         console.log(
           '✅ Contexts list:',
-          JSON.stringify(contextsResponse, null, 2),
+          JSON.stringify(contextsResponse, null, 2)
         );
 
         expect(contextsResponse).toBeDefined();
@@ -231,7 +231,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
         if (createdContextId) {
           const createdContext = contextsResponse.contexts.find(
-            (ctx: any) => ctx.id === createdContextId,
+            (ctx: any) => ctx.id === createdContextId
           );
           expect(createdContext).toBeDefined();
           console.log('✅ Found our created context:', createdContext);
@@ -240,7 +240,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ List contexts failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -250,7 +250,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
       if (!createdContextId) {
         console.log(
-          '⚠️ No created context ID available, skipping context details',
+          '⚠️ No created context ID available, skipping context details'
         );
         return;
       }
@@ -260,7 +260,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
           await meroJs.admin.getContext(createdContextId);
         console.log(
           '✅ Context details:',
-          JSON.stringify(contextDetailsResponse, null, 2),
+          JSON.stringify(contextDetailsResponse, null, 2)
         );
 
         expect(contextDetailsResponse).toBeDefined();
@@ -271,7 +271,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ Get context failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -283,7 +283,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
       if (!createdContextId) {
         console.log(
-          '⚠️ No created context ID available, skipping context deletion',
+          '⚠️ No created context ID available, skipping context deletion'
         );
         return;
       }
@@ -292,7 +292,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         const deleteResult = await meroJs.admin.deleteContext(createdContextId);
         console.log(
           '✅ Context deleted successfully:',
-          JSON.stringify(deleteResult, null, 2),
+          JSON.stringify(deleteResult, null, 2)
         );
 
         expect(deleteResult).toBeDefined();
@@ -303,7 +303,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ Delete context failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -313,7 +313,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
 
       if (!installedAppId) {
         console.log(
-          '⚠️ No installed application ID available, skipping application deletion',
+          '⚠️ No installed application ID available, skipping application deletion'
         );
         return;
       }
@@ -323,7 +323,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
           await meroJs.admin.uninstallApplication(installedAppId);
         console.log(
           '✅ Application uninstalled successfully:',
-          JSON.stringify(uninstallResult, null, 2),
+          JSON.stringify(uninstallResult, null, 2)
         );
 
         expect(uninstallResult).toBeDefined();
@@ -334,7 +334,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
         console.log('⚠️ Uninstall application failed:', error.message);
         expect(error.status).toBe(404);
         console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
+          '✅ Expected 404 - Admin API endpoints not implemented yet'
         );
       }
     });
@@ -352,7 +352,7 @@ describe('Admin API E2E Tests - Full Flow', () => {
       } catch (error: any) {
         console.log(
           '⚠️ Admin API health check failed (expected):',
-          error.message,
+          error.message
         );
         expect(error.status).toBe(404);
       }
@@ -365,14 +365,14 @@ describe('Admin API E2E Tests - Full Flow', () => {
         const authStatus = await meroJs.admin.isAuthed();
         console.log(
           '✅ Admin auth status:',
-          JSON.stringify(authStatus, null, 2),
+          JSON.stringify(authStatus, null, 2)
         );
         expect(authStatus).toBeDefined();
         expect(authStatus.status).toBeDefined();
       } catch (error: any) {
         console.log(
           '⚠️ Admin auth status check failed (expected):',
-          error.message,
+          error.message
         );
         expect(error.status).toBe(404);
       }

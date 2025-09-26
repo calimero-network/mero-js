@@ -2,9 +2,17 @@
 
 This is the monorepo for **Mero.js** - Pure JavaScript SDK for Calimero.
 
-## 📦 Packages
+## 📦 Package Layout (Milestone 1)
 
-- **`@calimero-network/mero-js`** - The main SDK package
+- **`@mero/core`** — platform-agnostic core (no Node/DOM globals).
+- **`@mero/adapter-browser`** — browser bindings (fetch, WebCrypto, storage).
+- **`@mero/adapter-node`** — Node bindings (fetch/undici, node:crypto, storage).
+- **`@mero/sdk`** — umbrella package re-exporting the public API (platform-neutral typings).  
+  _Note_: Conditional exports and pre-wired platform entries arrive in a later milestone.
+
+## 📦 Legacy Packages
+
+- **`@calimero-network/mero-js`** - The main SDK package (compatibility layer)
 - **`@calimero-network/mero-js-browser-example`** - Browser-specific usage example
 - **`@calimero-network/mero-js-node-example`** - Node.js-specific usage example
 - **`@calimero-network/mero-js-universal-example`** - Universal usage example (works in both browser and Node.js)

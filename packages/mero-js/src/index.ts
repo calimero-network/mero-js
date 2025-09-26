@@ -1,18 +1,5 @@
 // Mero.js - Pure JavaScript SDK for Calimero
-// This will contain the pure JavaScript SDK without React dependencies
+// This is now a compatibility layer that re-exports from the new monorepo structure
 
-// Main SDK class
-export { MeroJs, createMeroJs } from './mero-js';
-export type { MeroJsConfig, TokenData } from './mero-js';
-
-// Token storage module
-export * from './token-storage';
-
-// HTTP client module (Web Standards based)
-export * from './http-client';
-
-// Auth API client
-export * from './auth-api';
-
-// Admin API client
-export * from './admin-api';
+// Re-export everything from the new SDK package
+export * from '@mero/sdk';

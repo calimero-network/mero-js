@@ -13,12 +13,13 @@
     "examples/*"
   ],
   "scripts": {
-    "lint": "pnpm -r eslint .",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r run clean",
     "lint:fix": "pnpm -r eslint . --fix",
     "format": "pnpm -r prettier --check .",
     "format:fix": "pnpm -r prettier --write .",
-    "typecheck": "pnpm -r tsc",
-    "build": "pnpm -r build",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @calimero-network/mero-js test:e2e",
     "test:e2e:watch": "pnpm --filter @calimero-network/mero-js test:e2e:watch",
@@ -49,6 +50,7 @@
     "lint-staged": "^15.2.0",
     "npm-run-all": "^4.1.5",
     "prettier": "3.3.2",
+    "rimraf": "^3.0.0",
     "typescript": "^4.9.5",
     "vitest": "^1.0.0"
   },
