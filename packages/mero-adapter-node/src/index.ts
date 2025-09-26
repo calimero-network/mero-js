@@ -5,3 +5,7 @@ export * from '@mero/core';
 
 // Node.js-specific implementations
 export * from './file-storage';
+export * from './node-client';
+
+// Factory functions
+export * from './factory';

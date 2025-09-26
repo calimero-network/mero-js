@@ -7,8 +7,19 @@ This is the monorepo for **Mero.js** - Pure JavaScript SDK for Calimero.
 - **`@mero/core`** — platform-agnostic core (no Node/DOM globals).
 - **`@mero/adapter-browser`** — browser bindings (fetch, WebCrypto, storage).
 - **`@mero/adapter-node`** — Node bindings (fetch/undici, node:crypto, storage).
-- **`@mero/sdk`** — umbrella package re-exporting the public API (platform-neutral typings).  
-  _Note_: Conditional exports and pre-wired platform entries arrive in a later milestone.
+- **`@mero/sdk`** — umbrella package with conditional exports for platform-specific entries.
+
+### SDK Usage
+
+**Default import** from `@mero/sdk` resolves per-platform via exports conditions:
+
+- Browser builds → `dist/browser/index.js` (pre-wired browser factory)
+- Node builds → `dist/node/index.js` (pre-wired node factory)
+- Universal → `dist/universal/index.js` (DI-only, no platform types)
+
+For explicit control or SSR, use **DI** with `@mero/core` + adapters directly.
+
+Optional `@mero/sdk/auto` helper available for legacy use cases with runtime detection.
 
 ## 📦 Legacy Packages
 

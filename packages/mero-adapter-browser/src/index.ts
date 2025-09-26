@@ -6,3 +6,6 @@ export * from '@mero/core';
 // Browser-specific implementations
 export * from './web-client';
 export * from './local-storage';
+
+// Factory functions
+export * from './factory';

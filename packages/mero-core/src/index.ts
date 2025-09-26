@@ -16,3 +16,6 @@ export * from './admin-api';
 
 // Shared types
 export * from './types';
+
+// Core factory
+export * from './core-factory';

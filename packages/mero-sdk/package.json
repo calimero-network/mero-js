@@ -12,6 +12,13 @@
   "files": [
     "dist"
   ],
+  "exports": {
+    ".": {
+      "browser": "./dist/browser/index.browser.js",
+      "node": "./dist/node/index.node.js",
+      "default": "./dist/universal/index.universal.js"
+    }
+  },
   "private": true,
   "dependencies": {
     "@mero/core": "workspace:*",
@@ -19,7 +26,7 @@
     "@mero/adapter-browser": "workspace:*"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc --project tsconfig.browser.json && tsc --project tsconfig.node.json && tsc --project tsconfig.universal.json",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'Linting disabled during migration'",
     "clean": "rimraf dist"

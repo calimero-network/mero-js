@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/browser",
+    "lib": ["ES2020", "DOM"],
+    "types": []
+  },
+  "include": ["src/index.browser.ts"]
+}

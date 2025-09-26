@@ -26,6 +26,7 @@
     "test:e2e:auth": "pnpm --filter @calimero-network/mero-js test:e2e:auth",
     "test:e2e:admin": "pnpm --filter @calimero-network/mero-js test:e2e:admin",
     "test:e2e:examples": "pnpm --filter @calimero-network/mero-js test:e2e:examples",
+    "typecheck:examples": "pnpm -C examples/typecheck-browser exec tsc -p tsconfig.json && pnpm -C examples/typecheck-node exec tsc -p tsconfig.json",
     "lint-staged": "lint-staged",
     "prepare": "run-p prepare:*",
     "prepare:husky": "husky",
