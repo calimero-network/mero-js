@@ -72,10 +72,10 @@ const mockAdminClient = {
   getApplication: vi.fn(),
 };
 
-  vi.mock('./http-client', () => ({
-    createBrowserHttpClient: vi.fn(() => mockHttpClient),
-    createNodeHttpClient: vi.fn(() => mockHttpClient),
-  }));
+vi.mock('./http-client', () => ({
+  createBrowserHttpClient: vi.fn(() => mockHttpClient),
+  createNodeHttpClient: vi.fn(() => mockHttpClient),
+}));
 
 vi.mock('./auth-api', () => ({
   createAuthApiClientFromHttpClient: vi.fn(() => mockAuthClient),

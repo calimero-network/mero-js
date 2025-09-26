@@ -65,8 +65,11 @@ export class MeroJs {
 
     // Create HTTP client with token management
     // Use appropriate HTTP client based on environment
-    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
-    this.httpClient = isNode 
+    const isNode =
+      typeof process !== 'undefined' &&
+      process.versions &&
+      process.versions.node;
+    this.httpClient = isNode
       ? createNodeHttpClient({
           baseUrl: this.config.baseUrl,
           getAuthToken: async () => {
@@ -139,8 +142,11 @@ export class MeroJs {
       };
 
       // Create a temporary HTTP client with no auth for the initial token request
-      const tempIsNode = typeof process !== 'undefined' && process.versions && process.versions.node;
-      const tempHttpClient = tempIsNode 
+      const tempIsNode =
+        typeof process !== 'undefined' &&
+        process.versions &&
+        process.versions.node;
+      const tempHttpClient = tempIsNode
         ? createNodeHttpClient({
             baseUrl: this.config.baseUrl,
             timeoutMs: this.config.timeoutMs,
@@ -149,12 +155,12 @@ export class MeroJs {
             baseUrl: this.config.baseUrl,
             timeoutMs: this.config.timeoutMs,
           });
-      
+
       const tempAuthClient = createAuthApiClientFromHttpClient(tempHttpClient, {
         baseUrl: this.config.baseUrl,
         timeoutMs: this.config.timeoutMs,
       });
-      
+
       const response = await tempAuthClient.generateTokens(requestBody);
 
       const tokenData = {
