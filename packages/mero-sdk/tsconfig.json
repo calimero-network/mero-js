@@ -3,7 +3,6 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "lib": ["ES2020", "DOM"],
     "types": ["node"]
   },
   "include": ["src/**/*"],
