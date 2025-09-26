@@ -1,0 +1,35 @@
+{
+  "name": "@mero/sdk",
+  "version": "1.0.0",
+  "description": "Mero.js SDK - main entry point",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "dependencies": {
+    "@mero/core": "workspace:*",
+    "@mero/adapter-node": "workspace:*",
+    "@mero/adapter-browser": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'Linting disabled during migration'",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.34",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "eslint": "^8.57.0",
+    "rimraf": "^3.0.0",
+    "typescript": "^4.9.5"
+  },
+  "keywords": [
+    "mero",
+    "sdk",
+    "calimero"
+  ],
+  "license": "MIT",
+  "author": "Calimero Ltd"
+}

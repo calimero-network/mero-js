@@ -222,7 +222,7 @@ describe('MeroJs SDK', () => {
       mockAuthClient.generateTokens.mockRejectedValue(new Error('Auth failed'));
 
       await expect(meroJs.authenticate()).rejects.toThrow(
-        'Authentication failed: Auth failed',
+        'Authentication failed: Auth failed'
       );
     });
 
@@ -232,7 +232,7 @@ describe('MeroJs SDK', () => {
       });
 
       await expect(meroJsNoCreds.authenticate()).rejects.toThrow(
-        'No credentials provided for authentication',
+        'No credentials provided for authentication'
       );
     });
   });
@@ -332,7 +332,7 @@ describe('MeroJs SDK', () => {
 
       // Mock refresh failure
       mockAuthClient.refreshToken.mockRejectedValue(
-        new Error('Refresh failed'),
+        new Error('Refresh failed')
       );
 
       // Mock token storage to return expired token
@@ -344,7 +344,7 @@ describe('MeroJs SDK', () => {
 
       // This should trigger a refresh and fail
       await expect((meroJs as any).getValidToken()).rejects.toThrow(
-        'Token refresh failed: Refresh failed',
+        'Token refresh failed: Refresh failed'
       );
 
       // Mock token storage to return null after refresh failure
@@ -431,14 +431,14 @@ describe('MeroJs SDK', () => {
 
     it('should handle authentication errors gracefully', async () => {
       mockAuthClient.generateTokens.mockRejectedValue(
-        new Error('Network error'),
+        new Error('Network error')
       );
 
       await expect(
         meroJs.authenticate({
           username: 'admin',
           password: 'admin123',
-        }),
+        })
       ).rejects.toThrow('Authentication failed: Network error');
     });
 
@@ -456,7 +456,7 @@ describe('MeroJs SDK', () => {
 
       // Mock refresh failure
       mockAuthClient.refreshToken.mockRejectedValue(
-        new Error('Invalid refresh token'),
+        new Error('Invalid refresh token')
       );
 
       // Mock token storage to return expired token
@@ -467,7 +467,7 @@ describe('MeroJs SDK', () => {
       mockTokenStorage.getToken.mockResolvedValue(expiredToken);
 
       await expect((meroJs as any).getValidToken()).rejects.toThrow(
-        'Token refresh failed: Invalid refresh token',
+        'Token refresh failed: Invalid refresh token'
       );
 
       // Mock token storage to return null after refresh failure

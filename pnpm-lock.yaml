@@ -51,13 +51,88 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mero-js
 
-  examples/universal-example:
+  packages/mero-adapter-browser:
     dependencies:
-      '@calimero-network/mero-js':
+      '@mero/core':
         specifier: workspace:*
-        version: link:../../packages/mero-js
+        version: link:../mero-core
+    devDependencies:
+      '@types/node':
+        specifier: ^18.19.34
+        version: 18.19.127
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^5.62.0
+        version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@4.9.5))(eslint@8.57.1)(typescript@4.9.5)
+      '@typescript-eslint/parser':
+        specifier: ^5.62.0
+        version: 5.62.0(eslint@8.57.1)(typescript@4.9.5)
+      eslint:
+        specifier: ^8.57.0
+        version: 8.57.1
+      rimraf:
+        specifier: ^3.0.0
+        version: 3.0.2
+      typescript:
+        specifier: ^4.9.5
+        version: 4.9.5
+
+  packages/mero-adapter-node:
+    dependencies:
+      '@mero/core':
+        specifier: workspace:*
+        version: link:../mero-core
+    devDependencies:
+      '@types/node':
+        specifier: ^18.19.34
+        version: 18.19.127
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^5.62.0
+        version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@4.9.5))(eslint@8.57.1)(typescript@4.9.5)
+      '@typescript-eslint/parser':
+        specifier: ^5.62.0
+        version: 5.62.0(eslint@8.57.1)(typescript@4.9.5)
+      eslint:
+        specifier: ^8.57.0
+        version: 8.57.1
+      rimraf:
+        specifier: ^3.0.0
+        version: 3.0.2
+      typescript:
+        specifier: ^4.9.5
+        version: 4.9.5
+
+  packages/mero-core:
+    devDependencies:
+      '@types/node':
+        specifier: ^18.19.34
+        version: 18.19.127
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^5.62.0
+        version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@4.9.5))(eslint@8.57.1)(typescript@4.9.5)
+      '@typescript-eslint/parser':
+        specifier: ^5.62.0
+        version: 5.62.0(eslint@8.57.1)(typescript@4.9.5)
+      eslint:
+        specifier: ^8.57.0
+        version: 8.57.1
+      rimraf:
+        specifier: ^3.0.0
+        version: 3.0.2
+      typescript:
+        specifier: ^4.9.5
+        version: 4.9.5
 
   packages/mero-js:
+    dependencies:
+      '@mero/adapter-browser':
+        specifier: workspace:*
+        version: link:../mero-adapter-browser
+      '@mero/core':
+        specifier: workspace:*
+        version: link:../mero-core
+      '@mero/sdk':
+        specifier: workspace:*
+        version: link:../mero-sdk
     devDependencies:
       '@types/node':
         specifier: ^18.19.34
@@ -83,6 +158,37 @@ importers:
       vitest:
         specifier: ^1.0.0
         version: 1.6.1(@types/node@18.19.127)(jsdom@16.7.0)
+
+  packages/mero-sdk:
+    dependencies:
+      '@mero/adapter-browser':
+        specifier: workspace:*
+        version: link:../mero-adapter-browser
+      '@mero/adapter-node':
+        specifier: workspace:*
+        version: link:../mero-adapter-node
+      '@mero/core':
+        specifier: workspace:*
+        version: link:../mero-core
+    devDependencies:
+      '@types/node':
+        specifier: ^18.19.34
+        version: 18.19.127
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^5.62.0
+        version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@4.9.5))(eslint@8.57.1)(typescript@4.9.5)
+      '@typescript-eslint/parser':
+        specifier: ^5.62.0
+        version: 5.62.0(eslint@8.57.1)(typescript@4.9.5)
+      eslint:
+        specifier: ^8.57.0
+        version: 8.57.1
+      rimraf:
+        specifier: ^3.0.0
+        version: 3.0.2
+      typescript:
+        specifier: ^4.9.5
+        version: 4.9.5
 
 packages:
 

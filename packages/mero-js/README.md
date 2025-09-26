@@ -72,8 +72,8 @@ The `withRetry` helper retries on:
 import { withRetry } from '@calimero-network/mero-js';
 
 const data = await withRetry(
-  (attempt) => httpClient.get('/api/data'),
-  { attempts: 3 }, // Default: 3 attempts
+  attempt => httpClient.get('/api/data'),
+  { attempts: 3 } // Default: 3 attempts
 );
 ```
 
@@ -132,7 +132,7 @@ import { createBrowserHttpClient } from '@calimero-network/mero-js';
 const httpClient = createBrowserHttpClient({
   baseUrl: 'https://api.calimero.network',
   getAuthToken: async () => localStorage.getItem('access_token'),
-  onTokenRefresh: async (newToken) =>
+  onTokenRefresh: async newToken =>
     localStorage.setItem('access_token', newToken),
 });
 
@@ -359,8 +359,8 @@ const autoData = await httpClient.get('/api/data');
 import { withRetry } from '@calimero-network/mero-js';
 
 const data = await withRetry(
-  (attempt) => httpClient.get('/api/unreliable-endpoint'),
-  { attempts: 3 }, // Default: 3 attempts
+  attempt => httpClient.get('/api/unreliable-endpoint'),
+  { attempts: 3 } // Default: 3 attempts
 );
 ```
 

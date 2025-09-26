@@ -17,7 +17,12 @@
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "private": true,
-  "dependencies": {},
+  "build": false,
+  "dependencies": {
+    "@mero/sdk": "workspace:*",
+    "@mero/core": "workspace:*",
+    "@mero/adapter-browser": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
@@ -29,7 +34,7 @@
     "vitest": "^1.0.0"
   },
   "scripts": {
-    "build": "tsc && esbuild src/index.ts --bundle --platform=node --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=node --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
+    "build": "tsc && esbuild src/index.ts --bundle --platform=node --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=node --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.browser.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
     "test": "vitest run --passWithNoTests",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e:watch": "vitest --config vitest.e2e.config.ts",
