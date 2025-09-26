@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

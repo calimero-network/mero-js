@@ -6,6 +6,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "private": true,
   "dependencies": {
     "@mero/core": "workspace:*"
   },
@@ -16,12 +20,7 @@
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "@types/node": "^18.19.34",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "eslint": "^8.57.0",
-    "rimraf": "^3.0.0",
-    "typescript": "^4.9.5"
+    "rimraf": "^3.0.0"
   },
   "keywords": [
     "mero",
