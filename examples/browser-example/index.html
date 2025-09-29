@@ -27,11 +27,54 @@
         color: #00ff88;
         font-weight: bold;
       }
+      button {
+        background: #333;
+        color: #fff;
+        border: 1px solid #555;
+        padding: 8px 16px;
+        margin: 4px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover {
+        background: #555;
+      }
+      h3 {
+        color: #00ff88;
+        margin-bottom: 10px;
+      }
     </style>
   </head>
   <body>
     <h1>🚀 Mero Browser Test App</h1>
     <p class="status">Testing real connection to Calimero node...</p>
+
+    <div style="margin: 20px 0">
+      <h3>🔧 Auth API Tests (from e2e/auth-api.test.ts)</h3>
+      <button onclick="testAuthHealth()">🏥 Test Auth Health</button>
+      <button onclick="testAuthIdentity()">🔍 Test Auth Identity</button>
+      <button onclick="testAuthProviders()">🔌 Test Auth Providers</button>
+      <button onclick="testAuthLogin()">🔑 Test Auth Login</button>
+    </div>
+
+    <div style="margin: 20px 0">
+      <h3>📋 Admin API Tests (from e2e/admin-api.test.ts)</h3>
+      <button onclick="testAdminApplications()">
+        📋 Test List Applications
+      </button>
+      <button onclick="testAdminContexts()">📝 Test List Contexts</button>
+    </div>
+
+    <div style="margin: 20px 0">
+      <button
+        onclick="initializeMero()"
+        style="background: #00ff88; color: #000; font-weight: bold"
+      >
+        🔄 Reinitialize Mero
+      </button>
+    </div>
+
     <pre id="out">starting…</pre>
     <script type="module" src="/src/main.ts"></script>
   </body>

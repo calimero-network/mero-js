@@ -5,20 +5,25 @@ if (!out) throw new Error('Output element not found');
 
 const log = (m: string) => (out.textContent += `\n${m}`);
 
-(async () => {
-  out.textContent = '';
+// Global mero instance
+let mero: any = null;
+
+// Initialize the Mero connection
+async function initializeMero() {
   try {
-    // Connect to the running Calimero node
-    const mero = createMero({
+    log('🌐 Connecting to Calimero node...');
+    log('Node URL: http://node1.127.0.0.1.nip.io');
+
+    mero = createMero({
       baseUrl: 'http://node1.127.0.0.1.nip.io',
       credentials: {
-        username: 'testuser',
-        password: 'testpass',
+        username: 'admin',
+        password: 'admin123',
       },
       timeoutMs: 10000,
     });
-    log('🌐 Connected to Calimero node ✅');
-    log('Node URL: http://node1.127.0.0.1.nip.io');
+
+    log('✅ Mero instance created');
 
     // Test browser capabilities
     log('\n🔧 Browser Capabilities:');
@@ -53,46 +58,118 @@ const log = (m: string) => (out.textContent += `\n${m}`);
       log('storage roundtrip: ❌ ' + String(storageError));
     }
 
-    // Test API clients
-    log('\n🔌 API Clients:');
-    log('auth client: ' + (mero.auth ? 'available ✅' : 'missing ❌'));
-    log('admin client: ' + (mero.admin ? 'available ✅' : 'missing ❌'));
-
-    // Test actual API calls
-    log('\n🚀 Testing API Calls:');
-
-    try {
-      // Test auth API
-      log('Testing auth API...');
-      // Note: This would typically require proper credentials
-      log('  - Auth client ready for login/logout operations');
-    } catch (authError) {
-      log('  - Auth API error: ' + String(authError));
-    }
-
-    try {
-      // Test admin API
-      log('Testing admin API...');
-      // Note: This would typically require proper permissions
-      log('  - Admin client ready for node operations');
-    } catch (adminError) {
-      log('  - Admin API error: ' + String(adminError));
-    }
-
-    // Display configuration
-    log('\n⚙️ Configuration:');
-    log(JSON.stringify(mero.config, null, 2));
-
-    log('\n🎉 Browser example completed successfully!');
-    log('💡 The @mero/browser facade provides:');
-    log('   - Pre-configured browser environment');
-    log('   - Automatic token storage in localStorage');
-    log('   - Browser-optimized HTTP client');
-    log('   - Simple createMero() API');
-    log('   - Real connection to Calimero node');
+    log(
+      '\n🎉 Initialization complete! Use the buttons below to test API calls.'
+    );
   } catch (e: unknown) {
     const errorMessage = e instanceof Error ? e.message : String(e);
-    log('❌ Error: ' + errorMessage);
+    log('❌ Initialization error: ' + errorMessage);
     console.error(e);
   }
-})();
+}
+
+// Auth API Tests (replicating e2e/auth-api.test.ts)
+async function testAuthHealth() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n🏥 Testing Auth API Health...');
+    const health = await mero.auth.getHealth();
+    log('✅ Auth API health: ' + JSON.stringify(health, null, 2));
+  } catch (error: any) {
+    log('❌ Auth health test failed: ' + error.message);
+  }
+}
+
+async function testAuthIdentity() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n🔍 Testing Auth API Identity...');
+    const identity = await mero.auth.getIdentity();
+    log('✅ Service identity: ' + JSON.stringify(identity, null, 2));
+  } catch (error: any) {
+    log('❌ Auth identity test failed: ' + error.message);
+  }
+}
+
+async function testAuthProviders() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n🔌 Testing Auth API Providers...');
+    const providers = await mero.auth.getProviders();
+    log('✅ Available providers: ' + JSON.stringify(providers, null, 2));
+  } catch (error: any) {
+    log('❌ Auth providers test failed: ' + error.message);
+  }
+}
+
+async function testAuthLogin() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n🔑 Testing Auth Login...');
+    const tokenData = await mero.authenticate();
+    log('✅ Authentication successful!');
+    log('🎫 Token expires at: ' + new Date(tokenData.expires_at));
+    log('🔍 Token data: ' + JSON.stringify(tokenData, null, 2));
+  } catch (error: any) {
+    log('❌ Auth login test failed: ' + error.message);
+  }
+}
+
+// Admin API Tests (replicating e2e/admin-api.test.ts)
+async function testAdminApplications() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n📋 Testing Admin API - List Applications...');
+    const applications = await mero.admin.listApplications();
+    log('✅ Applications: ' + JSON.stringify(applications, null, 2));
+  } catch (error: any) {
+    log('❌ Admin applications test failed: ' + error.message);
+  }
+}
+
+async function testAdminContexts() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Initialize" first.');
+    return;
+  }
+
+  try {
+    log('\n📝 Testing Admin API - List Contexts...');
+    const contexts = await mero.admin.listContexts();
+    log('✅ Contexts: ' + JSON.stringify(contexts, null, 2));
+  } catch (error: any) {
+    log('❌ Admin contexts test failed: ' + error.message);
+  }
+}
+
+// Make functions available globally
+(window as any).initializeMero = initializeMero;
+(window as any).testAuthHealth = testAuthHealth;
+(window as any).testAuthIdentity = testAuthIdentity;
+(window as any).testAuthProviders = testAuthProviders;
+(window as any).testAuthLogin = testAuthLogin;
+(window as any).testAdminApplications = testAdminApplications;
+(window as any).testAdminContexts = testAdminContexts;
+
+// Initialize on load
+initializeMero();
