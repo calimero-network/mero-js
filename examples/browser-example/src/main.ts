@@ -179,6 +179,109 @@ async function testAdminContexts() {
   }
 }
 
+// Additional Admin API Tests
+async function testAdminBlobs() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n📦 Testing Admin API - List Blobs...');
+    log(
+      '🔍 Debug: Making request to: ' + mero.config.baseUrl + '/admin-api/blobs'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    const blobs = await mero.admin.listBlobs();
+    log('✅ Blobs: ' + JSON.stringify(blobs, null, 2));
+  } catch (error: any) {
+    log('❌ Admin blobs test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testAdminAliases() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n🔗 Testing Admin API - List Aliases...');
+    log(
+      '🔍 Debug: Making request to: ' + mero.config.baseUrl + '/admin-api/alias'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    const aliases = await mero.admin.listAliases();
+    log('✅ Aliases: ' + JSON.stringify(aliases, null, 2));
+  } catch (error: any) {
+    log('❌ Admin aliases test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testAdminPeers() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n🌐 Testing Admin API - Get Peers Count...');
+    log(
+      '🔍 Debug: Making request to: ' + mero.config.baseUrl + '/admin-api/peers'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    const peers = await mero.admin.getPeersCount();
+    log('✅ Peers count: ' + JSON.stringify(peers, null, 2));
+  } catch (error: any) {
+    log('❌ Admin peers test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testAdminCertificate() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n🔐 Testing Admin API - Get Certificate...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/certificate'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    const certificate = await mero.admin.getCertificate();
+    log('✅ Certificate: ' + JSON.stringify(certificate, null, 2));
+  } catch (error: any) {
+    log('❌ Admin certificate test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
 // Make functions available globally
 (window as any).initializeMero = initializeMero;
 (window as any).testAuthHealth = testAuthHealth;
@@ -188,6 +291,10 @@ async function testAdminContexts() {
 (window as any).testAdminApplications = testAdminApplications;
 (window as any).testAdminContexts = testAdminContexts;
 (window as any).testAdminIdentity = testAdminIdentity;
+(window as any).testAdminBlobs = testAdminBlobs;
+(window as any).testAdminAliases = testAdminAliases;
+(window as any).testAdminPeers = testAdminPeers;
+(window as any).testAdminCertificate = testAdminCertificate;
 
 // Initialize on load
 initializeMero();

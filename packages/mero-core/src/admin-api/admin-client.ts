@@ -34,20 +34,6 @@ import {
   DeleteAliasResponse,
   ListAliasesResponse,
   GetAliasResponse,
-
-  // Network
-  GetNetworkPeersResponse,
-  GetNetworkStatsResponse,
-  GetNetworkConfigResponse,
-  UpdateNetworkConfigRequest,
-  UpdateNetworkConfigResponse,
-
-  // System
-  GetSystemInfoResponse,
-  GetSystemLogsResponse,
-  GetSystemMetricsResponse,
-  RestartSystemResponse,
-  ShutdownSystemResponse,
 } from './admin-types';
 
 export class AdminApiClient {
@@ -72,7 +58,7 @@ export class AdminApiClient {
     request: InstallApplicationRequest
   ): Promise<InstallApplicationResponse> {
     return this.httpClient.post<InstallApplicationResponse>(
-      '/applications',
+      '/admin-api/install-application',
       request
     );
   }
@@ -81,7 +67,7 @@ export class AdminApiClient {
     request: InstallDevApplicationRequest
   ): Promise<InstallApplicationResponse> {
     return this.httpClient.post<InstallApplicationResponse>(
-      '/applications/dev',
+      '/admin-api/install-dev-application',
       request
     );
   }
@@ -90,7 +76,7 @@ export class AdminApiClient {
     appId: string
   ): Promise<UninstallApplicationResponse> {
     return this.httpClient.delete<UninstallApplicationResponse>(
-      `/applications/${appId}`
+      `/admin-api/applications/${appId}`
     );
   }
 
@@ -134,82 +120,150 @@ export class AdminApiClient {
 
   // Blob Management Endpoints
   async uploadBlob(request: UploadBlobRequest): Promise<UploadBlobResponse> {
-    return this.httpClient.post<UploadBlobResponse>('/blobs', request);
+    return this.httpClient.put<UploadBlobResponse>('/admin-api/blobs', request);
   }
 
   async deleteBlob(blobId: string): Promise<DeleteBlobResponse> {
-    return this.httpClient.delete<DeleteBlobResponse>(`/blobs/${blobId}`);
+    return this.httpClient.delete<DeleteBlobResponse>(
+      `/admin-api/blobs/${blobId}`
+    );
   }
 
   async listBlobs(): Promise<ListBlobsResponse> {
-    return this.httpClient.get<ListBlobsResponse>('/blobs');
+    return this.httpClient.get<ListBlobsResponse>('/admin-api/blobs');
   }
 
   async getBlob(blobId: string): Promise<GetBlobResponse> {
-    return this.httpClient.get<GetBlobResponse>(`/blobs/${blobId}`);
+    return this.httpClient.get<GetBlobResponse>(`/admin-api/blobs/${blobId}`);
+  }
+
+  async getBlobInfo(
+    blobId: string
+  ): Promise<{ headers: Record<string, string>; status: number }> {
+    return this.httpClient.head(`/admin-api/blobs/${blobId}`);
   }
 
   // Alias Management Endpoints
   async createAlias(request: CreateAliasRequest): Promise<CreateAliasResponse> {
-    return this.httpClient.post<CreateAliasResponse>('/alias', request);
-  }
-
-  async deleteAlias(aliasId: string): Promise<DeleteAliasResponse> {
-    return this.httpClient.delete<DeleteAliasResponse>(`/alias/${aliasId}`);
-  }
-
-  async listAliases(): Promise<ListAliasesResponse> {
-    return this.httpClient.get<ListAliasesResponse>('/alias');
-  }
-
-  async getAlias(aliasId: string): Promise<GetAliasResponse> {
-    return this.httpClient.get<GetAliasResponse>(`/alias/${aliasId}`);
-  }
-
-  // Network Management Endpoints
-  async getNetworkPeers(): Promise<GetNetworkPeersResponse> {
-    return this.httpClient.get<GetNetworkPeersResponse>('/network/peers');
-  }
-
-  async getNetworkStats(): Promise<GetNetworkStatsResponse> {
-    return this.httpClient.get<GetNetworkStatsResponse>('/network/stats');
-  }
-
-  async getNetworkConfig(): Promise<GetNetworkConfigResponse> {
-    return this.httpClient.get<GetNetworkConfigResponse>('/network/config');
-  }
-
-  async updateNetworkConfig(
-    request: UpdateNetworkConfigRequest
-  ): Promise<UpdateNetworkConfigResponse> {
-    return this.httpClient.put<UpdateNetworkConfigResponse>(
-      '/network/config',
+    return this.httpClient.post<CreateAliasResponse>(
+      '/admin-api/alias',
       request
     );
   }
 
-  async getPeersCount(): Promise<{ count: number }> {
-    return this.httpClient.get<{ count: number }>('/network/peers/count');
+  async deleteAlias(aliasId: string): Promise<DeleteAliasResponse> {
+    return this.httpClient.delete<DeleteAliasResponse>(
+      `/admin-api/alias/${aliasId}`
+    );
   }
 
-  // System Management Endpoints
-  async getSystemInfo(): Promise<GetSystemInfoResponse> {
-    return this.httpClient.get<GetSystemInfoResponse>('/system/info');
+  async listAliases(): Promise<ListAliasesResponse> {
+    return this.httpClient.get<ListAliasesResponse>('/admin-api/alias');
   }
 
-  async getSystemLogs(): Promise<GetSystemLogsResponse> {
-    return this.httpClient.get<GetSystemLogsResponse>('/system/logs');
+  async getAlias(aliasId: string): Promise<GetAliasResponse> {
+    return this.httpClient.get<GetAliasResponse>(`/admin-api/alias/${aliasId}`);
   }
 
-  async getSystemMetrics(): Promise<GetSystemMetricsResponse> {
-    return this.httpClient.get<GetSystemMetricsResponse>('/system/metrics');
+  // Network Management Endpoints
+  async getPeersCount(): Promise<{ payload: number }> {
+    return this.httpClient.get<{ payload: number }>('/admin-api/peers');
   }
 
-  async restartSystem(): Promise<RestartSystemResponse> {
-    return this.httpClient.post<RestartSystemResponse>('/system/restart');
+  // Context Invitation and Management
+  async inviteToContext(request: {
+    contextId: string;
+    publicKey: string;
+  }): Promise<void> {
+    return this.httpClient.post<void>('/admin-api/contexts/invite', request);
   }
 
-  async shutdownSystem(): Promise<ShutdownSystemResponse> {
-    return this.httpClient.post<ShutdownSystemResponse>('/system/shutdown');
+  async joinContext(request: { invitationPayload: string }): Promise<void> {
+    return this.httpClient.post<void>('/admin-api/contexts/join', request);
+  }
+
+  async updateContextApplication(
+    contextId: string,
+    request: { applicationId: string }
+  ): Promise<void> {
+    return this.httpClient.post<void>(
+      `/admin-api/contexts/${contextId}/application`,
+      request
+    );
+  }
+
+  async getContextStorage(contextId: string): Promise<Record<string, unknown>> {
+    return this.httpClient.get<Record<string, unknown>>(
+      `/admin-api/contexts/${contextId}/storage`
+    );
+  }
+
+  async getContextIdentities(
+    contextId: string
+  ): Promise<Record<string, unknown>> {
+    return this.httpClient.get<Record<string, unknown>>(
+      `/admin-api/contexts/${contextId}/identities`
+    );
+  }
+
+  async getOwnedContextIdentities(
+    contextId: string
+  ): Promise<Record<string, unknown>> {
+    return this.httpClient.get<Record<string, unknown>>(
+      `/admin-api/contexts/${contextId}/identities-owned`
+    );
+  }
+
+  async grantCapabilities(
+    contextId: string,
+    request: { publicKey: string; capabilities: string[] }
+  ): Promise<void> {
+    return this.httpClient.post<void>(
+      `/admin-api/contexts/${contextId}/capabilities/grant`,
+      request
+    );
+  }
+
+  async revokeCapabilities(
+    contextId: string,
+    request: { publicKey: string; capabilities: string[] }
+  ): Promise<void> {
+    return this.httpClient.post<void>(
+      `/admin-api/contexts/${contextId}/capabilities/revoke`,
+      request
+    );
+  }
+
+  // Identity Management
+  async generateContextIdentity(request: {
+    contextId?: string;
+  }): Promise<{ payload: { publicKey: string; privateKey: string } }> {
+    return this.httpClient.post<{
+      payload: { publicKey: string; privateKey: string };
+    }>('/admin-api/identity/context', request);
+  }
+
+  // Context Sync
+  async syncContext(request: { contextId?: string }): Promise<void> {
+    return this.httpClient.post<void>('/admin-api/contexts/sync', request);
+  }
+
+  async syncSpecificContext(
+    contextId: string,
+    request: { contextId?: string }
+  ): Promise<void> {
+    return this.httpClient.post<void>(
+      `/admin-api/contexts/sync/${contextId}`,
+      request
+    );
+  }
+
+  // Certificate
+  async getCertificate(): Promise<{
+    payload: { certificate: string; publicKey: string };
+  }> {
+    return this.httpClient.get<{
+      payload: { certificate: string; publicKey: string };
+    }>('/admin-api/certificate');
   }
 }
