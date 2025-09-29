@@ -53,9 +53,13 @@
     <div style="margin: 20px 0">
       <h3>🔧 Auth API Tests (from e2e/auth-api.test.ts)</h3>
       <button onclick="testAuthHealth()">🏥 Test Auth Health</button>
-      <button onclick="testAuthIdentity()">🔍 Test Auth Identity</button>
       <button onclick="testAuthProviders()">🔌 Test Auth Providers</button>
-      <button onclick="testAuthLogin()">🔑 Test Auth Login</button>
+      <button
+        onclick="authenticateNow()"
+        style="background: #00ff88; color: #000; font-weight: bold"
+      >
+        🔑 Authenticate
+      </button>
     </div>
 
     <div style="margin: 20px 0">
@@ -64,6 +68,7 @@
         📋 Test List Applications
       </button>
       <button onclick="testAdminContexts()">📝 Test List Contexts</button>
+      <button onclick="testAdminIdentity()">🪪 Test Admin Identity</button>
     </div>
 
     <div style="margin: 20px 0">

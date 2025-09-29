@@ -56,7 +56,7 @@ export class AdminApiClient {
   // Health and Status Endpoints
   async healthCheck(): Promise<HealthStatus> {
     const response =
-      await this.httpClient.get<ApiResponse<HealthStatus>>('/health');
+      await this.httpClient.get<ApiResponse<HealthStatus>>('/admin-api/health');
     if (!response.data) {
       throw new Error('Health response data is null');
     }
@@ -64,65 +64,72 @@ export class AdminApiClient {
   }
 
   async isAuthed(): Promise<AdminAuthStatus> {
-    return this.httpClient.get<AdminAuthStatus>('/is-authed');
+    return this.httpClient.get<AdminAuthStatus>('/admin-api/is-authed');
   }
 
   // Application Management Endpoints
   async installApplication(
-    request: InstallApplicationRequest,
+    request: InstallApplicationRequest
   ): Promise<InstallApplicationResponse> {
     return this.httpClient.post<InstallApplicationResponse>(
       '/applications',
-      request,
+      request
     );
   }
 
   async installDevApplication(
-    request: InstallDevApplicationRequest,
+    request: InstallDevApplicationRequest
   ): Promise<InstallApplicationResponse> {
     return this.httpClient.post<InstallApplicationResponse>(
       '/applications/dev',
-      request,
+      request
     );
   }
 
   async uninstallApplication(
-    appId: string,
+    appId: string
   ): Promise<UninstallApplicationResponse> {
     return this.httpClient.delete<UninstallApplicationResponse>(
-      `/applications/${appId}`,
+      `/applications/${appId}`
     );
   }
 
   async listApplications(): Promise<ListApplicationsResponse> {
-    return this.httpClient.get<ListApplicationsResponse>('/applications');
+    return this.httpClient.get<ListApplicationsResponse>(
+      '/admin-api/applications'
+    );
   }
 
   async getApplication(appId: string): Promise<GetApplicationResponse> {
     return this.httpClient.get<GetApplicationResponse>(
-      `/applications/${appId}`,
+      `/admin-api/applications/${appId}`
     );
   }
 
   // Context Management Endpoints
   async createContext(
-    request: CreateContextRequest,
+    request: CreateContextRequest
   ): Promise<CreateContextResponse> {
-    return this.httpClient.post<CreateContextResponse>('/contexts', request);
+    return this.httpClient.post<CreateContextResponse>(
+      '/admin-api/contexts',
+      request
+    );
   }
 
   async deleteContext(contextId: string): Promise<DeleteContextResponse> {
     return this.httpClient.delete<DeleteContextResponse>(
-      `/contexts/${contextId}`,
+      `/admin-api/contexts/${contextId}`
     );
   }
 
   async getContexts(): Promise<ListContextsResponse> {
-    return this.httpClient.get<ListContextsResponse>('/contexts');
+    return this.httpClient.get<ListContextsResponse>('/admin-api/contexts');
   }
 
   async getContext(contextId: string): Promise<GetContextResponse> {
-    return this.httpClient.get<GetContextResponse>(`/contexts/${contextId}`);
+    return this.httpClient.get<GetContextResponse>(
+      `/admin-api/contexts/${contextId}`
+    );
   }
 
   // Blob Management Endpoints
@@ -173,11 +180,11 @@ export class AdminApiClient {
   }
 
   async updateNetworkConfig(
-    request: UpdateNetworkConfigRequest,
+    request: UpdateNetworkConfigRequest
   ): Promise<UpdateNetworkConfigResponse> {
     return this.httpClient.put<UpdateNetworkConfigResponse>(
       '/network/config',
-      request,
+      request
     );
   }
 

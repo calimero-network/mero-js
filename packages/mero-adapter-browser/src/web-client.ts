@@ -7,6 +7,10 @@ import {
 } from '@mero/core';
 import { combineSignals, createTimeoutSignal } from '@mero/core';
 
+// Add missing type imports for browser APIs
+type RequestInit = globalThis.RequestInit;
+type HeadersInit = globalThis.HeadersInit;
+
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
   override name = 'HTTPError' as const;
@@ -16,7 +20,7 @@ export class HTTPError extends Error {
     public statusText: string,
     public url: string,
     public headers: Headers,
-    public bodyText?: string, // cap at ~64KB
+    public bodyText?: string // cap at ~64KB
   ) {
     super(`HTTP ${status} ${statusText}`);
   }
@@ -58,7 +62,7 @@ export class WebHttpClient implements HttpClient {
   async post<T>(
     path: string,
     body?: unknown,
-    init?: RequestOptions,
+    init?: RequestOptions
   ): Promise<T> {
     return this.request<T>(path, {
       ...init,
@@ -74,7 +78,7 @@ export class WebHttpClient implements HttpClient {
   async put<T>(
     path: string,
     body?: unknown,
-    init?: RequestOptions,
+    init?: RequestOptions
   ): Promise<T> {
     return this.request<T>(path, {
       ...init,
@@ -94,7 +98,7 @@ export class WebHttpClient implements HttpClient {
   async patch<T>(
     path: string,
     body?: unknown,
-    init?: RequestOptions,
+    init?: RequestOptions
   ): Promise<T> {
     return this.request<T>(path, {
       ...init,
@@ -109,7 +113,7 @@ export class WebHttpClient implements HttpClient {
 
   async head(
     path: string,
-    init?: RequestOptions,
+    init?: RequestOptions
   ): Promise<{ headers: Record<string, string>; status: number }> {
     const response = await this.makeRequest<Response>(path, {
       ...init,
@@ -128,7 +132,7 @@ export class WebHttpClient implements HttpClient {
 
   private async makeRequest<T>(
     path: string,
-    init?: RequestOptions,
+    init?: RequestOptions
   ): Promise<T> {
     const url = this.buildUrl(path);
     const signal = this.createAbortSignal(init);
@@ -143,7 +147,25 @@ export class WebHttpClient implements HttpClient {
     };
 
     try {
+      // Debug minimal info to verify URL and auth header presence
+      const hasAuthHeader = Boolean(
+        (headers as Record<string, string>)?.Authorization
+      );
+      // eslint-disable-next-line no-console
+      console.log('🔎 HTTP request', {
+        url,
+        method: requestInit.method,
+        hasAuth: hasAuthHeader,
+      });
+
       const response = await this.transport.fetch(url, requestInit);
+
+      // eslint-disable-next-line no-console
+      console.log('🔎 HTTP response', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+      });
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);
@@ -152,7 +174,7 @@ export class WebHttpClient implements HttpClient {
           response.statusText,
           url,
           response.headers,
-          bodyText,
+          bodyText
         );
       }
 
@@ -166,7 +188,7 @@ export class WebHttpClient implements HttpClient {
         'Network Error',
         url,
         new Headers(),
-        error instanceof Error ? error.message : 'Unknown error',
+        error instanceof Error ? error.message : 'Unknown error'
       );
     }
   }
@@ -210,7 +232,7 @@ export class WebHttpClient implements HttpClient {
   }
 
   private async buildHeaders(
-    initHeaders?: HeadersInit,
+    initHeaders?: HeadersInit
   ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       ...this.transport.defaultHeaders,
@@ -248,7 +270,7 @@ export class WebHttpClient implements HttpClient {
 
   private async parseResponse<T>(
     response: Response,
-    parse?: ResponseParser,
+    parse?: ResponseParser
   ): Promise<T> {
     switch (parse) {
       case 'text':

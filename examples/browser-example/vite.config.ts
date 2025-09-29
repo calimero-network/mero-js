@@ -15,6 +15,23 @@ export default defineConfig({
         )
       ),
 
+      // Ensure Vite pulls the local adapter build (not a nested node_modules copy)
+      '@mero/adapter-browser': path.resolve(
+        fileURLToPath(
+          new URL(
+            '../../packages/mero-adapter-browser/dist/index.js',
+            import.meta.url
+          )
+        )
+      ),
+
+      // Ensure local core changes are used (admin endpoints paths, etc.)
+      '@mero/core': path.resolve(
+        fileURLToPath(
+          new URL('../../packages/mero-core/dist/index.js', import.meta.url)
+        )
+      ),
+
       // For live-edit (optional): point to source instead of dist.
       // '@mero/browser': path.resolve(
       //   fileURLToPath(new URL('../../packages/mero-browser/src/index.ts', import.meta.url))

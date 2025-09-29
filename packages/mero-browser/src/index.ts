@@ -3,7 +3,7 @@ import { makeBrowserEnv } from '@mero/adapter-browser';
 
 /** Batteries-included factory for browser apps */
 export function createMero(config: CoreConfig) {
-  const deps = makeBrowserEnv();
+  const deps = makeBrowserEnv(config.baseUrl);
   const core = createCore(config, deps);
 
   // Add SDK methods that were in the original MeroJs class

@@ -8,4 +8,4 @@ export * from './web-client';
 export * from './local-storage';
 
 // Factory functions
-export * from './factory';
+export { makeBrowserEnv } from './factory';
