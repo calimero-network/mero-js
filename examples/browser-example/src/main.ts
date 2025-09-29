@@ -407,16 +407,18 @@ async function testAdminBlobs() {
   }
 }
 
-async function testAdminAliases() {
+async function testAdminContextAliases() {
   if (!mero) {
     log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
     return;
   }
 
   try {
-    log('\n🔗 Testing Admin API - List Aliases...');
+    log('\n🔗 Testing Admin API - List Context Aliases...');
     log(
-      '🔍 Debug: Making request to: ' + mero.config.baseUrl + '/admin-api/alias'
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/alias/list/context'
     );
 
     // First authenticate to get the token
@@ -424,10 +426,37 @@ async function testAdminAliases() {
     await mero.authenticate();
     log('✅ Authentication successful');
 
-    const aliases = await mero.admin.listAliases();
-    log('✅ Aliases: ' + JSON.stringify(aliases, null, 2));
+    const aliases = await mero.admin.listContextAliases();
+    log('✅ Context Aliases: ' + JSON.stringify(aliases, null, 2));
   } catch (error: any) {
-    log('❌ Admin aliases test failed: ' + error.message);
+    log('❌ Admin context aliases test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testAdminApplicationAliases() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n🔗 Testing Admin API - List Application Aliases...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/alias/list/application'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    const aliases = await mero.admin.listApplicationAliases();
+    log('✅ Application Aliases: ' + JSON.stringify(aliases, null, 2));
+  } catch (error: any) {
+    log('❌ Admin application aliases test failed: ' + error.message);
     log('Error details: ' + JSON.stringify(error, null, 2));
   }
 }
@@ -499,7 +528,8 @@ async function testAdminCertificate() {
 (window as any).testCreateContext = testCreateContext;
 (window as any).testGenerateIdentity = testGenerateIdentity;
 (window as any).testAdminBlobs = testAdminBlobs;
-(window as any).testAdminAliases = testAdminAliases;
+(window as any).testAdminContextAliases = testAdminContextAliases;
+(window as any).testAdminApplicationAliases = testAdminApplicationAliases;
 (window as any).testAdminPeers = testAdminPeers;
 (window as any).testAdminCertificate = testAdminCertificate;
 

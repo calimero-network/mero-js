@@ -143,26 +143,97 @@ export class AdminApiClient {
     return this.httpClient.head(`/admin-api/blobs/${blobId}`);
   }
 
-  // Alias Management Endpoints
-  async createAlias(request: CreateAliasRequest): Promise<CreateAliasResponse> {
+  // Context Alias Management Endpoints
+  async createContextAlias(
+    request: CreateAliasRequest
+  ): Promise<CreateAliasResponse> {
     return this.httpClient.post<CreateAliasResponse>(
-      '/admin-api/alias',
+      '/admin-api/alias/create/context',
       request
     );
   }
 
-  async deleteAlias(aliasId: string): Promise<DeleteAliasResponse> {
+  async deleteContextAlias(aliasName: string): Promise<DeleteAliasResponse> {
     return this.httpClient.delete<DeleteAliasResponse>(
-      `/admin-api/alias/${aliasId}`
+      `/admin-api/alias/delete/context/${aliasName}`
     );
   }
 
-  async listAliases(): Promise<ListAliasesResponse> {
-    return this.httpClient.get<ListAliasesResponse>('/admin-api/alias');
+  async listContextAliases(): Promise<ListAliasesResponse> {
+    return this.httpClient.get<ListAliasesResponse>(
+      '/admin-api/alias/list/context'
+    );
   }
 
-  async getAlias(aliasId: string): Promise<GetAliasResponse> {
-    return this.httpClient.get<GetAliasResponse>(`/admin-api/alias/${aliasId}`);
+  async lookupContextAlias(aliasName: string): Promise<GetAliasResponse> {
+    return this.httpClient.get<GetAliasResponse>(
+      `/admin-api/alias/lookup/context/${aliasName}`
+    );
+  }
+
+  // Application Alias Management Endpoints
+  async createApplicationAlias(
+    request: CreateAliasRequest
+  ): Promise<CreateAliasResponse> {
+    return this.httpClient.post<CreateAliasResponse>(
+      '/admin-api/alias/create/application',
+      request
+    );
+  }
+
+  async deleteApplicationAlias(
+    aliasName: string
+  ): Promise<DeleteAliasResponse> {
+    return this.httpClient.delete<DeleteAliasResponse>(
+      `/admin-api/alias/delete/application/${aliasName}`
+    );
+  }
+
+  async listApplicationAliases(): Promise<ListAliasesResponse> {
+    return this.httpClient.get<ListAliasesResponse>(
+      '/admin-api/alias/list/application'
+    );
+  }
+
+  async lookupApplicationAlias(aliasName: string): Promise<GetAliasResponse> {
+    return this.httpClient.get<GetAliasResponse>(
+      `/admin-api/alias/lookup/application/${aliasName}`
+    );
+  }
+
+  // Identity Alias Management Endpoints
+  async createIdentityAlias(
+    contextId: string,
+    request: CreateAliasRequest
+  ): Promise<CreateAliasResponse> {
+    return this.httpClient.post<CreateAliasResponse>(
+      `/admin-api/alias/create/identity/${contextId}`,
+      request
+    );
+  }
+
+  async deleteIdentityAlias(
+    contextId: string,
+    aliasName: string
+  ): Promise<DeleteAliasResponse> {
+    return this.httpClient.delete<DeleteAliasResponse>(
+      `/admin-api/alias/delete/identity/${contextId}/${aliasName}`
+    );
+  }
+
+  async listIdentityAliases(contextId: string): Promise<ListAliasesResponse> {
+    return this.httpClient.get<ListAliasesResponse>(
+      `/admin-api/alias/list/identity/${contextId}`
+    );
+  }
+
+  async lookupIdentityAlias(
+    contextId: string,
+    aliasName: string
+  ): Promise<GetAliasResponse> {
+    return this.httpClient.get<GetAliasResponse>(
+      `/admin-api/alias/lookup/identity/${contextId}/${aliasName}`
+    );
   }
 
   // Network Management Endpoints
