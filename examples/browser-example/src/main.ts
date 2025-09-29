@@ -179,6 +179,102 @@ async function testAdminContexts() {
   }
 }
 
+// Application Management Tests
+async function testInstallApplication() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n📦 Testing Admin API - Install Application...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/install-application'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    // Try to install a test application
+    const installRequest = {
+      url: 'https://example.com/test-app',
+      metadata: btoa(JSON.stringify({ name: 'Test App', version: '1.0.0' })),
+    };
+
+    const result = await mero.admin.installApplication(installRequest);
+    log('✅ Application installed: ' + JSON.stringify(result, null, 2));
+  } catch (error: any) {
+    log('❌ Install application test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testCreateContext() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n📝 Testing Admin API - Create Context...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/contexts'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    // Try to create a test context
+    const createRequest = {
+      name: 'Test Context',
+      description: 'A test context created via API',
+      metadata: { test: true },
+    };
+
+    const result = await mero.admin.createContext(createRequest);
+    log('✅ Context created: ' + JSON.stringify(result, null, 2));
+  } catch (error: any) {
+    log('❌ Create context test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function testGenerateIdentity() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n🔐 Testing Admin API - Generate Context Identity...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/identity/context'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    // Try to generate a context identity
+    const result = await mero.admin.generateContextIdentity({});
+    log('✅ Identity generated: ' + JSON.stringify(result, null, 2));
+  } catch (error: any) {
+    log('❌ Generate identity test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
 // Additional Admin API Tests
 async function testAdminBlobs() {
   if (!mero) {
@@ -291,6 +387,9 @@ async function testAdminCertificate() {
 (window as any).testAdminApplications = testAdminApplications;
 (window as any).testAdminContexts = testAdminContexts;
 (window as any).testAdminIdentity = testAdminIdentity;
+(window as any).testInstallApplication = testInstallApplication;
+(window as any).testCreateContext = testCreateContext;
+(window as any).testGenerateIdentity = testGenerateIdentity;
 (window as any).testAdminBlobs = testAdminBlobs;
 (window as any).testAdminAliases = testAdminAliases;
 (window as any).testAdminPeers = testAdminPeers;
