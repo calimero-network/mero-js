@@ -36,9 +36,13 @@ import { MeroProvider, useMero } from '@mero/react';
 ## 📦 Legacy Packages
 
 - **`@calimero-network/mero-js`** - The main SDK package (compatibility layer)
-- **`@calimero-network/mero-js-browser-example`** - Browser-specific usage example
-- **`@calimero-network/mero-js-node-example`** - Node.js-specific usage example
-- **`@calimero-network/mero-js-universal-example`** - Universal usage example (works in both browser and Node.js)
+
+## 📁 Examples
+
+- **`examples/browser-example/`** - Browser usage example with @mero/browser
+- **`examples/node-example/`** - Node.js usage example
+- **`examples/typecheck-browser/`** - TypeScript type checking for browser
+- **`examples/typecheck-node/`** - TypeScript type checking for Node.js
 
 ## 🚀 Quick Start
 

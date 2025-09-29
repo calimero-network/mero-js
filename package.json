@@ -18,6 +18,8 @@
     "lint": "pnpm -r run lint",
     "clean": "pnpm -r run clean",
     "lint:fix": "pnpm -r eslint . --fix",
+    "example:browser": "pnpm -C packages/mero-browser build && pnpm -C examples/browser-example dev",
+    "example:browser:src": "pnpm -C examples/browser-example dev",
     "format": "pnpm -r prettier --check .",
     "format:fix": "pnpm -r prettier --write .",
     "test": "pnpm -r test",

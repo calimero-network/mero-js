@@ -1,29 +1,14 @@
 {
-  "name": "@calimero-network/mero-js-browser-example",
-  "version": "1.0.0",
-  "description": "Browser example for Mero.js",
+  "name": "@mero/browser-example",
+  "private": true,
   "type": "module",
-  "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "build": "echo 'No build needed for this example'",
-    "dev": "node --watch index.js",
-    "lint": "echo 'No linting needed for this example'",
-    "eslint": "echo 'No eslint needed for this example'",
-    "test": "echo 'No tests for this example'",
-    "typecheck": "echo 'No typecheck needed for this example'",
-    "tsc": "echo 'No tsc needed for this example'",
-    "prettier": "echo 'No prettier needed for this example'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5176"
   },
-  "dependencies": {
-    "@calimero-network/mero-js": "workspace:*"
-  },
-  "keywords": [
-    "calimero",
-    "mero",
-    "browser",
-    "example"
-  ],
-  "author": "Calimero Ltd",
-  "license": "MIT"
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  }
 }
