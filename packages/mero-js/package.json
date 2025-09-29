@@ -22,7 +22,7 @@
   "private": true,
   "build": false,
   "dependencies": {
-    "@mero/sdk": "workspace:*",
+    "@mero/browser": "workspace:*",
     "@mero/core": "workspace:*",
     "@mero/adapter-browser": "workspace:*"
   },

@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "dist/node",
-    "lib": ["ES2020"],
-    "types": ["node"]
-  },
-  "include": ["src/index.node.ts"]
-}

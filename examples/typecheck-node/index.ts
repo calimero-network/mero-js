@@ -1,3 +1,3 @@
-import { createMero } from '@mero/sdk';
+import { createMero } from '@mero/browser';
 // Should typecheck without DOM libs
 void createMero;

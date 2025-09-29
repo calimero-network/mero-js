@@ -4,6 +4,6 @@
     { "path": "packages/mero-core" },
     { "path": "packages/mero-adapter-browser" },
     { "path": "packages/mero-adapter-node" },
-    { "path": "packages/mero-sdk" }
+    { "path": "packages/mero-browser" }
   ]
 }

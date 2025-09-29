@@ -1,9 +1,0 @@
-import { createCore } from '@mero/core';
-import { makeBrowserEnv } from '@mero/adapter-browser';
-
-export function createMero(config: any) {
-  const env = makeBrowserEnv();
-  return createCore(config, env);
-}
-
-export * from '@mero/core';

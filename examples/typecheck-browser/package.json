@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@mero/sdk": "workspace:*"
+    "@mero/browser": "workspace:*"
   }
 }

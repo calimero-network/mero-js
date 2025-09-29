@@ -53,6 +53,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mero-js
 
+  examples/typecheck-browser:
+    dependencies:
+      '@mero/browser':
+        specifier: workspace:*
+        version: link:../../packages/mero-browser
+
+  examples/typecheck-node:
+    dependencies:
+      '@mero/browser':
+        specifier: workspace:*
+        version: link:../../packages/mero-browser
+
   packages/mero-adapter-browser:
     dependencies:
       '@mero/core':
@@ -73,6 +85,19 @@ importers:
         specifier: ^3.0.0
         version: 3.0.2
 
+  packages/mero-browser:
+    dependencies:
+      '@mero/adapter-browser':
+        specifier: workspace:*
+        version: link:../mero-adapter-browser
+      '@mero/core':
+        specifier: workspace:*
+        version: link:../mero-core
+    devDependencies:
+      rimraf:
+        specifier: ^3.0.0
+        version: 3.0.2
+
   packages/mero-core:
     devDependencies:
       rimraf:
@@ -84,12 +109,12 @@ importers:
       '@mero/adapter-browser':
         specifier: workspace:*
         version: link:../mero-adapter-browser
+      '@mero/browser':
+        specifier: workspace:*
+        version: link:../mero-browser
       '@mero/core':
         specifier: workspace:*
         version: link:../mero-core
-      '@mero/sdk':
-        specifier: workspace:*
-        version: link:../mero-sdk
     devDependencies:
       '@types/node':
         specifier: ^18.19.34
@@ -109,28 +134,9 @@ importers:
       rimraf:
         specifier: ^3.0.0
         version: 3.0.2
-      typescript:
-        specifier: ^4.9.5
-        version: 4.9.5
       vitest:
         specifier: ^1.0.0
         version: 1.6.1(@types/node@18.19.127)(jsdom@16.7.0)
-
-  packages/mero-sdk:
-    dependencies:
-      '@mero/adapter-browser':
-        specifier: workspace:*
-        version: link:../mero-adapter-browser
-      '@mero/adapter-node':
-        specifier: workspace:*
-        version: link:../mero-adapter-node
-      '@mero/core':
-        specifier: workspace:*
-        version: link:../mero-core
-    devDependencies:
-      rimraf:
-        specifier: ^3.0.0
-        version: 3.0.2
 
 packages:
   '@esbuild/aix-ppc64@0.21.5':

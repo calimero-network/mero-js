@@ -1,0 +1,36 @@
+{
+  "name": "@mero/browser",
+  "version": "0.1.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "rimraf dist *.tsbuildinfo",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'Linting disabled during migration'",
+    "format": "prettier -w ."
+  },
+  "dependencies": {
+    "@mero/core": "workspace:*",
+    "@mero/adapter-browser": "workspace:*"
+  },
+  "devDependencies": {
+    "rimraf": "^3.0.0"
+  },
+  "keywords": [
+    "mero",
+    "browser",
+    "sdk",
+    "calimero"
+  ],
+  "license": "MIT",
+  "author": "Calimero Ltd"
+}

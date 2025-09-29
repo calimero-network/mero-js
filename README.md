@@ -2,24 +2,36 @@
 
 This is the monorepo for **Mero.js** - Pure JavaScript SDK for Calimero.
 
-## 📦 Package Layout (Milestone 1)
+## 📦 Package Layout
 
 - **`@mero/core`** — platform-agnostic core (no Node/DOM globals).
 - **`@mero/adapter-browser`** — browser bindings (fetch, WebCrypto, storage).
 - **`@mero/adapter-node`** — Node bindings (fetch/undici, node:crypto, storage).
-- **`@mero/sdk`** — umbrella package with conditional exports for platform-specific entries.
+- **`@mero/browser`** — batteries-included facade for browser apps.
 
-### SDK Usage
+### Usage Patterns
 
-**Default import** from `@mero/sdk` resolves per-platform via exports conditions:
+#### Browser Apps (Most Common)
 
-- Browser builds → `dist/browser/index.js` (pre-wired browser factory)
-- Node builds → `dist/node/index.js` (pre-wired node factory)
-- Universal → `dist/universal/index.js` (DI-only, no platform types)
+```typescript
+import { createMero } from '@mero/browser';
+const mero = createMero();
+```
 
-For explicit control or SSR, use **DI** with `@mero/core` + adapters directly.
+#### Dependency Injection (Advanced Users)
 
-Optional `@mero/sdk/auto` helper available for legacy use cases with runtime detection.
+```typescript
+import { createCore } from '@mero/core';
+import { makeBrowserEnv } from '@mero/adapter-browser';
+const mero = createCore(makeBrowserEnv());
+```
+
+#### React Apps (Coming Soon)
+
+```typescript
+// @mero/react will provide <MeroProvider /> and hooks
+import { MeroProvider, useMero } from '@mero/react';
+```
 
 ## 📦 Legacy Packages
 
