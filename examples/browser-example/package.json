@@ -1,11 +1,14 @@
 {
-  "name": "@mero/browser-example",
+  "name": "mero-browser-example",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 5176"
+  },
+  "dependencies": {
+    "@mero/browser": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

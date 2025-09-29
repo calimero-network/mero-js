@@ -2,23 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Mero Browser Example</title>
+    <title>Mero Browser Test App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         padding: 20px;
+        background: #0a0a0a;
+        color: #fff;
+      }
+      h1 {
+        color: #00ff88;
       }
       pre {
         background: #111;
         color: #eee;
         padding: 12px;
         border-radius: 8px;
+        border: 1px solid #333;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      .status {
+        color: #00ff88;
+        font-weight: bold;
       }
     </style>
   </head>
   <body>
-    <h1>Mero Browser Example</h1>
+    <h1>🚀 Mero Browser Test App</h1>
+    <p class="status">Testing real connection to Calimero node...</p>
     <pre id="out">starting…</pre>
     <script type="module" src="/src/main.ts"></script>
   </body>
