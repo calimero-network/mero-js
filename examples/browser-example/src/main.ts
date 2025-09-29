@@ -199,6 +199,16 @@ async function testInstallApplication() {
     await mero.authenticate();
     log('✅ Authentication successful');
 
+    // Debug: Check if token is available
+    const tokenData = await mero.getTokenData();
+    log('🔍 Debug: Token available: ' + (tokenData ? 'Yes' : 'No'));
+    if (tokenData) {
+      log(
+        '🔍 Debug: Token expires at: ' +
+          new Date(tokenData.expires_at).toLocaleString()
+      );
+    }
+
     // Try to install a test application
     const installRequest = {
       url: 'https://example.com/test-app',
@@ -211,6 +221,102 @@ async function testInstallApplication() {
     log('❌ Install application test failed: ' + error.message);
     log('Error details: ' + JSON.stringify(error, null, 2));
   }
+}
+
+async function testInstallDevApplication() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  try {
+    log('\n📦 Testing Admin API - Install Dev Application...');
+    log(
+      '🔍 Debug: Making request to: ' +
+        mero.config.baseUrl +
+        '/admin-api/install-dev-application'
+    );
+
+    // First authenticate to get the token
+    log('🔑 Authenticating first...');
+    await mero.authenticate();
+    log('✅ Authentication successful');
+
+    // Try to install a dev application
+    const installRequest = {
+      path: '/tmp/test-app',
+      metadata: btoa(JSON.stringify({ name: 'Dev App', version: '1.0.0' })),
+    };
+
+    const result = await mero.admin.installDevApplication(installRequest);
+    log('✅ Dev application installed: ' + JSON.stringify(result, null, 2));
+  } catch (error: any) {
+    log('❌ Install dev application test failed: ' + error.message);
+    log('Error details: ' + JSON.stringify(error, null, 2));
+  }
+}
+
+async function uploadWasmFile() {
+  if (!mero) {
+    log('❌ Mero not initialized. Click "Reinitialize Mero" first.');
+    return;
+  }
+
+  // Create file input element
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.wasm';
+  fileInput.style.display = 'none';
+  document.body.appendChild(fileInput);
+
+  fileInput.onchange = async event => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) {
+      log('❌ No file selected');
+      return;
+    }
+
+    try {
+      log('\n📦 Uploading WASM file: ' + file.name);
+      log(
+        '🔍 Debug: Making request to: ' +
+          mero.config.baseUrl +
+          '/admin-api/blobs'
+      );
+
+      // First authenticate to get the token
+      log('🔑 Authenticating first...');
+      await mero.authenticate();
+      log('✅ Authentication successful');
+
+      // Read file as base64
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Data = (reader.result as string).split(',')[1]; // Remove data:application/octet-stream;base64, prefix
+
+          const uploadRequest = {
+            data: base64Data,
+            metadata: { filename: file.name, size: file.size },
+          };
+
+          const result = await mero.admin.uploadBlob(uploadRequest);
+          log('✅ WASM file uploaded: ' + JSON.stringify(result, null, 2));
+        } catch (error: any) {
+          log('❌ WASM upload failed: ' + error.message);
+          log('Error details: ' + JSON.stringify(error, null, 2));
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (error: any) {
+      log('❌ WASM upload failed: ' + error.message);
+      log('Error details: ' + JSON.stringify(error, null, 2));
+    } finally {
+      document.body.removeChild(fileInput);
+    }
+  };
+
+  fileInput.click();
 }
 
 async function testCreateContext() {
@@ -388,6 +494,8 @@ async function testAdminCertificate() {
 (window as any).testAdminContexts = testAdminContexts;
 (window as any).testAdminIdentity = testAdminIdentity;
 (window as any).testInstallApplication = testInstallApplication;
+(window as any).testInstallDevApplication = testInstallDevApplication;
+(window as any).uploadWasmFile = uploadWasmFile;
 (window as any).testCreateContext = testCreateContext;
 (window as any).testGenerateIdentity = testGenerateIdentity;
 (window as any).testAdminBlobs = testAdminBlobs;
