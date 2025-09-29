@@ -155,7 +155,7 @@ async function testAdminContexts() {
 
   try {
     log('\n📝 Testing Admin API - List Contexts...');
-    const contexts = await mero.admin.listContexts();
+    const contexts = await mero.admin.getContexts();
     log('✅ Contexts: ' + JSON.stringify(contexts, null, 2));
   } catch (error: any) {
     log('❌ Admin contexts test failed: ' + error.message);
