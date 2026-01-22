@@ -51,6 +51,8 @@ function headersToRecord(headers: Headers): Record<string, string> {
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
+  // Track request start time for timeout calculation on retries
+  private requestStartTime: number | null = null;
   
   constructor(private transport: Transport) {}
 
@@ -137,6 +139,11 @@ export class WebHttpClient implements HttpClient {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
     const url = this.buildUrl(path);
+    
+    // Track request start time for timeout calculation (only on first attempt)
+    if (retryCount === 0) {
+      this.requestStartTime = Date.now();
+    }
     // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
@@ -168,11 +175,23 @@ export class WebHttpClient implements HttpClient {
       requestInit.body = init.body;
     }
     
-    // For retries, create a fresh signal but preserve user's abort signal
-    // The user's signal is checked before retry, so if we get here, it's not aborted
-    const retrySignal = retryCount > 0 
-      ? this.createAbortSignal(init) // Include user's signal in retry
-      : signal;
+    // For retries, calculate remaining timeout to prevent timeout reset
+    // Track elapsed time and use remaining timeout for retry
+    let retrySignal: AbortSignal | undefined;
+    if (retryCount > 0 && this.requestStartTime !== null) {
+      const elapsed = Date.now() - this.requestStartTime;
+      const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
+      if (timeoutMs) {
+        const remaining = Math.max(0, timeoutMs - elapsed);
+        // Create signal with remaining timeout, preserving user's signal
+        retrySignal = this.createAbortSignal({ ...init, timeoutMs: remaining });
+      } else {
+        // No timeout, just preserve user's signal
+        retrySignal = this.createAbortSignal(init);
+      }
+    } else {
+      retrySignal = signal;
+    }
     
     if (retrySignal) {
       requestInit.signal = retrySignal;
@@ -257,7 +276,15 @@ export class WebHttpClient implements HttpClient {
             }
             
             // Update token via callback
-            await this.transport.onTokenRefresh(newToken);
+            // If this throws, it's an onTokenRefresh error (not a refreshToken error)
+            // We'll catch it separately to preserve it
+            try {
+              await this.transport.onTokenRefresh(newToken);
+            } catch (onTokenRefreshError) {
+              // Errors from onTokenRefresh callback should be preserved (don't mask as 401)
+              // This helps developers debug token storage issues
+              throw onTokenRefreshError;
+            }
             
             // Retry the request with the new token (increment retry count)
             // Preserve user's abort signal in retry
@@ -265,17 +292,13 @@ export class WebHttpClient implements HttpClient {
           } catch (refreshError) {
             // Clear the cache on error
             this.refreshTokenPromise = null;
-            // If refresh fails or onTokenRefresh is missing, throw the specific error
-            // (not the original 401, as that would mask configuration issues)
+            // Configuration errors (missing onTokenRefresh) should be thrown as-is
             if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
               throw refreshError;
             }
-            // If onTokenRefresh callback threw an error, preserve it (don't mask as 401)
-            // This helps developers debug token storage issues
-            if (refreshError instanceof Error && !refreshError.message.includes('Refresh token returned empty token')) {
-              throw refreshError;
-            }
-            // For other refresh errors (like empty token), throw the original 401 error
+            // Errors from onTokenRefresh callback are already thrown above, so if we get here,
+            // it's either a refreshToken() failure or empty token - throw original 401
+            // This matches the PR description: "If refresh fails, throws the original 401 error"
             throw httpError;
           }
         }
