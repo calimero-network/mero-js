@@ -1,3 +1,7 @@
+## <small>1.0.2 (2026-01-22)</small>
+
+* fix: use node 24 for better npm OIDC support ([3df75fc](https://github.com/calimero-network/mero-js/commit/3df75fc))
+
 ## <small>1.0.1 (2026-01-22)</small>
 
 * fix: publish to npm directly in workflow for OIDC support ([eba1ee2](https://github.com/calimero-network/mero-js/commit/eba1ee2))
