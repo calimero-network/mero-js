@@ -276,15 +276,9 @@ export class WebHttpClient implements HttpClient {
             }
             
             // Update token via callback
-            // If this throws, it's an onTokenRefresh error (not a refreshToken error)
-            // We'll catch it separately to preserve it
-            try {
-              await this.transport.onTokenRefresh(newToken);
-            } catch (onTokenRefreshError) {
-              // Errors from onTokenRefresh callback should be preserved (don't mask as 401)
-              // This helps developers debug token storage issues
-              throw onTokenRefreshError;
-            }
+            // Errors from onTokenRefresh callback should be preserved (don't mask as 401)
+            // This helps developers debug token storage issues
+            await this.transport.onTokenRefresh(newToken);
             
             // Retry the request with the new token (increment retry count)
             // Preserve user's abort signal in retry
