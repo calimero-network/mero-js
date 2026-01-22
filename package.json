@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
