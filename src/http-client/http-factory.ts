@@ -17,7 +17,9 @@ export function createBrowserHttpClient(options: {
   defaultAbortSignal?: AbortSignal;
 }): HttpClient {
   const transport: Transport = {
-    fetch: globalThis.fetch,
+    // Wrap fetch in arrow function to prevent "Illegal invocation" error
+    // This preserves the correct 'this' context when fetch is called
+    fetch: (url: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
@@ -52,7 +54,9 @@ export function createNodeHttpClient(options: {
   }
 
   const transport: Transport = {
-    fetch: fetchImpl,
+    // Wrap fetch in arrow function to prevent "Illegal invocation" error
+    // This preserves the correct 'this' context when fetch is called
+    fetch: (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
