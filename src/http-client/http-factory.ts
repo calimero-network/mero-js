@@ -53,10 +53,18 @@ export function createNodeHttpClient(options: {
     );
   }
 
+  // Check if we're using the default globalThis.fetch to preserve context
+  // When fetchImpl is globalThis.fetch, we must call it directly, not through a variable
+  // Custom fetch implementations (like undici.fetch) can be called through the variable
+  const isDefaultFetch = fetchImpl === globalThis.fetch;
+
   const transport: Transport = {
     // Wrap fetch in arrow function to prevent "Illegal invocation" error
-    // This preserves the correct 'this' context when fetch is called
-    fetch: (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
+    // For globalThis.fetch, call it directly to preserve 'this' context
+    // For custom implementations, calling through the variable is safe
+    fetch: isDefaultFetch
+      ? (url: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(url, init)
+      : (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
