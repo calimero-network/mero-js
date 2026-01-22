@@ -9,9 +9,10 @@ on:
       - master
 
 # Cancel in-progress runs when a new commit is pushed
-# Use PR number for PRs, ref for pushes to group runs properly
+# Use branch name for both PR and push events to ensure consistent concurrency grouping
+# github.head_ref is available for PR events, github.ref_name for push events
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
