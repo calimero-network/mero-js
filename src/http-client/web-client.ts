@@ -49,6 +49,9 @@ function headersToRecord(headers: Headers): Record<string, string> {
 
 // Web Standards HTTP client implementation
 export class WebHttpClient implements HttpClient {
+  // Cache for concurrent refresh token calls to prevent race conditions
+  private refreshTokenPromise: Promise<string> | null = null;
+  
   constructor(private transport: Transport) {}
 
   async get<T>(path: string, init?: RequestOptions): Promise<T> {
@@ -129,7 +132,10 @@ export class WebHttpClient implements HttpClient {
   private async makeRequest<T>(
     path: string,
     init?: RequestOptions,
+    retryCount = 0,
   ): Promise<T> {
+    // Maximum retry attempts to prevent infinite loops
+    const MAX_RETRY_ATTEMPTS = 1;
     const url = this.buildUrl(path);
     // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
@@ -150,12 +156,25 @@ export class WebHttpClient implements HttpClient {
       headers: headersObj,
     };
     
-    if (init?.body !== undefined) {
+    // Check if body is a stream (ReadableStream, Blob, etc.) that can't be reused
+    const isStreamBody = init?.body instanceof ReadableStream || 
+                        init?.body instanceof Blob ||
+                        (typeof init?.body === 'object' && init?.body !== null && 'getReader' in init.body);
+    
+    if (init?.body !== undefined && !isStreamBody) {
+      requestInit.body = init.body;
+    } else if (init?.body !== undefined && isStreamBody && retryCount === 0) {
+      // Only include stream body on first attempt - can't retry with streams
       requestInit.body = init.body;
     }
     
-    if (signal) {
-      requestInit.signal = signal;
+    // For retries, create a fresh signal without the original (which may be aborted)
+    const retrySignal = retryCount > 0 
+      ? this.createAbortSignal({ ...init, signal: undefined })
+      : signal;
+    
+    if (retrySignal) {
+      requestInit.signal = retrySignal;
     }
     
     if (this.transport.credentials !== undefined) {
@@ -201,19 +220,52 @@ export class WebHttpClient implements HttpClient {
         if (
           response.status === 401 &&
           this.transport.refreshToken &&
-          response.headers.get('x-auth-error') === 'token_expired'
+          response.headers.get('x-auth-error') === 'token_expired' &&
+          retryCount < MAX_RETRY_ATTEMPTS &&
+          !isStreamBody // Can't retry with stream bodies
         ) {
           try {
-            // Attempt to refresh the token
-            const newToken = await this.transport.refreshToken();
-            // Update token via callback if provided
-            if (this.transport.onTokenRefresh && newToken) {
-              await this.transport.onTokenRefresh(newToken);
+            // Use cached refresh promise if one is in progress (prevents race conditions)
+            let refreshPromise = this.refreshTokenPromise;
+            if (!refreshPromise) {
+              refreshPromise = this.transport.refreshToken();
+              this.refreshTokenPromise = refreshPromise;
             }
-            // Retry the request with the new token
-            return this.makeRequest<T>(path, init);
+            
+            // Attempt to refresh the token
+            const newToken = await refreshPromise;
+            
+            // Clear the cache after refresh completes
+            this.refreshTokenPromise = null;
+            
+            // Validate token - must be non-empty
+            if (!newToken || newToken.trim() === '') {
+              throw new Error('Refresh token returned empty token');
+            }
+            
+            // onTokenRefresh is required when refreshToken is provided
+            // Without it, the new token cannot be stored and getAuthToken() will return the old token
+            if (!this.transport.onTokenRefresh) {
+              throw new Error(
+                'onTokenRefresh callback is required when refreshToken is provided. ' +
+                'The callback must update the token storage so getAuthToken() returns the new token.'
+              );
+            }
+            
+            // Update token via callback
+            await this.transport.onTokenRefresh(newToken);
+            
+            // Retry the request with the new token (increment retry count)
+            return this.makeRequest<T>(path, { ...init, signal: undefined }, retryCount + 1);
           } catch (refreshError) {
-            // If refresh fails, throw the original 401 error
+            // Clear the cache on error
+            this.refreshTokenPromise = null;
+            // If refresh fails or onTokenRefresh is missing, throw the specific error
+            // (not the original 401, as that would mask configuration issues)
+            if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
+              throw refreshError;
+            }
+            // For other refresh errors, throw the original 401 error
             throw httpError;
           }
         }
@@ -224,6 +276,10 @@ export class WebHttpClient implements HttpClient {
       return this.parseResponse<T>(response, init?.parse);
     } catch (error) {
       if (error instanceof HTTPError) {
+        throw error;
+      }
+      // Preserve configuration errors (like missing onTokenRefresh)
+      if (error instanceof Error && error.message.includes('onTokenRefresh')) {
         throw error;
       }
       throw new HTTPError(

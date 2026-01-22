@@ -307,32 +307,31 @@ describe('WebHttpClient - Token Refresh', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it('should work when onTokenRefresh is not provided', async () => {
-      // Note: Without onTokenRefresh, getAuthToken will still return old token
-      // This test verifies the refresh mechanism works even without the callback
+    it('should throw error when onTokenRefresh is not provided', async () => {
+      // onTokenRefresh is required when refreshToken is provided
+      // Without it, the new token cannot be stored and getAuthToken() will return the old token
       const refreshToken = vi.fn().mockResolvedValue('new-token');
       transport.refreshToken = refreshToken;
-      // No onTokenRefresh
+      // No onTokenRefresh - this should cause an error
 
       const errorResponse = new Response(null, {
         status: 401,
         headers: { 'x-auth-error': 'token_expired' },
       });
 
-      const successResponse = new Response(
-        JSON.stringify({ data: 'success' }),
-        { status: 200 },
-      );
+      mockFetch.mockResolvedValueOnce(errorResponse);
 
-      mockFetch
-        .mockResolvedValueOnce(errorResponse)
-        .mockResolvedValueOnce(successResponse);
-
-      const result = await client.get('/protected-endpoint');
+      try {
+        await client.get('/protected-endpoint');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        // Should throw error about onTokenRefresh being required
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toContain('onTokenRefresh');
+      }
 
       expect(refreshToken).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ data: 'success' });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('should handle concurrent requests with 401 by refreshing for each', async () => {
