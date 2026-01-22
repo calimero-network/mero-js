@@ -107,7 +107,7 @@ jobs:
   test-e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    # Only run e2e tests on PRs to main/master to validate before merging
+    # Only run e2e tests on PRs to main/master
     if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master')
     needs: build
     timeout-minutes: 15
