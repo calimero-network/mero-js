@@ -1,3 +1,8 @@
+## <small>1.0.1 (2026-01-22)</small>
+
+* fix: publish to npm directly in workflow for OIDC support ([eba1ee2](https://github.com/calimero-network/mero-js/commit/eba1ee2))
+* fix: use @semantic-release/npm plugin for OIDC support (#18) ([3dcf4de](https://github.com/calimero-network/mero-js/commit/3dcf4de)), closes [#18](https://github.com/calimero-network/mero-js/issues/18)
+
 ## 1.0.0 (2026-01-22)
 
 * fix: add --provenance flag to npm publish for OIDC trusted publishing (#16) ([e7bbf13](https://github.com/calimero-network/mero-js/commit/e7bbf13)), closes [#16](https://github.com/calimero-network/mero-js/issues/16)
