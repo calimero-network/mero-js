@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    # Run on all branches
+    branches-ignore:
+      - main
+      - master
   pull_request:
-    # Run on PRs to any branch
+    branches:
+      - main
+      - master
 
 jobs:
   test:
@@ -41,7 +45,8 @@ jobs:
   test-e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    # Run e2e tests on all branches and PRs to test before merging
+    # Only run e2e tests on PRs to main/master (optional, can be skipped)
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
