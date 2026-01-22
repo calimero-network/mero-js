@@ -6,7 +6,6 @@ on:
       - '**' # Run on all branches
   pull_request:
     branches:
-      - main
       - master
 
 # Cancel in-progress runs when a new commit is pushed
@@ -107,8 +106,8 @@ jobs:
   test-e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    # Only run e2e tests on PRs to main/master
-    if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master')
+    # Only run e2e tests on PRs to master
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
     needs: build
     timeout-minutes: 15
     steps:
