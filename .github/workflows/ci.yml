@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    # Run on all branches
+  pull_request:
+    # Run on PRs to any branch
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+  test-e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    # Run e2e tests on all branches and PRs to test before merging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Docker
+        run: |
+          docker --version
+
+      - name: Clone merobox
+        run: |
+          git clone https://github.com/calimero-network/merobox.git
+
+      - name: Install merobox
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./merobox
+
+      - name: Verify merobox installation
+        run: |
+          merobox --version
+
+      - name: Run E2E tests
+        run: pnpm test:e2e
+        env:
+          AUTH_API_BASE_URL: 'http://localhost'
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          mkdir -p docker-logs
+          echo "Collecting Docker logs..."
+          for container in $(docker ps -a --filter "label=calimero.node=true" --format "{{.Names}}" 2>/dev/null || true); do
+            if [ -n "$container" ]; then
+              echo "Collecting logs from container: $container"
+              docker logs "$container" > "docker-logs/${container}.log" 2>&1 || true
+            fi
+          done
+          ls -la docker-logs/ || echo "No logs collected"
+
+      - name: Upload Docker logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs
+          path: docker-logs/
+          if-no-files-found: ignore
+
+      - name: Cleanup merobox
+        if: always()
+        run: |
+          merobox nuke -f || true

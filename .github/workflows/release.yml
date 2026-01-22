@@ -1,0 +1,53 @@
+name: Release and Publish
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Create Release and Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create releases and tags
+      id-token: write # Required for OIDC/trusted publishers
+      issues: write # Required for commenting on issues
+      pull-requests: write # Required for commenting on PRs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@calimero-network'
+          token: false # Disable NPM_AUTH_TOKEN to allow OIDC trusted publishing
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Publish @calimero-network/mero-js to npm
+        run: |
+          echo "🚀 Mero.js Release"
+          echo "📦 Package: @calimero-network/mero-js"
+          npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: production
