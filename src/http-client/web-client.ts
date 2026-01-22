@@ -156,10 +156,10 @@ export class WebHttpClient implements HttpClient {
       headers: headersObj,
     };
     
-    // Check if body is a stream (ReadableStream, Blob, etc.) that can't be reused
-    const isStreamBody = init?.body instanceof ReadableStream || 
-                        init?.body instanceof Blob ||
-                        (typeof init?.body === 'object' && init?.body !== null && 'getReader' in init.body);
+    // Check if body is a stream (ReadableStream) that can't be reused
+    // Note: Blob is reusable, so it's not included here
+    const isStreamBody = init?.body instanceof ReadableStream ||
+                        (typeof init?.body === 'object' && init?.body !== null && 'getReader' in init.body && !(init.body instanceof Blob));
     
     if (init?.body !== undefined && !isStreamBody) {
       requestInit.body = init.body;
@@ -168,9 +168,10 @@ export class WebHttpClient implements HttpClient {
       requestInit.body = init.body;
     }
     
-    // For retries, create a fresh signal without the original (which may be aborted)
+    // For retries, create a fresh signal but preserve user's abort signal
+    // The user's signal is checked before retry, so if we get here, it's not aborted
     const retrySignal = retryCount > 0 
-      ? this.createAbortSignal({ ...init, signal: undefined })
+      ? this.createAbortSignal(init) // Include user's signal in retry
       : signal;
     
     if (retrySignal) {
@@ -217,12 +218,15 @@ export class WebHttpClient implements HttpClient {
         );
 
         // Handle 401 with token_expired - attempt automatic token refresh
+        // Don't retry if user aborted the request
+        const userAborted = init?.signal?.aborted === true;
         if (
           response.status === 401 &&
           this.transport.refreshToken &&
           response.headers.get('x-auth-error') === 'token_expired' &&
           retryCount < MAX_RETRY_ATTEMPTS &&
-          !isStreamBody // Can't retry with stream bodies
+          !isStreamBody && // Can't retry with stream bodies
+          !userAborted // Don't retry if user aborted
         ) {
           try {
             // Use cached refresh promise if one is in progress (prevents race conditions)
@@ -256,7 +260,8 @@ export class WebHttpClient implements HttpClient {
             await this.transport.onTokenRefresh(newToken);
             
             // Retry the request with the new token (increment retry count)
-            return this.makeRequest<T>(path, { ...init, signal: undefined }, retryCount + 1);
+            // Preserve user's abort signal in retry
+            return this.makeRequest<T>(path, init, retryCount + 1);
           } catch (refreshError) {
             // Clear the cache on error
             this.refreshTokenPromise = null;
@@ -265,7 +270,12 @@ export class WebHttpClient implements HttpClient {
             if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
               throw refreshError;
             }
-            // For other refresh errors, throw the original 401 error
+            // If onTokenRefresh callback threw an error, preserve it (don't mask as 401)
+            // This helps developers debug token storage issues
+            if (refreshError instanceof Error && !refreshError.message.includes('Refresh token returned empty token')) {
+              throw refreshError;
+            }
+            // For other refresh errors (like empty token), throw the original 401 error
             throw httpError;
           }
         }
