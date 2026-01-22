@@ -11,6 +11,12 @@ export function createBrowserHttpClient(options: {
   baseUrl: string;
   getAuthToken?: () => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
+  /**
+   * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
+   * Should return the new access token, or throw an error if refresh fails.
+   * If provided, the client will automatically retry the request after a successful refresh.
+   */
+  refreshToken?: () => Promise<string>;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
@@ -23,6 +29,7 @@ export function createBrowserHttpClient(options: {
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
+    refreshToken: options.refreshToken,
     defaultHeaders: options.defaultHeaders,
     timeoutMs: options.timeoutMs,
     credentials: options.credentials, // No default credentials
@@ -38,6 +45,12 @@ export function createNodeHttpClient(options: {
   fetch?: typeof fetch; // Allow injection of undici.fetch or other fetch implementations
   getAuthToken?: () => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
+  /**
+   * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
+   * Should return the new access token, or throw an error if refresh fails.
+   * If provided, the client will automatically retry the request after a successful refresh.
+   */
+  refreshToken?: () => Promise<string>;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
@@ -68,6 +81,7 @@ export function createNodeHttpClient(options: {
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
+    refreshToken: options.refreshToken,
     defaultHeaders: options.defaultHeaders,
     timeoutMs: options.timeoutMs,
     credentials: options.credentials, // Node.js doesn't have default credentials
@@ -83,6 +97,12 @@ export function createUniversalHttpClient(options: {
   fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
+  /**
+   * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
+   * Should return the new access token, or throw an error if refresh fails.
+   * If provided, the client will automatically retry the request after a successful refresh.
+   */
+  refreshToken?: () => Promise<string>;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;

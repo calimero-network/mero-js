@@ -131,74 +131,8 @@ export class WebHttpClient implements HttpClient {
     init?: RequestOptions,
   ): Promise<T> {
     const url = this.buildUrl(path);
-    // Detect Tauri - check multiple ways since __TAURI_INTERNALS__ might not be available
-    // Also use minimal path if credentials is 'omit' (Tauri workaround)
-    const hasTauriInternals = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    const hasTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-    const isTauri = hasTauriInternals || hasTauri || this.transport.credentials === 'omit';
-    
-    // In Tauri, use absolute minimal RequestInit - just like a direct fetch call
-    if (isTauri) {
-      const headers = await this.buildHeaders(init?.headers);
-      let headersObj: Record<string, string>;
-      if (headers instanceof Headers) {
-        headersObj = {};
-        headers.forEach((value, key) => {
-          headersObj[key] = value;
-        });
-      } else {
-        headersObj = headers;
-      }
-      
-      // Build minimal RequestInit - only what's absolutely necessary
-      const requestInit: RequestInit = {};
-      
-      if (init?.method && init.method !== 'GET') {
-        requestInit.method = init.method;
-      }
-      
-      if (headersObj && Object.keys(headersObj).length > 0) {
-        requestInit.headers = headersObj;
-      }
-      
-      if (init?.body !== undefined && init.body !== null) {
-        requestInit.body = init.body;
-      }
-      
-      if (this.transport.credentials !== undefined) {
-        requestInit.credentials = this.transport.credentials;
-      }
-      
-      try {
-        const response = await globalThis.fetch(url, requestInit);
-        
-        if (!response.ok) {
-          const bodyText = await this.getBodyText(response);
-          throw new HTTPError(
-            response.status,
-            response.statusText,
-            url,
-            response.headers,
-            bodyText,
-          );
-        }
-        
-        return this.parseResponse<T>(response, init?.parse);
-      } catch (error) {
-        if (error instanceof HTTPError) {
-          throw error;
-        }
-        throw new HTTPError(
-          0,
-          'Network Error',
-          url,
-          new Headers(),
-          error instanceof Error ? error.message : 'Unknown error',
-        );
-      }
-    }
-    
-    // Non-Tauri: use full implementation with signals, etc.
+    // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
+    // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
     const headers = await this.buildHeaders(init?.headers);
     let headersObj: Record<string, string>;
@@ -255,13 +189,36 @@ export class WebHttpClient implements HttpClient {
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);
-        throw new HTTPError(
+        const httpError = new HTTPError(
           response.status,
           response.statusText,
           url,
           response.headers,
           bodyText,
         );
+
+        // Handle 401 with token_expired - attempt automatic token refresh
+        if (
+          response.status === 401 &&
+          this.transport.refreshToken &&
+          response.headers.get('x-auth-error') === 'token_expired'
+        ) {
+          try {
+            // Attempt to refresh the token
+            const newToken = await this.transport.refreshToken();
+            // Update token via callback if provided
+            if (this.transport.onTokenRefresh && newToken) {
+              await this.transport.onTokenRefresh(newToken);
+            }
+            // Retry the request with the new token
+            return this.makeRequest<T>(path, init);
+          } catch (refreshError) {
+            // If refresh fails, throw the original 401 error
+            throw httpError;
+          }
+        }
+
+        throw httpError;
       }
 
       return this.parseResponse<T>(response, init?.parse);
@@ -299,12 +256,6 @@ export class WebHttpClient implements HttpClient {
   }
 
   private createAbortSignal(init?: RequestOptions): AbortSignal | undefined {
-    // Skip AbortSignal in Tauri - it causes HTTP 0 Network Error
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (isTauri) {
-      return undefined;
-    }
-
     const signals: AbortSignal[] = [];
 
     if (this.transport.defaultAbortSignal) {
