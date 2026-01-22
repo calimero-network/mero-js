@@ -21,16 +21,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           scope: '@calimero-network'
-          token: false # Disable NPM_AUTH_TOKEN to allow OIDC trusted publishing
+          token: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
