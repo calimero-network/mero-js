@@ -6,12 +6,12 @@ on:
       - '**' # Run on all branches
   pull_request:
     branches:
-      - main
       - master
 
 # Cancel in-progress runs when a new commit is pushed
+# Use event type in concurrency group to prevent duplicate runs for PRs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -25,6 +25,8 @@ jobs:
   lint-and-typecheck:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    # Only run on pull_request events (skip push events to avoid duplicates)
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,6 +54,8 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
+    # Only run on pull_request events (skip push events to avoid duplicates)
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -84,6 +88,8 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: build
+    # Only run on pull_request events (skip push events to avoid duplicates)
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -107,8 +113,8 @@ jobs:
   test-e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    # Only run e2e tests on PRs to main/master
-    if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master')
+    # Only run e2e tests on PRs to master
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
     needs: build
     timeout-minutes: 15
     steps:
