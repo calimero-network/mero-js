@@ -47,7 +47,7 @@ jobs:
         run: |
           echo "🚀 Mero.js Release"
           echo "📦 Package: @calimero-network/mero-js"
-          npx semantic-release
+          pnpm exec semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
