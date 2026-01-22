@@ -2,13 +2,9 @@ name: CI
 
 on:
   push:
-    branches-ignore:
-      - main
-      - master
+    # Run CI on all branches including main/master
   pull_request:
-    branches:
-      - main
-      - master
+    # Run CI on PRs to any branch
 
 jobs:
   test:
