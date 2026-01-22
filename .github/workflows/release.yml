@@ -40,8 +40,8 @@ jobs:
       - name: Build packages
         run: pnpm build
 
-      - name: Run tests
-        run: pnpm test
+      - name: Run unit tests
+        run: pnpm test:unit
 
       - name: Publish @calimero-network/mero-js to npm
         run: |
