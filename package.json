@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
@@ -51,7 +51,6 @@
     "prettier": "prettier --check \"src/**/*.{ts,js,json,md}\"",
     "prettier:fix": "prettier --write \"src/**/*.{ts,js,json,md}\"",
     "clean": "pnpm rimraf dist",
-    "dev": "echo 'Mero.js package not yet implemented'",
     "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck"
   },
   "files": [
@@ -69,12 +68,12 @@
   "author": "Calimero Ltd",
   "repository": {
     "type": "git",
-    "url": "https://github.com/calimero-network/calimero.git",
+    "url": "https://github.com/calimero-network/mero-js",
     "directory": "mero-js"
   },
-  "homepage": "https://github.com/calimero-network/calimero/tree/main/mero-js#readme",
+  "homepage": "https://github.com/calimero-network/mero-js/blob/main/README.md",
   "bugs": {
-    "url": "https://github.com/calimero-network/calimero/issues"
+    "url": "https://github.com/calimero-network/mero-js/issues"
   },
   "engines": {
     "node": ">=18.0.0"
