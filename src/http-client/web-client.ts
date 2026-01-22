@@ -51,8 +51,6 @@ function headersToRecord(headers: Headers): Record<string, string> {
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
-  // Track request start time for timeout calculation on retries
-  private requestStartTime: number | null = null;
   
   constructor(private transport: Transport) {}
 
@@ -135,15 +133,15 @@ export class WebHttpClient implements HttpClient {
     path: string,
     init?: RequestOptions,
     retryCount = 0,
+    requestStartTime?: number,
   ): Promise<T> {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
     const url = this.buildUrl(path);
     
     // Track request start time for timeout calculation (only on first attempt)
-    if (retryCount === 0) {
-      this.requestStartTime = Date.now();
-    }
+    // Use per-request start time to avoid corruption from concurrent requests
+    const startTime = requestStartTime ?? Date.now();
     // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
@@ -178,8 +176,8 @@ export class WebHttpClient implements HttpClient {
     // For retries, calculate remaining timeout to prevent timeout reset
     // Track elapsed time and use remaining timeout for retry
     let retrySignal: AbortSignal | undefined;
-    if (retryCount > 0 && this.requestStartTime !== null) {
-      const elapsed = Date.now() - this.requestStartTime;
+    if (retryCount > 0 && requestStartTime !== undefined) {
+      const elapsed = Date.now() - startTime;
       const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
       if (timeoutMs) {
         const remaining = Math.max(0, timeoutMs - elapsed);
@@ -281,8 +279,8 @@ export class WebHttpClient implements HttpClient {
             await this.transport.onTokenRefresh(newToken);
             
             // Retry the request with the new token (increment retry count)
-            // Preserve user's abort signal in retry
-            return this.makeRequest<T>(path, init, retryCount + 1);
+            // Preserve user's abort signal and start time in retry
+            return this.makeRequest<T>(path, init, retryCount + 1, startTime);
           } catch (refreshError) {
             // Clear the cache on error
             this.refreshTokenPromise = null;
