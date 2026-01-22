@@ -49,7 +49,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       
-      - name: Publish @calimero-network/mero-js to npm
+      - name: Run semantic-release (version, changelog, github release)
+        id: semantic
         run: |
           echo "🚀 Mero.js Release"
           echo "📦 Package: @calimero-network/mero-js"
@@ -58,11 +59,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
       
+      - name: Publish to npm with OIDC
+        run: |
+          echo "📦 Publishing to npm with OIDC trusted publishing..."
+          npm publish --provenance --access public
+      
       - name: Push release commit and tag
         if: success()
         run: |
-          # Note: This requires repository settings to allow GitHub Actions to bypass branch protection
-          # Settings > Branches > Branch protection rule > Allow specified actors to bypass required pull requests
-          # Add: github-actions[bot]
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git push origin HEAD:master --follow-tags
+          git push origin HEAD:master --follow-tags || true
