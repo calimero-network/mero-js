@@ -9,65 +9,132 @@ const mockHttpClient = {
   delete: vi.fn(),
 };
 
+// Mock the new modular API clients
 const mockAuthClient = {
   getHealth: vi.fn(),
   getIdentity: vi.fn(),
   getProviders: vi.fn(),
-  generateTokens: vi.fn(),
+  getToken: vi.fn(), // Renamed from generateTokens
   refreshToken: vi.fn(),
   validateToken: vi.fn(),
+  validateTokenGet: vi.fn(),
   listRootKeys: vi.fn(),
   getKeyPermissions: vi.fn(),
-  createKey: vi.fn(),
-  deleteKey: vi.fn(),
-  getClientKeys: vi.fn(),
+  createRootKey: vi.fn(),
+  deleteRootKey: vi.fn(),
+  listClientKeys: vi.fn(),
   generateClientKey: vi.fn(),
-  deleteClient: vi.fn(),
+  deleteClientKey: vi.fn(),
+  updateKeyPermissions: vi.fn(),
   revokeToken: vi.fn(),
-  getAuthStatus: vi.fn(),
+  getMetrics: vi.fn(),
+  getProtectedIdentity: vi.fn(),
+  getChallenge: vi.fn(),
+  getLogin: vi.fn(),
+  getCallback: vi.fn(),
+};
+
+const mockAdminPublicClient = {
+  health: vi.fn(),
+  isAuthed: vi.fn(),
+  getCertificate: vi.fn(),
+};
+
+const mockAdminApplicationsClient = {
+  installApplication: vi.fn(),
+  installDevApplication: vi.fn(),
+  listApplications: vi.fn(),
+  getApplication: vi.fn(),
+  uninstallApplication: vi.fn(),
+  listPackages: vi.fn(),
+  listVersions: vi.fn(),
+  getLatestVersion: vi.fn(),
+};
+
+const mockAdminContextsClient = {
+  listContexts: vi.fn(),
+  createContext: vi.fn(),
+  getContext: vi.fn(),
+  deleteContext: vi.fn(),
+  getContextStorage: vi.fn(),
+  getContextIdentities: vi.fn(),
+  getContextIdentitiesOwned: vi.fn(),
+  inviteToContext: vi.fn(),
+  inviteToContextOpenInvitation: vi.fn(),
+  inviteSpecializedNode: vi.fn(),
+  joinContext: vi.fn(),
+  joinContextByOpenInvitation: vi.fn(),
+  updateContextApplication: vi.fn(),
+  getContextsForApplication: vi.fn(),
+  getContextsWithExecutorsForApplication: vi.fn(),
+  getProxyContract: vi.fn(),
+  syncContext: vi.fn(),
+  syncContextById: vi.fn(),
 };
 
 const mockAdminClient = {
-  healthCheck: vi.fn(),
-  isAuthed: vi.fn(),
-  createContext: vi.fn(),
-  getContexts: vi.fn(),
-  getContext: vi.fn(),
-  deleteContext: vi.fn(),
-  uploadBlob: vi.fn(),
-  listBlobs: vi.fn(),
-  getBlob: vi.fn(),
-  deleteBlob: vi.fn(),
-  createAlias: vi.fn(),
-  listAliases: vi.fn(),
-  getAlias: vi.fn(),
-  deleteAlias: vi.fn(),
-  getNetworkPeers: vi.fn(),
-  getNetworkStats: vi.fn(),
-  getNetworkConfig: vi.fn(),
-  updateNetworkConfig: vi.fn(),
-  getSystemInfo: vi.fn(),
-  getSystemLogs: vi.fn(),
-  getSystemMetrics: vi.fn(),
-  restartSystem: vi.fn(),
-  shutdownSystem: vi.fn(),
-  installApplication: vi.fn(),
-  installDevApplication: vi.fn(),
-  uninstallApplication: vi.fn(),
-  listApplications: vi.fn(),
-  getApplication: vi.fn(),
+  public: mockAdminPublicClient,
+  applications: mockAdminApplicationsClient,
+  contexts: mockAdminContextsClient,
+  proposals: {
+    getProposals: vi.fn(),
+    getProposal: vi.fn(),
+    createAndApproveProposal: vi.fn(),
+    approveProposal: vi.fn(),
+    getNumberOfActiveProposals: vi.fn(),
+    getNumberOfProposalApprovals: vi.fn(),
+    getProposalApprovers: vi.fn(),
+    getContextValue: vi.fn(),
+    getContextStorageEntries: vi.fn(),
+  },
+  capabilities: {
+    grantPermission: vi.fn(),
+    revokePermission: vi.fn(),
+  },
+  identity: {
+    generateContextIdentity: vi.fn(),
+  },
+  network: {
+    getPeersCount: vi.fn(),
+  },
+  blobs: {
+    uploadBlob: vi.fn(),
+    listBlobs: vi.fn(),
+    getBlob: vi.fn(),
+    getBlobInfo: vi.fn(),
+    deleteBlob: vi.fn(),
+  },
+  aliases: {
+    createContextAlias: vi.fn(),
+    createApplicationAlias: vi.fn(),
+    createIdentityAlias: vi.fn(),
+    lookupContextAlias: vi.fn(),
+    lookupApplicationAlias: vi.fn(),
+    lookupIdentityAlias: vi.fn(),
+    listContextAliases: vi.fn(),
+    listApplicationAliases: vi.fn(),
+    listIdentityAliases: vi.fn(),
+    deleteContextAlias: vi.fn(),
+    deleteApplicationAlias: vi.fn(),
+    deleteIdentityAlias: vi.fn(),
+  },
+  tee: {
+    getTeeInfo: vi.fn(),
+    attestTee: vi.fn(),
+    verifyTeeQuote: vi.fn(),
+  },
 };
 
 vi.mock('./http-client', () => ({
   createBrowserHttpClient: vi.fn(() => mockHttpClient),
 }));
 
-vi.mock('./auth-api', () => ({
-  createAuthApiClientFromHttpClient: vi.fn(() => mockAuthClient),
+vi.mock('./api/auth/client', () => ({
+  AuthApiClient: vi.fn(() => mockAuthClient),
 }));
 
-vi.mock('./admin-api', () => ({
-  createAdminApiClientFromHttpClient: vi.fn(() => mockAdminClient),
+vi.mock('./api/admin/client', () => ({
+  AdminApiClient: vi.fn(() => mockAdminClient),
 }));
 
 describe('MeroJs SDK', () => {
@@ -135,17 +202,16 @@ describe('MeroJs SDK', () => {
 
     it('should authenticate successfully', async () => {
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
 
       const tokenData = await meroJs.authenticate();
 
-      expect(mockAuthClient.generateTokens).toHaveBeenCalledWith({
+      expect(mockAuthClient.getToken).toHaveBeenCalledWith({
         auth_method: 'user_password',
         public_key: 'admin',
         client_name: 'mero-js-sdk',
@@ -168,20 +234,19 @@ describe('MeroJs SDK', () => {
 
     it('should authenticate with custom credentials', async () => {
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
 
       const tokenData = await meroJs.authenticate({
         username: 'custom-user',
         password: 'custom-pass',
       });
 
-      expect(mockAuthClient.generateTokens).toHaveBeenCalledWith({
+      expect(mockAuthClient.getToken).toHaveBeenCalledWith({
         auth_method: 'user_password',
         public_key: 'custom-user',
         client_name: 'mero-js-sdk',
@@ -197,7 +262,7 @@ describe('MeroJs SDK', () => {
     });
 
     it('should throw error when authentication fails', async () => {
-      mockAuthClient.generateTokens.mockRejectedValue(new Error('Auth failed'));
+      mockAuthClient.getToken.mockRejectedValue(new Error('Auth failed'));
 
       await expect(meroJs.authenticate()).rejects.toThrow(
         'Authentication failed: Auth failed',
@@ -238,13 +303,12 @@ describe('MeroJs SDK', () => {
 
     it('should get token data when authenticated', async () => {
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
 
       await meroJs.authenticate();
 
@@ -256,21 +320,19 @@ describe('MeroJs SDK', () => {
     it('should refresh token when expired', async () => {
       // First authenticate
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
       // Mock refresh response
       const mockRefreshResponse = {
-        data: {
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-        },
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+        expires_in: 3600,
       };
 
       mockAuthClient.refreshToken.mockResolvedValue(mockRefreshResponse);
@@ -283,7 +345,6 @@ describe('MeroJs SDK', () => {
       const validToken = await (meroJs as any).getValidToken();
 
       expect(mockAuthClient.refreshToken).toHaveBeenCalledWith({
-        access_token: 'mock-access-token',
         refresh_token: 'mock-refresh-token',
       });
 
@@ -293,13 +354,12 @@ describe('MeroJs SDK', () => {
     it('should clear token when refresh fails', async () => {
       // First authenticate
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
       // Mock refresh failure
@@ -328,7 +388,7 @@ describe('MeroJs SDK', () => {
 
     it('should provide auth API client', () => {
       expect(meroJs.auth).toBeDefined();
-      expect(typeof meroJs.auth.generateTokens).toBe('function');
+      expect(typeof meroJs.auth.getToken).toBe('function');
       expect(typeof meroJs.auth.refreshToken).toBe('function');
       expect(typeof meroJs.auth.getHealth).toBe('function');
       expect(typeof meroJs.auth.listRootKeys).toBe('function');
@@ -336,10 +396,13 @@ describe('MeroJs SDK', () => {
 
     it('should provide admin API client', () => {
       expect(meroJs.admin).toBeDefined();
-      expect(typeof meroJs.admin.healthCheck).toBe('function');
-      expect(typeof meroJs.admin.isAuthed).toBe('function');
-      expect(typeof meroJs.admin.getContexts).toBe('function');
-      expect(typeof meroJs.admin.listBlobs).toBe('function');
+      expect(meroJs.admin.public).toBeDefined();
+      expect(typeof meroJs.admin.public.health).toBe('function');
+      expect(typeof meroJs.admin.public.isAuthed).toBe('function');
+      expect(meroJs.admin.contexts).toBeDefined();
+      expect(typeof meroJs.admin.contexts.listContexts).toBe('function');
+      expect(meroJs.admin.blobs).toBeDefined();
+      expect(typeof meroJs.admin.blobs.listBlobs).toBe('function');
     });
   });
 
@@ -357,13 +420,12 @@ describe('MeroJs SDK', () => {
 
       // Mock authentication
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
       // Verify HTTP client was created with getAuthToken function
@@ -393,7 +455,7 @@ describe('MeroJs SDK', () => {
     });
 
     it('should handle authentication errors gracefully', async () => {
-      mockAuthClient.generateTokens.mockRejectedValue(
+      mockAuthClient.getToken.mockRejectedValue(
         new Error('Network error'),
       );
 
@@ -408,13 +470,12 @@ describe('MeroJs SDK', () => {
     it('should handle refresh token errors gracefully', async () => {
       // First authenticate successfully
       const mockTokenResponse = {
-        data: {
-          access_token: 'mock-access-token',
-          refresh_token: 'mock-refresh-token',
-        },
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token',
+        expires_in: 3600,
       };
 
-      mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
+      mockAuthClient.getToken.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
       // Mock refresh failure

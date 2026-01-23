@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     env: {
       AUTH_API_BASE_URL: 'http://localhost',
+      // NODE_API_BASE_URL defaults to http://localhost (same as auth when using --auth-service)
     },
   },
 });

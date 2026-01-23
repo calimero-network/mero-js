@@ -1,13 +1,15 @@
 import { createBrowserHttpClient } from './http-client';
-import { createAuthApiClientFromHttpClient } from './auth-api';
-import { createAdminApiClientFromHttpClient } from './admin-api';
-import type { AuthApiClient } from './auth-api';
-import type { AdminApiClient } from './admin-api';
+import { createAuthApiClient } from './api/auth';
+import { createAdminApiClient } from './api/admin';
+import type { AuthApiClient } from './api/auth';
+import type { AdminApiClient } from './api/admin';
 import type { HttpClient } from './http-client';
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */
   baseUrl: string;
+  /** Auth service base URL (for proxied mode). If not specified, uses baseUrl (embedded mode) */
+  authBaseUrl?: string;
   /** Initial credentials for authentication */
   credentials?: {
     username: string;
@@ -56,23 +58,15 @@ export class MeroJs {
     });
 
     // Create API clients
-    this.authClient = createAuthApiClientFromHttpClient(this.httpClient, {
-      baseUrl: this.config.baseUrl,
-      getAuthToken: async () => {
-        const token = await this.getValidToken();
-        return token?.access_token || '';
-      },
-      timeoutMs: this.config.timeoutMs,
+    const authBaseUrl = this.config.authBaseUrl ?? this.config.baseUrl;
+    const isEmbedded = authBaseUrl === this.config.baseUrl;
+
+    this.authClient = createAuthApiClient(this.httpClient, {
+      baseUrl: authBaseUrl,
+      embedded: isEmbedded,
     });
 
-    this.adminClient = createAdminApiClientFromHttpClient(this.httpClient, {
-      baseUrl: this.config.baseUrl,
-      getAuthToken: async () => {
-        const token = await this.getValidToken();
-        return token?.access_token || '';
-      },
-      timeoutMs: this.config.timeoutMs,
-    });
+    this.adminClient = createAdminApiClient(this.httpClient);
 
     // Token management is in-memory only
   }
@@ -105,8 +99,9 @@ export class MeroJs {
     }
 
     try {
+      // Note: Auth API expects snake_case, not camelCase (despite OpenAPI spec showing camelCase)
       const requestBody = {
-        auth_method: 'user_password',
+        auth_method: 'user_password' as const,
         public_key: creds.username,
         client_name: 'mero-js-sdk',
         permissions: ['admin'],
@@ -117,18 +112,25 @@ export class MeroJs {
         },
       };
 
-      const response = await this.authClient.generateTokens(requestBody);
+      const response = await this.authClient.getToken(requestBody);
 
       this.tokenData = {
-        access_token: response.data.access_token,
-        refresh_token: response.data.refresh_token,
-        expires_at: Date.now() + 24 * 60 * 60 * 1000, // Default to 24 hours
+        access_token: response.access_token,
+        refresh_token: response.refresh_token,
+        expires_at: Date.now() + response.expires_in * 1000,
       };
 
       return this.tokenData;
-    } catch (error) {
+    } catch (error: any) {
+      // Include HTTP error details if available
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const httpStatus = error?.status ? `HTTP ${error.status}` : '';
+      const httpStatusText = error?.statusText ? ` ${error.statusText}` : '';
+      const bodyText = error?.bodyText ? `: ${error.bodyText}` : '';
+      
       throw new Error(
-        `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Authentication failed: ${httpStatus}${httpStatusText}${bodyText || errorMessage}`,
       );
     }
   }
@@ -183,14 +185,13 @@ export class MeroJs {
 
     try {
       const response = await this.authClient.refreshToken({
-        access_token: this.tokenData.access_token,
         refresh_token: this.tokenData.refresh_token,
       });
 
       this.tokenData = {
-        access_token: response.data.access_token,
-        refresh_token: response.data.refresh_token,
-        expires_at: Date.now() + 24 * 60 * 60 * 1000, // Default to 24 hours
+        access_token: response.access_token,
+        refresh_token: response.refresh_token,
+        expires_at: Date.now() + response.expires_in * 1000,
       };
 
       return this.tokenData;

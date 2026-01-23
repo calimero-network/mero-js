@@ -44,6 +44,7 @@
     "test:e2e:watch": "vitest --config vitest.e2e.config.ts",
     "test:e2e:auth": "vitest run --config vitest.e2e.config.ts tests/e2e/auth-api.test.ts",
     "test:e2e:admin": "vitest run --config vitest.e2e.config.ts tests/e2e/admin-api.test.ts",
+    "test:e2e:node": "vitest run --config vitest.e2e.config.ts tests/e2e/node-api.test.ts",
     "test:e2e:examples": "vitest run --config vitest.e2e.config.ts tests/e2e/examples.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

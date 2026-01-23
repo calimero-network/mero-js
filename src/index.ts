@@ -8,10 +8,7 @@ export type { MeroJsConfig, TokenData } from './mero-js';
 // HTTP client module (Web Standards based)
 export * from './http-client';
 
-// Auth API client
-export * from './auth-api';
-
-// Admin API client
-export * from './admin-api';
+// API clients (clean implementation based on OpenAPI spec)
+export * from './api';
 
 // Utilities
