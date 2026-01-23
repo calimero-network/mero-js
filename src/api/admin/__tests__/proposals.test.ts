@@ -1,23 +1,31 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { server } from '../../../../tests/mocks/server';
 import { ProposalsApiClient } from '../proposals';
-import { MockHttpClient } from './mock-http-client';
+import { createBrowserHttpClient } from '../../../http-client';
 
 describe('ProposalsApiClient', () => {
   let client: ProposalsApiClient;
-  let mockHttp: MockHttpClient;
 
   beforeEach(() => {
-    mockHttp = new MockHttpClient();
-    client = new ProposalsApiClient(mockHttp);
+    const httpClient = createBrowserHttpClient({
+      baseUrl: 'http://localhost:8080',
+      timeoutMs: 5000,
+    });
+    client = new ProposalsApiClient(httpClient);
   });
 
   describe('getProposals', () => {
     it('should get proposals', async () => {
       const request = { offset: 0, limit: 10 };
 
-      mockHttp.setMockResponse('POST', '/admin-api/contexts/ctx-1/proposals', {
-        data: [{ proposalId: 'prop-1' }, { proposalId: 'prop-2' }],
-      });
+      server.use(
+        http.post('*/admin-api/contexts/ctx-1/proposals', () => {
+          return HttpResponse.json({
+            data: [{ proposalId: 'prop-1' }, { proposalId: 'prop-2' }],
+          });
+        }),
+      );
 
       const result = await client.getProposals('ctx-1', request);
 
@@ -27,12 +35,12 @@ describe('ProposalsApiClient', () => {
 
   describe('getProposal', () => {
     it('should get proposal by id', async () => {
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/prop-1',
-        {
-          data: { proposalId: 'prop-1', data: 'test' },
-        },
+      server.use(
+        http.get('*/admin-api/contexts/ctx-1/proposals/prop-1', () => {
+          return HttpResponse.json({
+            data: { proposalId: 'prop-1', data: 'test' },
+          });
+        }),
       );
 
       const result = await client.getProposal('ctx-1', 'prop-1');
@@ -45,12 +53,12 @@ describe('ProposalsApiClient', () => {
     it('should approve proposal', async () => {
       const request = { signerId: 'signer', proposalId: 'prop-1' };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/approve',
-        {
-          data: { proposalId: 'prop-1', approved: true },
-        },
+      server.use(
+        http.post('*/admin-api/contexts/ctx-1/proposals/approve', () => {
+          return HttpResponse.json({
+            data: { proposalId: 'prop-1', approved: true },
+          });
+        }),
       );
 
       const result = await client.approveProposal('ctx-1', request);
@@ -61,12 +69,10 @@ describe('ProposalsApiClient', () => {
 
   describe('getNumberOfActiveProposals', () => {
     it('should get number of active proposals', async () => {
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/count',
-        {
-          data: 5,
-        },
+      server.use(
+        http.get('*/admin-api/contexts/ctx-1/proposals/count', () => {
+          return HttpResponse.json({ data: 5 });
+        }),
       );
 
       const result = await client.getNumberOfActiveProposals('ctx-1');
@@ -77,12 +83,10 @@ describe('ProposalsApiClient', () => {
     it('should handle zero active proposals', async () => {
       // Zero is a valid response for count endpoints
       // The unwrap function should correctly handle 0 (not treat it as falsy)
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/count',
-        {
-          data: 0,
-        },
+      server.use(
+        http.get('*/admin-api/contexts/ctx-1/proposals/count', () => {
+          return HttpResponse.json({ data: 0 });
+        }),
       );
 
       const result = await client.getNumberOfActiveProposals('ctx-1');
@@ -92,12 +96,15 @@ describe('ProposalsApiClient', () => {
 
   describe('getNumberOfProposalApprovals', () => {
     it('should get number of proposal approvals', async () => {
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/prop-1/approvals/count',
-        {
-          data: { proposalId: 'prop-1', approvals: 3 },
-        },
+      server.use(
+        http.get(
+          '*/admin-api/contexts/ctx-1/proposals/prop-1/approvals/count',
+          () => {
+            return HttpResponse.json({
+              data: { proposalId: 'prop-1', approvals: 3 },
+            });
+          },
+        ),
       );
 
       const result = await client.getNumberOfProposalApprovals(
@@ -111,12 +118,15 @@ describe('ProposalsApiClient', () => {
 
   describe('getProposalApprovers', () => {
     it('should get proposal approvers', async () => {
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/prop-1/approvals/users',
-        {
-          data: [{ identity: 'id1' }, { identity: 'id2' }],
-        },
+      server.use(
+        http.get(
+          '*/admin-api/contexts/ctx-1/proposals/prop-1/approvals/users',
+          () => {
+            return HttpResponse.json({
+              data: [{ identity: 'id1' }, { identity: 'id2' }],
+            });
+          },
+        ),
       );
 
       const result = await client.getProposalApprovers('ctx-1', 'prop-1');
@@ -125,12 +135,13 @@ describe('ProposalsApiClient', () => {
     });
 
     it('should handle empty approvers list', async () => {
-      mockHttp.setMockResponse(
-        'GET',
-        '/admin-api/contexts/ctx-1/proposals/prop-1/approvals/users',
-        {
-          data: [],
-        },
+      server.use(
+        http.get(
+          '*/admin-api/contexts/ctx-1/proposals/prop-1/approvals/users',
+          () => {
+            return HttpResponse.json({ data: [] });
+          },
+        ),
       );
 
       const result = await client.getProposalApprovers('ctx-1', 'prop-1');
@@ -143,12 +154,13 @@ describe('ProposalsApiClient', () => {
     it('should get context value', async () => {
       const request = { key: 'test-key' };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/get-context-value',
-        {
-          data: [1, 2, 3, 4, 5],
-        },
+      server.use(
+        http.post(
+          '*/admin-api/contexts/ctx-1/proposals/get-context-value',
+          () => {
+            return HttpResponse.json({ data: [1, 2, 3, 4, 5] });
+          },
+        ),
       );
 
       const result = await client.getContextValue('ctx-1', request);
@@ -160,12 +172,13 @@ describe('ProposalsApiClient', () => {
     it('should handle empty context value', async () => {
       const request = { key: 'empty-key' };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/get-context-value',
-        {
-          data: [],
-        },
+      server.use(
+        http.post(
+          '*/admin-api/contexts/ctx-1/proposals/get-context-value',
+          () => {
+            return HttpResponse.json({ data: [] });
+          },
+        ),
       );
 
       const result = await client.getContextValue('ctx-1', request);
@@ -178,12 +191,15 @@ describe('ProposalsApiClient', () => {
     it('should get context storage entries', async () => {
       const request = { offset: 0, limit: 10 };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/context-storage-entries',
-        {
-          data: [{ key: 'key1', value: 'value1' }],
-        },
+      server.use(
+        http.post(
+          '*/admin-api/contexts/ctx-1/proposals/context-storage-entries',
+          () => {
+            return HttpResponse.json({
+              data: [{ key: 'key1', value: 'value1' }],
+            });
+          },
+        ),
       );
 
       const result = await client.getContextStorageEntries('ctx-1', request);
@@ -194,12 +210,13 @@ describe('ProposalsApiClient', () => {
     it('should handle pagination', async () => {
       const request = { offset: 10, limit: 20 };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/context-storage-entries',
-        {
-          data: [],
-        },
+      server.use(
+        http.post(
+          '*/admin-api/contexts/ctx-1/proposals/context-storage-entries',
+          () => {
+            return HttpResponse.json({ data: [] });
+          },
+        ),
       );
 
       const result = await client.getContextStorageEntries('ctx-1', request);
@@ -215,12 +232,15 @@ describe('ProposalsApiClient', () => {
         proposal: { action: 'test' },
       };
 
-      mockHttp.setMockResponse(
-        'POST',
-        '/admin-api/contexts/ctx-1/proposals/create-and-approve',
-        {
-          data: { proposalId: 'prop-new', approved: true },
-        },
+      server.use(
+        http.post(
+          '*/admin-api/contexts/ctx-1/proposals/create-and-approve',
+          () => {
+            return HttpResponse.json({
+              data: { proposalId: 'prop-new', approved: true },
+            });
+          },
+        ),
       );
 
       const result = await client.createAndApproveProposal('ctx-1', request);
