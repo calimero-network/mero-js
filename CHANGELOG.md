@@ -1,3 +1,7 @@
+## 1.1.0 (2026-01-23)
+
+* feat: add automatic token refresh and remove Tauri workarounds (#19) ([08761e9](https://github.com/calimero-network/mero-js/commit/08761e9)), closes [#19](https://github.com/calimero-network/mero-js/issues/19)
+
 ## <small>1.0.2 (2026-01-22)</small>
 
 * fix: use node 24 for better npm OIDC support ([3df75fc](https://github.com/calimero-network/mero-js/commit/3df75fc))
