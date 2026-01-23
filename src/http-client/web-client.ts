@@ -51,6 +51,8 @@ function headersToRecord(headers: Headers): Record<string, string> {
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
+  // Cache for concurrent onTokenRefresh calls to prevent duplicate callbacks
+  private onTokenRefreshPromise: Promise<void> | null = null;
   
   constructor(private transport: Transport) {}
 
@@ -256,34 +258,50 @@ export class WebHttpClient implements HttpClient {
             // Attempt to refresh the token
             const newToken = await refreshPromise;
             
-            // Clear the cache after refresh completes
-            this.refreshTokenPromise = null;
-            
             // Validate token - must be non-empty
             if (!newToken || newToken.trim() === '') {
+              // Clear caches on error
+              this.refreshTokenPromise = null;
+              this.onTokenRefreshPromise = null;
               throw new Error('Refresh token returned empty token');
             }
             
             // onTokenRefresh is required when refreshToken is provided
             // Without it, the new token cannot be stored and getAuthToken() will return the old token
             if (!this.transport.onTokenRefresh) {
+              // Clear caches on error
+              this.refreshTokenPromise = null;
+              this.onTokenRefreshPromise = null;
               throw new Error(
                 'onTokenRefresh callback is required when refreshToken is provided. ' +
                 'The callback must update the token storage so getAuthToken() returns the new token.'
               );
             }
             
-            // Update token via callback
+            // Use cached onTokenRefresh promise if one is in progress (prevents duplicate callbacks)
+            // This ensures onTokenRefresh is only called once per token refresh, even with concurrent requests
+            let onTokenRefreshPromise = this.onTokenRefreshPromise;
+            if (!onTokenRefreshPromise) {
+              onTokenRefreshPromise = this.transport.onTokenRefresh(newToken);
+              this.onTokenRefreshPromise = onTokenRefreshPromise;
+            }
+            
+            // Update token via callback (only called once per refresh, even with concurrent requests)
             // Errors from onTokenRefresh callback should be preserved (don't mask as 401)
             // This helps developers debug token storage issues
-            await this.transport.onTokenRefresh(newToken);
+            await onTokenRefreshPromise;
+            
+            // Clear caches after both refresh and callback complete
+            this.refreshTokenPromise = null;
+            this.onTokenRefreshPromise = null;
             
             // Retry the request with the new token (increment retry count)
             // Preserve user's abort signal and start time in retry
             return this.makeRequest<T>(path, init, retryCount + 1, startTime);
           } catch (refreshError) {
-            // Clear the cache on error
+            // Clear caches on error
             this.refreshTokenPromise = null;
+            this.onTokenRefreshPromise = null;
             // Configuration errors (missing onTokenRefresh) should be thrown as-is
             if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
               throw refreshError;

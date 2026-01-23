@@ -386,9 +386,11 @@ describe('WebHttpClient - Token Refresh', () => {
         client.get('/endpoint2'),
       ]);
 
-      // refreshToken might be called multiple times (once per request)
-      // This is expected behavior - each request independently triggers refresh
-      expect(refreshToken).toHaveBeenCalled();
+      // refreshToken should be called only once (cached for concurrent requests)
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      // onTokenRefresh should also be called only once (cached for concurrent requests)
+      expect(onTokenRefresh).toHaveBeenCalledTimes(1);
+      expect(onTokenRefresh).toHaveBeenCalledWith('new-token');
       expect(result1).toEqual({ data: 'success' });
       expect(result2).toEqual({ data: 'success' });
     });
