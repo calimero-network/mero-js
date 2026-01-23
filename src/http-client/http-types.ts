@@ -10,6 +10,12 @@ export interface Transport {
   defaultHeaders?: Record<string, string>;
   getAuthToken?: () => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
+  /**
+   * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
+   * Should return the new access token, or throw an error if refresh fails.
+   * If provided, the client will automatically retry the request after a successful refresh.
+   */
+  refreshToken?: () => Promise<string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
   defaultAbortSignal?: AbortSignal;

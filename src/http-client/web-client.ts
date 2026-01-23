@@ -49,6 +49,11 @@ function headersToRecord(headers: Headers): Record<string, string> {
 
 // Web Standards HTTP client implementation
 export class WebHttpClient implements HttpClient {
+  // Cache for concurrent refresh token calls to prevent race conditions
+  private refreshTokenPromise: Promise<string> | null = null;
+  // Cache for concurrent onTokenRefresh calls to prevent duplicate callbacks
+  private onTokenRefreshPromise: Promise<void> | null = null;
+  
   constructor(private transport: Transport) {}
 
   async get<T>(path: string, init?: RequestOptions): Promise<T> {
@@ -129,76 +134,18 @@ export class WebHttpClient implements HttpClient {
   private async makeRequest<T>(
     path: string,
     init?: RequestOptions,
+    retryCount = 0,
+    requestStartTime?: number,
   ): Promise<T> {
+    // Maximum retry attempts to prevent infinite loops
+    const MAX_RETRY_ATTEMPTS = 1;
     const url = this.buildUrl(path);
-    // Detect Tauri - check multiple ways since __TAURI_INTERNALS__ might not be available
-    // Also use minimal path if credentials is 'omit' (Tauri workaround)
-    const hasTauriInternals = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    const hasTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-    const isTauri = hasTauriInternals || hasTauri || this.transport.credentials === 'omit';
     
-    // In Tauri, use absolute minimal RequestInit - just like a direct fetch call
-    if (isTauri) {
-      const headers = await this.buildHeaders(init?.headers);
-      let headersObj: Record<string, string>;
-      if (headers instanceof Headers) {
-        headersObj = {};
-        headers.forEach((value, key) => {
-          headersObj[key] = value;
-        });
-      } else {
-        headersObj = headers;
-      }
-      
-      // Build minimal RequestInit - only what's absolutely necessary
-      const requestInit: RequestInit = {};
-      
-      if (init?.method && init.method !== 'GET') {
-        requestInit.method = init.method;
-      }
-      
-      if (headersObj && Object.keys(headersObj).length > 0) {
-        requestInit.headers = headersObj;
-      }
-      
-      if (init?.body !== undefined && init.body !== null) {
-        requestInit.body = init.body;
-      }
-      
-      if (this.transport.credentials !== undefined) {
-        requestInit.credentials = this.transport.credentials;
-      }
-      
-      try {
-        const response = await globalThis.fetch(url, requestInit);
-        
-        if (!response.ok) {
-          const bodyText = await this.getBodyText(response);
-          throw new HTTPError(
-            response.status,
-            response.statusText,
-            url,
-            response.headers,
-            bodyText,
-          );
-        }
-        
-        return this.parseResponse<T>(response, init?.parse);
-      } catch (error) {
-        if (error instanceof HTTPError) {
-          throw error;
-        }
-        throw new HTTPError(
-          0,
-          'Network Error',
-          url,
-          new Headers(),
-          error instanceof Error ? error.message : 'Unknown error',
-        );
-      }
-    }
-    
-    // Non-Tauri: use full implementation with signals, etc.
+    // Track request start time for timeout calculation (only on first attempt)
+    // Use per-request start time to avoid corruption from concurrent requests
+    const startTime = requestStartTime ?? Date.now();
+    // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
+    // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
     const headers = await this.buildHeaders(init?.headers);
     let headersObj: Record<string, string>;
@@ -216,12 +163,41 @@ export class WebHttpClient implements HttpClient {
       headers: headersObj,
     };
     
-    if (init?.body !== undefined) {
+    // Check if body is a stream (ReadableStream) that can't be reused
+    // Note: Blob is reusable, so it's not included here
+    const isStreamBody = init?.body instanceof ReadableStream ||
+                        (typeof init?.body === 'object' && init?.body !== null && 'getReader' in init.body && !(init.body instanceof Blob));
+    
+    if (init?.body !== undefined && !isStreamBody) {
+      requestInit.body = init.body;
+    } else if (init?.body !== undefined && isStreamBody && retryCount === 0) {
+      // Only include stream body on first attempt - can't retry with streams
       requestInit.body = init.body;
     }
     
-    if (signal) {
-      requestInit.signal = signal;
+    // For retries, calculate remaining timeout to prevent timeout reset
+    // Track elapsed time and use remaining timeout for retry
+    // Note: This is calculated before the request, so it doesn't include token refresh time
+    // The actual remaining timeout check happens after token refresh completes
+    let retrySignal: AbortSignal | undefined;
+    if (retryCount > 0 && requestStartTime !== undefined) {
+      const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
+      if (timeoutMs) {
+        // Calculate elapsed time (will be recalculated after token refresh if needed)
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, timeoutMs - elapsed);
+        // Create signal with remaining timeout, preserving user's signal
+        retrySignal = this.createAbortSignal({ ...init, timeoutMs: remaining });
+      } else {
+        // No timeout, just preserve user's signal
+        retrySignal = this.createAbortSignal(init);
+      }
+    } else {
+      retrySignal = signal;
+    }
+    
+    if (retrySignal) {
+      requestInit.signal = retrySignal;
     }
     
     if (this.transport.credentials !== undefined) {
@@ -255,18 +231,115 @@ export class WebHttpClient implements HttpClient {
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);
-        throw new HTTPError(
+        const httpError = new HTTPError(
           response.status,
           response.statusText,
           url,
           response.headers,
           bodyText,
         );
+
+        // Handle 401 with token_expired - attempt automatic token refresh
+        // Don't retry if user aborted the request
+        const userAborted = init?.signal?.aborted === true;
+        if (
+          response.status === 401 &&
+          this.transport.refreshToken &&
+          response.headers.get('x-auth-error') === 'token_expired' &&
+          retryCount < MAX_RETRY_ATTEMPTS &&
+          !isStreamBody && // Can't retry with stream bodies
+          !userAborted // Don't retry if user aborted
+        ) {
+          try {
+            // Use cached refresh promise if one is in progress (prevents race conditions)
+            let refreshPromise = this.refreshTokenPromise;
+            if (!refreshPromise) {
+              refreshPromise = this.transport.refreshToken();
+              this.refreshTokenPromise = refreshPromise;
+            }
+            
+            // Attempt to refresh the token
+            const newToken = await refreshPromise;
+            
+            // Validate token - must be non-empty
+            if (!newToken || newToken.trim() === '') {
+              // Clear caches on error
+              this.refreshTokenPromise = null;
+              this.onTokenRefreshPromise = null;
+              throw new Error('Refresh token returned empty token');
+            }
+            
+            // onTokenRefresh is required when refreshToken is provided
+            // Without it, the new token cannot be stored and getAuthToken() will return the old token
+            if (!this.transport.onTokenRefresh) {
+              // Clear caches on error
+              this.refreshTokenPromise = null;
+              this.onTokenRefreshPromise = null;
+              throw new Error(
+                'onTokenRefresh callback is required when refreshToken is provided. ' +
+                'The callback must update the token storage so getAuthToken() returns the new token.'
+              );
+            }
+            
+            // Use cached onTokenRefresh promise if one is in progress (prevents duplicate callbacks)
+            // This ensures onTokenRefresh is only called once per token refresh, even with concurrent requests
+            let onTokenRefreshPromise = this.onTokenRefreshPromise;
+            if (!onTokenRefreshPromise) {
+              onTokenRefreshPromise = this.transport.onTokenRefresh(newToken);
+              this.onTokenRefreshPromise = onTokenRefreshPromise;
+            }
+            
+            // Update token via callback (only called once per refresh, even with concurrent requests)
+            // Errors from onTokenRefresh callback should be preserved (don't mask as 401)
+            // This helps developers debug token storage issues
+            await onTokenRefreshPromise;
+            
+            // Clear caches after both refresh and callback complete
+            this.refreshTokenPromise = null;
+            this.onTokenRefreshPromise = null;
+            
+            // Check if timeout has expired during token refresh
+            // If so, throw the original 401 error instead of retrying with 0ms timeout
+            // This prevents timeout/abort errors that obscure the root cause (expired token)
+            const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
+            if (timeoutMs && requestStartTime !== undefined) {
+              const elapsed = Date.now() - startTime;
+              const remaining = timeoutMs - elapsed;
+              if (remaining <= 0) {
+                // Timeout expired during token refresh - throw original 401 error
+                // This is better than retrying with 0ms timeout which would cause confusing timeout errors
+                throw httpError;
+              }
+            }
+            
+            // Retry the request with the new token (increment retry count)
+            // Preserve user's abort signal and start time in retry
+            return this.makeRequest<T>(path, init, retryCount + 1, startTime);
+          } catch (refreshError) {
+            // Clear caches on error
+            this.refreshTokenPromise = null;
+            this.onTokenRefreshPromise = null;
+            // Configuration errors (missing onTokenRefresh) should be thrown as-is
+            if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
+              throw refreshError;
+            }
+            // Errors from onTokenRefresh callback are already thrown above, so if we get here,
+            // it's either a refreshToken() failure or empty token - throw original 401
+            // This matches the PR description: "If refresh fails, throws the original 401 error"
+            throw httpError;
+          }
+        }
+
+        throw httpError;
       }
 
       return this.parseResponse<T>(response, init?.parse);
     } catch (error) {
       if (error instanceof HTTPError) {
+        throw error;
+      }
+      // Preserve configuration errors (like missing onTokenRefresh)
+      if (error instanceof Error && error.message.includes('onTokenRefresh')) {
         throw error;
       }
       throw new HTTPError(
@@ -299,12 +372,6 @@ export class WebHttpClient implements HttpClient {
   }
 
   private createAbortSignal(init?: RequestOptions): AbortSignal | undefined {
-    // Skip AbortSignal in Tauri - it causes HTTP 0 Network Error
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (isTauri) {
-      return undefined;
-    }
-
     const signals: AbortSignal[] = [];
 
     if (this.transport.defaultAbortSignal) {
