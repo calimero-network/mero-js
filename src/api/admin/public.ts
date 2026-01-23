@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface HealthResponse {
   status: string;
@@ -14,13 +14,13 @@ export class PublicApiClient {
 
   async health(): Promise<HealthResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<HealthResponse>>('/admin-api/health'),
+      this.httpClient.get<ApiResponseWrapper<HealthResponse>>('/admin-api/health'),
     );
   }
 
   async isAuthed(): Promise<IsAuthedResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<IsAuthedResponse>>(
+      this.httpClient.get<ApiResponseWrapper<IsAuthedResponse>>(
         '/admin-api/is-authed',
       ),
     );

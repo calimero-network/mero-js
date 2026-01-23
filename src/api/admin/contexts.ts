@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface Context {
   contextId: string;
@@ -106,7 +106,7 @@ export class ContextsApiClient {
 
   async listContexts(): Promise<GetContextsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextsResponse>>(
         '/admin-api/contexts',
       ),
     );
@@ -116,7 +116,7 @@ export class ContextsApiClient {
     request: CreateContextRequest,
   ): Promise<CreateContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<CreateContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<CreateContextResponse>>(
         '/admin-api/contexts',
         request,
       ),
@@ -125,7 +125,7 @@ export class ContextsApiClient {
 
   async getContext(contextId: string): Promise<GetContextResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextResponse>>(
         `/admin-api/contexts/${contextId}`,
       ),
     );
@@ -133,7 +133,7 @@ export class ContextsApiClient {
 
   async deleteContext(contextId: string): Promise<DeleteContextResponse> {
     return unwrap(
-      this.httpClient.delete<ApiResponse<DeleteContextResponse>>(
+      this.httpClient.delete<ApiResponseWrapper<DeleteContextResponse>>(
         `/admin-api/contexts/${contextId}`,
       ),
     );
@@ -143,7 +143,7 @@ export class ContextsApiClient {
     contextId: string,
   ): Promise<GetContextStorageResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextStorageResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextStorageResponse>>(
         `/admin-api/contexts/${contextId}/storage`,
       ),
     );
@@ -153,7 +153,7 @@ export class ContextsApiClient {
     contextId: string,
   ): Promise<GetContextIdentitiesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextIdentitiesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextIdentitiesResponse>>(
         `/admin-api/contexts/${contextId}/identities`,
       ),
     );
@@ -163,7 +163,7 @@ export class ContextsApiClient {
     contextId: string,
   ): Promise<GetContextIdentitiesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextIdentitiesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextIdentitiesResponse>>(
         `/admin-api/contexts/${contextId}/identities-owned`,
       ),
     );
@@ -173,7 +173,7 @@ export class ContextsApiClient {
     request: InviteToContextRequest,
   ): Promise<InviteToContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<InviteToContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<InviteToContextResponse>>(
         '/admin-api/contexts/invite',
         request,
       ),
@@ -184,7 +184,7 @@ export class ContextsApiClient {
     request: InviteToContextOpenInvitationRequest,
   ): Promise<InviteToContextOpenInvitationResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<InviteToContextOpenInvitationResponse>>(
+      this.httpClient.post<ApiResponseWrapper<InviteToContextOpenInvitationResponse>>(
         '/admin-api/contexts/invite_by_open_invitation',
         request,
       ),
@@ -195,7 +195,7 @@ export class ContextsApiClient {
     request: InviteSpecializedNodeRequest,
   ): Promise<InviteSpecializedNodeResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<InviteSpecializedNodeResponse>>(
+      this.httpClient.post<ApiResponseWrapper<InviteSpecializedNodeResponse>>(
         '/admin-api/contexts/invite-specialized-node',
         request,
       ),
@@ -204,7 +204,7 @@ export class ContextsApiClient {
 
   async joinContext(request: JoinContextRequest): Promise<JoinContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<JoinContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<JoinContextResponse>>(
         '/admin-api/contexts/join',
         request,
       ),
@@ -215,7 +215,7 @@ export class ContextsApiClient {
     request: JoinContextByOpenInvitationRequest,
   ): Promise<JoinContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<JoinContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<JoinContextResponse>>(
         '/admin-api/contexts/join_by_open_invitation',
         request,
       ),
@@ -227,7 +227,7 @@ export class ContextsApiClient {
     request: UpdateContextApplicationRequest,
   ): Promise<UpdateContextApplicationResponse> {
     return unwrap(
-      this.httpClient.put<ApiResponse<UpdateContextApplicationResponse>>(
+      this.httpClient.put<ApiResponseWrapper<UpdateContextApplicationResponse>>(
         `/admin-api/contexts/${contextId}/application`,
         request,
       ),
@@ -238,7 +238,7 @@ export class ContextsApiClient {
     applicationId: string,
   ): Promise<GetContextsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextsResponse>>(
         `/admin-api/contexts/for-application/${applicationId}`,
       ),
     );
@@ -248,7 +248,7 @@ export class ContextsApiClient {
     applicationId: string,
   ): Promise<GetContextsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetContextsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetContextsResponse>>(
         `/admin-api/contexts/with-executors/for-application/${applicationId}`,
       ),
     );
@@ -258,7 +258,7 @@ export class ContextsApiClient {
     contextId: string,
   ): Promise<GetProxyContractResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetProxyContractResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetProxyContractResponse>>(
         `/admin-api/contexts/${contextId}/proxy-contract`,
       ),
     );
@@ -266,7 +266,7 @@ export class ContextsApiClient {
 
   async syncContext(): Promise<SyncContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<SyncContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<SyncContextResponse>>(
         '/admin-api/contexts/sync',
         {},
       ),
@@ -275,7 +275,7 @@ export class ContextsApiClient {
 
   async syncContextById(contextId: string): Promise<SyncContextResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<SyncContextResponse>>(
+      this.httpClient.post<ApiResponseWrapper<SyncContextResponse>>(
         `/admin-api/contexts/sync/${contextId}`,
         {},
       ),

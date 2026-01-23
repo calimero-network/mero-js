@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface Application {
   applicationId: string;
@@ -56,7 +56,7 @@ export class ApplicationsApiClient {
     request: InstallApplicationRequest,
   ): Promise<InstallApplicationResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<InstallApplicationResponse>>(
+      this.httpClient.post<ApiResponseWrapper<InstallApplicationResponse>>(
         '/admin-api/install-application',
         request,
       ),
@@ -67,7 +67,7 @@ export class ApplicationsApiClient {
     request: InstallDevApplicationRequest,
   ): Promise<InstallApplicationResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<InstallApplicationResponse>>(
+      this.httpClient.post<ApiResponseWrapper<InstallApplicationResponse>>(
         '/admin-api/install-dev-application',
         request,
       ),
@@ -76,7 +76,7 @@ export class ApplicationsApiClient {
 
   async listApplications(): Promise<ListApplicationsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListApplicationsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListApplicationsResponse>>(
         '/admin-api/applications',
       ),
     );
@@ -86,7 +86,7 @@ export class ApplicationsApiClient {
     applicationId: string,
   ): Promise<GetApplicationResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetApplicationResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetApplicationResponse>>(
         `/admin-api/applications/${applicationId}`,
       ),
     );
@@ -96,7 +96,7 @@ export class ApplicationsApiClient {
     applicationId: string,
   ): Promise<UninstallApplicationResponse> {
     return unwrap(
-      this.httpClient.delete<ApiResponse<UninstallApplicationResponse>>(
+      this.httpClient.delete<ApiResponseWrapper<UninstallApplicationResponse>>(
         `/admin-api/applications/${applicationId}`,
       ),
     );
@@ -104,7 +104,7 @@ export class ApplicationsApiClient {
 
   async listPackages(): Promise<ListPackagesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListPackagesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListPackagesResponse>>(
         '/admin-api/packages',
       ),
     );
@@ -112,7 +112,7 @@ export class ApplicationsApiClient {
 
   async listVersions(packageName: string): Promise<ListVersionsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListVersionsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListVersionsResponse>>(
         `/admin-api/packages/${packageName}/versions`,
       ),
     );
@@ -122,7 +122,7 @@ export class ApplicationsApiClient {
     packageName: string,
   ): Promise<GetLatestVersionResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetLatestVersionResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetLatestVersionResponse>>(
         `/admin-api/packages/${packageName}/latest`,
       ),
     );

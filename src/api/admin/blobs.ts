@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface BlobInfo {
   blobId: string;
@@ -24,7 +24,7 @@ export class BlobsApiClient {
   async uploadBlob(blob: Blob | File): Promise<BlobUploadResponse> {
     // Blob upload uses PUT method, not POST
     return unwrap(
-      this.httpClient.put<ApiResponse<BlobUploadResponse>>(
+      this.httpClient.put<ApiResponseWrapper<BlobUploadResponse>>(
         '/admin-api/blobs',
         blob,
       ),
@@ -33,7 +33,7 @@ export class BlobsApiClient {
 
   async listBlobs(): Promise<BlobListResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<BlobListResponse>>('/admin-api/blobs'),
+      this.httpClient.get<ApiResponseWrapper<BlobListResponse>>('/admin-api/blobs'),
     );
   }
 
@@ -56,7 +56,7 @@ export class BlobsApiClient {
 
   async deleteBlob(blobId: string): Promise<BlobDeleteResponse> {
     return unwrap(
-      this.httpClient.delete<ApiResponse<BlobDeleteResponse>>(
+      this.httpClient.delete<ApiResponseWrapper<BlobDeleteResponse>>(
         `/admin-api/blobs/${blobId}`,
       ),
     );

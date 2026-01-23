@@ -1,6 +1,6 @@
 import { HttpClient } from '../../http-client';
 import * as types from './types';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface AuthApiClientConfig {
   /**
@@ -48,7 +48,7 @@ export class AuthApiClient {
 
   async getChallenge(): Promise<types.AuthChallengeResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.AuthChallengeResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.AuthChallengeResponse>>(
         this.getAuthPath('/challenge'),
       ),
     );
@@ -58,7 +58,7 @@ export class AuthApiClient {
     request: types.AuthTokenRequest,
   ): Promise<types.AuthTokenResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.AuthTokenResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.AuthTokenResponse>>(
         this.getAuthPath('/token'),
         request,
       ),
@@ -69,7 +69,7 @@ export class AuthApiClient {
     request: types.RefreshTokenRequest,
   ): Promise<types.AuthTokenResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.AuthTokenResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.AuthTokenResponse>>(
         this.getAuthPath('/refresh'),
         request,
       ),
@@ -78,7 +78,7 @@ export class AuthApiClient {
 
   async getProviders(): Promise<types.AuthProvidersResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.AuthProvidersResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.AuthProvidersResponse>>(
         this.getAuthPath('/providers'),
       ),
     );
@@ -86,7 +86,7 @@ export class AuthApiClient {
 
   async getIdentity(): Promise<types.AuthIdentityResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.AuthIdentityResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.AuthIdentityResponse>>(
         this.getAuthPath('/identity'),
       ),
     );
@@ -96,7 +96,7 @@ export class AuthApiClient {
     request: types.TokenValidationRequest,
   ): Promise<types.TokenValidationResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.TokenValidationResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.TokenValidationResponse>>(
         this.getAuthPath('/validate'),
         request,
       ),
@@ -105,7 +105,7 @@ export class AuthApiClient {
 
   async validateTokenGet(token: string): Promise<types.TokenValidationResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.TokenValidationResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.TokenValidationResponse>>(
         this.getAuthPath('/validate'),
         {
           headers: {
@@ -118,7 +118,7 @@ export class AuthApiClient {
 
   async getHealth(): Promise<types.HealthResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.HealthResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.HealthResponse>>(
         this.getAuthPath('/health'),
       ),
     );
@@ -139,7 +139,7 @@ export class AuthApiClient {
   // Protected endpoints (require JWT token)
   async revokeToken(): Promise<types.RevokeTokenResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.RevokeTokenResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.RevokeTokenResponse>>(
         this.getAuthPath('/admin/revoke'),
         {},
       ),
@@ -148,7 +148,7 @@ export class AuthApiClient {
 
   async listRootKeys(): Promise<types.ListRootKeysResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.ListRootKeysResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.ListRootKeysResponse>>(
         this.getAuthPath('/admin/keys'),
       ),
     );
@@ -158,7 +158,7 @@ export class AuthApiClient {
     request: types.CreateRootKeyRequest,
   ): Promise<types.CreateRootKeyResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.CreateRootKeyResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.CreateRootKeyResponse>>(
         this.getAuthPath('/admin/keys'),
         request,
       ),
@@ -167,7 +167,7 @@ export class AuthApiClient {
 
   async deleteRootKey(keyId: string): Promise<types.DeleteRootKeyResponse> {
     return unwrap(
-      this.httpClient.delete<ApiResponse<types.DeleteRootKeyResponse>>(
+      this.httpClient.delete<ApiResponseWrapper<types.DeleteRootKeyResponse>>(
         this.getAuthPath(`/admin/keys/${keyId}`),
       ),
     );
@@ -175,7 +175,7 @@ export class AuthApiClient {
 
   async listClientKeys(): Promise<types.ListClientKeysResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.ListClientKeysResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.ListClientKeysResponse>>(
         this.getAuthPath('/admin/keys/clients'),
       ),
     );
@@ -185,7 +185,7 @@ export class AuthApiClient {
     request: types.GenerateClientKeyRequest,
   ): Promise<types.GenerateClientKeyResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<types.GenerateClientKeyResponse>>(
+      this.httpClient.post<ApiResponseWrapper<types.GenerateClientKeyResponse>>(
         this.getAuthPath('/admin/client-key'),
         request,
       ),
@@ -197,7 +197,7 @@ export class AuthApiClient {
     clientId: string,
   ): Promise<types.DeleteClientKeyResponse> {
     return unwrap(
-      this.httpClient.delete<ApiResponse<types.DeleteClientKeyResponse>>(
+      this.httpClient.delete<ApiResponseWrapper<types.DeleteClientKeyResponse>>(
         this.getAuthPath(`/admin/keys/${keyId}/clients/${clientId}`),
       ),
     );
@@ -207,7 +207,7 @@ export class AuthApiClient {
     keyId: string,
   ): Promise<types.GetKeyPermissionsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.GetKeyPermissionsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.GetKeyPermissionsResponse>>(
         this.getAuthPath(`/admin/keys/${keyId}/permissions`),
       ),
     );
@@ -218,7 +218,7 @@ export class AuthApiClient {
     request: types.UpdateKeyPermissionsRequest,
   ): Promise<types.UpdateKeyPermissionsResponse> {
     return unwrap(
-      this.httpClient.put<ApiResponse<types.UpdateKeyPermissionsResponse>>(
+      this.httpClient.put<ApiResponseWrapper<types.UpdateKeyPermissionsResponse>>(
         this.getAuthPath(`/admin/keys/${keyId}/permissions`),
         request,
       ),
@@ -227,7 +227,7 @@ export class AuthApiClient {
 
   async getProtectedIdentity(): Promise<types.AuthIdentityResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.AuthIdentityResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.AuthIdentityResponse>>(
         this.getAuthPath('/admin/identity'),
       ),
     );
@@ -235,7 +235,7 @@ export class AuthApiClient {
 
   async getMetrics(): Promise<types.AuthMetricsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<types.AuthMetricsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<types.AuthMetricsResponse>>(
         this.getAuthPath('/admin/metrics'),
       ),
     );

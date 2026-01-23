@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface CreateContextAliasRequest {
   alias: string;
@@ -55,7 +55,7 @@ export class AliasesApiClient {
     request: CreateContextAliasRequest,
   ): Promise<CreateAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<CreateAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<CreateAliasResponse>>(
         '/admin-api/alias/create/context',
         request,
       ),
@@ -66,7 +66,7 @@ export class AliasesApiClient {
     request: CreateApplicationAliasRequest,
   ): Promise<CreateAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<CreateAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<CreateAliasResponse>>(
         '/admin-api/alias/create/application',
         request,
       ),
@@ -78,7 +78,7 @@ export class AliasesApiClient {
     request: CreateIdentityAliasRequest,
   ): Promise<CreateAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<CreateAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<CreateAliasResponse>>(
         `/admin-api/alias/create/identity/${context}`,
         request,
       ),
@@ -87,7 +87,7 @@ export class AliasesApiClient {
 
   async lookupContextAlias(name: string): Promise<LookupContextAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<LookupContextAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<LookupContextAliasResponse>>(
         `/admin-api/alias/lookup/context/${name}`,
         {},
       ),
@@ -98,7 +98,7 @@ export class AliasesApiClient {
     name: string,
   ): Promise<LookupApplicationAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<LookupApplicationAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<LookupApplicationAliasResponse>>(
         `/admin-api/alias/lookup/application/${name}`,
         {},
       ),
@@ -110,7 +110,7 @@ export class AliasesApiClient {
     name: string,
   ): Promise<LookupIdentityAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<LookupIdentityAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<LookupIdentityAliasResponse>>(
         `/admin-api/alias/lookup/identity/${context}/${name}`,
         {},
       ),
@@ -119,7 +119,7 @@ export class AliasesApiClient {
 
   async listContextAliases(): Promise<ListContextAliasesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListContextAliasesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListContextAliasesResponse>>(
         '/admin-api/alias/list/context',
       ),
     );
@@ -127,7 +127,7 @@ export class AliasesApiClient {
 
   async listApplicationAliases(): Promise<ListApplicationAliasesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListApplicationAliasesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListApplicationAliasesResponse>>(
         '/admin-api/alias/list/application',
       ),
     );
@@ -137,7 +137,7 @@ export class AliasesApiClient {
     context: string,
   ): Promise<ListIdentityAliasesResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<ListIdentityAliasesResponse>>(
+      this.httpClient.get<ApiResponseWrapper<ListIdentityAliasesResponse>>(
         `/admin-api/alias/list/identity/${context}`,
       ),
     );
@@ -145,7 +145,7 @@ export class AliasesApiClient {
 
   async deleteContextAlias(name: string): Promise<DeleteAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<DeleteAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<DeleteAliasResponse>>(
         `/admin-api/alias/delete/context/${name}`,
         {},
       ),
@@ -154,7 +154,7 @@ export class AliasesApiClient {
 
   async deleteApplicationAlias(name: string): Promise<DeleteAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<DeleteAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<DeleteAliasResponse>>(
         `/admin-api/alias/delete/application/${name}`,
         {},
       ),
@@ -166,7 +166,7 @@ export class AliasesApiClient {
     name: string,
   ): Promise<DeleteAliasResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<DeleteAliasResponse>>(
+      this.httpClient.post<ApiResponseWrapper<DeleteAliasResponse>>(
         `/admin-api/alias/delete/identity/${context}/${name}`,
         {},
       ),

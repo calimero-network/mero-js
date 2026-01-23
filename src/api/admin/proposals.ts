@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface Proposal {
   [key: string]: unknown;
@@ -59,7 +59,7 @@ export class ProposalsApiClient {
     request: GetProposalsRequest,
   ): Promise<GetProposalsResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<GetProposalsResponse>>(
+      this.httpClient.post<ApiResponseWrapper<GetProposalsResponse>>(
         `/admin-api/contexts/${contextId}/proposals`,
         request,
       ),
@@ -71,7 +71,7 @@ export class ProposalsApiClient {
     proposalId: string,
   ): Promise<GetProposalResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetProposalResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetProposalResponse>>(
         `/admin-api/contexts/${contextId}/proposals/${proposalId}`,
       ),
     );
@@ -82,7 +82,7 @@ export class ProposalsApiClient {
     request: CreateAndApproveProposalRequest,
   ): Promise<CreateAndApproveProposalResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<CreateAndApproveProposalResponse>>(
+      this.httpClient.post<ApiResponseWrapper<CreateAndApproveProposalResponse>>(
         `/admin-api/contexts/${contextId}/proposals/create-and-approve`,
         request,
       ),
@@ -94,7 +94,7 @@ export class ProposalsApiClient {
     request: ApproveProposalRequest,
   ): Promise<ApproveProposalResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<ApproveProposalResponse>>(
+      this.httpClient.post<ApiResponseWrapper<ApproveProposalResponse>>(
         `/admin-api/contexts/${contextId}/proposals/approve`,
         request,
       ),
@@ -105,7 +105,7 @@ export class ProposalsApiClient {
     contextId: string,
   ): Promise<GetNumberOfActiveProposalsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetNumberOfActiveProposalsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetNumberOfActiveProposalsResponse>>(
         `/admin-api/contexts/${contextId}/proposals/count`,
       ),
     );
@@ -116,7 +116,7 @@ export class ProposalsApiClient {
     proposalId: string,
   ): Promise<GetNumberOfProposalApprovalsResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetNumberOfProposalApprovalsResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetNumberOfProposalApprovalsResponse>>(
         `/admin-api/contexts/${contextId}/proposals/${proposalId}/approvals/count`,
       ),
     );
@@ -127,7 +127,7 @@ export class ProposalsApiClient {
     proposalId: string,
   ): Promise<GetProposalApproversResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<GetProposalApproversResponse>>(
+      this.httpClient.get<ApiResponseWrapper<GetProposalApproversResponse>>(
         `/admin-api/contexts/${contextId}/proposals/${proposalId}/approvals/users`,
       ),
     );
@@ -138,7 +138,7 @@ export class ProposalsApiClient {
     request: GetContextValueRequest,
   ): Promise<GetContextValueResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<GetContextValueResponse>>(
+      this.httpClient.post<ApiResponseWrapper<GetContextValueResponse>>(
         `/admin-api/contexts/${contextId}/proposals/get-context-value`,
         request,
       ),
@@ -150,7 +150,7 @@ export class ProposalsApiClient {
     request: GetContextStorageEntriesRequest,
   ): Promise<GetContextStorageEntriesResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<GetContextStorageEntriesResponse>>(
+      this.httpClient.post<ApiResponseWrapper<GetContextStorageEntriesResponse>>(
         `/admin-api/contexts/${contextId}/proposals/context-storage-entries`,
         request,
       ),

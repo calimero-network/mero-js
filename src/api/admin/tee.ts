@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface TeeAttestRequest {
   nonce: string;
@@ -82,13 +82,13 @@ export class TeeApiClient {
 
   async getTeeInfo(): Promise<TeeInfoResponse> {
     return unwrap(
-      this.httpClient.get<ApiResponse<TeeInfoResponse>>('/admin-api/tee/info'),
+      this.httpClient.get<ApiResponseWrapper<TeeInfoResponse>>('/admin-api/tee/info'),
     );
   }
 
   async attestTee(request: TeeAttestRequest): Promise<TeeAttestResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<TeeAttestResponse>>(
+      this.httpClient.post<ApiResponseWrapper<TeeAttestResponse>>(
         '/admin-api/tee/attest',
         request,
       ),
@@ -99,7 +99,7 @@ export class TeeApiClient {
     request: TeeVerifyQuoteRequest,
   ): Promise<TeeVerifyQuoteResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<TeeVerifyQuoteResponse>>(
+      this.httpClient.post<ApiResponseWrapper<TeeVerifyQuoteResponse>>(
         '/admin-api/tee/verify-quote',
         request,
       ),

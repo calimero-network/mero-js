@@ -3,7 +3,8 @@
  */
 
 // Helper type for API responses that wrap data
-export type ApiResponse<T> = { data: T };
+// Note: This is specifically for unwrapping { data: T } responses from the API
+export type ApiResponseWrapper<T> = { data: T };
 
 /**
  * Unwraps a response from the API format { data: T } to T.
@@ -11,12 +12,12 @@ export type ApiResponse<T> = { data: T };
  * Note: This function specifically checks for null/undefined, not falsy values.
  * This allows valid responses like 0, false, or empty strings to pass through.
  * 
- * @param response - Promise resolving to an ApiResponse<T>
+ * @param response - Promise resolving to an ApiResponseWrapper<T>
  * @returns Promise resolving to the unwrapped data
  * @throws Error if data is null or undefined
  */
 export async function unwrap<T>(
-  response: Promise<ApiResponse<T>>,
+  response: Promise<ApiResponseWrapper<T>>,
 ): Promise<T> {
   const result = await response;
   // Check specifically for null/undefined, not falsy values

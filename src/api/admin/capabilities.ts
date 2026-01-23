@@ -1,5 +1,5 @@
 import { HttpClient } from '../../http-client';
-import { unwrap, type ApiResponse } from '../utils';
+import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface GrantPermissionRequest {
   contextId: string;
@@ -31,7 +31,7 @@ export class CapabilitiesApiClient {
     request: GrantPermissionRequest,
   ): Promise<GrantPermissionResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<GrantPermissionResponse>>(
+      this.httpClient.post<ApiResponseWrapper<GrantPermissionResponse>>(
         `/admin-api/contexts/${contextId}/capabilities/grant`,
         request,
       ),
@@ -43,7 +43,7 @@ export class CapabilitiesApiClient {
     request: RevokePermissionRequest,
   ): Promise<RevokePermissionResponse> {
     return unwrap(
-      this.httpClient.post<ApiResponse<RevokePermissionResponse>>(
+      this.httpClient.post<ApiResponseWrapper<RevokePermissionResponse>>(
         `/admin-api/contexts/${contextId}/capabilities/revoke`,
         request,
       ),
