@@ -75,8 +75,8 @@ describe('ProposalsApiClient', () => {
     });
 
     it('should handle zero active proposals', async () => {
-      // Note: The unwrap function checks `!result.data`, which means 0 would fail
-      // This test verifies that the API returns a number, not null/undefined
+      // Zero is a valid response for count endpoints
+      // The unwrap function should correctly handle 0 (not treat it as falsy)
       mockHttp.setMockResponse(
         'GET',
         '/admin-api/contexts/ctx-1/proposals/count',
@@ -85,11 +85,8 @@ describe('ProposalsApiClient', () => {
         },
       );
 
-      // The unwrap function will throw because 0 is falsy
-      // This is expected behavior - the API should not return 0 as data
-      await expect(
-        client.getNumberOfActiveProposals('ctx-1'),
-      ).rejects.toThrow('Response data is null');
+      const result = await client.getNumberOfActiveProposals('ctx-1');
+      expect(result).toBe(0);
     });
   });
 

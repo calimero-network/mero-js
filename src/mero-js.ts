@@ -47,6 +47,12 @@ export class MeroJs {
     // Create HTTP client with token management
     // For Tauri, explicitly set credentials to 'omit' to avoid network errors
     const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    
+    // Determine auth base URL and whether we need separate HTTP clients
+    const authBaseUrl = this.config.authBaseUrl ?? this.config.baseUrl;
+    const isEmbedded = authBaseUrl === this.config.baseUrl;
+    
+    // Create admin HTTP client (always uses baseUrl)
     this.httpClient = createBrowserHttpClient({
       baseUrl: this.config.baseUrl,
       getAuthToken: async () => {
@@ -57,11 +63,22 @@ export class MeroJs {
       credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
     });
 
-    // Create API clients
-    const authBaseUrl = this.config.authBaseUrl ?? this.config.baseUrl;
-    const isEmbedded = authBaseUrl === this.config.baseUrl;
+    // Create auth HTTP client (uses authBaseUrl when different from baseUrl)
+    // When authBaseUrl differs, we need a separate client to route requests correctly
+    const authHttpClient = isEmbedded
+      ? this.httpClient // Reuse admin client when URLs match (embedded mode)
+      : createBrowserHttpClient({
+          baseUrl: authBaseUrl,
+          getAuthToken: async () => {
+            const token = await this.getValidToken();
+            return token?.access_token || '';
+          },
+          timeoutMs: this.config.timeoutMs,
+          credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
+        });
 
-    this.authClient = createAuthApiClient(this.httpClient, {
+    // Create API clients
+    this.authClient = createAuthApiClient(authHttpClient, {
       baseUrl: authBaseUrl,
       embedded: isEmbedded,
     });

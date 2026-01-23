@@ -5,3 +5,6 @@ export { AdminApiClient, createAdminApiClient } from './admin';
 // Export auth API
 export * as AuthApi from './auth';
 export { AuthApiClient, createAuthApiClient } from './auth';
+
+// Export shared utilities
+export * from './utils';
