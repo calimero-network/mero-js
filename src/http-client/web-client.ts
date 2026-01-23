@@ -177,11 +177,14 @@ export class WebHttpClient implements HttpClient {
     
     // For retries, calculate remaining timeout to prevent timeout reset
     // Track elapsed time and use remaining timeout for retry
+    // Note: This is calculated before the request, so it doesn't include token refresh time
+    // The actual remaining timeout check happens after token refresh completes
     let retrySignal: AbortSignal | undefined;
     if (retryCount > 0 && requestStartTime !== undefined) {
-      const elapsed = Date.now() - startTime;
       const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
       if (timeoutMs) {
+        // Calculate elapsed time (will be recalculated after token refresh if needed)
+        const elapsed = Date.now() - startTime;
         const remaining = Math.max(0, timeoutMs - elapsed);
         // Create signal with remaining timeout, preserving user's signal
         retrySignal = this.createAbortSignal({ ...init, timeoutMs: remaining });
@@ -294,6 +297,20 @@ export class WebHttpClient implements HttpClient {
             // Clear caches after both refresh and callback complete
             this.refreshTokenPromise = null;
             this.onTokenRefreshPromise = null;
+            
+            // Check if timeout has expired during token refresh
+            // If so, throw the original 401 error instead of retrying with 0ms timeout
+            // This prevents timeout/abort errors that obscure the root cause (expired token)
+            const timeoutMs = init?.timeoutMs || this.transport.timeoutMs;
+            if (timeoutMs && requestStartTime !== undefined) {
+              const elapsed = Date.now() - startTime;
+              const remaining = timeoutMs - elapsed;
+              if (remaining <= 0) {
+                // Timeout expired during token refresh - throw original 401 error
+                // This is better than retrying with 0ms timeout which would cause confusing timeout errors
+                throw httpError;
+              }
+            }
             
             // Retry the request with the new token (increment retry count)
             // Preserve user's abort signal and start time in retry
