@@ -121,14 +121,23 @@ export class MeroJs {
       };
 
       return this.tokenData;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Include HTTP error details if available
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      const httpStatus = error?.status ? `HTTP ${error.status}` : '';
-      const httpStatusText = error?.statusText ? ` ${error.statusText}` : '';
-      const bodyText = error?.bodyText ? `: ${error.bodyText}` : '';
-      
+      const httpStatus =
+        error && typeof error === 'object' && 'status' in error
+          ? `HTTP ${String(error.status)}`
+          : '';
+      const httpStatusText =
+        error && typeof error === 'object' && 'statusText' in error
+          ? ` ${String(error.statusText)}`
+          : '';
+      const bodyText =
+        error && typeof error === 'object' && 'bodyText' in error
+          ? `: ${String(error.bodyText)}`
+          : '';
+
       throw new Error(
         `Authentication failed: ${httpStatus}${httpStatusText}${bodyText || errorMessage}`,
       );

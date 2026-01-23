@@ -41,7 +41,7 @@ export interface AuthProvider {
   enabled: boolean;
 }
 
-export interface AuthProvidersResponse extends Array<AuthProvider> {}
+export type AuthProvidersResponse = AuthProvider[];
 
 export interface AuthIdentityResponse {
   service: string;
@@ -70,7 +70,7 @@ export interface RootKey {
   permissions: string[];
 }
 
-export interface ListRootKeysResponse extends Array<RootKey> {}
+export type ListRootKeysResponse = RootKey[];
 
 export interface CreateRootKeyRequest {
   publicKey: string;
@@ -78,7 +78,7 @@ export interface CreateRootKeyRequest {
   permissions?: string[];
 }
 
-export interface CreateRootKeyResponse extends RootKey {}
+export type CreateRootKeyResponse = RootKey;
 
 export interface DeleteRootKeyResponse {
   deleted: boolean;
@@ -93,7 +93,7 @@ export interface ClientKey {
   createdAt: string;
 }
 
-export interface ListClientKeysResponse extends Array<ClientKey> {}
+export type ListClientKeysResponse = ClientKey[];
 
 export interface GenerateClientKeyRequest {
   contextId: string;
@@ -101,7 +101,7 @@ export interface GenerateClientKeyRequest {
   permissions: string[];
 }
 
-export interface GenerateClientKeyResponse extends ClientKey {}
+export type GenerateClientKeyResponse = ClientKey;
 
 export interface DeleteClientKeyResponse {
   deleted: boolean;
