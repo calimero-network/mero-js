@@ -9,14 +9,14 @@ export interface Application {
 export interface InstallApplicationRequest {
   url: string;
   hash?: string;
-  metadata: string; // base64 encoded
+  metadata: number[] | string; // byte array or base64 string (API accepts both but prefers array)
   package?: string;
   version?: string;
 }
 
 export interface InstallDevApplicationRequest {
   path: string;
-  metadata: string; // base64 encoded
+  metadata: number[] | string; // byte array or base64 string (API accepts both but prefers array)
   package?: string;
   version?: string;
 }

@@ -1,426 +1,405 @@
-# Mero.js - Pure JavaScript SDK for Calimero
+# Mero.js v2 — Pure JavaScript SDK for Calimero
 
-A lightweight, universal JavaScript SDK for Calimero that works in both browser and Node.js environments using Web Standards.
-
-> **🚨 Breaking Change (v1.0.0)**: This version removes all legacy Axios-based code. The package now uses only Web Standards (`fetch`, `AbortController`) with zero external dependencies.
+A lightweight, universal JavaScript SDK for interacting with Calimero nodes. Works in browsers, Node.js, React Native, and Tauri.
 
 ## Features
 
-- 🌐 **Web Standards First**: Built on `fetch`, `AbortController`, and other Web APIs
-- 🔄 **Universal**: Works in browsers, Node.js, and edge runtimes
-- 📦 **Zero Dependencies**: No external dependencies, uses native Web APIs
-- 🔧 **Dependency Injection**: Flexible and testable architecture
-- ⚡ **Modern**: ES2020+ with TypeScript support
-- 🛡️ **Type Safe**: Full TypeScript definitions
-- 🔄 **Smart Retry**: Distinguishes user aborts vs timeouts for intelligent retry logic
-- 🎯 **Advanced Cancellation**: Signal combination and proper timeout handling
-
-## Behavior
-
-### Error Model (Throwing)
-
-The client **throws** `HTTPError` on any `!response.ok` status. Network/timeout/abort errors are re-thrown as-is:
-
-```typescript
-try {
-  const data = await httpClient.get('/api/data');
-  // Success - data is the parsed response
-} catch (error) {
-  if (error instanceof HTTPError) {
-    console.log(`HTTP ${error.status}: ${error.statusText}`);
-    console.log('URL:', error.url);
-    console.log('Headers:', error.headers);
-    console.log('Body:', error.bodyText); // Up to 64KB
-  } else if (error.name === 'TimeoutError') {
-    // Request timed out
-  } else if (error.name === 'AbortError') {
-    // Request was cancelled
-  }
-}
-```
-
-### Parsing Defaults & Override
-
-Each method accepts optional `{ parse?: 'json'|'text'|'blob'|'arrayBuffer'|'response' }`:
-
-**Default parsing rules:**
-
-- `Content-Type: application/json` → parse as JSON
-- `Content-Type: text/*` → parse as text
-- Other types → parse as `arrayBuffer`
-
-**Override:**
-
-```typescript
-// Get raw Response object
-const response = await httpClient.get('/api/data', { parse: 'response' });
-```
-
-### Retry Policy (`withRetry`)
-
-The `withRetry` helper retries on:
-
-- `HTTPError` with status `429` or `>= 500`
-- `TimeoutError` (internal timeouts)
-- `TypeError` (network failures)
-
-**Never retries:**
-
-- `AbortError` (user/caller aborts)
-
-```typescript
-import { withRetry } from '@calimero-network/mero-js';
-
-const data = await withRetry(
-  (attempt) => httpClient.get('/api/data'),
-  { attempts: 3 }, // Default: 3 attempts
-);
-```
-
-### Signal Composition
-
-The client combines caller signals with internal timeouts:
-
-```typescript
-const userSignal = new AbortController().signal;
-const data = await httpClient.get('/api/data', {
-  signal: userSignal,
-  timeoutMs: 5000,
-});
-```
-
-### Header Precedence & Authorization
-
-- **Caller headers win**: Request-level headers override client defaults
-- **Authorization rules**: Only set `Authorization: Bearer ${token}` if caller didn't provide any `authorization` header (case-insensitive)
-
-### FormData Handling
-
-For `FormData` bodies, the client does **not** set `content-type` (lets browser/undici add the boundary):
-
-```typescript
-const formData = new FormData();
-formData.append('file', file);
-await httpClient.post('/api/upload', formData);
-// No content-type header is set by the client
-```
-
-### Credentials
-
-No implicit `same-origin` default. Credentials are only set if explicitly provided:
-
-```typescript
-const client = createBrowserHttpClient({
-  baseUrl: 'https://api.example.com',
-  credentials: 'include', // Only if you want to include credentials
-});
-```
+- 🌐 **Universal** — Browser, Node.js, React Native, Tauri
+- 📦 **Zero Dependencies** — Built on Web Standards (`fetch`, `AbortController`)
+- 🔐 **Smart Token Management** — Automatic refresh on 401, preemptive refresh before expiry
+- 💾 **Pluggable Storage** — Bring your own `TokenStorage` (localStorage, AsyncStorage, Keychain)
+- 🔄 **Real-time** — WebSocket and SSE clients for event subscriptions
+- ⚡ **JSON-RPC** — Execute queries and mutations on contexts
+- 🛡️ **Type Safe** — Full TypeScript definitions
+- ✅ **Tested** — 236 unit tests, E2E with Merobox
 
 ## Installation
 
 ```bash
 npm install @calimero-network/mero-js
+# or
+pnpm add @calimero-network/mero-js
 ```
 
 ## Quick Start
 
-### Browser Usage
-
 ```typescript
-import { createBrowserHttpClient } from '@calimero-network/mero-js';
+import { MeroJs } from '@calimero-network/mero-js';
 
-const httpClient = createBrowserHttpClient({
-  baseUrl: 'https://api.calimero.network',
-  getAuthToken: async () => localStorage.getItem('access_token'),
-  onTokenRefresh: async (newToken) =>
-    localStorage.setItem('access_token', newToken),
+const mero = new MeroJs({
+  baseUrl: 'http://localhost:2428',
+  credentials: {
+    username: 'admin',
+    password: 'your-password',
+  },
 });
 
-// Make requests
-try {
-  const data = await httpClient.get<{ message: string }>('/api/hello');
-  console.log(data.message);
-} catch (error) {
-  console.error('Request failed:', error);
+// Authenticate
+await mero.authenticate();
+
+// Use the Admin API
+const apps = await mero.admin.applications.listApplications();
+const contexts = await mero.admin.contexts.listContexts();
+
+// Execute JSON-RPC calls
+const result = await mero.rpc.query(
+  'context-id',
+  'get',
+  { key: 'myKey' },
+  'ed25519:executor-public-key'
+);
+```
+
+## Token Persistence
+
+By default, tokens are stored in-memory. Provide a `TokenStorage` to persist across sessions:
+
+### Browser (localStorage)
+
+```typescript
+const mero = new MeroJs({
+  baseUrl: 'http://localhost:2428',
+  credentials: { username: 'admin', password: 'password' },
+  tokenStorage: {
+    async get() {
+      const data = localStorage.getItem('mero-token');
+      return data ? JSON.parse(data) : null;
+    },
+    async set(token) {
+      localStorage.setItem('mero-token', JSON.stringify(token));
+    },
+    async clear() {
+      localStorage.removeItem('mero-token');
+    },
+  },
+});
+
+// Load stored tokens on startup
+await mero.init();
+
+if (!mero.isAuthenticated()) {
+  await mero.authenticate();
 }
 ```
 
-### Node.js Usage
+### React Native (AsyncStorage)
 
 ```typescript
-import { createNodeHttpClient } from '@calimero-network/mero-js';
-// For Node.js < 18, install undici: npm install undici
-import { fetch as undiciFetch } from 'undici';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const httpClient = createNodeHttpClient({
-  baseUrl: 'https://api.calimero.network',
-  fetch: undiciFetch, // Required for Node.js < 18
-  getAuthToken: async () => process.env.ACCESS_TOKEN,
-});
-
-const data = await httpClient.get<{ message: string }>('/api/hello');
-console.log(data.message);
-```
-
-### Universal Usage
-
-```typescript
-import { createUniversalHttpClient } from '@calimero-network/mero-js';
-
-const httpClient = createUniversalHttpClient({
-  baseUrl: 'https://api.calimero.network',
-  getAuthToken: async () => {
-    return typeof window !== 'undefined'
-      ? localStorage.getItem('access_token')
-      : process.env.ACCESS_TOKEN;
+const mero = new MeroJs({
+  baseUrl: 'http://localhost:2428',
+  credentials: { username: 'admin', password: 'password' },
+  tokenStorage: {
+    async get() {
+      const data = await AsyncStorage.getItem('mero-token');
+      return data ? JSON.parse(data) : null;
+    },
+    async set(token) {
+      await AsyncStorage.setItem('mero-token', JSON.stringify(token));
+    },
+    async clear() {
+      await AsyncStorage.removeItem('mero-token');
+    },
   },
 });
+```
+
+### Tauri (Secure Store)
+
+```typescript
+import { Store } from '@tauri-apps/plugin-store';
+
+const store = new Store('.tokens.dat');
+
+const mero = new MeroJs({
+  baseUrl: 'http://localhost:2428',
+  requestCredentials: 'omit', // Required for Tauri
+  tokenStorage: {
+    async get() {
+      return await store.get('mero-token');
+    },
+    async set(token) {
+      await store.set('mero-token', token);
+      await store.save();
+    },
+    async clear() {
+      await store.delete('mero-token');
+      await store.save();
+    },
+  },
+});
+```
+
+## Token Refresh
+
+The SDK automatically handles token refresh in two ways:
+
+1. **Preemptive** — Refreshes 5 minutes before expiry
+2. **Reactive** — On 401 with `x-auth-error: token_expired`, automatically refreshes and retries
+
+```
+┌─────────────────────────────────────────────────┐
+│                Token Lifecycle                  │
+├─────────────────────────────────────────────────┤
+│  authenticate() ──> Token stored                │
+│                     │                           │
+│  API Request ───────┼──> Token valid? ──yes──>  │
+│                     │         │                 │
+│                     │        no (within 5min)   │
+│                     │         │                 │
+│                     │         ▼                 │
+│                     │    Refresh token          │
+│                     │         │                 │
+│  401 + expired ─────┼─────────┘                 │
+│                     │                           │
+│  clearToken() ──────┼──> Token cleared          │
+└─────────────────────────────────────────────────┘
 ```
 
 ## API Reference
 
-### Factory Functions
-
-#### `createBrowserHttpClient(options)`
-
-Creates an HTTP client optimized for browser environments.
-
-#### `createNodeHttpClient(options)`
-
-Creates an HTTP client for Node.js environments.
-
-#### `createUniversalHttpClient(options)`
-
-Creates an HTTP client that works in both browser and Node.js.
-
-### Options
+### MeroJs Class
 
 ```typescript
-interface HttpClientOptions {
-  baseUrl: string; // Base URL for all requests
-  fetch?: typeof fetch; // Custom fetch implementation (Node.js)
-  getAuthToken?: () => Promise<string | undefined>; // Token getter
-  onTokenRefresh?: (token: string) => Promise<void>; // Token refresh callback
-  defaultHeaders?: Record<string, string>; // Default headers
-  timeoutMs?: number; // Request timeout (default: 30000)
-  credentials?: RequestCredentials; // CORS credentials (default: 'same-origin' for browser)
-  defaultAbortSignal?: AbortSignal; // Default abort signal for all requests
+interface MeroJsConfig {
+  baseUrl: string;              // Node URL
+  authBaseUrl?: string;         // Auth service URL (if separate)
+  credentials?: { username: string; password: string };
+  timeoutMs?: number;           // Default: 10000
+  requestCredentials?: RequestCredentials;
+  tokenStorage?: TokenStorage;  // For persistence
 }
+
+const mero = new MeroJs(config);
+
+// Lifecycle
+await mero.init();              // Load tokens from storage
+await mero.authenticate();      // Get new tokens
+await mero.clearToken();        // Clear tokens
+mero.isAuthenticated();         // Check auth status
+mero.getTokenData();            // Get current tokens
+
+// API Clients
+mero.auth                       // Auth API
+mero.admin                      // Admin API
+mero.rpc                        // JSON-RPC client
+
+// Real-time
+mero.createWebSocket();         // WebSocket client
+mero.createSse();               // SSE client
 ```
 
-### HTTP Methods
+### Admin API
 
 ```typescript
-// GET request
-const response = await httpClient.get<T>('/api/endpoint', init?);
+// Applications
+await mero.admin.applications.listApplications();
+await mero.admin.applications.getApplication(appId);
+await mero.admin.applications.installApplication({ url, metadata });
+await mero.admin.applications.uninstallApplication(appId);
 
-// POST request
-const response = await httpClient.post<T>('/api/endpoint', body?, init?);
+// Contexts
+await mero.admin.contexts.listContexts();
+await mero.admin.contexts.createContext({ applicationId, contextSeed });
+await mero.admin.contexts.getContext(contextId);
+await mero.admin.contexts.deleteContext(contextId);
+await mero.admin.contexts.joinContext({ contextId, invitationPayload });
 
-// PUT request
-const response = await httpClient.put<T>('/api/endpoint', body?, init?);
+// Blobs
+await mero.admin.blobs.listBlobs();
+await mero.admin.blobs.uploadBlob(data);
+await mero.admin.blobs.getBlob(blobId);
+await mero.admin.blobs.deleteBlob(blobId);
 
-// DELETE request
-const response = await httpClient.delete<T>('/api/endpoint', init?);
+// Identity
+await mero.admin.identity.generateContextIdentity();
 
-// PATCH request
-const response = await httpClient.patch<T>('/api/endpoint', body?, init?);
+// Network
+await mero.admin.network.getPeersCount();
 
-// HEAD request
-const response = await httpClient.head<T>('/api/endpoint', init?);
-
-// Generic request
-const response = await httpClient.request<T>('/api/endpoint', init?);
+// Public (no auth required)
+await mero.admin.public.health();
+await mero.admin.public.isAuthed();
 ```
 
-### Request Options
+### Auth API
 
 ```typescript
-interface RequestOptions extends RequestInit {
-  parse?: 'json' | 'text' | 'blob' | 'arrayBuffer' | 'response';
-  timeoutMs?: number;
-}
+// Health & Info
+await mero.auth.getHealth();
+await mero.auth.getIdentity();
+await mero.auth.getProviders();
+
+// Tokens
+await mero.auth.getToken(request);
+await mero.auth.refreshToken({ refresh_token });
+await mero.auth.validateToken({ token });
+
+// Keys
+await mero.auth.listRootKeys();
+await mero.auth.createRootKey(request);
+await mero.auth.deleteRootKey(publicKey);
+await mero.auth.listClientKeys();
+await mero.auth.generateClientKey(request);
+await mero.auth.deleteClientKey(publicKey);
 ```
 
-### Response Format
-
-All methods return the parsed data directly or throw errors:
+### JSON-RPC
 
 ```typescript
-// Success - returns parsed data
-const data: T = await httpClient.get<T>('/api/data');
+// Query (read-only)
+const result = await mero.rpc.query(
+  'context-id',
+  'get',
+  { key: 'myKey' },
+  'ed25519:executor-public-key'
+);
 
-// Error - throws HTTPError or other errors
+// Mutate (write)
+const result = await mero.rpc.mutate(
+  'context-id',
+  'set',
+  { key: 'myKey', value: 'myValue' },
+  'ed25519:executor-public-key'
+);
+
+// Generic execute
+const result = await mero.rpc.execute({
+  contextId: 'context-id',
+  method: 'myMethod',
+  args: { foo: 'bar' },
+  executorPublicKey: 'ed25519:...',
+});
+```
+
+### WebSocket (Real-time Events)
+
+```typescript
+const ws = mero.createWebSocket();
+
+await ws.connect();
+
+ws.onEvent((event) => {
+  console.log('Event:', event);
+});
+
+ws.onError((error) => {
+  console.error('Error:', error);
+});
+
+await ws.subscribe(['context-id-1', 'context-id-2']);
+
+// Later...
+await ws.unsubscribe(['context-id-1']);
+ws.disconnect();
+```
+
+### SSE (Server-Sent Events)
+
+```typescript
+const sse = mero.createSse();
+
+const sessionId = await sse.connect();
+
+sse.onEvent((event) => {
+  console.log('Event:', event);
+});
+
+await sse.subscribe(['context-id-1']);
+
+// Get session info
+const session = await sse.getSession();
+
+// Later...
+sse.disconnect();
+```
+
+## Deep Imports
+
+For tree-shaking or direct access:
+
+```typescript
+// Main SDK
+import { MeroJs } from '@calimero-network/mero-js';
+
+// HTTP Client only
+import { createBrowserHttpClient } from '@calimero-network/mero-js/http-client';
+
+// Specific API clients
+import { AdminApiClient } from '@calimero-network/mero-js/api/admin';
+import { AuthApiClient } from '@calimero-network/mero-js/api/auth';
+import { RpcClient } from '@calimero-network/mero-js/api/rpc';
+import { WebSocketClient } from '@calimero-network/mero-js/api/ws';
+import { SseClient } from '@calimero-network/mero-js/api/sse';
+```
+
+## HTTP Client (Low-Level)
+
+For custom use cases, use the HTTP client directly:
+
+```typescript
+import { createBrowserHttpClient, HTTPError } from '@calimero-network/mero-js';
+
+const http = createBrowserHttpClient({
+  baseUrl: 'https://api.example.com',
+  getAuthToken: async () => myTokenStore.getToken(),
+  refreshToken: async () => {
+    const newToken = await myRefreshLogic();
+    return newToken;
+  },
+  onTokenRefresh: async (token) => {
+    await myTokenStore.setToken(token);
+  },
+  timeoutMs: 10000,
+});
+
 try {
-  const data = await httpClient.get('/api/data');
+  const data = await http.get<MyType>('/api/endpoint');
 } catch (error) {
   if (error instanceof HTTPError) {
-    console.log(`HTTP ${error.status}: ${error.statusText}`);
-    console.log('URL:', error.url);
-    console.log('Headers:', error.headers);
-    console.log('Body:', error.bodyText);
+    console.log(`HTTP ${error.status}: ${error.bodyText}`);
   }
 }
 ```
 
-## Advanced Usage
-
-### Custom Transport
+## Error Handling
 
 ```typescript
-import { createHttpClient, Transport } from '@calimero-network/mero-js';
+import { HTTPError, ApiResponseError } from '@calimero-network/mero-js';
 
-const transport: Transport = {
-  fetch: customFetch,
-  baseUrl: 'https://api.example.com',
-  getAuthToken: async () => 'your-token',
-  timeoutMs: 5000,
-};
-
-const httpClient = createHttpClient(transport);
-```
-
-### Error Handling
-
-```typescript
 try {
-  const data = await httpClient.get('/api/data');
-  // Success - data is the parsed response
-  console.log(data);
+  await mero.admin.contexts.getContext('invalid-id');
 } catch (error) {
   if (error instanceof HTTPError) {
-    // HTTP error (4xx, 5xx)
-    console.error(`HTTP ${error.status}: ${error.statusText}`);
-    console.error('URL:', error.url);
-    console.error('Body:', error.bodyText);
-  } else if (error.name === 'TimeoutError') {
-    // Request timed out
-    console.error('Request timed out');
+    // HTTP-level error (4xx, 5xx)
+    console.log(`HTTP ${error.status}: ${error.statusText}`);
+    console.log('Body:', error.bodyText);
+  } else if (error instanceof ApiResponseError) {
+    // API-level error (in response body)
+    console.log(`API Error: ${error.message}`);
+    console.log('Type:', error.type);
+    console.log('Code:', error.code);
   } else if (error.name === 'AbortError') {
     // Request was cancelled
-    console.error('Request was cancelled');
-  } else {
-    // Network or other errors
-    console.error('Request failed:', error);
+  } else if (error.name === 'TimeoutError') {
+    // Request timed out
   }
 }
 ```
 
-### Custom Headers
+## Testing
 
-```typescript
-const data = await httpClient.post('/api/data', body, {
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Custom-Header': 'value',
-  },
-});
+```bash
+# Unit tests (236 tests)
+pnpm test
+
+# E2E tests with Merobox
+pnpm test:e2e
+
+# Full test suite
+pnpm test:all
 ```
-
-### Request Cancellation
-
-```typescript
-const abortController = new AbortController();
-
-// Cancel request after 5 seconds
-setTimeout(() => abortController.abort(), 5000);
-
-const data = await httpClient.get('/api/slow-endpoint', {
-  signal: abortController.signal,
-});
-```
-
-### FormData Support
-
-```typescript
-const formData = new FormData();
-formData.append('file', fileInput.files[0]);
-formData.append('name', 'John Doe');
-
-const data = await httpClient.post('/api/upload', formData);
-// Content-Type is set by the browser/undici with proper boundary
-```
-
-### Response Parsing
-
-```typescript
-// Explicit parsing
-const jsonData = await httpClient.get('/api/data', { parse: 'json' });
-const textData = await httpClient.get('/api/text', { parse: 'text' });
-const blobData = await httpClient.get('/api/file', { parse: 'blob' });
-
-// Auto-detection based on Content-Type (default)
-const autoData = await httpClient.get('/api/data');
-```
-
-### Retry with Exponential Backoff
-
-```typescript
-import { withRetry } from '@calimero-network/mero-js';
-
-const data = await withRetry(
-  (attempt) => httpClient.get('/api/unreliable-endpoint'),
-  { attempts: 3 }, // Default: 3 attempts
-);
-```
-
-### Signal Combination
-
-```typescript
-import { combineSignals, createTimeoutSignal } from '@calimero-network/mero-js';
-
-// Combine multiple abort signals
-const userSignal = new AbortController().signal;
-const timeoutSignal = createTimeoutSignal(5000);
-const combinedSignal = combineSignals([userSignal, timeoutSignal]);
-
-const data = await httpClient.get('/api/endpoint', {
-  signal: combinedSignal,
-});
-```
-
-### CORS and Credentials
-
-```typescript
-const httpClient = createBrowserHttpClient({
-  baseUrl: 'https://api.example.com',
-  credentials: 'include', // Include cookies in CORS requests
-});
-
-// For APIs that require credentials
-const data = await httpClient.get('/api/protected', {
-  credentials: 'include',
-});
-```
-
-## Migration from Axios
-
-If you're migrating from an Axios-based client:
-
-1. **Replace imports**: Use the factory functions instead of direct class instantiation
-2. **Update method signatures**: Methods now use `RequestInit` instead of custom options
-3. **Handle responses**: Methods now return parsed data directly or throw errors (no more `ResponseData<T>`)
-4. **Token management**: Use the `getAuthToken` and `onTokenRefresh` callbacks
-
-## Browser Support
-
-- Modern browsers with `fetch` support (Chrome 42+, Firefox 39+, Safari 10.1+)
-- Node.js 18+ (native fetch) or Node.js 16+ with `undici`
-
-## Bundle Sizes
-
-- **ESM**: ~9.4kb (gzipped: ~3.2kb)
-- **CJS**: ~10.5kb (gzipped: ~3.6kb)
-
-## Examples
-
-See the `examples/` directory for complete usage examples:
-
-- `browser-example.ts` - Browser-specific usage (designed for browser environments)
-- `node-example.ts` - Node.js-specific usage (designed for Node.js environments)
-- `universal-example.ts` - Universal usage (works in both browser and Node.js)
-
-**Note**: Run `npm run build` before running the examples, as they import from the built library.
 
 ## Development
 
@@ -428,15 +407,58 @@ See the `examples/` directory for complete usage examples:
 # Install dependencies
 pnpm install
 
-# Build
+# Build (with strict mode)
 pnpm build
-
-# Test
-pnpm test
 
 # Lint
 pnpm lint
+
+# Type check
+pnpm typecheck
+
+# Generate MSW handlers from OpenAPI
+pnpm generate:msw
 ```
+
+## Bundle Sizes
+
+| Format | Size | Gzipped |
+|--------|------|---------|
+| ESM | ~57kb | ~15kb |
+| CJS | ~59kb | ~16kb |
+| Browser (minified) | ~29kb | ~9kb |
+
+## Browser Support
+
+- Modern browsers with `fetch` (Chrome 42+, Firefox 39+, Safari 10.1+)
+- Node.js 18+ (native fetch) or 16+ with `undici`
+- React Native with `fetch` polyfill
+- Tauri (set `requestCredentials: 'omit'`)
+
+## Migration from v1.x
+
+### Breaking Changes
+
+1. **`clearToken()` is now async**
+   ```typescript
+   // Before
+   mero.clearToken();
+   
+   // After
+   await mero.clearToken();
+   ```
+
+2. **HTTP client wiring** — Token refresh callbacks are now wired automatically
+
+### New Features
+
+- `TokenStorage` interface for persistence
+- `init()` method to load stored tokens
+- Automatic 401 token refresh with retry
+- WebSocket and SSE clients
+- JSON-RPC client
+- Lazy-loaded Admin API sub-clients
+- Enhanced `unwrap()` with RPC error detection
 
 ## License
 

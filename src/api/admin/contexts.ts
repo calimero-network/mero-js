@@ -2,16 +2,23 @@ import { HttpClient } from '../../http-client';
 import { unwrap, type ApiResponseWrapper } from '../utils';
 
 export interface Context {
-  contextId: string;
+  /** Context ID - server may return as 'id' or 'contextId' */
+  id: string;
+  /** Application ID */
   applicationId: string;
-  protocol: string;
+  /** Protocol name */
+  protocol?: string;
+  /** Root hash (optional) */
+  rootHash?: string;
+  /** DAG heads (optional) */
+  dagHeads?: string[];
 }
 
 export interface CreateContextRequest {
   protocol: string;
   applicationId: string;
   contextSeed?: string;
-  initializationParams: string; // base64 encoded
+  initializationParams: number[] | string; // byte array or base64 string (API accepts both but prefers array)
 }
 
 export interface CreateContextResponse {

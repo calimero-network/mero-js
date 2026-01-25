@@ -9,7 +9,7 @@ import { combineSignals, createTimeoutSignal } from './signal-utils';
 
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
-  name = 'HTTPError' as const;
+  override readonly name = 'HTTPError' as const;
 
   constructor(
     public status: number,

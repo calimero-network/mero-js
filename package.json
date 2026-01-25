@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
@@ -10,6 +10,36 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
+    },
+    "./http-client": {
+      "types": "./dist/http-client/index.d.ts",
+      "import": "./dist/http-client/index.js",
+      "default": "./dist/http-client/index.js"
+    },
+    "./api/admin": {
+      "types": "./dist/api/admin/index.d.ts",
+      "import": "./dist/api/admin/index.js",
+      "default": "./dist/api/admin/index.js"
+    },
+    "./api/auth": {
+      "types": "./dist/api/auth/index.d.ts",
+      "import": "./dist/api/auth/index.js",
+      "default": "./dist/api/auth/index.js"
+    },
+    "./api/rpc": {
+      "types": "./dist/api/rpc/index.d.ts",
+      "import": "./dist/api/rpc/index.js",
+      "default": "./dist/api/rpc/index.js"
+    },
+    "./api/ws": {
+      "types": "./dist/api/ws/index.d.ts",
+      "import": "./dist/api/ws/index.js",
+      "default": "./dist/api/ws/index.js"
+    },
+    "./api/sse": {
+      "types": "./dist/api/sse/index.d.ts",
+      "import": "./dist/api/sse/index.js",
+      "default": "./dist/api/sse/index.js"
     }
   },
   "main": "./dist/index.cjs",
@@ -30,22 +60,26 @@
     "conventional-changelog-conventionalcommits": "^7.0.0",
     "esbuild": "^0.25.8",
     "eslint": "^8.57.0",
+    "js-yaml": "4",
     "msw": "^2.12.7",
+    "openapi-types": "^12.1.3",
     "rimraf": "^3.0.0",
     "semantic-release": "^24.2.9",
+    "tsx": "^4.21.0",
     "typescript": "^4.9.5",
     "vitest": "^2.0.0"
   },
   "scripts": {
-    "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
+    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:smoke": "vitest run --config vitest.e2e.config.ts tests/e2e/smoke.test.ts",
+    "test:e2e:full": "vitest run --config vitest.e2e.config.ts tests/e2e/admin-api.test.ts tests/e2e/auth-api.test.ts",
     "test:e2e:watch": "vitest --config vitest.e2e.config.ts",
-    "test:e2e:auth": "vitest run --config vitest.e2e.config.ts tests/e2e/auth-api.test.ts",
-    "test:e2e:admin": "vitest run --config vitest.e2e.config.ts tests/e2e/admin-api.test.ts",
-    "test:e2e:node": "vitest run --config vitest.e2e.config.ts tests/e2e/node-api.test.ts",
-    "test:e2e:examples": "vitest run --config vitest.e2e.config.ts tests/e2e/examples.test.ts",
+    "test:all": "pnpm test:unit && pnpm test:integration && pnpm test:e2e:smoke",
+    "generate:msw": "node scripts/generate-msw-handlers.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "eslint": "eslint .",

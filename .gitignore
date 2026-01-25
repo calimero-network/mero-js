@@ -31,6 +31,12 @@ lerna-debug.log*
 coverage/
 .nyc_output/
 
+# Generated files
+tests/mocks/generated-handlers.ts
+
+# Test data / node data
+data/
+
 # Temporary files
 *.tmp
 *.temp

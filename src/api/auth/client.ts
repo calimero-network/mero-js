@@ -92,28 +92,55 @@ export class AuthApiClient {
     );
   }
 
+  /**
+   * Validate a JWT token.
+   *
+   * Note: The server returns an empty string "" on success with auth info in headers
+   * (X-Auth-User, X-Auth-Permissions). If no error is thrown, the token is valid.
+   */
   async validateToken(
     request: types.TokenValidationRequest,
   ): Promise<types.TokenValidationResponse> {
-    return unwrap(
-      this.httpClient.post<ApiResponseWrapper<types.TokenValidationResponse>>(
-        this.getAuthPath('/validate'),
-        request,
-      ),
-    );
+    const response = await this.httpClient.post<
+      ApiResponseWrapper<types.TokenValidationRawResponse | types.TokenValidationResponse>
+    >(this.getAuthPath('/validate'), request);
+
+    // Handle raw response (empty string = valid) vs structured response
+    if (response.data === '' || response.data === undefined || response.data === null) {
+      // Server returned empty string on success
+      return { valid: true };
+    }
+    if (typeof response.data === 'object' && 'valid' in response.data) {
+      // Server returned structured response
+      return response.data as types.TokenValidationResponse;
+    }
+    // Fallback: if we got here without error, token is valid
+    return { valid: true };
   }
 
+  /**
+   * Validate a JWT token using GET with Authorization header.
+   *
+   * Note: The server returns an empty string "" on success with auth info in headers
+   * (X-Auth-User, X-Auth-Permissions). If no error is thrown, the token is valid.
+   */
   async validateTokenGet(token: string): Promise<types.TokenValidationResponse> {
-    return unwrap(
-      this.httpClient.get<ApiResponseWrapper<types.TokenValidationResponse>>(
-        this.getAuthPath('/validate'),
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      ),
-    );
+    const response = await this.httpClient.get<
+      ApiResponseWrapper<types.TokenValidationRawResponse | types.TokenValidationResponse>
+    >(this.getAuthPath('/validate'), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    // Handle raw response (empty string = valid) vs structured response
+    if (response.data === '' || response.data === undefined || response.data === null) {
+      return { valid: true };
+    }
+    if (typeof response.data === 'object' && 'valid' in response.data) {
+      return response.data as types.TokenValidationResponse;
+    }
+    return { valid: true };
   }
 
   async getHealth(): Promise<types.HealthResponse> {

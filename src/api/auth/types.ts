@@ -4,7 +4,7 @@
 export interface AuthChallengeResponse {
   challenge: string;
   nonce: string;
-  timestamp: number;
+  // Note: timestamp is embedded in the JWT challenge string, not a separate field
 }
 
 export type AuthMethod =
@@ -53,10 +53,17 @@ export interface TokenValidationRequest {
   token: string;
 }
 
+// Token validation response
+// Note: The server returns an empty string "" on success with auth info in headers
+// (X-Auth-User, X-Auth-Permissions). This is designed for auth proxy use.
+// If the request doesn't throw an error, the token is valid.
 export interface TokenValidationResponse {
   valid: boolean;
-  claims: Record<string, unknown> | null;
+  claims?: Record<string, unknown> | null;
 }
+
+// Raw response from server (empty string on success)
+export type TokenValidationRawResponse = string;
 
 export interface RevokeTokenResponse {
   revoked: boolean;

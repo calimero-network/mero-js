@@ -15,9 +15,10 @@ describe('BlobsApiClient', () => {
     it('should upload blob', async () => {
       const blob = new Blob(['test data']);
 
+      // Server returns snake_case, SDK transforms to camelCase
       mockHttp.setMockResponse('PUT', '/admin-api/blobs', {
         data: {
-          blobId: 'blob-123',
+          blob_id: 'blob-123',
           size: 9,
           hash: 'hash123',
         },
@@ -32,11 +33,12 @@ describe('BlobsApiClient', () => {
 
   describe('listBlobs', () => {
     it('should list blobs', async () => {
+      // Server returns snake_case, SDK transforms to camelCase
       mockHttp.setMockResponse('GET', '/admin-api/blobs', {
         data: {
           blobs: [
-            { blobId: 'blob-1', size: 100, hash: 'hash1' },
-            { blobId: 'blob-2', size: 200, hash: 'hash2' },
+            { blob_id: 'blob-1', size: 100, hash: 'hash1' },
+            { blob_id: 'blob-2', size: 200, hash: 'hash2' },
           ],
         },
       });

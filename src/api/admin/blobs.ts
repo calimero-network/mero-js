@@ -22,19 +22,42 @@ export class BlobsApiClient {
   constructor(private httpClient: HttpClient) {}
 
   async uploadBlob(blob: Blob | File): Promise<BlobUploadResponse> {
-    // Blob upload uses PUT method, not POST
-    return unwrap(
-      this.httpClient.put<ApiResponseWrapper<BlobUploadResponse>>(
+    // Blob upload uses PUT method with binary data (application/octet-stream)
+    // We need to use request() directly to pass the blob without JSON.stringify
+    const response = await unwrap(
+      this.httpClient.request<ApiResponseWrapper<{ blob_id: string; size: number; hash?: string | null }>>(
         '/admin-api/blobs',
-        blob,
+        {
+          method: 'PUT',
+          body: blob,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+          },
+        },
       ),
     );
+    
+    // Transform snake_case response to camelCase to match our interface
+    return {
+      blobId: response.blob_id,
+      size: response.size,
+      hash: response.hash ?? null,
+    };
   }
 
   async listBlobs(): Promise<BlobListResponse> {
-    return unwrap(
-      this.httpClient.get<ApiResponseWrapper<BlobListResponse>>('/admin-api/blobs'),
+    const response = await unwrap(
+      this.httpClient.get<ApiResponseWrapper<{ blobs: Array<{ blob_id: string; size: number; hash?: string | null }> }>>('/admin-api/blobs'),
     );
+    
+    // Transform snake_case response to camelCase to match our interface
+    return {
+      blobs: response.blobs.map((blob) => ({
+        blobId: blob.blob_id,
+        size: blob.size,
+        hash: blob.hash ?? null,
+      })),
+    };
   }
 
   async getBlob(blobId: string): Promise<Blob> {
@@ -55,10 +78,16 @@ export class BlobsApiClient {
   }
 
   async deleteBlob(blobId: string): Promise<BlobDeleteResponse> {
-    return unwrap(
-      this.httpClient.delete<ApiResponseWrapper<BlobDeleteResponse>>(
+    const response = await unwrap(
+      this.httpClient.delete<ApiResponseWrapper<{ blob_id?: string; blobId?: string; deleted: boolean }>>(
         `/admin-api/blobs/${blobId}`,
       ),
     );
+    
+    // Transform snake_case response to camelCase to match our interface
+    return {
+      blobId: response.blob_id || response.blobId || blobId,
+      deleted: response.deleted,
+    };
   }
 }

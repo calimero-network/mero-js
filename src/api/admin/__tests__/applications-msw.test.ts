@@ -24,7 +24,8 @@ describe('ApplicationsApiClient - MSW Integration Tests', () => {
     it('should list applications', async () => {
       const result = await client.listApplications();
       expect(result).toBeDefined();
-      expect(Array.isArray(result)).toBe(true);
+      expect(result.apps).toBeDefined();
+      expect(Array.isArray(result.apps)).toBe(true);
     });
 
     it('should get application by id', async () => {
