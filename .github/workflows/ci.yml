@@ -102,6 +102,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate MSW handlers
+        run: pnpm generate:msw
+
       - name: Run unit tests
         run: pnpm test:unit
 
@@ -131,6 +134,9 @@ jobs:
 
       - name: Build package
         run: pnpm build
+
+      - name: Generate MSW handlers
+        run: pnpm generate:msw
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
