@@ -31,7 +31,9 @@ export interface AuthTokenResponse {
   expires_in: number;
 }
 
+// Server requires BOTH access_token and refresh_token (snake_case, no serde rename)
 export interface RefreshTokenRequest {
+  access_token: string;
   refresh_token: string;
 }
 
@@ -41,7 +43,10 @@ export interface AuthProvider {
   enabled: boolean;
 }
 
-export type AuthProvidersResponse = AuthProvider[];
+export interface AuthProvidersResponse {
+  providers: AuthProvider[];
+  count?: number;
+}
 
 export interface AuthIdentityResponse {
   service: string;

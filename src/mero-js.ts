@@ -143,28 +143,19 @@ export class MeroJs {
     });
 
     // Create auth HTTP client (uses authBaseUrl when different from baseUrl)
-    // When authBaseUrl differs, we need a separate client to route requests correctly
-    const authHttpClient = isEmbedded
-      ? this.httpClient // Reuse admin client when URLs match (embedded mode)
-      : createBrowserHttpClient({
-          baseUrl: authBaseUrl,
-          getAuthToken: async () => {
-            const token = await this.getValidToken();
-            return token?.access_token || '';
-          },
-          // Wire up automatic token refresh on 401
-          refreshToken: async () => {
-            const refreshed = await this.performTokenRefresh();
-            return refreshed.access_token;
-          },
-          onTokenRefresh: async (_newToken: string) => {
-            if (this.tokenData && this.tokenStorage) {
-              await this.tokenStorage.set(this.tokenData);
-            }
-          },
-          timeoutMs: this.config.timeoutMs,
-          credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
-        });
+    // IMPORTANT: Auth client does NOT have refreshToken wired up to prevent infinite loops
+    // when the refresh endpoint itself returns 401
+    const authHttpClient = createBrowserHttpClient({
+      baseUrl: authBaseUrl,
+      getAuthToken: async () => {
+        const token = await this.getValidToken();
+        return token?.access_token || '';
+      },
+      // NO refreshToken callback - auth endpoints handle their own auth
+      // Wiring refreshToken here would cause infinite loops when refresh fails
+      timeoutMs: this.config.timeoutMs,
+      credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
+    });
 
     // Create API clients
     this.authClient = createAuthApiClient(authHttpClient, {
@@ -195,11 +186,16 @@ export class MeroJs {
    * ```
    */
   async init(): Promise<void> {
+    console.log('[mero-js] init() called, tokenStorage:', this.tokenStorage ? 'EXISTS' : 'NULL');
     if (this.tokenStorage) {
       const storedToken = await this.tokenStorage.get();
+      console.log('[mero-js] init() storedToken:', storedToken ? 'LOADED' : 'NULL');
       if (storedToken) {
         this.tokenData = storedToken;
+        console.log('[mero-js] init() tokenData set, expires_at:', storedToken.expires_at);
       }
+    } else {
+      console.log('[mero-js] init() no tokenStorage configured');
     }
   }
 
@@ -280,10 +276,22 @@ export class MeroJs {
 
       const response = await this.authClient.getToken(requestBody);
 
+      // Extract expiry from JWT (more reliable than response.expires_in)
+      let expiresAt: number;
+      try {
+        const payload = JSON.parse(atob(response.access_token.split('.')[1]));
+        expiresAt = payload.exp * 1000; // JWT exp is in seconds, convert to ms
+        console.log('[mero-js] Extracted exp from JWT:', payload.exp, '-> expires_at:', expiresAt);
+      } catch (e) {
+        // Fallback to response.expires_in if JWT parsing fails
+        expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
+        console.warn('[mero-js] Failed to parse JWT, using expires_in fallback:', expiresAt);
+      }
+
       this.tokenData = {
         access_token: response.access_token,
         refresh_token: response.refresh_token,
-        expires_at: Date.now() + response.expires_in * 1000,
+        expires_at: expiresAt,
       };
 
       // Persist to storage if provided
@@ -323,34 +331,54 @@ export class MeroJs {
    * so this preemptive check is an optimization to avoid unnecessary 401s.
    */
   private async getValidToken(): Promise<TokenData | null> {
+    console.log('[mero-js] getValidToken called, tokenData:', this.tokenData ? 'EXISTS' : 'NULL');
     if (!this.tokenData) {
+      console.log('[mero-js] No tokenData, returning null');
       return null;
     }
 
-    // Check if token is expired (with 5 minute buffer)
-    const bufferTime = 5 * 60 * 1000; // 5 minutes
-    if (Date.now() >= this.tokenData.expires_at - bufferTime) {
+    // Check if token is actually expired
+    const now = Date.now();
+    const expiresAt = this.tokenData.expires_at;
+    const isExpired = now >= expiresAt;
+    console.log('[mero-js] Token check: now=', now, 'expires_at=', expiresAt, 'isExpired=', isExpired);
+    
+    if (isExpired) {
+      console.log('[mero-js] Token expired, attempting preemptive refresh');
       return await this.refreshToken();
     }
 
+    console.log('[mero-js] Token valid, returning tokenData');
     return this.tokenData;
   }
 
   /**
    * Refresh the access token using the refresh token.
    * Called automatically when token is about to expire or on 401.
+   * 
+   * @deprecated Use performTokenRefresh instead - this is kept for compatibility
    */
   private async refreshToken(): Promise<TokenData> {
-    if (!this.tokenData?.refresh_token) {
-      throw new Error('No refresh token available');
-    }
+    return this.performTokenRefresh();
+  }
 
+  /**
+   * Perform the actual token refresh.
+   * This is used by both preemptive refresh and HTTP client's 401 handler.
+   * 
+   * Uses a shared promise to prevent multiple simultaneous refresh attempts,
+   * even when called from multiple sources (preemptive check, HTTP 401 handler, etc.)
+   */
+  private async performTokenRefresh(): Promise<TokenData> {
     // Prevent multiple simultaneous refresh attempts
+    // This is critical for avoiding 100+ refresh requests when multiple 401s come in
     if (this.refreshPromise) {
+      console.log('[mero-js] Refresh already in progress, waiting for existing promise');
       return this.refreshPromise;
     }
 
-    this.refreshPromise = this.performTokenRefresh();
+    console.log('[mero-js] Starting new refresh attempt');
+    this.refreshPromise = this.doTokenRefresh();
 
     try {
       const newToken = await this.refreshPromise;
@@ -361,23 +389,50 @@ export class MeroJs {
   }
 
   /**
-   * Perform the actual token refresh.
-   * This is exposed separately for the HTTP client's 401 handler.
+   * Internal: Actually perform the refresh request.
+   * Called only from performTokenRefresh() which manages the deduplication.
    */
-  private async performTokenRefresh(): Promise<TokenData> {
+  private async doTokenRefresh(): Promise<TokenData> {
+    console.log('[mero-js doTokenRefresh] STARTING refresh...');
+    console.log('[mero-js doTokenRefresh] tokenData exists:', !!this.tokenData);
+    console.log('[mero-js doTokenRefresh] access_token exists:', !!this.tokenData?.access_token);
+    console.log('[mero-js doTokenRefresh] refresh_token exists:', !!this.tokenData?.refresh_token);
+    
     if (!this.tokenData?.refresh_token) {
       throw new Error('No refresh token available');
     }
+    
+    if (!this.tokenData?.access_token) {
+      throw new Error('No access token available for refresh (server requires both tokens)');
+    }
 
     try {
-      const response = await this.authClient.refreshToken({
+      // Server requires BOTH access_token and refresh_token (snake_case)
+      const refreshPayload = {
+        access_token: this.tokenData.access_token,
         refresh_token: this.tokenData.refresh_token,
-      });
+      };
+      console.log('[mero-js doTokenRefresh] Payload keys:', Object.keys(refreshPayload));
+      console.log('[mero-js doTokenRefresh] access_token length:', refreshPayload.access_token?.length);
+      console.log('[mero-js doTokenRefresh] refresh_token length:', refreshPayload.refresh_token?.length);
+      const response = await this.authClient.refreshToken(refreshPayload);
+
+      // Extract expiry from JWT (more reliable than response.expires_in)
+      let expiresAt: number;
+      try {
+        const payload = JSON.parse(atob(response.access_token.split('.')[1]));
+        expiresAt = payload.exp * 1000; // JWT exp is in seconds, convert to ms
+        console.log('[mero-js] Extracted exp from JWT:', payload.exp, '-> expires_at:', expiresAt);
+      } catch (e) {
+        // Fallback to response.expires_in if JWT parsing fails
+        expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
+        console.warn('[mero-js] Failed to parse JWT, using expires_in fallback:', expiresAt);
+      }
 
       this.tokenData = {
         access_token: response.access_token,
         refresh_token: response.refresh_token,
-        expires_at: Date.now() + response.expires_in * 1000,
+        expires_at: expiresAt,
       };
 
       // Persist to storage if provided
@@ -387,7 +442,47 @@ export class MeroJs {
 
       return this.tokenData;
     } catch (error) {
-      // If refresh fails, clear the token and require re-authentication
+      console.error('[mero-js] Token refresh failed:', error);
+      
+      // Check if it's an HTTP error with status code
+      const httpError = error as { status?: number; body?: string; message?: string };
+      const status = httpError?.status;
+      const errorBody = httpError?.body || httpError?.message || '';
+      
+      if (status) {
+        console.error('[mero-js] Refresh error status:', status);
+        console.error('[mero-js] Refresh error body:', errorBody);
+      }
+      
+      // Special case: server says "Access token still valid"
+      // This means the token IS valid but some other endpoint returned 401
+      // Don't clear tokens, don't retry - something else is wrong
+      if (errorBody.includes('still valid') || errorBody.includes('token valid')) {
+        console.warn('[mero-js] Server says token is still valid - NOT clearing tokens');
+        console.warn('[mero-js] This usually means the 401 came from a different issue (wrong endpoint, missing header, etc.)');
+        // Create a special error that the HTTP client won't retry
+        const tokenValidError = new Error('Token is valid but request failed. Check Authorization header.');
+        (tokenValidError as any).tokenStillValid = true;
+        throw tokenValidError;
+      }
+      
+      // On ANY 4XX error, tokens are invalid - clear them and require re-auth
+      // This handles: 400 (bad request), 401 (unauthorized), 403 (forbidden), etc.
+      if (status && status >= 400 && status < 500) {
+        console.warn('[mero-js] Refresh failed with 4XX - clearing tokens, user must re-authenticate');
+        await this.clearToken();
+        throw new Error(`Session expired. Please log in again. (${status})`);
+      }
+      
+      // On 5XX errors, don't clear tokens - might be transient server issue
+      // User can retry later
+      if (status && status >= 500) {
+        console.warn('[mero-js] Refresh failed with 5XX - server error, keeping tokens');
+        throw new Error(`Server error during refresh. Please try again later. (${status})`);
+      }
+      
+      // Unknown error - clear tokens to be safe
+      console.warn('[mero-js] Refresh failed with unknown error - clearing tokens');
       await this.clearToken();
       throw new Error(
         `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -417,6 +512,32 @@ export class MeroJs {
    */
   public getTokenData(): TokenData | null {
     return this.tokenData;
+  }
+
+  /**
+   * Manually set the token data.
+   * Use this when handling authentication externally (e.g., OAuth flows).
+   * 
+   * @param tokenData - The token data to set, or null to clear
+   * @example
+   * ```typescript
+   * // After receiving tokens from external auth flow
+   * await meroJs.setToken({
+   *   access_token: 'eyJ...',
+   *   refresh_token: 'eyJ...',
+   *   expires_at: Date.now() + 3600000,
+   * });
+   * ```
+   */
+  public async setToken(tokenData: TokenData | null): Promise<void> {
+    this.tokenData = tokenData;
+    if (this.tokenStorage) {
+      if (tokenData) {
+        await this.tokenStorage.set(tokenData);
+      } else {
+        await this.tokenStorage.clear();
+      }
+    }
   }
 
   /**
