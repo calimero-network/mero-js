@@ -8,13 +8,7 @@ module.exports = {
     node: true,
     es2020: true,
   },
-  ignorePatterns: [
-    'dist/**',
-    'lib/**',
-    '**/*.test.ts',
-    '**/*.spec.ts',
-    'tests/**',
-  ],
+  ignorePatterns: ['dist/**', 'lib/**', 'node_modules/**'],
   rules: {
     '@typescript-eslint/no-unused-vars': [
       'warn',
@@ -23,5 +17,20 @@ module.exports = {
         varsIgnorePattern: '^_',
       },
     ],
+    '@typescript-eslint/no-explicit-any': 'warn',
   },
+  overrides: [
+    {
+      // Test files configuration
+      files: ['**/*.test.ts', '**/*.spec.ts', 'tests/**/*.ts'],
+      env: {
+        node: true,
+      },
+      rules: {
+        // Relax rules for tests
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-non-null-assertion': 'off',
+      },
+    },
+  ],
 };

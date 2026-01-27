@@ -176,9 +176,14 @@ describe('WebHttpClient - Token Refresh', () => {
   });
 
   describe('Non-Expired 401 Errors', () => {
-    it('should not call refreshToken for 401 with missing_token', async () => {
-      const refreshToken = vi.fn();
+    // NOTE: Changed behavior - we now attempt refresh on ANY 401
+    // This is because many servers don't send x-auth-error headers
+    // The refresh logic handles various failure modes appropriately
+    
+    it('should call refreshToken for 401 with missing_token (attempts refresh)', async () => {
+      const refreshToken = vi.fn().mockRejectedValue(new Error('Missing token'));
       transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = vi.fn();
 
       const errorResponse = new Response(null, {
         status: 401,
@@ -187,19 +192,23 @@ describe('WebHttpClient - Token Refresh', () => {
         },
       });
 
-      mockFetch.mockResolvedValueOnce(errorResponse);
+      mockFetch.mockResolvedValue(errorResponse);
 
       await expect(client.get('/protected-endpoint')).rejects.toThrow(
         HTTPError,
       );
 
-      expect(refreshToken).not.toHaveBeenCalled();
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(refreshToken).toHaveBeenCalled();
     });
 
-    it('should not call refreshToken for 401 with token_revoked', async () => {
-      const refreshToken = vi.fn();
+    // NOTE: Changed behavior - we now attempt refresh on ANY 401
+    // This is because many servers don't send x-auth-error headers
+    // The refresh logic handles "token still valid" responses appropriately
+    
+    it('should call refreshToken for 401 with token_revoked (attempts refresh)', async () => {
+      const refreshToken = vi.fn().mockRejectedValue(new Error('Token revoked'));
       transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = vi.fn();
 
       const errorResponse = new Response(null, {
         status: 401,
@@ -208,18 +217,19 @@ describe('WebHttpClient - Token Refresh', () => {
         },
       });
 
-      mockFetch.mockResolvedValueOnce(errorResponse);
+      mockFetch.mockResolvedValue(errorResponse);
 
       await expect(client.get('/protected-endpoint')).rejects.toThrow(
         HTTPError,
       );
 
-      expect(refreshToken).not.toHaveBeenCalled();
+      expect(refreshToken).toHaveBeenCalled();
     });
 
-    it('should not call refreshToken for 401 with invalid_token', async () => {
-      const refreshToken = vi.fn();
+    it('should call refreshToken for 401 with invalid_token (attempts refresh)', async () => {
+      const refreshToken = vi.fn().mockRejectedValue(new Error('Invalid token'));
       transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = vi.fn();
 
       const errorResponse = new Response(null, {
         status: 401,
@@ -228,30 +238,31 @@ describe('WebHttpClient - Token Refresh', () => {
         },
       });
 
-      mockFetch.mockResolvedValueOnce(errorResponse);
+      mockFetch.mockResolvedValue(errorResponse);
 
       await expect(client.get('/protected-endpoint')).rejects.toThrow(
         HTTPError,
       );
 
-      expect(refreshToken).not.toHaveBeenCalled();
+      expect(refreshToken).toHaveBeenCalled();
     });
 
-    it('should not call refreshToken for 401 without x-auth-error header', async () => {
-      const refreshToken = vi.fn();
+    it('should call refreshToken for 401 without x-auth-error header (attempts refresh)', async () => {
+      const refreshToken = vi.fn().mockRejectedValue(new Error('Refresh failed'));
       transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = vi.fn();
 
       const errorResponse = new Response(null, {
         status: 401,
       });
 
-      mockFetch.mockResolvedValueOnce(errorResponse);
+      mockFetch.mockResolvedValue(errorResponse);
 
       await expect(client.get('/protected-endpoint')).rejects.toThrow(
         HTTPError,
       );
 
-      expect(refreshToken).not.toHaveBeenCalled();
+      expect(refreshToken).toHaveBeenCalled();
     });
   });
 

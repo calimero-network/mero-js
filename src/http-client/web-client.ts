@@ -9,7 +9,7 @@ import { combineSignals, createTimeoutSignal } from './signal-utils';
 
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
-  name = 'HTTPError' as const;
+  override readonly name = 'HTTPError' as const;
 
   constructor(
     public status: number,
@@ -65,10 +65,16 @@ export class WebHttpClient implements HttpClient {
     body?: unknown,
     init?: RequestOptions,
   ): Promise<T> {
+    const jsonBody = body ? JSON.stringify(body) : undefined;
+    // Debug: Log the exact request body for /refresh endpoint
+    if (path.includes('/refresh')) {
+      console.log('[HTTP POST /refresh] Body being sent:', jsonBody);
+      console.log('[HTTP POST /refresh] Body type:', typeof body, body ? Object.keys(body as object) : 'undefined');
+    }
     return this.request<T>(path, {
       ...init,
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: jsonBody,
       headers: {
         'Content-Type': 'application/json',
         ...init?.headers,
@@ -239,17 +245,21 @@ export class WebHttpClient implements HttpClient {
           bodyText,
         );
 
-        // Handle 401 with token_expired - attempt automatic token refresh
+        // Handle 401 - attempt automatic token refresh
+        // Attempt refresh on ANY 401 when we have a refresh token callback,
+        // not just when x-auth-error header is present (server implementations vary)
         // Don't retry if user aborted the request
         const userAborted = init?.signal?.aborted === true;
-        if (
+        const hasAuthError = response.headers.get('x-auth-error');
+        const shouldAttemptRefresh = 
           response.status === 401 &&
           this.transport.refreshToken &&
-          response.headers.get('x-auth-error') === 'token_expired' &&
           retryCount < MAX_RETRY_ATTEMPTS &&
           !isStreamBody && // Can't retry with stream bodies
-          !userAborted // Don't retry if user aborted
-        ) {
+          !userAborted; // Don't retry if user aborted
+        
+        if (shouldAttemptRefresh && this.transport.refreshToken) {
+          console.log('[mero-js] 401 received, attempting token refresh...', { hasAuthError });
           try {
             // Use cached refresh promise if one is in progress (prevents race conditions)
             let refreshPromise = this.refreshTokenPromise;
@@ -319,6 +329,7 @@ export class WebHttpClient implements HttpClient {
             // Clear caches on error
             this.refreshTokenPromise = null;
             this.onTokenRefreshPromise = null;
+            console.log('[mero-js] Token refresh failed:', refreshError);
             // Configuration errors (missing onTokenRefresh) should be thrown as-is
             if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
               throw refreshError;
