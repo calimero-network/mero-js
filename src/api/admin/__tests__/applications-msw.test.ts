@@ -5,7 +5,6 @@ import { ApplicationsApiClient } from '../applications';
 import { createBrowserHttpClient } from '../../../http-client';
 import {
   createErrorHandler,
-  createEmptyResponseHandler,
   createMalformedJsonHandler,
 } from '../../../../tests/mocks/helpers';
 
@@ -114,11 +113,16 @@ describe('ApplicationsApiClient - MSW Integration Tests', () => {
   });
 
   describe('Edge Cases', () => {
-    it('should handle empty response array', async () => {
-      server.use(createEmptyResponseHandler('*/admin-api/applications'));
+    it('should handle empty applications list', async () => {
+      server.use(
+        http.get('*/admin-api/applications', () => {
+          return HttpResponse.json({ data: { apps: [] } });
+        }),
+      );
 
       const result = await client.listApplications();
-      expect(result).toEqual([]);
+      expect(result).toEqual({ apps: [] });
+      expect(result.apps).toHaveLength(0);
     });
 
     it('should handle network timeout', async () => {
@@ -142,19 +146,18 @@ describe('ApplicationsApiClient - MSW Integration Tests', () => {
 
     it('should handle very large responses', async () => {
       const largeArray = Array(1000).fill({
-        id: 'item',
-        name: 'x'.repeat(1000),
-        version: '1.0.0',
+        applicationId: 'app-item',
+        metadata: 'x'.repeat(1000),
       });
 
       server.use(
         http.get('*/admin-api/applications', () => {
-          return HttpResponse.json({ data: largeArray });
+          return HttpResponse.json({ data: { apps: largeArray } });
         }),
       );
 
       const result = await client.listApplications();
-      expect(result).toHaveLength(1000);
+      expect(result.apps).toHaveLength(1000);
     });
   });
 
