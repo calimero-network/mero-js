@@ -107,9 +107,10 @@ export interface ClientKey {
 
 export type ListClientKeysResponse = ClientKey[];
 
+// Note: Auth API expects snake_case field names
 export interface GenerateClientKeyRequest {
-  contextId: string;
-  contextIdentity: string;
+  context_id: string;
+  context_identity: string;
   permissions: string[];
 }
 
