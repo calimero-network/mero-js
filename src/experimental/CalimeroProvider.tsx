@@ -304,10 +304,19 @@ export const CalimeroProvider: React.FC<CalimeroProviderProps> = ({
       setAppUrl(newAppUrl);
       if (!newAppUrl) return;
 
+      // Tokens received and stored — set authenticated immediately.
+      // Background verification is best-effort; don't reset auth on failure
+      // since the tokens may be valid but the verify endpoint unreachable
+      // (e.g. cross-origin, network timing).
+      setIsAuthenticated(true);
       const verify = async () => {
-        const response = await apiClient.node().checkAuth();
-        if (!response.error) {
-          setIsAuthenticated(true);
+        try {
+          const response = await apiClient.node().checkAuth();
+          if (response.error) {
+            console.warn('[CalimeroProvider] Auth verification warning:', response.error);
+          }
+        } catch (err) {
+          console.warn('[CalimeroProvider] Auth verification error (non-fatal):', err);
         }
       };
       verify();
