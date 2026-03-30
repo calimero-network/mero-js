@@ -21,7 +21,7 @@ import type {
   JoinContextResponseData,
   UploadBlobRequest,
   CreateAliasRequest,
-  AliasEntry,
+
   ListAliasesResponseData,
 } from './admin-types';
 
@@ -71,9 +71,9 @@ export class AdminApiClient {
   // ---- Package Management (public, no auth) ----
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
-    return this.httpClient.get<GetLatestVersionResponseData>(
+    return unwrap(await this.httpClient.get<{ data: GetLatestVersionResponseData }>(
       `/admin-api/packages/${encodeURIComponent(packageName)}/latest`,
-    );
+    ));
   }
 
   // ---- Context Management ----
@@ -168,17 +168,16 @@ export class AdminApiClient {
   }
 
   async listContextAliases(): Promise<ListAliasesResponseData> {
-    return this.httpClient.get<ListAliasesResponseData>('/admin-api/alias/list/context');
+    return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/context'));
   }
 
   async listApplicationAliases(): Promise<ListAliasesResponseData> {
-    return this.httpClient.get<ListAliasesResponseData>('/admin-api/alias/list/application');
+    return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/application'));
   }
 
   // ---- Network ----
 
-  /** Returns `{ count: number }`. No `data` wrapper — this endpoint is flat. */
   async getPeersCount(): Promise<{ count: number }> {
-    return this.httpClient.get<{ count: number }>('/admin-api/peers');
+    return unwrap(await this.httpClient.get<{ data: { count: number } }>('/admin-api/peers'));
   }
 }

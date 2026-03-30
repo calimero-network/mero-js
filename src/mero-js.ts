@@ -38,7 +38,10 @@ function expiresAtFromJwt(token: string, fallbackMs: number): number {
   try {
     const parts = token.split('.');
     if (parts.length === 3) {
-      const payload = JSON.parse(atob(parts[1]));
+      // JWT uses base64url encoding: replace -/_ with +// and add padding
+      let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const payload = JSON.parse(atob(b64));
       if (typeof payload.exp === 'number') {
         return payload.exp * 1000;
       }

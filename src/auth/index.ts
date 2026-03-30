@@ -37,7 +37,7 @@ export function parseAuthCallback(url: string): AuthCallbackResult | null {
       applicationId: params.get('application_id') ?? '',
       contextId: params.get('context_id') ?? '',
       contextIdentity: params.get('context_identity') ?? '',
-      nodeUrl: params.get('node_url') ? decodeURIComponent(params.get('node_url')!) : '',
+      nodeUrl: params.get('node_url') ?? '',
     };
   } catch {
     return null;

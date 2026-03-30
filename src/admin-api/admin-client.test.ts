@@ -86,8 +86,8 @@ describe('AdminApiClient', () => {
   });
 
   describe('Package Management', () => {
-    it('getLatestPackageVersion returns flat response', async () => {
-      mock.setMockResponse('GET', '/admin-api/packages/com.calimero.app/latest', { applicationId: 'app-1', version: '1.0' });
+    it('getLatestPackageVersion unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/packages/com.calimero.app/latest', { data: { applicationId: 'app-1', version: '1.0' } });
       const result = await client.getLatestPackageVersion('com.calimero.app');
       expect(result).toEqual({ applicationId: 'app-1', version: '1.0' });
     });
@@ -195,8 +195,8 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ value: 'ctx-1' });
     });
 
-    it('listContextAliases gets correct path', async () => {
-      mock.setMockResponse('GET', '/admin-api/alias/list/context', { aliases: [] });
+    it('listContextAliases unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/alias/list/context', { data: { aliases: [] } });
       const result = await client.listContextAliases();
       expect(result).toEqual({ aliases: [] });
     });
@@ -209,8 +209,8 @@ describe('AdminApiClient', () => {
   });
 
   describe('Network', () => {
-    it('getPeersCount returns flat response', async () => {
-      mock.setMockResponse('GET', '/admin-api/peers', { count: 3 });
+    it('getPeersCount unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/peers', { data: { count: 3 } });
       const result = await client.getPeersCount();
       expect(result).toEqual({ count: 3 });
     });
