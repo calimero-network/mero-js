@@ -1,208 +1,184 @@
 import { HttpClient } from '../http-client';
-import {
-  // Common types
-  ApiResponse,
-  // Health and Status
+import type {
   HealthStatus,
   AdminAuthStatus,
-
-  // Applications
   InstallApplicationRequest,
+  InstallApplicationResponseData,
   InstallDevApplicationRequest,
-  InstallApplicationResponse,
-  UninstallApplicationResponse,
-  ListApplicationsResponse,
-  GetApplicationResponse,
-
-  // Contexts
+  UninstallApplicationResponseData,
+  ListApplicationsResponseData,
+  GetApplicationResponseData,
+  GetLatestVersionResponseData,
   CreateContextRequest,
-  CreateContextResponse,
-  DeleteContextResponse,
-  ListContextsResponse,
-  GetContextResponse,
-
-  // Blobs
+  CreateContextResponseData,
+  DeleteContextResponseData,
+  GetContextsResponseData,
+  Context,
+  GenerateContextIdentityResponseData,
+  GetContextIdentitiesResponseData,
+  InviteToContextRequest,
+  JoinContextRequest,
+  JoinContextResponseData,
   UploadBlobRequest,
-  UploadBlobResponse,
-  DeleteBlobResponse,
-  ListBlobsResponse,
-  GetBlobResponse,
-
-  // Aliases
   CreateAliasRequest,
-  CreateAliasResponse,
-  DeleteAliasResponse,
-  ListAliasesResponse,
-  GetAliasResponse,
-
-  // Network
-  GetNetworkPeersResponse,
-  GetNetworkStatsResponse,
-  GetNetworkConfigResponse,
-  UpdateNetworkConfigRequest,
-  UpdateNetworkConfigResponse,
-
-  // System
-  GetSystemInfoResponse,
-  GetSystemLogsResponse,
-  GetSystemMetricsResponse,
-  RestartSystemResponse,
-  ShutdownSystemResponse,
+  AliasEntry,
+  ListAliasesResponseData,
 } from './admin-types';
+
+/**
+ * Helper: server wraps most responses in `{ data: T }`.
+ * This extracts `.data` so callers get the inner payload directly.
+ */
+function unwrap<T>(response: { data: T }): T {
+  return response.data;
+}
 
 export class AdminApiClient {
   constructor(private httpClient: HttpClient) {}
 
-  // Health and Status Endpoints
+  // ---- Health and Status (public, no auth) ----
+
   async healthCheck(): Promise<HealthStatus> {
-    const response =
-      await this.httpClient.get<ApiResponse<HealthStatus>>('/health');
-    if (!response.data) {
-      throw new Error('Health response data is null');
-    }
-    return response.data;
+    return unwrap(await this.httpClient.get<{ data: HealthStatus }>('/admin-api/health'));
   }
 
   async isAuthed(): Promise<AdminAuthStatus> {
-    return this.httpClient.get<AdminAuthStatus>('/is-authed');
+    return this.httpClient.get<AdminAuthStatus>('/admin-api/is-authed');
   }
 
-  // Application Management Endpoints
-  async installApplication(
-    request: InstallApplicationRequest,
-  ): Promise<InstallApplicationResponse> {
-    return this.httpClient.post<InstallApplicationResponse>(
-      '/install-application',
-      request,
+  // ---- Application Management ----
+
+  async installApplication(request: InstallApplicationRequest): Promise<InstallApplicationResponseData> {
+    return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-application', request));
+  }
+
+  async installDevApplication(request: InstallDevApplicationRequest): Promise<InstallApplicationResponseData> {
+    return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-dev-application', request));
+  }
+
+  async uninstallApplication(appId: string): Promise<UninstallApplicationResponseData> {
+    return unwrap(await this.httpClient.delete<{ data: UninstallApplicationResponseData }>(`/admin-api/applications/${appId}`));
+  }
+
+  async listApplications(): Promise<ListApplicationsResponseData> {
+    return unwrap(await this.httpClient.get<{ data: ListApplicationsResponseData }>('/admin-api/applications'));
+  }
+
+  async getApplication(appId: string): Promise<GetApplicationResponseData> {
+    return unwrap(await this.httpClient.get<{ data: GetApplicationResponseData }>(`/admin-api/applications/${appId}`));
+  }
+
+  // ---- Package Management (public, no auth) ----
+
+  async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
+    return this.httpClient.get<GetLatestVersionResponseData>(
+      `/admin-api/packages/${encodeURIComponent(packageName)}/latest`,
     );
   }
 
-  async installDevApplication(
-    request: InstallDevApplicationRequest,
-  ): Promise<InstallApplicationResponse> {
-    return this.httpClient.post<InstallApplicationResponse>(
-      '/install-dev-application',
-      request,
-    );
+  // ---- Context Management ----
+
+  async createContext(request: CreateContextRequest): Promise<CreateContextResponseData> {
+    return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', request));
   }
 
-  async uninstallApplication(
-    appId: string,
-  ): Promise<UninstallApplicationResponse> {
-    return this.httpClient.delete<UninstallApplicationResponse>(
-      `/applications/${appId}`,
-    );
+  async deleteContext(contextId: string): Promise<DeleteContextResponseData> {
+    return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`));
   }
 
-  async listApplications(): Promise<ListApplicationsResponse> {
-    return this.httpClient.get<ListApplicationsResponse>('/applications');
+  async getContexts(): Promise<GetContextsResponseData> {
+    return unwrap(await this.httpClient.get<{ data: GetContextsResponseData }>('/admin-api/contexts'));
   }
 
-  async getApplication(appId: string): Promise<GetApplicationResponse> {
-    return this.httpClient.get<GetApplicationResponse>(
-      `/applications/${appId}`,
-    );
+  async getContext(contextId: string): Promise<Context> {
+    return unwrap(await this.httpClient.get<{ data: Context }>(`/admin-api/contexts/${contextId}`));
   }
 
-  // Context Management Endpoints
-  async createContext(
-    request: CreateContextRequest,
-  ): Promise<CreateContextResponse> {
-    return this.httpClient.post<CreateContextResponse>('/contexts', request);
+  async getContextsForApplication(applicationId: string): Promise<GetContextsResponseData> {
+    return unwrap(await this.httpClient.get<{ data: GetContextsResponseData }>(`/admin-api/contexts/for-application/${applicationId}`));
   }
 
-  async deleteContext(contextId: string): Promise<DeleteContextResponse> {
-    return this.httpClient.delete<DeleteContextResponse>(
-      `/contexts/${contextId}`,
-    );
+  // ---- Context Identity ----
+
+  async generateContextIdentity(): Promise<GenerateContextIdentityResponseData> {
+    return unwrap(await this.httpClient.post<{ data: GenerateContextIdentityResponseData }>('/admin-api/identity/context', {}));
   }
 
-  async getContexts(): Promise<ListContextsResponse> {
-    return this.httpClient.get<ListContextsResponse>('/contexts');
+  async getContextIdentities(contextId: string): Promise<GetContextIdentitiesResponseData> {
+    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${contextId}/identities`));
   }
 
-  async getContext(contextId: string): Promise<GetContextResponse> {
-    return this.httpClient.get<GetContextResponse>(`/contexts/${contextId}`);
+  async getContextIdentitiesOwned(contextId: string): Promise<GetContextIdentitiesResponseData> {
+    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${contextId}/identities-owned`));
   }
 
-  // Blob Management Endpoints
-  async uploadBlob(request: UploadBlobRequest): Promise<UploadBlobResponse> {
-    return this.httpClient.post<UploadBlobResponse>('/blobs', request);
+  // ---- Context Invite / Join ----
+
+  async inviteToContext(request: InviteToContextRequest): Promise<unknown> {
+    return unwrap(await this.httpClient.post<{ data: unknown }>('/admin-api/contexts/invite', request));
   }
 
-  async deleteBlob(blobId: string): Promise<DeleteBlobResponse> {
-    return this.httpClient.delete<DeleteBlobResponse>(`/blobs/${blobId}`);
+  async joinContext(request: JoinContextRequest): Promise<JoinContextResponseData | null> {
+    return unwrap(await this.httpClient.post<{ data: JoinContextResponseData | null }>('/admin-api/contexts/join', request));
   }
 
-  async listBlobs(): Promise<ListBlobsResponse> {
-    return this.httpClient.get<ListBlobsResponse>('/blobs');
+  // ---- Blob Management ----
+
+  async uploadBlob(data: UploadBlobRequest): Promise<unknown> {
+    return unwrap(await this.httpClient.put<{ data: unknown }>('/admin-api/blobs', data));
   }
 
-  async getBlob(blobId: string): Promise<GetBlobResponse> {
-    return this.httpClient.get<GetBlobResponse>(`/blobs/${blobId}`);
+  async deleteBlob(blobId: string): Promise<unknown> {
+    return unwrap(await this.httpClient.delete<{ data: unknown }>(`/admin-api/blobs/${blobId}`));
   }
 
-  // Alias Management Endpoints
-  async createAlias(request: CreateAliasRequest): Promise<CreateAliasResponse> {
-    return this.httpClient.post<CreateAliasResponse>('/alias', request);
+  async listBlobs(): Promise<unknown> {
+    return this.httpClient.get('/admin-api/blobs');
   }
 
-  async deleteAlias(aliasId: string): Promise<DeleteAliasResponse> {
-    return this.httpClient.delete<DeleteAliasResponse>(`/alias/${aliasId}`);
+  async getBlob(blobId: string): Promise<unknown> {
+    return this.httpClient.get(`/admin-api/blobs/${blobId}`);
   }
 
-  async listAliases(): Promise<ListAliasesResponse> {
-    return this.httpClient.get<ListAliasesResponse>('/alias');
+  // ---- Alias Management ----
+  // Server uses type-specific alias routes: /admin-api/alias/{create,lookup,delete,list}/{context,application}
+
+  async createContextAlias(request: CreateAliasRequest): Promise<unknown> {
+    return this.httpClient.post('/admin-api/alias/create/context', request);
   }
 
-  async getAlias(aliasId: string): Promise<GetAliasResponse> {
-    return this.httpClient.get<GetAliasResponse>(`/alias/${aliasId}`);
+  async createApplicationAlias(request: CreateAliasRequest): Promise<unknown> {
+    return this.httpClient.post('/admin-api/alias/create/application', request);
   }
 
-  // Network Management Endpoints
-  async getNetworkPeers(): Promise<GetNetworkPeersResponse> {
-    return this.httpClient.get<GetNetworkPeersResponse>('/network/peers');
+  async lookupContextAlias(name: string): Promise<unknown> {
+    return this.httpClient.post(`/admin-api/alias/lookup/context/${encodeURIComponent(name)}`, {});
   }
 
-  async getNetworkStats(): Promise<GetNetworkStatsResponse> {
-    return this.httpClient.get<GetNetworkStatsResponse>('/network/stats');
+  async lookupApplicationAlias(name: string): Promise<unknown> {
+    return this.httpClient.post(`/admin-api/alias/lookup/application/${encodeURIComponent(name)}`, {});
   }
 
-  async getNetworkConfig(): Promise<GetNetworkConfigResponse> {
-    return this.httpClient.get<GetNetworkConfigResponse>('/network/config');
+  async deleteContextAlias(name: string): Promise<unknown> {
+    return this.httpClient.post(`/admin-api/alias/delete/context/${encodeURIComponent(name)}`, {});
   }
 
-  async updateNetworkConfig(
-    request: UpdateNetworkConfigRequest,
-  ): Promise<UpdateNetworkConfigResponse> {
-    return this.httpClient.put<UpdateNetworkConfigResponse>(
-      '/network/config',
-      request,
-    );
+  async deleteApplicationAlias(name: string): Promise<unknown> {
+    return this.httpClient.post(`/admin-api/alias/delete/application/${encodeURIComponent(name)}`, {});
   }
 
+  async listContextAliases(): Promise<ListAliasesResponseData> {
+    return this.httpClient.get<ListAliasesResponseData>('/admin-api/alias/list/context');
+  }
+
+  async listApplicationAliases(): Promise<ListAliasesResponseData> {
+    return this.httpClient.get<ListAliasesResponseData>('/admin-api/alias/list/application');
+  }
+
+  // ---- Network ----
+
+  /** Returns `{ count: number }`. No `data` wrapper — this endpoint is flat. */
   async getPeersCount(): Promise<{ count: number }> {
-    return this.httpClient.get<{ count: number }>('/network/peers/count');
-  }
-
-  // System Management Endpoints
-  async getSystemInfo(): Promise<GetSystemInfoResponse> {
-    return this.httpClient.get<GetSystemInfoResponse>('/system/info');
-  }
-
-  async getSystemLogs(): Promise<GetSystemLogsResponse> {
-    return this.httpClient.get<GetSystemLogsResponse>('/system/logs');
-  }
-
-  async getSystemMetrics(): Promise<GetSystemMetricsResponse> {
-    return this.httpClient.get<GetSystemMetricsResponse>('/system/metrics');
-  }
-
-  async restartSystem(): Promise<RestartSystemResponse> {
-    return this.httpClient.post<RestartSystemResponse>('/system/restart');
-  }
-
-  async shutdownSystem(): Promise<ShutdownSystemResponse> {
-    return this.httpClient.post<ShutdownSystemResponse>('/system/shutdown');
+    return this.httpClient.get<{ count: number }>('/admin-api/peers');
   }
 }

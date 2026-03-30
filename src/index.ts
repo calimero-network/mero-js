@@ -14,4 +14,20 @@ export * from './auth-api';
 // Admin API client
 export * from './admin-api';
 
+// Auth utilities
+export { parseAuthCallback, buildAuthLoginUrl } from './auth';
+export type { AuthCallbackResult, AuthLoginOptions } from './auth';
+
+// Token store
+export { MemoryTokenStore, LocalStorageTokenStore } from './token-store';
+export type { TokenStore } from './token-store';
+
+// RPC client
+export { RpcClient, RpcError } from './rpc';
+export type { ExecuteParams } from './rpc';
+
+// Events (SSE / WebSocket)
+export { SseClient, WsClient } from './events';
+export type { SseEventData, WsEventData } from './events';
+
 // Utilities
