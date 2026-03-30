@@ -1,3 +1,8 @@
+## <small>1.2.1 (2026-03-30)</small>
+
+* fix: skip npm publish when no new release is created (#24) ([424bba7](https://github.com/calimero-network/mero-js/commit/424bba7)), closes [#24](https://github.com/calimero-network/mero-js/issues/24)
+* ci: comment out E2E tests until core releases X-Auth-Error fix (#23) ([adf2e9b](https://github.com/calimero-network/mero-js/commit/adf2e9b)), closes [#23](https://github.com/calimero-network/mero-js/issues/23)
+
 ## 1.2.0 (2026-03-30)
 
 * feat: complete SDK — TokenStore, auth callback, RPC, SSE, WebSocket (#22) ([ba62a19](https://github.com/calimero-network/mero-js/commit/ba62a19)), closes [#22](https://github.com/calimero-network/mero-js/issues/22)
