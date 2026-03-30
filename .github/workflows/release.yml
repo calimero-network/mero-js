@@ -52,18 +52,26 @@ jobs:
         run: |
           echo "🚀 Mero.js Release"
           echo "📦 Package: @calimero-network/mero-js"
-          pnpm exec semantic-release
+          OUTPUT=$(pnpm exec semantic-release 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "Published release"; then
+            echo "new_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "new_release=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No new release — semantic-release found no releasable commits"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
       
       - name: Publish to npm with OIDC
+        if: steps.semantic.outputs.new_release == 'true'
         run: |
           echo "📦 Publishing to npm with OIDC trusted publishing..."
           npm publish --provenance --access public
       
       - name: Push release commit and tag
-        if: success()
+        if: steps.semantic.outputs.new_release == 'true'
         run: |
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push origin HEAD:master --follow-tags || true
