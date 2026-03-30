@@ -253,8 +253,7 @@ describe('MeroJs SDK', () => {
       expect(tokenData?.access_token).toBe('mock-access-token');
     });
 
-    it('should refresh token when expired', async () => {
-      // First authenticate
+    it('should return token as-is from getValidToken (no proactive refresh)', async () => {
       const mockTokenResponse = {
         data: {
           access_token: 'mock-access-token',
@@ -265,33 +264,17 @@ describe('MeroJs SDK', () => {
       mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
-      // Mock refresh response
-      const mockRefreshResponse = {
-        data: {
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-        },
-      };
-
-      mockAuthClient.refreshToken.mockResolvedValue(mockRefreshResponse);
-
-      // Manually set token as expired
+      // Even with expired token, getValidToken returns it — reactive refresh
+      // happens in the HTTP client layer when it gets a 401
       const tokenData = meroJs.getTokenData()!;
-      tokenData.expires_at = Date.now() - 1000; // Expired 1 second ago
+      tokenData.expires_at = Date.now() - 1000;
 
-      // This should trigger a refresh
       const validToken = await (meroJs as any).getValidToken();
-
-      expect(mockAuthClient.refreshToken).toHaveBeenCalledWith({
-        access_token: 'mock-access-token',
-        refresh_token: 'mock-refresh-token',
-      });
-
-      expect(validToken.access_token).toBe('new-access-token');
+      expect(validToken.access_token).toBe('mock-access-token');
+      expect(mockAuthClient.refreshToken).not.toHaveBeenCalled();
     });
 
-    it('should clear token when refresh fails', async () => {
-      // First authenticate
+    it('should not clear token on refresh failure', async () => {
       const mockTokenResponse = {
         data: {
           access_token: 'mock-access-token',
@@ -302,20 +285,15 @@ describe('MeroJs SDK', () => {
       mockAuthClient.generateTokens.mockResolvedValue(mockTokenResponse);
       await meroJs.authenticate();
 
-      // Mock refresh failure
       mockAuthClient.refreshToken.mockRejectedValue(
         new Error('Refresh failed'),
       );
 
-      // Manually set token as expired
-      const tokenData = meroJs.getTokenData()!;
-      tokenData.expires_at = Date.now() - 1000; // Expired 1 second ago
-
-      // This should trigger a refresh and fail
-      await expect((meroJs as any).getValidToken()).rejects.toThrow(
-        'Token refresh failed: Refresh failed',
+      await expect((meroJs as any).performTokenRefresh()).rejects.toThrow(
+        'Token refresh failed',
       );
-      expect(meroJs.isAuthenticated()).toBe(false);
+      // Token should NOT be cleared — still valid until server says otherwise
+      expect(meroJs.isAuthenticated()).toBe(true);
     });
   });
 
@@ -370,6 +348,8 @@ describe('MeroJs SDK', () => {
       expect(createBrowserHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
+        refreshToken: expect.any(Function),
+        onTokenRefresh: expect.any(Function),
         timeoutMs: 10000,
       });
 
@@ -422,14 +402,12 @@ describe('MeroJs SDK', () => {
         new Error('Invalid refresh token'),
       );
 
-      // Manually set token as expired
-      const tokenData = meroJs.getTokenData()!;
-      tokenData.expires_at = Date.now() - 1000;
-
-      await expect((meroJs as any).getValidToken()).rejects.toThrow(
+      // performTokenRefresh throws but does NOT clear token
+      await expect((meroJs as any).performTokenRefresh()).rejects.toThrow(
         'Token refresh failed: Invalid refresh token',
       );
-      expect(meroJs.isAuthenticated()).toBe(false);
+      // Token is NOT cleared — reactive refresh is handled by HTTP client
+      expect(meroJs.isAuthenticated()).toBe(true);
     });
   });
 
@@ -444,6 +422,8 @@ describe('MeroJs SDK', () => {
       expect(createBrowserHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
+        refreshToken: expect.any(Function),
+        onTokenRefresh: expect.any(Function),
         timeoutMs: 10000,
       });
     });
@@ -459,6 +439,8 @@ describe('MeroJs SDK', () => {
       expect(createBrowserHttpClient).toHaveBeenCalledWith({
         baseUrl: 'http://localhost:3000',
         getAuthToken: expect.any(Function),
+        refreshToken: expect.any(Function),
+        onTokenRefresh: expect.any(Function),
         timeoutMs: 30000,
       });
     });

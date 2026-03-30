@@ -26,11 +26,15 @@ class MockHttpClient implements HttpClient {
     return {} as T;
   }
 
-  async head<T>(path: string): Promise<T> {
-    return {} as T;
+  async head(_path: string): Promise<{ headers: Record<string, string>; status: number }> {
+    return { headers: {}, status: 200 };
   }
 
   async patch<T>(path: string, body?: any): Promise<T> {
+    return {} as T;
+  }
+
+  async request<T>(): Promise<T> {
     return {} as T;
   }
 }

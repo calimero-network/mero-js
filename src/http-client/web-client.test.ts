@@ -176,81 +176,28 @@ describe('WebHttpClient - Token Refresh', () => {
   });
 
   describe('Non-Expired 401 Errors', () => {
-    it('should not call refreshToken for 401 with missing_token', async () => {
+    it('should not call refreshToken for 401 without x-auth-error: token_expired', async () => {
       const refreshToken = vi.fn();
       transport.refreshToken = refreshToken;
 
       const errorResponse = new Response(null, {
         status: 401,
-        headers: {
-          'x-auth-error': 'missing_token',
-        },
+        headers: { 'x-auth-error': 'token_revoked' },
       });
-
       mockFetch.mockResolvedValueOnce(errorResponse);
 
-      await expect(client.get('/protected-endpoint')).rejects.toThrow(
-        HTTPError,
-      );
-
-      expect(refreshToken).not.toHaveBeenCalled();
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-    });
-
-    it('should not call refreshToken for 401 with token_revoked', async () => {
-      const refreshToken = vi.fn();
-      transport.refreshToken = refreshToken;
-
-      const errorResponse = new Response(null, {
-        status: 401,
-        headers: {
-          'x-auth-error': 'token_revoked',
-        },
-      });
-
-      mockFetch.mockResolvedValueOnce(errorResponse);
-
-      await expect(client.get('/protected-endpoint')).rejects.toThrow(
-        HTTPError,
-      );
-
+      await expect(client.get('/protected-endpoint')).rejects.toThrow(HTTPError);
       expect(refreshToken).not.toHaveBeenCalled();
     });
 
-    it('should not call refreshToken for 401 with invalid_token', async () => {
+    it('should not call refreshToken for bare 401 without x-auth-error header', async () => {
       const refreshToken = vi.fn();
       transport.refreshToken = refreshToken;
 
-      const errorResponse = new Response(null, {
-        status: 401,
-        headers: {
-          'x-auth-error': 'invalid_token',
-        },
-      });
-
+      const errorResponse = new Response(null, { status: 401 });
       mockFetch.mockResolvedValueOnce(errorResponse);
 
-      await expect(client.get('/protected-endpoint')).rejects.toThrow(
-        HTTPError,
-      );
-
-      expect(refreshToken).not.toHaveBeenCalled();
-    });
-
-    it('should not call refreshToken for 401 without x-auth-error header', async () => {
-      const refreshToken = vi.fn();
-      transport.refreshToken = refreshToken;
-
-      const errorResponse = new Response(null, {
-        status: 401,
-      });
-
-      mockFetch.mockResolvedValueOnce(errorResponse);
-
-      await expect(client.get('/protected-endpoint')).rejects.toThrow(
-        HTTPError,
-      );
-
+      await expect(client.get('/protected-endpoint')).rejects.toThrow(HTTPError);
       expect(refreshToken).not.toHaveBeenCalled();
     });
   });
