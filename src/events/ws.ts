@@ -80,6 +80,9 @@ export class WsClient {
   }
 
   async connect(): Promise<void> {
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      return;
+    }
     this.closed = false;
 
     try {

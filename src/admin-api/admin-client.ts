@@ -68,12 +68,12 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: GetApplicationResponseData }>(`/admin-api/applications/${appId}`));
   }
 
-  // ---- Package Management (public, no auth) ----
+  // ---- Package Management ----
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetLatestVersionResponseData }>(
+    return this.httpClient.get<GetLatestVersionResponseData>(
       `/admin-api/packages/${encodeURIComponent(packageName)}/latest`,
-    ));
+    );
   }
 
   // ---- Context Management ----
@@ -133,11 +133,11 @@ export class AdminApiClient {
   }
 
   async listBlobs(): Promise<unknown> {
-    return this.httpClient.get('/admin-api/blobs');
+    return unwrap(await this.httpClient.get<{ data: unknown }>('/admin-api/blobs'));
   }
 
   async getBlob(blobId: string): Promise<unknown> {
-    return this.httpClient.get(`/admin-api/blobs/${blobId}`);
+    return unwrap(await this.httpClient.get<{ data: unknown }>(`/admin-api/blobs/${blobId}`));
   }
 
   // ---- Alias Management ----
@@ -178,6 +178,6 @@ export class AdminApiClient {
   // ---- Network ----
 
   async getPeersCount(): Promise<{ count: number }> {
-    return unwrap(await this.httpClient.get<{ data: { count: number } }>('/admin-api/peers'));
+    return this.httpClient.get<{ count: number }>('/admin-api/peers');
   }
 }

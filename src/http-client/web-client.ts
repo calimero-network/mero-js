@@ -240,15 +240,14 @@ export class WebHttpClient implements HttpClient {
         );
 
         // Handle 401 with token_expired - attempt automatic token refresh
-        // Don't retry if user aborted the request
         const userAborted = init?.signal?.aborted === true;
         if (
           response.status === 401 &&
           this.transport.refreshToken &&
           response.headers.get('x-auth-error') === 'token_expired' &&
           retryCount < MAX_RETRY_ATTEMPTS &&
-          !isStreamBody && // Can't retry with stream bodies
-          !userAborted // Don't retry if user aborted
+          !isStreamBody &&
+          !userAborted
         ) {
           try {
             // Use cached refresh promise if one is in progress (prevents race conditions)

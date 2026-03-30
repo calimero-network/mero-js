@@ -3,21 +3,18 @@ name: CI
 on:
   push:
     branches:
-      - '**' # Run on all branches
+      - '**'
   pull_request:
     branches:
       - master
 
-# Cancel in-progress runs when a new commit is pushed
-# Use branch name for both PR and push events to ensure consistent concurrency grouping
-# github.head_ref is available for PR events, github.ref_name for push events
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: write # For PR comments
+  pull-requests: write
 
 env:
   NODE_VERSION: '20'
@@ -27,162 +24,103 @@ jobs:
     name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        # Version is read from package.json packageManager field
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run linter
-        run: pnpm lint
-
-      - name: Run type check
-        run: pnpm typecheck
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
 
   build:
     name: Build
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        # Version is read from package.json packageManager field
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build package
-        run: pnpm build
-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - name: Verify build artifacts
         run: |
-          test -f dist/index.mjs || exit 1
-          test -f dist/index.cjs || exit 1
-          test -f dist/index.browser.mjs || exit 1
-          test -f dist/index.d.ts || exit 1
-          echo "✅ All build artifacts created successfully"
+          test -f dist/index.mjs
+          test -f dist/index.cjs
+          test -f dist/index.browser.mjs
+          test -f dist/index.d.ts
 
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        # Version is read from package.json packageManager field
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run unit tests
-        run: pnpm test:unit
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
 
   test-e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    # Only run e2e tests on PRs to master
-    if: github.event_name == 'pull_request' && github.base_ref == 'master'
     needs: build
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        # Version is read from package.json packageManager field
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build package
-        run: pnpm build
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Docker
-        uses: docker/setup-buildx-action@v3
-
-      - name: Verify Docker
-        run: docker --version
-
-      - name: Clone merobox
+      - name: Start merod node
         run: |
-          git clone https://github.com/calimero-network/merobox.git
+          # Get merod from Docker image
+          docker pull ghcr.io/calimero-network/merod:prerelease
+          docker create --name merod-bin ghcr.io/calimero-network/merod:prerelease
+          docker cp merod-bin:/usr/local/bin/merod ./merod
+          docker rm merod-bin
+          chmod +x ./merod
 
-      - name: Install merobox
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ./merobox
+          # Init + start
+          ./merod --home ./e2e-node --node e2e init \
+            --server-port 4001 --swarm-port 4002 --auth-mode embedded 2>&1 || true
+          RUST_LOG=warn ./merod --home ./e2e-node --node e2e run &
+          echo $! > merod.pid
 
-      - name: Verify merobox installation
-        run: merobox --version
+          # Wait for ready
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://localhost:4001/admin-api/health || exit 1
+
+          # Install test app bundle (committed in tests/e2e/assets/)
+          TOKEN=$(curl -sf http://localhost:4001/auth/token \
+            -H "Content-Type: application/json" \
+            -d "{\"auth_method\":\"user_password\",\"public_key\":\"dev\",\"client_name\":\"http://localhost:4001\",\"timestamp\":$(date +%s),\"provider_data\":{\"username\":\"dev\",\"password\":\"dev\"}}" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['access_token'])")
+          curl -sf http://localhost:4001/admin-api/install-dev-application \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"path\":\"$(pwd)/tests/e2e/assets/kv-store.mpk\",\"metadata\":[]}"
+          echo "Node ready with test app"
 
       - name: Run E2E tests
-        run: pnpm test:e2e
+        run: npx vitest run --config vitest.e2e.config.ts tests/e2e/full-api.test.ts
         env:
-          AUTH_API_BASE_URL: 'http://localhost'
+          NODE_URL: http://localhost:4001
 
-      - name: Collect Docker logs
+      - name: Stop node
         if: always()
-        run: |
-          mkdir -p docker-logs
-          echo "Collecting Docker logs..."
-          for container in $(docker ps -a --filter "label=calimero.node=true" --format "{{.Names}}" 2>/dev/null || true); do
-            if [ -n "$container" ]; then
-              echo "Collecting logs from container: $container"
-              docker logs "$container" > "docker-logs/${container}.log" 2>&1 || true
-            fi
-          done
-          ls -la docker-logs/ || echo "No logs collected"
-
-      - name: Upload Docker logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-logs-${{ github.run_number }}
-          path: docker-logs/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Cleanup merobox
-        if: always()
-        run: |
-          merobox nuke -f || true
+        run: kill $(cat merod.pid) 2>/dev/null || true

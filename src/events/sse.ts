@@ -77,9 +77,9 @@ export class SseClient {
   }
 
   async connect(): Promise<void> {
-    // Abort any existing connection before reconnecting
-    if (this.abortController) {
-      this.abortController.abort();
+    // Already connected — don't reconnect
+    if (this.abortController && !this.closed) {
+      return;
     }
     this.closed = false;
     this.abortController = new AbortController();
@@ -201,22 +201,22 @@ export class SseClient {
   }
 
   async subscribe(contextIds: string[]): Promise<void> {
+    const newIds = contextIds.filter(id => !this.subscribedContextIds.has(id));
     for (const id of contextIds) {
       this.subscribedContextIds.add(id);
     }
-
-    if (this.sessionId) {
-      await this.sendSubscription('subscribe', contextIds);
+    if (newIds.length > 0 && this.sessionId) {
+      await this.sendSubscription('subscribe', newIds);
     }
   }
 
   async unsubscribe(contextIds: string[]): Promise<void> {
+    const hadIds = contextIds.filter(id => this.subscribedContextIds.has(id));
     for (const id of contextIds) {
       this.subscribedContextIds.delete(id);
     }
-
-    if (this.sessionId) {
-      await this.sendSubscription('unsubscribe', contextIds);
+    if (hadIds.length > 0 && this.sessionId) {
+      await this.sendSubscription('unsubscribe', hadIds);
     }
   }
 
@@ -243,6 +243,15 @@ export class SseClient {
     }
   }
 
+  private forceReconnect(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+    this.sessionId = null;
+    this.connect();
+  }
+
   private scheduleReconnect(): void {
     if (this.closed) return;
     if (this.reconnectTimer) {
@@ -250,7 +259,7 @@ export class SseClient {
     }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.connect();
+      this.forceReconnect();
     }, this.reconnectDelayMs);
   }
 
