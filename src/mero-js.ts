@@ -90,6 +90,16 @@ export class MeroJs {
         const token = await this.getValidToken();
         return token?.access_token || '';
       },
+      refreshToken: async () => {
+        const refreshed = await this.performTokenRefresh();
+        return refreshed.access_token;
+      },
+      onTokenRefresh: async (newToken: string) => {
+        if (this.tokenData) {
+          this.tokenData.access_token = newToken;
+          this.tokenStore?.setTokens(this.tokenData);
+        }
+      },
       timeoutMs: this.config.timeoutMs,
       credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
     });
@@ -221,19 +231,12 @@ export class MeroJs {
   }
 
   /**
-   * Get a valid token, refreshing if necessary
+   * Get a valid token. Returns the current token as-is.
+   * The server rejects refresh attempts while the access token is still valid,
+   * so we never proactively refresh. Instead, the WebHttpClient handles 401
+   * responses reactively via the refreshToken transport hook.
    */
   private async getValidToken(): Promise<TokenData | null> {
-    if (!this.tokenData) {
-      return null;
-    }
-
-    // Check if token is expired (with 5 minute buffer)
-    const bufferTime = 5 * 60 * 1000; // 5 minutes
-    if (Date.now() >= this.tokenData.expires_at - bufferTime) {
-      return await this.refreshToken();
-    }
-
     return this.tokenData;
   }
 
@@ -285,8 +288,9 @@ export class MeroJs {
 
       return this.tokenData;
     } catch (error) {
-      // If refresh fails, clear the token and require re-authentication
-      this.clearToken();
+      // Don't clear tokens on refresh failure — the access token may still be
+      // valid (server rejects refresh while access token hasn't expired yet).
+      // Let the caller handle the error.
       throw new Error(
         `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
