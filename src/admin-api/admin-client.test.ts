@@ -5,9 +5,14 @@ import { HttpClient } from '../http-client';
 // Mock HttpClient that stores expected responses by "METHOD /path"
 class MockHttpClient implements HttpClient {
   private mockResponses = new Map<string, unknown>();
+  private requestBodies = new Map<string, unknown>();
 
   setMockResponse(method: string, path: string, response: unknown) {
     this.mockResponses.set(`${method} ${path}`, response);
+  }
+
+  getRequestBody(method: string, path: string): unknown {
+    return this.requestBodies.get(`${method} ${path}`);
   }
 
   private getResponse(method: string, path: string): unknown {
@@ -20,14 +25,31 @@ class MockHttpClient implements HttpClient {
   }
 
   async get<T>(path: string): Promise<T> { return this.getResponse('GET', path) as T; }
-  async post<T>(path: string, _body?: unknown): Promise<T> { return this.getResponse('POST', path) as T; }
-  async put<T>(path: string, _body?: unknown): Promise<T> { return this.getResponse('PUT', path) as T; }
+  async post<T>(path: string, body?: unknown): Promise<T> {
+    this.requestBodies.set(`POST ${path}`, body);
+    return this.getResponse('POST', path) as T;
+  }
+  async put<T>(path: string, body?: unknown): Promise<T> {
+    this.requestBodies.set(`PUT ${path}`, body);
+    return this.getResponse('PUT', path) as T;
+  }
   async delete<T>(path: string): Promise<T> { return this.getResponse('DELETE', path) as T; }
-  async patch<T>(path: string, _body?: unknown): Promise<T> { return this.getResponse('PATCH', path) as T; }
+  async patch<T>(path: string, body?: unknown): Promise<T> {
+    this.requestBodies.set(`PATCH ${path}`, body);
+    return this.getResponse('PATCH', path) as T;
+  }
   async head(_path: string): Promise<{ headers: Record<string, string>; status: number }> {
     return { headers: {}, status: 200 };
   }
-  async request<T>(): Promise<T> { throw new Error('Not implemented'); }
+  async request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+    const method = init?.method ?? 'GET';
+    let body = init?.body;
+    if (typeof body === 'string') {
+      body = JSON.parse(body);
+    }
+    this.requestBodies.set(`${method} ${path}`, body);
+    return this.getResponse(method, path) as T;
+  }
 }
 
 describe('AdminApiClient', () => {
@@ -213,6 +235,160 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/peers', { count: 3 });
       const result = await client.getPeersCount();
       expect(result).toEqual({ count: 3 });
+    });
+  });
+
+  describe('Group Management', () => {
+    it('listGroups unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups', {
+        data: [{ groupId: 'group-1', appKey: 'app-key-1', targetApplicationId: 'app-1', upgradePolicy: 'manual', createdAt: 123 }],
+      });
+      const result = await client.listGroups();
+      expect(result).toEqual([
+        {
+          groupId: 'group-1',
+          appKey: 'app-key-1',
+          targetApplicationId: 'app-1',
+          upgradePolicy: 'manual',
+          createdAt: 123,
+        },
+      ]);
+    });
+
+    it('createGroup posts to correct path and unwraps data', async () => {
+      const request = { applicationId: 'app-1', upgradePolicy: 'manual', alias: 'Lobby' };
+      mock.setMockResponse('POST', '/admin-api/groups', { data: { groupId: 'group-1' } });
+      const result = await client.createGroup(request);
+      expect(result).toEqual({ groupId: 'group-1' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups')).toEqual(request);
+    });
+
+    it('getGroupInfo unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1', {
+        data: {
+          groupId: 'group-1',
+          appKey: 'app-key-1',
+          targetApplicationId: 'app-1',
+          upgradePolicy: 'manual',
+          memberCount: 2,
+          contextCount: 1,
+          defaultCapabilities: 7,
+          defaultVisibility: 'Members',
+        },
+      });
+      const result = await client.getGroupInfo('group-1');
+      expect(result.memberCount).toBe(2);
+    });
+
+    it('deleteGroup sends an empty delete body and unwraps data', async () => {
+      mock.setMockResponse('DELETE', '/admin-api/groups/group-1', { data: { isDeleted: true } });
+      const result = await client.deleteGroup('group-1');
+      expect(result).toEqual({ isDeleted: true });
+      expect(mock.getRequestBody('DELETE', '/admin-api/groups/group-1')).toEqual({});
+    });
+
+    it('listGroupMembers preserves self identity metadata', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/members', {
+        data: [{ identity: 'member-1', role: 'Member' }],
+        selfIdentity: 'self-1',
+      });
+      const result = await client.listGroupMembers('group-1');
+      expect(result).toEqual({
+        data: [{ identity: 'member-1', role: 'Member' }],
+        selfIdentity: 'self-1',
+      });
+    });
+
+    it('addGroupMembers posts members payload', async () => {
+      const request = { members: [{ identity: 'member-1', role: 'Admin' }] };
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/members', { data: null });
+      const result = await client.addGroupMembers('group-1', request);
+      expect(result).toBeNull();
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/members')).toEqual(request);
+    });
+
+    it('removeGroupMembers posts remove payload', async () => {
+      const request = { members: ['member-1'] };
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/members/remove', { data: null });
+      const result = await client.removeGroupMembers('group-1', request);
+      expect(result).toBeNull();
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/members/remove')).toEqual(request);
+    });
+
+    it('listGroupContexts unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/contexts', {
+        data: [{ contextId: 'ctx-1' }],
+      });
+      const result = await client.listGroupContexts('group-1');
+      expect(result).toEqual([{ contextId: 'ctx-1' }]);
+    });
+
+    it('joinGroupContext posts context id and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/join-context', {
+        data: { contextId: 'ctx-1', memberPublicKey: 'pk-1' },
+      });
+      const result = await client.joinGroupContext('group-1', 'ctx-1');
+      expect(result).toEqual({ contextId: 'ctx-1', memberPublicKey: 'pk-1' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/join-context')).toEqual({
+        contextId: 'ctx-1',
+      });
+    });
+
+    it('createGroupInvitation posts empty body and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/invite', {
+        data: {
+          invitation: {
+            invitation: {
+              inviter_identity: new Array(32).fill(0),
+              group_id: new Array(32).fill(0),
+              expiration_timestamp: 123,
+            },
+            inviter_signature: 'sig-1',
+          },
+        },
+      });
+      const result = await client.createGroupInvitation('group-1');
+      expect(result.invitation.inviter_signature).toBe('sig-1');
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/invite')).toEqual({});
+    });
+
+    it('joinGroup posts invitation payload and unwraps data', async () => {
+      const request = {
+        invitation: {
+          invitation: {
+            inviter_identity: new Array(32).fill(0),
+            group_id: new Array(32).fill(0),
+            expiration_timestamp: 123,
+          },
+          inviter_signature: 'sig-1',
+        },
+        groupAlias: 'Lobby',
+      };
+      mock.setMockResponse('POST', '/admin-api/groups/join', {
+        data: { groupId: 'group-1', memberIdentity: 'member-2' },
+      });
+      const result = await client.joinGroup(request);
+      expect(result).toEqual({ groupId: 'group-1', memberIdentity: 'member-2' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/join')).toEqual(request);
+    });
+
+    it('setMemberCapabilities puts capabilities payload', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/members/member-1/capabilities', {
+        data: null,
+      });
+      const result = await client.setMemberCapabilities('group-1', 'member-1', 7);
+      expect(result).toBeNull();
+      expect(
+        mock.getRequestBody('PUT', '/admin-api/groups/group-1/members/member-1/capabilities'),
+      ).toEqual({ capabilities: 7 });
+    });
+
+    it('getMemberCapabilities unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/members/member-1/capabilities', {
+        data: { capabilities: 7 },
+      });
+      const result = await client.getMemberCapabilities('group-1', 'member-1');
+      expect(result).toEqual({ capabilities: 7 });
     });
   });
 });

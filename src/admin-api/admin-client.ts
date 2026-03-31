@@ -19,6 +19,21 @@ import type {
   InviteToContextRequest,
   JoinContextRequest,
   JoinContextResponseData,
+  GroupInfo,
+  GroupSummary,
+  CreateGroupRequest,
+  CreateGroupResponseData,
+  DeleteGroupRequest,
+  DeleteGroupResponseData,
+  AddGroupMembersRequest,
+  RemoveGroupMembersRequest,
+  GroupContext,
+  CreateGroupInvitationRequest,
+  CreateGroupInvitationResponseData,
+  JoinGroupRequest,
+  JoinGroupResponseData,
+  MemberCapabilities,
+  ListGroupMembersResponseData,
   UploadBlobRequest,
   CreateAliasRequest,
 
@@ -120,6 +135,90 @@ export class AdminApiClient {
 
   async joinContext(request: JoinContextRequest): Promise<JoinContextResponseData | null> {
     return unwrap(await this.httpClient.post<{ data: JoinContextResponseData | null }>('/admin-api/contexts/join', request));
+  }
+
+  // ---- Group Management ----
+
+  async listGroups(): Promise<GroupSummary[]> {
+    return unwrap(await this.httpClient.get<{ data: GroupSummary[] }>('/admin-api/groups'));
+  }
+
+  async createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData> {
+    return unwrap(await this.httpClient.post<{ data: CreateGroupResponseData }>('/admin-api/groups', request));
+  }
+
+  async getGroupInfo(groupId: string): Promise<GroupInfo> {
+    return unwrap(await this.httpClient.get<{ data: GroupInfo }>(`/admin-api/groups/${groupId}`));
+  }
+
+  async deleteGroup(groupId: string, request: DeleteGroupRequest = {}): Promise<DeleteGroupResponseData> {
+    return unwrap(
+      await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
+        method: 'DELETE',
+        body: JSON.stringify(request),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+  }
+
+  async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
+    return this.httpClient.get<ListGroupMembersResponseData>(`/admin-api/groups/${groupId}/members`);
+  }
+
+  async addGroupMembers(groupId: string, request: AddGroupMembersRequest): Promise<void> {
+    return unwrap(await this.httpClient.post<{ data: null }>(`/admin-api/groups/${groupId}/members`, request));
+  }
+
+  async removeGroupMembers(groupId: string, request: RemoveGroupMembersRequest): Promise<void> {
+    return unwrap(await this.httpClient.post<{ data: null }>(`/admin-api/groups/${groupId}/members/remove`, request));
+  }
+
+  async listGroupContexts(groupId: string): Promise<GroupContext[]> {
+    return unwrap(await this.httpClient.get<{ data: GroupContext[] }>(`/admin-api/groups/${groupId}/contexts`));
+  }
+
+  async joinGroupContext(groupId: string, contextId: string): Promise<JoinContextResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: JoinContextResponseData }>(
+        `/admin-api/groups/${groupId}/join-context`,
+        { contextId },
+      ),
+    );
+  }
+
+  async createGroupInvitation(
+    groupId: string,
+    request: CreateGroupInvitationRequest = {},
+  ): Promise<CreateGroupInvitationResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreateGroupInvitationResponseData }>(
+        `/admin-api/groups/${groupId}/invite`,
+        request,
+      ),
+    );
+  }
+
+  async joinGroup(request: JoinGroupRequest): Promise<JoinGroupResponseData> {
+    return unwrap(await this.httpClient.post<{ data: JoinGroupResponseData }>('/admin-api/groups/join', request));
+  }
+
+  async setMemberCapabilities(groupId: string, memberId: string, capabilities: number): Promise<void> {
+    return unwrap(
+      await this.httpClient.put<{ data: null }>(
+        `/admin-api/groups/${groupId}/members/${memberId}/capabilities`,
+        { capabilities },
+      ),
+    );
+  }
+
+  async getMemberCapabilities(groupId: string, memberId: string): Promise<MemberCapabilities> {
+    return unwrap(
+      await this.httpClient.get<{ data: MemberCapabilities }>(
+        `/admin-api/groups/${groupId}/members/${memberId}/capabilities`,
+      ),
+    );
   }
 
   // ---- Blob Management ----

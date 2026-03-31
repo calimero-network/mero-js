@@ -117,6 +117,123 @@ export interface JoinContextResponseData {
   memberPublicKey: string;
 }
 
+// ---- Groups ----
+
+export type GroupMemberRole = 'Admin' | 'Member' | 'ReadOnly';
+
+export interface GroupInvitationFromAdmin {
+  inviter_identity: number[] | string;
+  group_id: number[] | string;
+  expiration_timestamp: number;
+  secret_salt?: number[] | Uint8Array;
+}
+
+export interface SignedGroupOpenInvitation {
+  invitation: GroupInvitationFromAdmin;
+  inviter_signature: string;
+}
+
+export interface GroupSummary {
+  groupId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: string;
+  createdAt: number;
+  alias?: string;
+}
+
+export interface GroupUpgradeStatus {
+  fromVersion: string;
+  toVersion: string;
+  initiatedAt: number;
+  initiatedBy: string;
+  status: string;
+  total?: number;
+  completed?: number;
+  failed?: number;
+  completedAt?: number;
+}
+
+export interface GroupInfo extends Omit<GroupSummary, 'createdAt'> {
+  memberCount: number;
+  contextCount: number;
+  activeUpgrade?: GroupUpgradeStatus;
+  defaultCapabilities: number;
+  defaultVisibility: string;
+  alias?: string;
+}
+
+export interface GroupMember {
+  identity: string;
+  role: GroupMemberRole;
+  alias?: string;
+}
+
+export interface GroupContext {
+  contextId: string;
+  alias?: string;
+}
+
+export interface CreateGroupRequest {
+  groupId?: string;
+  appKey?: string;
+  applicationId: string;
+  upgradePolicy: string;
+  parentGroupId?: string;
+  alias?: string;
+}
+
+export interface CreateGroupResponseData {
+  groupId: string;
+}
+
+export interface DeleteGroupRequest {
+  requester?: string;
+}
+
+export interface DeleteGroupResponseData {
+  isDeleted: boolean;
+}
+
+export interface AddGroupMembersRequest {
+  members: Array<{ identity: string; role: GroupMemberRole }>;
+  requester?: string;
+}
+
+export interface RemoveGroupMembersRequest {
+  members: string[];
+  requester?: string;
+}
+
+export interface ListGroupMembersResponseData {
+  data: GroupMember[];
+  selfIdentity?: string;
+}
+
+export interface CreateGroupInvitationRequest {
+  requester?: string;
+  expirationTimestamp?: number;
+}
+
+export interface CreateGroupInvitationResponseData {
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
+}
+
+export interface JoinGroupRequest {
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
+}
+
+export interface JoinGroupResponseData {
+  groupId: string;
+  memberIdentity: string;
+}
+
+export interface MemberCapabilities {
+  capabilities: number;
+}
+
 // ---- Blobs ----
 
 export interface UploadBlobRequest {
