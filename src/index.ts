@@ -30,4 +30,7 @@ export type { ExecuteParams } from './rpc';
 export { SseClient, WsClient } from './events';
 export type { SseEventData, WsEventData } from './events';
 
+// Cloud client (enable-HA, disable-HA)
+export * from './cloud';
+
 // Utilities
