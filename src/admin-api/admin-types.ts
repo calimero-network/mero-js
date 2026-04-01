@@ -64,6 +64,7 @@ export interface GetLatestVersionResponseData {
 
 export interface CreateContextRequest {
   applicationId: string;
+  serviceName?: string;
   contextSeed?: string;
   initializationParams?: number[];
   protocol?: string;
@@ -81,6 +82,7 @@ export interface DeleteContextResponseData {
 export interface Context {
   id: string;
   applicationId: string;
+  serviceName?: string;
   rootHash: string;
   dagHeads: number[][];
 }
