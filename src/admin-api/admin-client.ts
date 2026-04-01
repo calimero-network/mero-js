@@ -21,8 +21,19 @@ import type {
   JoinContextResponseData,
   UploadBlobRequest,
   CreateAliasRequest,
-
   ListAliasesResponseData,
+  ListNamespacesResponseData,
+  NamespaceIdentity,
+  CreateGroupRequest,
+  CreateGroupResponseData,
+  ListGroupsResponseData,
+  GroupInfoResponseData,
+  ListGroupMembersResponseData,
+  ListGroupContextsResponseData,
+  CreateGroupInvitationRequest,
+  JoinGroupRequest,
+  JoinGroupContextRequest,
+  JoinGroupContextResponseData,
 } from './admin-types';
 
 /**
@@ -173,6 +184,58 @@ export class AdminApiClient {
 
   async listApplicationAliases(): Promise<ListAliasesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/application'));
+  }
+
+  // ---- Namespace Management ----
+
+  async listNamespaces(): Promise<ListNamespacesResponseData> {
+    return this.httpClient.get<ListNamespacesResponseData>('/admin-api/namespaces');
+  }
+
+  async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
+    return this.httpClient.get<NamespaceIdentity>(`/admin-api/namespaces/${namespaceId}/identity`);
+  }
+
+  async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
+    return this.httpClient.get<ListNamespacesResponseData>(`/admin-api/namespaces/for-application/${applicationId}`);
+  }
+
+  // ---- Group Management ----
+
+  async listGroups(): Promise<ListGroupsResponseData> {
+    return this.httpClient.get<ListGroupsResponseData>('/admin-api/groups');
+  }
+
+  async createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData> {
+    return unwrap(await this.httpClient.post<{ data: CreateGroupResponseData }>('/admin-api/groups', request));
+  }
+
+  async getGroupInfo(groupId: string): Promise<GroupInfoResponseData> {
+    return this.httpClient.get<GroupInfoResponseData>(`/admin-api/groups/${groupId}`);
+  }
+
+  async deleteGroup(groupId: string): Promise<unknown> {
+    return this.httpClient.delete(`/admin-api/groups/${groupId}`);
+  }
+
+  async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
+    return this.httpClient.get<ListGroupMembersResponseData>(`/admin-api/groups/${groupId}/members`);
+  }
+
+  async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
+    return this.httpClient.get<ListGroupContextsResponseData>(`/admin-api/groups/${groupId}/contexts`);
+  }
+
+  async createGroupInvitation(groupId: string, request?: CreateGroupInvitationRequest): Promise<unknown> {
+    return unwrap(await this.httpClient.post<{ data: unknown }>(`/admin-api/groups/${groupId}/invite`, request ?? {}));
+  }
+
+  async joinGroup(request: JoinGroupRequest): Promise<unknown> {
+    return unwrap(await this.httpClient.post<{ data: unknown }>('/admin-api/groups/join', request));
+  }
+
+  async joinGroupContext(groupId: string, request: JoinGroupContextRequest): Promise<JoinGroupContextResponseData> {
+    return unwrap(await this.httpClient.post<{ data: JoinGroupContextResponseData }>(`/admin-api/groups/${groupId}/join-context`, request));
   }
 
   // ---- Network ----

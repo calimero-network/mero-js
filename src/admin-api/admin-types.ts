@@ -143,6 +143,109 @@ export interface ListAliasesResponseData {
   aliases: AliasEntry[];
 }
 
+// ---- Namespaces ----
+
+export interface Namespace {
+  namespaceId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: string;
+  createdAt: number;
+  alias?: string;
+  memberCount: number;
+  contextCount: number;
+  subgroupCount: number;
+}
+
+export interface ListNamespacesResponseData {
+  data: Namespace[];
+}
+
+export interface NamespaceIdentity {
+  namespaceId: string;
+  publicKey: string;
+}
+
+// ---- Groups ----
+
+export interface CreateGroupRequest {
+  applicationId: string;
+  groupId?: string;
+  appKey?: string;
+  upgradePolicy?: string;
+  alias?: string;
+  parentGroupId?: string;
+}
+
+export interface CreateGroupResponseData {
+  groupId: string;
+}
+
+export interface GroupSummary {
+  groupId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: string;
+  createdAt: number;
+  alias?: string;
+}
+
+export interface ListGroupsResponseData {
+  data: GroupSummary[];
+}
+
+export interface GroupInfo {
+  groupId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: string;
+  createdAt: number;
+  alias?: string;
+  memberCount: number;
+  contextCount: number;
+}
+
+export interface GroupInfoResponseData {
+  data: GroupInfo;
+}
+
+export interface GroupMember {
+  identity: string;
+  role: string;
+  alias?: string;
+}
+
+export interface ListGroupMembersResponseData {
+  data: { members: GroupMember[] };
+}
+
+export interface GroupContextEntry {
+  contextId: string;
+  alias?: string;
+}
+
+export interface ListGroupContextsResponseData {
+  data: GroupContextEntry[];
+}
+
+export interface CreateGroupInvitationRequest {
+  validForSeconds?: number;
+}
+
+export interface JoinGroupRequest {
+  invitation: unknown;
+  groupAlias?: string;
+}
+
+export interface JoinGroupContextRequest {
+  contextId: string;
+}
+
+export interface JoinGroupContextResponseData {
+  contextId: string;
+  memberPublicKey: string;
+}
+
 // ---- Client Configuration ----
 
 export interface AdminApiClientConfig {
