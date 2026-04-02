@@ -189,7 +189,7 @@ export class AdminApiClient {
   // ---- Namespace Management ----
 
   async listNamespaces(): Promise<ListNamespacesResponseData> {
-    return this.httpClient.get<ListNamespacesResponseData>('/admin-api/namespaces');
+    return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>('/admin-api/namespaces'));
   }
 
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
@@ -197,13 +197,13 @@ export class AdminApiClient {
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
-    return this.httpClient.get<ListNamespacesResponseData>(`/admin-api/namespaces/for-application/${applicationId}`);
+    return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>(`/admin-api/namespaces/for-application/${applicationId}`));
   }
 
   // ---- Group Management ----
 
   async listGroups(): Promise<ListGroupsResponseData> {
-    return this.httpClient.get<ListGroupsResponseData>('/admin-api/groups');
+    return unwrap(await this.httpClient.get<{ data: ListGroupsResponseData }>('/admin-api/groups'));
   }
 
   async createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData> {
@@ -211,11 +211,11 @@ export class AdminApiClient {
   }
 
   async getGroupInfo(groupId: string): Promise<GroupInfoResponseData> {
-    return this.httpClient.get<GroupInfoResponseData>(`/admin-api/groups/${groupId}`);
+    return unwrap(await this.httpClient.get<{ data: GroupInfoResponseData }>(`/admin-api/groups/${groupId}`));
   }
 
   async deleteGroup(groupId: string): Promise<unknown> {
-    return this.httpClient.delete(`/admin-api/groups/${groupId}`);
+    return unwrap(await this.httpClient.delete<{ data: unknown }>(`/admin-api/groups/${groupId}`));
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
@@ -223,7 +223,7 @@ export class AdminApiClient {
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
-    return this.httpClient.get<ListGroupContextsResponseData>(`/admin-api/groups/${groupId}/contexts`);
+    return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${groupId}/contexts`));
   }
 
   async createGroupInvitation(groupId: string, request?: CreateGroupInvitationRequest): Promise<unknown> {

@@ -159,9 +159,7 @@ export interface Namespace {
   subgroupCount: number;
 }
 
-export interface ListNamespacesResponseData {
-  data: Namespace[];
-}
+export type ListNamespacesResponseData = Namespace[];
 
 export interface NamespaceIdentity {
   namespaceId: string;
@@ -192,9 +190,7 @@ export interface GroupSummary {
   alias?: string;
 }
 
-export interface ListGroupsResponseData {
-  data: GroupSummary[];
-}
+export type ListGroupsResponseData = GroupSummary[];
 
 export interface GroupInfo {
   groupId: string;
@@ -207,9 +203,7 @@ export interface GroupInfo {
   contextCount: number;
 }
 
-export interface GroupInfoResponseData {
-  data: GroupInfo;
-}
+export type GroupInfoResponseData = GroupInfo;
 
 export interface GroupMember {
   identity: string;
@@ -218,7 +212,8 @@ export interface GroupMember {
 }
 
 export interface ListGroupMembersResponseData {
-  data: { members: GroupMember[] };
+  data: GroupMember[];
+  selfIdentity?: string;
 }
 
 export interface GroupContextEntry {
@@ -226,9 +221,7 @@ export interface GroupContextEntry {
   alias?: string;
 }
 
-export interface ListGroupContextsResponseData {
-  data: GroupContextEntry[];
-}
+export type ListGroupContextsResponseData = GroupContextEntry[];
 
 export interface CreateGroupInvitationRequest {
   validForSeconds?: number;
