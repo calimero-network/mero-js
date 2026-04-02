@@ -422,6 +422,45 @@ See the `examples/` directory for complete usage examples:
 
 **Note**: Run `npm run build` before running the examples, as they import from the built library.
 
+## Admin API
+
+The `AdminApiClient` provides methods for managing Calimero node resources:
+
+### Namespaces (application instances)
+```typescript
+const namespaces = await admin.listNamespaces();
+const identity = await admin.getNamespaceIdentity(namespaceId);
+const appNamespaces = await admin.listNamespacesForApplication(appId);
+```
+
+### Groups (governance boundaries)
+```typescript
+const groups = await admin.listGroups();
+const group = await admin.createGroup({ applicationId: '...' });
+const info = await admin.getGroupInfo(groupId);
+const members = await admin.listGroupMembers(groupId);
+const contexts = await admin.listGroupContexts(groupId);
+```
+
+### Contexts (WASM execution instances)
+```typescript
+// Single-service app
+const ctx = await admin.createContext({ applicationId: '...' });
+
+// Multi-service app -- specify which service to run
+const ctx = await admin.createContext({
+  applicationId: '...',
+  serviceName: 'chat',
+});
+```
+
+### Cloud (TEE High Availability)
+```typescript
+import { CloudClient } from 'mero-js';
+const cloud = new CloudClient();
+cloud.enableHA({ groupId, contextId, redirectUrl });
+```
+
 ## Development
 
 ```bash
