@@ -232,15 +232,6 @@ export interface JoinGroupRequest {
   groupAlias?: string;
 }
 
-export interface JoinGroupContextRequest {
-  contextId: string;
-}
-
-export interface JoinGroupContextResponseData {
-  contextId: string;
-  memberPublicKey: string;
-}
-
 // ---- Client Configuration ----
 
 export interface AdminApiClientConfig {

@@ -32,8 +32,6 @@ import type {
   ListGroupContextsResponseData,
   CreateGroupInvitationRequest,
   JoinGroupRequest,
-  JoinGroupContextRequest,
-  JoinGroupContextResponseData,
 } from './admin-types';
 
 /**
@@ -129,8 +127,13 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: unknown }>('/admin-api/contexts/invite', request));
   }
 
-  async joinContext(request: JoinContextRequest): Promise<JoinContextResponseData | null> {
-    return unwrap(await this.httpClient.post<{ data: JoinContextResponseData | null }>('/admin-api/contexts/join', request));
+  async joinContext(request: JoinContextRequest): Promise<JoinContextResponseData | null>;
+  async joinContext(contextId: string): Promise<JoinContextResponseData>;
+  async joinContext(requestOrContextId: JoinContextRequest | string): Promise<JoinContextResponseData | null> {
+    if (typeof requestOrContextId === 'string') {
+      return unwrap(await this.httpClient.post<{ data: JoinContextResponseData }>(`/admin-api/contexts/${requestOrContextId}/join`, {}));
+    }
+    return unwrap(await this.httpClient.post<{ data: JoinContextResponseData | null }>('/admin-api/contexts/join', requestOrContextId));
   }
 
   // ---- Blob Management ----
@@ -232,10 +235,6 @@ export class AdminApiClient {
 
   async joinGroup(request: JoinGroupRequest): Promise<unknown> {
     return unwrap(await this.httpClient.post<{ data: unknown }>('/admin-api/groups/join', request));
-  }
-
-  async joinGroupContext(groupId: string, request: JoinGroupContextRequest): Promise<JoinGroupContextResponseData> {
-    return unwrap(await this.httpClient.post<{ data: JoinGroupContextResponseData }>(`/admin-api/groups/${groupId}/join-context`, request));
   }
 
   // ---- Network ----
