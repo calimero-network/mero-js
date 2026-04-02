@@ -171,16 +171,60 @@ describe('AdminApiClient', () => {
   });
 
   describe('Context Invite / Join', () => {
-    it('inviteToContext unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite', { data: { invitation: 'xyz' } });
+    it('inviteToContext returns typed SignedOpenInvitation', async () => {
+      const invitation = {
+        invitation: { inviter_identity: 'id-1', context_id: 'ctx-1', expiration_timestamp: 123, secret_salt: [0] },
+        inviter_signature: 'sig-1',
+      };
+      mock.setMockResponse('POST', '/admin-api/contexts/invite', { data: invitation });
       const result = await client.inviteToContext({ contextId: 'ctx-1', inviterId: 'id-1', validForSeconds: 3600 });
-      expect(result).toEqual({ invitation: 'xyz' });
+      expect(result).toEqual(invitation);
+    });
+
+    it('inviteToContext returns null when no invitation', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/invite', { data: null });
+      const result = await client.inviteToContext({ contextId: 'ctx-1', inviterId: 'id-1', validForSeconds: 3600 });
+      expect(result).toBeNull();
     });
 
     it('joinContext unwraps data', async () => {
+      const invitation = {
+        invitation: { inviter_identity: 'id-1', context_id: 'ctx-1', expiration_timestamp: 123, secret_salt: [0] },
+        inviter_signature: 'sig-1',
+      };
       mock.setMockResponse('POST', '/admin-api/contexts/join', { data: { contextId: 'ctx-1', memberPublicKey: 'pk-1' } });
-      const result = await client.joinContext({ invitation: {}, newMemberPublicKey: 'pk-1' });
+      const result = await client.joinContext({ invitation, newMemberPublicKey: 'pk-1' });
       expect(result).toEqual({ contextId: 'ctx-1', memberPublicKey: 'pk-1' });
+    });
+
+    it('getContextGroup returns group id', async () => {
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-1/group', { data: 'abcdef0123456789' });
+      const result = await client.getContextGroup('ctx-1');
+      expect(result).toBe('abcdef0123456789');
+    });
+
+    it('getContextGroup returns null when no group', async () => {
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-1/group', { data: null });
+      const result = await client.getContextGroup('ctx-1');
+      expect(result).toBeNull();
+    });
+
+    it('getContextStorageSize unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-1/storage', { data: { sizeInBytes: 1024 } });
+      const result = await client.getContextStorageSize('ctx-1');
+      expect(result).toEqual({ sizeInBytes: 1024 });
+    });
+
+    it('syncContext posts to correct path', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/sync/ctx-1', { data: null });
+      await client.syncContext('ctx-1');
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/ctx-1')).toEqual({});
+    });
+
+    it('syncAllContexts posts to correct path', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/sync', { data: null });
+      await client.syncAllContexts();
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/sync')).toEqual({});
     });
   });
 
@@ -389,6 +433,127 @@ describe('AdminApiClient', () => {
       });
       const result = await client.getMemberCapabilities('group-1', 'member-1');
       expect(result).toEqual({ capabilities: 7 });
+    });
+  });
+
+  describe('Group Governance / Settings', () => {
+    it('setDefaultCapabilities sends PUT with body', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/settings/default-capabilities', { data: null });
+      await client.setDefaultCapabilities('group-1', { defaultCapabilities: 3 });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/settings/default-capabilities')).toEqual({ defaultCapabilities: 3 });
+    });
+
+    it('setDefaultVisibility sends PUT with body', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/settings/default-visibility', { data: null });
+      await client.setDefaultVisibility('group-1', { defaultVisibility: 'open' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/settings/default-visibility')).toEqual({ defaultVisibility: 'open' });
+    });
+
+    it('getContextVisibility unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/contexts/ctx-1/visibility', {
+        data: { mode: 'open', creator: 'member-1' },
+      });
+      const result = await client.getContextVisibility('group-1', 'ctx-1');
+      expect(result).toEqual({ mode: 'open', creator: 'member-1' });
+    });
+
+    it('setContextVisibility sends PUT with body', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/contexts/ctx-1/visibility', { data: null });
+      await client.setContextVisibility('group-1', 'ctx-1', { mode: 'restricted' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/contexts/ctx-1/visibility')).toEqual({ mode: 'restricted' });
+    });
+
+    it('getContextAllowlist unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/contexts/ctx-1/allowlist', {
+        data: ['member-1', 'member-2'],
+      });
+      const result = await client.getContextAllowlist('group-1', 'ctx-1');
+      expect(result).toEqual(['member-1', 'member-2']);
+    });
+
+    it('updateContextAllowlist sends POST with add/remove', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/contexts/ctx-1/allowlist', { data: null });
+      await client.updateContextAllowlist('group-1', 'ctx-1', { add: ['member-3'], remove: ['member-1'] });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/contexts/ctx-1/allowlist')).toEqual({
+        add: ['member-3'],
+        remove: ['member-1'],
+      });
+    });
+
+    it('updateMemberRole sends PUT with role', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/members/member-1/role', { data: null });
+      await client.updateMemberRole('group-1', 'member-1', { role: 'Admin' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/members/member-1/role')).toEqual({ role: 'Admin' });
+    });
+  });
+
+  describe('Group Upgrade', () => {
+    it('upgradeGroup posts request and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/upgrade', {
+        data: { groupId: 'group-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+      });
+      const result = await client.upgradeGroup('group-1', { targetApplicationId: 'app-2' });
+      expect(result.status).toBe('in_progress');
+    });
+
+    it('getGroupUpgradeStatus unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/upgrade/status', {
+        data: { groupId: 'group-1', status: 'completed', total: 3, completed: 3, failed: 0 },
+      });
+      const result = await client.getGroupUpgradeStatus('group-1');
+      expect(result?.status).toBe('completed');
+    });
+
+    it('getGroupUpgradeStatus returns null when no upgrade', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/group-1/upgrade/status', { data: null });
+      const result = await client.getGroupUpgradeStatus('group-1');
+      expect(result).toBeNull();
+    });
+
+    it('retryGroupUpgrade posts and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/upgrade/retry', {
+        data: { groupId: 'group-1', status: 'in_progress' },
+      });
+      const result = await client.retryGroupUpgrade('group-1');
+      expect(result.status).toBe('in_progress');
+    });
+  });
+
+  describe('Group / Member Alias', () => {
+    it('setGroupAlias sends PUT with alias', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/alias', { data: null });
+      await client.setGroupAlias('group-1', { alias: 'My Group' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/alias')).toEqual({ alias: 'My Group' });
+    });
+
+    it('setMemberAlias sends PUT with alias', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/group-1/members/member-1/alias', { data: null });
+      await client.setMemberAlias('group-1', 'member-1', { alias: 'Alice' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/group-1/members/member-1/alias')).toEqual({ alias: 'Alice' });
+    });
+  });
+
+  describe('Group Update / Context Removal', () => {
+    it('updateGroup sends PATCH with body', async () => {
+      mock.setMockResponse('PATCH', '/admin-api/groups/group-1', { data: null });
+      await client.updateGroup('group-1', { upgradePolicy: 'automatic' });
+      expect(mock.getRequestBody('PATCH', '/admin-api/groups/group-1')).toEqual({ upgradePolicy: 'automatic' });
+    });
+
+    it('removeContextFromGroup posts to correct path', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/contexts/ctx-1/remove', { data: null });
+      await client.removeContextFromGroup('group-1', 'ctx-1');
+      expect(mock.getRequestBody('POST', '/admin-api/groups/group-1/contexts/ctx-1/remove')).toEqual({});
+    });
+  });
+
+  describe('Signing Key', () => {
+    it('registerSigningKey posts and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/group-1/signing-key', {
+        data: { publicKey: 'pk-123' },
+      });
+      const result = await client.registerSigningKey('group-1', { signingKey: 'sk-123' });
+      expect(result).toEqual({ publicKey: 'pk-123' });
     });
   });
 });
