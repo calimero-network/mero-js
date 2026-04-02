@@ -16,8 +16,6 @@ import type {
   Context,
   GenerateContextIdentityResponseData,
   GetContextIdentitiesResponseData,
-  InviteToContextRequest,
-  JoinContextRequest,
   JoinContextResponseData,
   UploadBlobRequest,
   CreateAliasRequest,
@@ -121,19 +119,12 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${contextId}/identities-owned`));
   }
 
-  // ---- Context Invite / Join ----
+  // ---- Context join (group membership) ----
 
-  async inviteToContext(request: InviteToContextRequest): Promise<unknown> {
-    return unwrap(await this.httpClient.post<{ data: unknown }>('/admin-api/contexts/invite', request));
-  }
-
-  async joinContext(request: JoinContextRequest): Promise<JoinContextResponseData | null>;
-  async joinContext(contextId: string): Promise<JoinContextResponseData>;
-  async joinContext(requestOrContextId: JoinContextRequest | string): Promise<JoinContextResponseData | null> {
-    if (typeof requestOrContextId === 'string') {
-      return unwrap(await this.httpClient.post<{ data: JoinContextResponseData }>(`/admin-api/contexts/${requestOrContextId}/join`, {}));
-    }
-    return unwrap(await this.httpClient.post<{ data: JoinContextResponseData | null }>('/admin-api/contexts/join', requestOrContextId));
+  async joinContext(contextId: string): Promise<JoinContextResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: JoinContextResponseData }>(`/admin-api/contexts/${contextId}/join`, {}),
+    );
   }
 
   // ---- Blob Management ----

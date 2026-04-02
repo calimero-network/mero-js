@@ -101,18 +101,7 @@ export interface GetContextIdentitiesResponseData {
   identities: string[];
 }
 
-// ---- Context Invite / Join ----
-
-export interface InviteToContextRequest {
-  contextId: string;
-  inviterId: string;
-  validForSeconds: number;
-}
-
-export interface JoinContextRequest {
-  invitation: unknown;
-  newMemberPublicKey: string;
-}
+// ---- Context join (group membership; POST /contexts/:id/join) ----
 
 export interface JoinContextResponseData {
   contextId: string;
