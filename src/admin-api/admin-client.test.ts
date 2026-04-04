@@ -148,16 +148,10 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Context Invite / Join', () => {
-    it('inviteToContext unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite', { data: { invitation: 'xyz' } });
-      const result = await client.inviteToContext({ contextId: 'ctx-1', inviterId: 'id-1', validForSeconds: 3600 });
-      expect(result).toEqual({ invitation: 'xyz' });
-    });
-
-    it('joinContext unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/join', { data: { contextId: 'ctx-1', memberPublicKey: 'pk-1' } });
-      const result = await client.joinContext({ invitation: {}, newMemberPublicKey: 'pk-1' });
+  describe('Context join', () => {
+    it('joinContext posts to contexts/:id/join and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/join', { data: { contextId: 'ctx-1', memberPublicKey: 'pk-1' } });
+      const result = await client.joinContext('ctx-1');
       expect(result).toEqual({ contextId: 'ctx-1', memberPublicKey: 'pk-1' });
     });
   });
