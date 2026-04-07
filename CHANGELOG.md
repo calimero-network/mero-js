@@ -1,3 +1,7 @@
+## 1.4.0 (2026-04-07)
+
+* feat: align mero-js with core namespace model (#28) ([fb4b2ae](https://github.com/calimero-network/mero-js/commit/fb4b2ae)), closes [#28](https://github.com/calimero-network/mero-js/issues/28) [#29](https://github.com/calimero-network/mero-js/issues/29)
+
 ## 1.3.0 (2026-04-01)
 
 * feat: add CloudClient with enableHA/disableHA methods (#27) ([8a4ae41](https://github.com/calimero-network/mero-js/commit/8a4ae41)), closes [#27](https://github.com/calimero-network/mero-js/issues/27)
