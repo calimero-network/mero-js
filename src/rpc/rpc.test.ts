@@ -19,7 +19,6 @@ describe('RpcClient', () => {
     contextId: 'ctx-1',
     method: 'list',
     argsJson: {},
-    executorPublicKey: 'pub-key-1',
   };
 
   it('sends correct JSON-RPC request', async () => {
@@ -40,7 +39,6 @@ describe('RpcClient', () => {
         contextId: 'ctx-1',
         method: 'list',
         argsJson: {},
-        executorPublicKey: 'pub-key-1',
       },
     });
   });
@@ -131,7 +129,6 @@ describe('RpcClient', () => {
     await rpc.execute({
       contextId: 'ctx-1',
       method: 'test',
-      executorPublicKey: 'key',
     });
 
     expect(httpClient.post).toHaveBeenCalledWith('/jsonrpc', expect.objectContaining({

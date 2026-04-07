@@ -4,7 +4,8 @@ export interface ExecuteParams {
   contextId: string;
   method: string;
   argsJson?: Record<string, unknown>;
-  executorPublicKey: string;
+  /** @deprecated No longer used by the server. Ignored if provided. */
+  executorPublicKey?: string;
 }
 
 export class RpcError extends Error {
@@ -54,7 +55,6 @@ export class RpcClient {
         contextId: params.contextId,
         method: params.method,
         argsJson: params.argsJson ?? {},
-        executorPublicKey: params.executorPublicKey,
       },
     };
 

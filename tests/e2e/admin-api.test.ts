@@ -1,381 +1,391 @@
+/**
+ * E2E tests for Admin API — namespace/group/context model.
+ *
+ * Requires a running merod node with embedded auth on localhost:4001.
+ * The CI workflow starts the node via Docker before running these tests.
+ *
+ * Run manually:
+ *   NODE_URL=http://localhost:4001 pnpm test:e2e:admin
+ */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '@calimero-network/mero-js';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { MeroJs } from '../../src/mero-js';
 
-// Test configuration
-const ADMIN_CONFIG = {
-  baseUrl: process.env.ADMIN_API_BASE_URL || 'http://localhost',
-  credentials: {
-    username: 'admin',
-    password: 'admin123',
-  },
-  timeoutMs: 10000,
-};
+const NODE_URL = process.env.NODE_URL || 'http://localhost:4001';
+const USERNAME = 'dev';
+const PASSWORD = 'dev';
+const KV_STORE_PACKAGE = 'com.calimero.kv-store';
 
-describe('Admin API E2E Tests - Full Flow', () => {
-  let meroJs: MeroJs;
-  let installedAppId: string;
-  let createdContextId: string;
+let mero: MeroJs;
+
+// Shared state across ordered test sections
+let applicationId: string;
+let namespaceId: string;
+let namespaceGroupId: string;
+let subgroupId: string;
+let contextId: string;
+let memberPublicKey: string;
+
+describe('Admin API E2E — Namespace Model', () => {
+  // ---- Setup ----
 
   beforeAll(async () => {
-    console.log('🚀 Starting merobox environment...');
+    mero = new MeroJs({ baseUrl: NODE_URL });
+    await mero.authenticate({ username: USERNAME, password: PASSWORD });
+    expect(mero.isAuthenticated()).toBe(true);
+  }, 30000);
 
-    // Start merobox with auth service
-    const { spawn } = await import('child_process');
+  afterAll(() => {
+    mero.close();
+  });
 
-    console.log('🔧 Starting Calimero node with auth service...');
-    const meroboxProcess = spawn('merobox', ['run', '--auth-service'], {
-      stdio: 'pipe',
-      cwd: process.cwd(),
+  // ---- Health ----
+
+  describe('Health & Status', () => {
+    it('should return alive status', async () => {
+      const health = await mero.admin.healthCheck();
+      expect(health.status).toBe('alive');
     });
 
-    // Add error handling for merobox process
-    meroboxProcess.on('error', (error) => {
-      console.error('❌ Merobox process error:', error);
+    it('should return peers count', async () => {
+      const response = await mero.admin.getPeersCount();
+      expect(typeof response.count).toBe('number');
     });
+  });
 
-    meroboxProcess.stderr.on('data', (data) => {
-      console.error('❌ Merobox stderr:', data.toString());
-    });
+  // ---- Applications ----
 
-    meroboxProcess.stdout.on('data', (data) => {
-      console.log('📝 Merobox stdout:', data.toString());
-    });
-
-    // Wait for services to be ready
-    console.log('⏳ Waiting for services to start...');
-    await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds
-
-    console.log('🔧 Creating MeroJs SDK...');
-    console.log('Admin API URL:', ADMIN_CONFIG.baseUrl);
-
-    // Create MeroJs SDK instance
-    meroJs = new MeroJs(ADMIN_CONFIG);
-
-    // Authenticate (this creates the root key on first use)
-    console.log('🔑 Authenticating with MeroJs SDK...');
-    const tokenData = await meroJs.authenticate();
-
-    console.log('✅ Authentication successful!');
-    console.log('🎫 Token expires at:', new Date(tokenData.expires_at));
-  }, 120000); // 2 minute timeout for beforeAll
-
-  afterAll(async () => {
-    console.log('🧹 Cleaning up merobox environment...');
-
-    try {
-      const { spawn } = await import('child_process');
-
-      console.log('🗑️ Running merobox nuke --force...');
-      const nukeProcess = spawn('merobox', ['nuke', '--force'], {
-        stdio: 'inherit',
-        cwd: process.cwd(),
-      });
-
-      // Wait for nuke to complete with timeout
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          console.warn('⚠️ Merobox cleanup timeout, killing process...');
-          nukeProcess.kill('SIGTERM');
-          resolve(void 0);
-        }, 90000); // 90 second timeout
-
-        nukeProcess.on('close', (code) => {
-          clearTimeout(timeout);
-          if (code === 0) {
-            console.log('✅ Merobox cleanup completed successfully');
-            resolve(void 0);
-          } else {
-            console.warn('⚠️ Merobox cleanup completed with code:', code);
-            resolve(void 0); // Don't fail the test for cleanup issues
-          }
-        });
-        nukeProcess.on('error', (error) => {
-          clearTimeout(timeout);
-          console.warn('⚠️ Merobox cleanup failed:', error);
-          resolve(void 0); // Don't fail the test for cleanup issues
-        });
-      });
-    } catch (error) {
-      console.warn('⚠️ Merobox cleanup failed:', error);
-    }
-
-    console.log('🧹 Test cleanup completed');
-  }, 120000); // 2 minute timeout for afterAll
-
-  describe('Application Management Flow', () => {
-    it('should install an application from WASM file', async () => {
-      console.log('📦 Installing application from WASM file...');
-
-      // Read the WASM file
-      const wasmPath = join(process.cwd(), 'tests/e2e/assets/kv_store.wasm');
-      const wasmBuffer = readFileSync(wasmPath);
-
-      console.log('📄 WASM file size:', wasmBuffer.length, 'bytes');
-
-      try {
-        const installResult = await meroJs.admin.installApplication({
-          url: 'file://kv_store.wasm',
-          metadata: Buffer.from('Test KV Store application').toString('base64'),
-        });
-
-        console.log(
-          '✅ Application installed successfully:',
-          JSON.stringify(installResult, null, 2),
-        );
-
-        expect(installResult).toBeDefined();
-        expect(installResult.applicationId).toBeDefined();
-        installedAppId = installResult.applicationId;
-
-        console.log('🆔 Installed application ID:', installedAppId);
-      } catch (error: any) {
-        console.log('⚠️ Application installation failed:', error.message);
-        // This might fail if the endpoint is not implemented yet
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
-      }
-    });
-
+  describe('Applications', () => {
     it('should list installed applications', async () => {
-      console.log('📋 Listing installed applications...');
+      const response = await mero.admin.listApplications();
+      expect(response.apps).toBeDefined();
+      expect(response.apps.length).toBeGreaterThan(0);
 
-      try {
-        const applicationsResponse = await meroJs.admin.listApplications();
-        console.log(
-          '✅ Applications list:',
-          JSON.stringify(applicationsResponse, null, 2),
-        );
+      const kvApp = response.apps.find((a) => a.package === KV_STORE_PACKAGE);
+      expect(kvApp).toBeTruthy();
+      applicationId = kvApp!.id;
+    });
 
-        expect(applicationsResponse).toBeDefined();
-        expect(applicationsResponse.apps).toBeDefined();
-        expect(Array.isArray(applicationsResponse.apps)).toBe(true);
+    it('should get application by ID', async () => {
+      const response = await mero.admin.getApplication(applicationId);
+      expect(response.application).toBeDefined();
+      expect(response.application!.id).toBe(applicationId);
+      expect(response.application!.package).toBe(KV_STORE_PACKAGE);
+    });
 
-        if (installedAppId) {
-          const installedApp = applicationsResponse.apps.find(
-            (app: any) => app.id === installedAppId,
-          );
-          expect(installedApp).toBeDefined();
-          console.log('✅ Found our installed application:', installedApp);
-        }
-      } catch (error: any) {
-        console.log('⚠️ List applications failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
+    it('should get latest package version', async () => {
+      const response = await mero.admin.getLatestPackageVersion(KV_STORE_PACKAGE);
+      expect(response.applicationId).toBeTruthy();
+      expect(response.version).toBeTruthy();
+    });
+  });
+
+  // ---- Packages ----
+
+  describe('Packages', () => {
+    it('should list packages', async () => {
+      const response = await mero.admin.listPackages();
+      expect(response.packages).toBeDefined();
+      expect(response.packages.length).toBeGreaterThan(0);
+      expect(response.packages).toContain(KV_STORE_PACKAGE);
+    });
+
+    it('should list package versions', async () => {
+      const response = await mero.admin.listPackageVersions(KV_STORE_PACKAGE);
+      expect(response.versions).toBeDefined();
+      expect(response.versions.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---- Namespace lifecycle ----
+
+  describe('Namespace Lifecycle', () => {
+    it('should create a namespace', async () => {
+      const response = await mero.admin.createNamespace({
+        applicationId,
+        upgradePolicy: 'manual',
+        alias: 'e2e-test-ns',
+      });
+      expect(response.namespaceId).toBeTruthy();
+      namespaceId = response.namespaceId;
+    });
+
+    it('should list namespaces', async () => {
+      const namespaces = await mero.admin.listNamespaces();
+      expect(namespaces.length).toBeGreaterThan(0);
+      const found = namespaces.find((ns) => ns.namespaceId === namespaceId);
+      expect(found).toBeTruthy();
+      expect(found!.alias).toBe('e2e-test-ns');
+    });
+
+    it('should get namespace by ID', async () => {
+      const ns = await mero.admin.getNamespace(namespaceId);
+      expect(ns.namespaceId).toBe(namespaceId);
+      expect(ns.targetApplicationId).toBe(applicationId);
+      expect(ns.upgradePolicy).toBe('manual');
+    });
+
+    it('should get namespace identity', async () => {
+      const identity = await mero.admin.getNamespaceIdentity(namespaceId);
+      expect(identity.namespaceId).toBe(namespaceId);
+      expect(identity.publicKey).toBeTruthy();
+    });
+
+    it('should list namespaces for application', async () => {
+      const namespaces = await mero.admin.listNamespacesForApplication(applicationId);
+      expect(namespaces.length).toBeGreaterThan(0);
+      expect(namespaces.some((ns) => ns.namespaceId === namespaceId)).toBe(true);
+    });
+  });
+
+  // ---- Group within namespace ----
+
+  describe('Group Management', () => {
+    it('should create a group in namespace', async () => {
+      const response = await mero.admin.createGroupInNamespace(namespaceId, { alias: 'e2e-subgroup' });
+      expect(response.groupId).toBeTruthy();
+      subgroupId = response.groupId;
+    });
+
+    it('should list namespace groups', async () => {
+      const groups = await mero.admin.listNamespaceGroups(namespaceId);
+      expect(groups.length).toBeGreaterThan(0);
+      expect(groups.some((g) => g.groupId === subgroupId)).toBe(true);
+    });
+
+    it('should get group info', async () => {
+      // Use the namespace's root group (namespaceId is the root group ID)
+      const info = await mero.admin.getGroupInfo(namespaceId);
+      expect(info.groupId).toBe(namespaceId);
+      expect(info.targetApplicationId).toBe(applicationId);
+      expect(typeof info.memberCount).toBe('number');
+      expect(typeof info.contextCount).toBe('number');
+      expect(typeof info.defaultCapabilities).toBe('number');
+      expect(typeof info.defaultVisibility).toBe('string');
+      namespaceGroupId = info.groupId;
+    });
+
+    it('should list group members', async () => {
+      const response = await mero.admin.listGroupMembers(namespaceGroupId);
+      expect(response.data).toBeDefined();
+      expect(response.data.length).toBeGreaterThan(0);
+      expect(response.data[0].identity).toBeTruthy();
+      expect(response.data[0].role).toBeTruthy();
+      expect(response.selfIdentity).toBeTruthy();
+    });
+
+    it('should get member capabilities', async () => {
+      const members = await mero.admin.listGroupMembers(namespaceGroupId);
+      const firstMember = members.data[0].identity;
+      const caps = await mero.admin.getMemberCapabilities(namespaceGroupId, firstMember);
+      expect(typeof caps.capabilities).toBe('number');
+    });
+  });
+
+  // ---- Context lifecycle ----
+
+  describe('Context Lifecycle', () => {
+    it('should create a context in the namespace group', async () => {
+      const response = await mero.admin.createContext({
+        applicationId,
+        groupId: namespaceGroupId,
+      });
+      expect(response.contextId).toBeTruthy();
+      expect(response.memberPublicKey).toBeTruthy();
+      contextId = response.contextId;
+      memberPublicKey = response.memberPublicKey;
+    });
+
+    it('should list contexts', async () => {
+      const response = await mero.admin.getContexts();
+      expect(response.contexts.length).toBeGreaterThan(0);
+      const found = response.contexts.find((c) => c.id === contextId);
+      expect(found).toBeTruthy();
+    });
+
+    it('should get context by ID', async () => {
+      const ctx = await mero.admin.getContext(contextId);
+      expect(ctx.id).toBe(contextId);
+      expect(ctx.applicationId).toBe(applicationId);
+    });
+
+    it('should get contexts for application', async () => {
+      const response = await mero.admin.getContextsForApplication(applicationId);
+      expect(response.contexts.some((c) => c.id === contextId)).toBe(true);
+    });
+
+    it('should get context group', async () => {
+      const groupId = await mero.admin.getContextGroup(contextId);
+      expect(groupId).toBe(namespaceGroupId);
+    });
+
+    it('should get context storage', async () => {
+      const storage = await mero.admin.getContextStorage(contextId);
+      expect(typeof storage.sizeInBytes).toBe('number');
+    });
+
+    it('should list group contexts', async () => {
+      const contexts = await mero.admin.listGroupContexts(namespaceGroupId);
+      expect(contexts.length).toBeGreaterThan(0);
+      expect(contexts.some((c) => c.contextId === contextId)).toBe(true);
+    });
+
+    it('should get context identities', async () => {
+      const response = await mero.admin.getContextIdentities(contextId);
+      expect(response.identities.length).toBeGreaterThan(0);
+      expect(response.identities).toContain(memberPublicKey);
+    });
+
+    it('should get owned context identities', async () => {
+      const response = await mero.admin.getContextIdentitiesOwned(contextId);
+      expect(response.identities.length).toBeGreaterThan(0);
+      expect(response.identities).toContain(memberPublicKey);
+    });
+
+    it('should join context (as existing group member)', async () => {
+      const response = await mero.admin.joinContext(contextId);
+      expect(response.contextId).toBe(contextId);
+      expect(response.memberPublicKey).toBeTruthy();
+    });
+  });
+
+  // ---- Alias Management ----
+
+  describe('Alias Management', () => {
+    it('should create and lookup a context alias', async () => {
+      await mero.admin.createContextAlias({ name: 'e2e-ctx', value: contextId });
+      const lookup = await mero.admin.lookupContextAlias('e2e-ctx');
+      expect(lookup.value).toBe(contextId);
+    });
+
+    it('should list context aliases', async () => {
+      const aliases = await mero.admin.listContextAliases();
+      expect(aliases.aliases).toBeDefined();
+    });
+
+    it('should delete context alias', async () => {
+      await mero.admin.deleteContextAlias('e2e-ctx');
+      // After delete, lookup should return null/undefined value
+      const lookup = await mero.admin.lookupContextAlias('e2e-ctx');
+      expect(lookup.value).toBeFalsy();
+    });
+
+    it('should create and lookup an application alias', async () => {
+      await mero.admin.createApplicationAlias({ name: 'e2e-app', value: applicationId });
+      const lookup = await mero.admin.lookupApplicationAlias('e2e-app');
+      expect(lookup.value).toBe(applicationId);
+      await mero.admin.deleteApplicationAlias('e2e-app');
+    });
+  });
+
+  // ---- Group Settings ----
+
+  describe('Group Settings', () => {
+    it('should set default visibility', async () => {
+      await mero.admin.setDefaultVisibility(namespaceGroupId, { defaultVisibility: 'open' });
+      const info = await mero.admin.getGroupInfo(namespaceGroupId);
+      expect(info.defaultVisibility).toBe('open');
+    });
+
+    it('should set default capabilities', async () => {
+      await mero.admin.setDefaultCapabilities(namespaceGroupId, { defaultCapabilities: 7 });
+      const info = await mero.admin.getGroupInfo(namespaceGroupId);
+      expect(info.defaultCapabilities).toBe(7);
+    });
+
+    it('should set group alias', async () => {
+      await mero.admin.setGroupAlias(namespaceGroupId, { alias: 'renamed-group' });
+      const info = await mero.admin.getGroupInfo(namespaceGroupId);
+      expect(info.alias).toBe('renamed-group');
+    });
+  });
+
+  // ---- Namespace Invitation Flow ----
+
+  describe('Namespace Invitation', () => {
+    it('should create a namespace invitation', async () => {
+      const response = await mero.admin.createNamespaceInvitation(namespaceId);
+      expect('invitation' in response).toBe(true);
+      if ('invitation' in response) {
+        expect(response.invitation).toBeTruthy();
+        expect(response.invitation.inviterSignature).toBeTruthy();
+      }
+    });
+
+    it('should create a group invitation', async () => {
+      const response = await mero.admin.createGroupInvitation(namespaceGroupId);
+      if ('invitation' in response) {
+        expect(response.invitation).toBeTruthy();
+        expect(response.invitation.inviterSignature).toBeTruthy();
       }
     });
   });
 
-  describe('Context Management Flow', () => {
-    it('should create a context with the installed application', async () => {
-      console.log('🏗️ Creating context with application...');
+  // ---- Group Sync & Signing Key ----
 
-      if (!installedAppId) {
-        console.log(
-          '⚠️ No installed application ID available, skipping context creation',
-        );
-        return;
-      }
-
-      try {
-        const contextResult = await meroJs.admin.createContext({
-          name: 'test-context',
-          description: 'Test context for KV store',
-          metadata: {
-            application_id: installedAppId,
-            config: {
-              // Example config for KV store
-              max_keys: 1000,
-              storage_type: 'memory',
-            },
-          },
-        });
-
-        console.log(
-          '✅ Context created successfully:',
-          JSON.stringify(contextResult, null, 2),
-        );
-
-        expect(contextResult).toBeDefined();
-        expect(contextResult.contextId).toBeDefined();
-        createdContextId = contextResult.contextId;
-
-        console.log('🆔 Created context ID:', createdContextId);
-      } catch (error: any) {
-        console.log('⚠️ Context creation failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
-      }
+  describe('Group Sync & Signing Key', () => {
+    it('should sync group', async () => {
+      const response = await mero.admin.syncGroup(namespaceGroupId);
+      expect(response.groupId).toBe(namespaceGroupId);
+      expect(typeof response.memberCount).toBe('number');
+      expect(typeof response.contextCount).toBe('number');
     });
 
-    it('should list all contexts', async () => {
-      console.log('📋 Listing all contexts...');
-
-      try {
-        const contextsResponse = await meroJs.admin.getContexts();
-        console.log(
-          '✅ Contexts list:',
-          JSON.stringify(contextsResponse, null, 2),
-        );
-
-        expect(contextsResponse).toBeDefined();
-        expect(contextsResponse.contexts).toBeDefined();
-        expect(Array.isArray(contextsResponse.contexts)).toBe(true);
-
-        if (createdContextId) {
-          const createdContext = contextsResponse.contexts.find(
-            (ctx: any) => ctx.id === createdContextId,
-          );
-          expect(createdContext).toBeDefined();
-          console.log('✅ Found our created context:', createdContext);
-        }
-      } catch (error: any) {
-        console.log('⚠️ List contexts failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
-      }
+    it('should sync context', async () => {
+      // Should not throw
+      await mero.admin.syncContext(contextId);
     });
+  });
 
-    it('should get specific context details', async () => {
-      console.log('🔍 Getting specific context details...');
+  // ---- Group Nesting ----
 
-      if (!createdContextId) {
-        console.log(
-          '⚠️ No created context ID available, skipping context details',
-        );
-        return;
-      }
+  describe('Group Nesting', () => {
+    it('should list subgroups', async () => {
+      const subgroups = await mero.admin.listSubgroups(namespaceGroupId);
+      expect(Array.isArray(subgroups)).toBe(true);
+      // The subgroup we created earlier should be listed
+      expect(subgroups.some((sg) => sg.groupId === subgroupId)).toBe(true);
+    });
+  });
 
+  // ---- TEE (may not be enabled, test gracefully) ----
+
+  describe('TEE', () => {
+    it('should get TEE info', async () => {
       try {
-        const contextDetailsResponse =
-          await meroJs.admin.getContext(createdContextId);
-        console.log(
-          '✅ Context details:',
-          JSON.stringify(contextDetailsResponse, null, 2),
-        );
-
-        expect(contextDetailsResponse).toBeDefined();
-        expect(contextDetailsResponse.context).toBeDefined();
-        expect(contextDetailsResponse.context.id).toBe(createdContextId);
-        expect(contextDetailsResponse.context.name).toBe('test-context');
-      } catch (error: any) {
-        console.log('⚠️ Get context failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
+        const info = await mero.admin.getTeeInfo();
+        expect(info.cloudProvider).toBeDefined();
+        expect(info.osImage).toBeDefined();
+        expect(info.mrtd).toBeDefined();
+      } catch {
+        // TEE may not be enabled on the test node, that's OK
       }
     });
   });
 
-  describe('Cleanup Flow', () => {
-    it('should delete the created context', async () => {
-      console.log('🗑️ Deleting created context...');
+  // ---- Cleanup ----
 
-      if (!createdContextId) {
-        console.log(
-          '⚠️ No created context ID available, skipping context deletion',
-        );
-        return;
-      }
-
-      try {
-        const deleteResult = await meroJs.admin.deleteContext(createdContextId);
-        console.log(
-          '✅ Context deleted successfully:',
-          JSON.stringify(deleteResult, null, 2),
-        );
-
-        expect(deleteResult).toBeDefined();
-        expect(deleteResult.contextId).toBeDefined();
-        expect(deleteResult.contextId).toBe(createdContextId);
-        console.log('✅ Context cleanup completed');
-      } catch (error: any) {
-        console.log('⚠️ Delete context failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
-      }
+  describe('Cleanup', () => {
+    it('should delete context', async () => {
+      if (!contextId) return;
+      const result = await mero.admin.deleteContext(contextId);
+      expect(result.isDeleted).toBe(true);
     });
 
-    it('should uninstall the application', async () => {
-      console.log('🗑️ Uninstalling application...');
-
-      if (!installedAppId) {
-        console.log(
-          '⚠️ No installed application ID available, skipping application deletion',
-        );
-        return;
-      }
-
-      try {
-        const uninstallResult =
-          await meroJs.admin.uninstallApplication(installedAppId);
-        console.log(
-          '✅ Application uninstalled successfully:',
-          JSON.stringify(uninstallResult, null, 2),
-        );
-
-        expect(uninstallResult).toBeDefined();
-        expect(uninstallResult.applicationId).toBeDefined();
-        expect(uninstallResult.applicationId).toBe(installedAppId);
-        console.log('✅ Application cleanup completed');
-      } catch (error: any) {
-        console.log('⚠️ Uninstall application failed:', error.message);
-        expect(error.status).toBe(404);
-        console.log(
-          '✅ Expected 404 - Admin API endpoints not implemented yet',
-        );
-      }
-    });
-  });
-
-  describe('Health and Status Checks', () => {
-    it('should check admin service health', async () => {
-      console.log('🏥 Checking Admin API health...');
-
-      try {
-        const health = await meroJs.admin.healthCheck();
-        console.log('✅ Admin API health:', JSON.stringify(health, null, 2));
-        expect(health).toBeDefined();
-        expect(health.status).toBeDefined();
-      } catch (error: any) {
-        console.log(
-          '⚠️ Admin API health check failed (expected):',
-          error.message,
-        );
-        expect(error.status).toBe(404);
-      }
+    it('should delete subgroup', async () => {
+      if (!subgroupId) return;
+      const result = await mero.admin.deleteGroup(subgroupId);
+      expect(result.isDeleted).toBe(true);
     });
 
-    it('should get admin auth status', async () => {
-      console.log('🔐 Getting admin auth status...');
+    it('should delete namespace', async () => {
+      if (!namespaceId) return;
+      const result = await mero.admin.deleteNamespace(namespaceId);
+      expect(result.isDeleted).toBe(true);
+    });
 
-      try {
-        const authStatus = await meroJs.admin.isAuthed();
-        console.log(
-          '✅ Admin auth status:',
-          JSON.stringify(authStatus, null, 2),
-        );
-        expect(authStatus).toBeDefined();
-        expect(authStatus.status).toBeDefined();
-      } catch (error: any) {
-        console.log(
-          '⚠️ Admin auth status check failed (expected):',
-          error.message,
-        );
-        expect(error.status).toBe(404);
-      }
+    it('should verify namespace is deleted', async () => {
+      const namespaces = await mero.admin.listNamespaces();
+      expect(namespaces.find((ns) => ns.namespaceId === namespaceId)).toBeUndefined();
     });
   });
 });
