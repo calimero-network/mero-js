@@ -1,4 +1,5 @@
-// Admin API Types — aligned with merod server routes
+// Admin API Types — aligned with core server routes
+// All types use camelCase to match core's #[serde(rename_all = "camelCase")]
 
 // Re-export shared types
 export { ApiResponse } from '../http-client';
@@ -19,11 +20,15 @@ export interface InstallApplicationRequest {
   url: string;
   hash?: string;
   metadata: number[];
+  package?: string;
+  version?: string;
 }
 
 export interface InstallDevApplicationRequest {
   path: string;
-  metadata: unknown[];
+  metadata: number[];
+  package?: string;
+  version?: string;
 }
 
 export interface InstallApplicationResponseData {
@@ -60,6 +65,14 @@ export interface GetLatestVersionResponseData {
   version: string | null;
 }
 
+export interface ListPackagesResponseData {
+  packages: string[];
+}
+
+export interface ListVersionsResponseData {
+  versions: string[];
+}
+
 // ---- Contexts ----
 
 export interface CreateContextRequest {
@@ -68,12 +81,19 @@ export interface CreateContextRequest {
   serviceName?: string;
   contextSeed?: string;
   initializationParams?: number[];
-  protocol?: string;
+  identitySecret?: string;
+  alias?: string;
 }
 
 export interface CreateContextResponseData {
   contextId: string;
   memberPublicKey: string;
+  groupId?: string;
+  groupCreated?: boolean;
+}
+
+export interface DeleteContextRequest {
+  requester?: string;
 }
 
 export interface DeleteContextResponseData {
@@ -88,8 +108,12 @@ export interface Context {
   dagHeads: number[][];
 }
 
+export interface ContextWithGroup extends Context {
+  groupId?: string;
+}
+
 export interface GetContextsResponseData {
-  contexts: Context[];
+  contexts: ContextWithGroup[];
 }
 
 // ---- Context Identity ----
@@ -109,32 +133,71 @@ export interface JoinContextResponseData {
   memberPublicKey: string;
 }
 
+// ---- Context group / storage / sync ----
+
+export type ContextGroupResponseData = string | null;
+
+export interface ContextStorageResponseData {
+  sizeInBytes: number;
+}
+
+// Sync context returns empty
+export type SyncContextResponseData = null;
+
+// ---- Specialized Node Invite ----
+
+export interface InviteSpecializedNodeRequest {
+  contextId: string;
+  inviterId?: string;
+}
+
+export interface InviteSpecializedNodeResponseData {
+  nonce: string;
+}
+
+// ---- Update Context Application ----
+
+export interface UpdateContextApplicationRequest {
+  applicationId: string;
+  executorPublicKey: string;
+  migrateMethod?: string;
+}
+
+// Update context application returns empty
+export type UpdateContextApplicationResponseData = Record<string, never>;
+
+// ---- Contexts With Executors ----
+
+export interface ContextWithExecutors {
+  contextId: string;
+  executors: string[];
+}
+
+export type ContextsWithExecutorsResponseData = ContextWithExecutors[];
+
 // ---- Blobs ----
 
 export interface UploadBlobRequest {
   data: Uint8Array | ArrayBuffer;
 }
 
-export interface UploadBlobResponseData {
-  blobId?: string;
-  hash?: string;
-  size?: number;
+export interface BlobInfo {
+  blobId: string;
+  size: number;
 }
+
+export type UploadBlobResponseData = BlobInfo;
 
 export interface DeleteBlobResponseData {
-  success: boolean;
+  blobId: string;
+  deleted: boolean;
 }
 
-export interface BlobEntry {
-  blobId?: string;
-  hash?: string;
-  size?: number;
-  createdAt?: number;
+export interface ListBlobsResponseData {
+  blobs: BlobInfo[];
 }
 
-export type ListBlobsResponseData = BlobEntry[];
-
-export type GetBlobResponseData = BlobEntry;
+export type GetBlobResponseData = BlobInfo;
 
 // ---- Aliases ----
 
@@ -152,20 +215,44 @@ export interface ListAliasesResponseData {
   aliases: AliasEntry[];
 }
 
-export interface CreateAliasResponseData {
-  success?: boolean;
-  name?: string;
-  value?: string;
-}
+// Create/delete alias returns empty
+export type CreateAliasResponseData = Record<string, never>;
+export type DeleteAliasResponseData = Record<string, never>;
 
 export interface LookupAliasResponseData {
-  name?: string;
   value?: string;
 }
 
-export interface DeleteAliasResponseData {
-  success?: boolean;
-  name?: string;
+// ---- Context identity aliases ----
+
+export type ListContextIdentityAliasesResponseData = ListAliasesResponseData;
+export type CreateContextIdentityAliasResponseData = Record<string, never>;
+
+export interface LookupContextIdentityAliasResponseData {
+  value?: string;
+}
+
+export type DeleteContextIdentityAliasResponseData = Record<string, never>;
+
+// ---- Shared invitation types ----
+
+export interface GroupInvitationFromAdmin {
+  inviterIdentity: number[];
+  groupId: number[];
+  expirationTimestamp: number;
+  secretSalt: number[];
+  invitedRole?: number;
+}
+
+export interface SignedGroupOpenInvitation {
+  invitation: GroupInvitationFromAdmin;
+  inviterSignature: string;
+}
+
+export interface RecursiveInvitationEntry {
+  groupId: string;
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
 }
 
 // ---- Namespaces ----
@@ -191,9 +278,7 @@ export interface NamespaceIdentity {
 
 export interface CreateNamespaceRequest {
   applicationId: string;
-  namespaceId?: string;
-  appKey?: string;
-  upgradePolicy?: string;
+  upgradePolicy: string;
   alias?: string;
 }
 
@@ -202,7 +287,7 @@ export interface CreateNamespaceResponseData {
 }
 
 export interface DeleteNamespaceRequest {
-  force?: boolean;
+  requester?: string;
 }
 
 export interface DeleteNamespaceResponseData {
@@ -210,20 +295,29 @@ export interface DeleteNamespaceResponseData {
 }
 
 export interface CreateNamespaceInvitationRequest {
-  validForSeconds?: number;
+  requester?: string;
+  expirationTimestamp?: number;
+  recursive?: boolean;
 }
 
 export interface CreateNamespaceInvitationResponseData {
-  invitation: string;
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
+}
+
+export interface CreateRecursiveInvitationResponseData {
+  invitations: RecursiveInvitationEntry[];
 }
 
 export interface JoinNamespaceRequest {
-  invitation: string;
-  namespaceAlias?: string;
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
 }
 
 export interface JoinNamespaceResponseData {
-  namespaceId: string;
+  groupId: string;
+  memberIdentity: string;
+  governanceOp: string;
 }
 
 export interface CreateGroupInNamespaceRequest {
@@ -240,18 +334,13 @@ export interface SubgroupEntry {
   alias?: string;
 }
 
-export interface SubscribeNamespaceResponseData {
-  namespaceId: string;
-  subscribed: boolean;
-}
-
 // ---- Groups ----
 
 export interface CreateGroupRequest {
   applicationId: string;
+  upgradePolicy: string;
   groupId?: string;
   appKey?: string;
-  upgradePolicy?: string;
   alias?: string;
   parentGroupId?: string;
 }
@@ -260,26 +349,29 @@ export interface CreateGroupResponseData {
   groupId: string;
 }
 
-export interface GroupSummary {
-  groupId: string;
-  appKey: string;
-  targetApplicationId: string;
-  upgradePolicy: string;
-  createdAt: number;
-  alias?: string;
+export interface GroupUpgradeStatus {
+  fromVersion: string;
+  toVersion: string;
+  initiatedAt: number;
+  initiatedBy: string;
+  status: string;
+  total?: number;
+  completed?: number;
+  failed?: number;
+  completedAt?: number;
 }
-
-export type ListGroupsResponseData = GroupSummary[];
 
 export interface GroupInfo {
   groupId: string;
   appKey: string;
   targetApplicationId: string;
   upgradePolicy: string;
-  createdAt: number;
-  alias?: string;
   memberCount: number;
   contextCount: number;
+  activeUpgrade?: GroupUpgradeStatus;
+  defaultCapabilities: number;
+  defaultVisibility: string;
+  alias?: string;
 }
 
 export type GroupInfoResponseData = GroupInfo;
@@ -302,13 +394,8 @@ export interface GroupContextEntry {
 
 export type ListGroupContextsResponseData = GroupContextEntry[];
 
-export interface CreateGroupInvitationRequest {
-  validForSeconds?: number;
-}
-
-export interface JoinGroupRequest {
-  invitation: unknown;
-  groupAlias?: string;
+export interface DeleteGroupRequest {
+  requester?: string;
 }
 
 export interface DeleteGroupResponseData {
@@ -317,254 +404,267 @@ export interface DeleteGroupResponseData {
 
 // ---- Group Members ----
 
-export interface AddGroupMembersRequest {
-  identities: string[];
-  role?: string;
-}
-
-export interface AddGroupMembersResponseData {
-  added: string[];
-}
-
-export interface RemoveGroupMembersRequest {
-  identities: string[];
-}
-
-export interface RemoveGroupMembersResponseData {
-  removed: string[];
-}
-
-export interface UpdateMemberRoleRequest {
-  role: string;
-}
-
-export interface UpdateMemberRoleResponseData {
+export interface GroupMemberInput {
   identity: string;
   role: string;
 }
+
+export interface AddGroupMembersRequest {
+  members: GroupMemberInput[];
+  requester?: string;
+}
+
+// Returns empty
+export type AddGroupMembersResponseData = Record<string, never>;
+
+export interface RemoveGroupMembersRequest {
+  members: string[];
+  requester?: string;
+}
+
+// Returns empty
+export type RemoveGroupMembersResponseData = Record<string, never>;
+
+export interface UpdateMemberRoleRequest {
+  role: string;
+  requester?: string;
+}
+
+// Returns empty
+export type UpdateMemberRoleResponseData = Record<string, never>;
 
 // ---- Group Capabilities & Settings ----
 
 export interface MemberCapabilities {
-  identity: string;
-  capabilities: string[];
+  capabilities: number;
 }
 
 export interface SetMemberCapabilitiesRequest {
-  capabilities: string[];
+  capabilities: number;
+  requester?: string;
 }
 
-export interface SetMemberCapabilitiesResponseData {
-  identity: string;
-  capabilities: string[];
-}
+// Returns empty
+export type SetMemberCapabilitiesResponseData = Record<string, never>;
 
 export interface SetDefaultCapabilitiesRequest {
-  capabilities: string[];
+  defaultCapabilities: number;
+  requester?: string;
 }
 
-export interface SetDefaultCapabilitiesResponseData {
-  capabilities: string[];
-}
+// Returns empty
+export type SetDefaultCapabilitiesResponseData = Record<string, never>;
 
 export interface SetDefaultVisibilityRequest {
-  visibility: string;
+  defaultVisibility: string;
+  requester?: string;
 }
 
-export interface SetDefaultVisibilityResponseData {
-  visibility: string;
-}
+// Returns empty
+export type SetDefaultVisibilityResponseData = Record<string, never>;
 
 export interface SetTeeAdmissionPolicyRequest {
-  policy: string;
+  allowedMrtd: string[];
+  allowedRtmr0: string[];
+  allowedRtmr1: string[];
+  allowedRtmr2: string[];
+  allowedRtmr3: string[];
+  allowedTcbStatuses: string[];
+  acceptMock: boolean;
+  requester?: string;
 }
 
-export interface SetTeeAdmissionPolicyResponseData {
-  policy: string;
-}
+// Returns empty
+export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
 
 export interface UpdateGroupSettingsRequest {
-  alias?: string;
-  upgradePolicy?: string;
+  upgradePolicy: string;
+  requester?: string;
 }
 
-export interface UpdateGroupSettingsResponseData {
-  groupId: string;
-}
+// Returns empty
+export type UpdateGroupSettingsResponseData = Record<string, never>;
 
 export interface SetGroupAliasRequest {
   alias: string;
+  requester?: string;
 }
 
-export interface SetGroupAliasResponseData {
-  alias: string;
-}
+// Returns empty
+export type SetGroupAliasResponseData = Record<string, never>;
 
 export interface SetMemberAliasRequest {
   alias: string;
+  requester?: string;
 }
 
-export interface SetMemberAliasResponseData {
-  identity: string;
-  alias: string;
-}
+// Returns empty
+export type SetMemberAliasResponseData = Record<string, never>;
 
 // ---- Group Sync, Signing & Upgrades ----
 
 export interface SyncGroupRequest {
-  force?: boolean;
+  requester?: string;
 }
 
 export interface SyncGroupResponseData {
   groupId: string;
-  synced: boolean;
+  appKey: string;
+  targetApplicationId: string;
+  memberCount: number;
+  contextCount: number;
 }
 
 export interface RegisterGroupSigningKeyRequest {
-  key: string;
+  signingKey: string;
 }
 
 export interface RegisterGroupSigningKeyResponseData {
-  keyId?: string;
-  registered: boolean;
+  publicKey: string;
 }
 
 export interface UpgradeGroupRequest {
-  targetVersion?: string;
+  targetApplicationId: string;
+  requester?: string;
+  migrateMethod?: string;
 }
 
 export interface UpgradeGroupResponseData {
-  operationId?: string;
-  started: boolean;
+  groupId: string;
+  status: string;
+  total?: number;
+  completed?: number;
+  failed?: number;
 }
 
-export interface GroupUpgradeStatusResponseData {
-  status: string;
-  error?: string;
-}
+export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;
 
 export interface RetryGroupUpgradeRequest {
-  force?: boolean;
+  requester?: string;
 }
 
-export interface RetryGroupUpgradeResponseData {
-  operationId?: string;
-  started: boolean;
-}
+// Retry returns same shape as upgrade
+export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
 // ---- Group Nesting & Context Attachments ----
 
 export interface NestGroupRequest {
   childGroupId: string;
+  requester?: string;
 }
 
-export interface NestGroupResponseData {
-  parentGroupId: string;
-  childGroupId: string;
-}
+// Returns empty
+export type NestGroupResponseData = Record<string, never>;
 
 export interface UnnestGroupRequest {
   childGroupId: string;
+  requester?: string;
 }
 
-export interface UnnestGroupResponseData {
-  parentGroupId: string;
-  childGroupId: string;
-}
+// Returns empty
+export type UnnestGroupResponseData = Record<string, never>;
 
 export interface DetachContextFromGroupRequest {
-  reason?: string;
+  requester?: string;
 }
 
-export interface DetachContextFromGroupResponseData {
-  contextId: string;
-  removed: boolean;
+// Returns empty
+export type DetachContextFromGroupResponseData = Record<string, never>;
+
+// ---- Group Invitation & Join ----
+
+export interface CreateGroupInvitationRequest {
+  requester?: string;
+  expirationTimestamp?: number;
+  recursive?: boolean;
 }
 
-// ---- Additional Context Routes ----
+export interface CreateGroupInvitationResponseData {
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
+}
 
-export interface ContextGroupResponseData {
+export interface CreateRecursiveGroupInvitationResponseData {
+  invitations: RecursiveInvitationEntry[];
+}
+
+export interface JoinGroupRequest {
+  invitation: SignedGroupOpenInvitation;
+  groupAlias?: string;
+}
+
+export interface JoinGroupResponseData {
   groupId: string;
-  alias?: string;
-}
-
-export interface ContextStorageResponseData {
-  usageBytes: number;
-  limitBytes?: number;
-}
-
-export interface SyncContextResponseData {
-  contextId?: string;
-  synced: boolean;
-}
-
-export interface InviteSpecializedNodeRequest {
-  contextId: string;
-  nodePublicKey: string;
-}
-
-export interface InviteSpecializedNodeResponseData {
-  invited: boolean;
-}
-
-export interface UpdateContextApplicationRequest {
-  applicationId: string;
-}
-
-export interface UpdateContextApplicationResponseData {
-  contextId: string;
-  applicationId: string;
-}
-
-export interface ContextWithExecutors {
-  contextId: string;
-  executors: string[];
-}
-
-export type ContextsWithExecutorsResponseData = ContextWithExecutors[];
-
-// ---- Context identity aliases ----
-
-export type ListContextIdentityAliasesResponseData = ListAliasesResponseData;
-
-export interface CreateContextIdentityAliasResponseData {
-  success?: boolean;
-  name?: string;
-  value?: string;
-}
-
-export interface LookupContextIdentityAliasResponseData {
-  name?: string;
-  value?: string;
-}
-
-export interface DeleteContextIdentityAliasResponseData {
-  success?: boolean;
-  name?: string;
+  memberIdentity: string;
+  governanceOp: string;
 }
 
 // ---- TEE ----
 
 export interface TeeInfoResponseData {
-  enabled: boolean;
-  mode?: string;
+  cloudProvider: string;
+  osImage: string;
+  mrtd: string;
 }
 
 export interface TeeAttestRequest {
-  payload: string;
+  nonce: string;
+  applicationId?: string;
+}
+
+export interface QuoteHeader {
+  version: number;
+  attestationKeyType: number;
+  teeType: number;
+  qeVendorId: string;
+  userData: string;
+}
+
+export interface QuoteBody {
+  tdxVersion: string;
+  teeTcbSvn: string;
+  mrseam: string;
+  mrsignerseam: string;
+  seamattributes: string;
+  tdattributes: string;
+  xfam: string;
+  mrtd: string;
+  mrconfigid: string;
+  mrowner: string;
+  mrownerconfig: string;
+  rtmr0: string;
+  rtmr1: string;
+  rtmr2: string;
+  rtmr3: string;
+  reportdata: string;
+  teeTcbSvn2?: string;
+  mrservicetd?: string;
+}
+
+export interface Quote {
+  header: QuoteHeader;
+  body: QuoteBody;
+  signature: string;
+  attestationKey: string;
+  certificationData: unknown;
 }
 
 export interface TeeAttestResponseData {
-  quote: string;
+  quoteB64: string;
+  quote: Quote;
 }
 
 export interface TeeVerifyQuoteRequest {
-  quote: string;
-  payload?: string;
+  quoteB64: string;
+  nonce: string;
+  expectedApplicationHash?: string;
 }
 
 export interface TeeVerifyQuoteResponseData {
-  valid: boolean;
+  quoteVerified: boolean;
+  nonceVerified: boolean;
+  applicationHashVerified?: boolean;
+  quote: Quote;
 }
 
 // ---- Client Configuration ----

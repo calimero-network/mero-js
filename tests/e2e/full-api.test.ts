@@ -1,12 +1,14 @@
 /**
- * E2E tests for mero-js against a running Calimero node.
+ * Full E2E tests for mero-js against a running Calimero node.
+ *
+ * Covers: Auth -> Applications -> Namespace -> Group -> Context -> RPC -> SSE
  *
  * Prerequisites:
- *   cd todo-app/test-nodes && bash start.sh
- *   # Installs todo-app + kv-store on node at localhost:4001
+ *   A merod node running on localhost:4001 with embedded auth and kv-store installed.
+ *   CI starts this via Docker; locally run the node manually.
  *
  * Run:
- *   pnpm test:e2e
+ *   NODE_URL=http://localhost:4001 pnpm test:e2e
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js';
@@ -16,14 +18,15 @@ const NODE_URL = process.env.NODE_URL || 'http://localhost:4001';
 const USERNAME = 'dev';
 const PASSWORD = 'dev';
 const KV_STORE_PACKAGE = 'com.calimero.kv-store';
-const DEV_SIGNER_ID = 'did:key:z6MknF3p5L5FDHJQ7FREUapuX4Wmp4MtF6WrHYaXS2B3eZQd';
 
 let mero: MeroJs;
 let applicationId: string;
+let namespaceId: string;
+let groupId: string;
 let contextId: string;
 let executorPublicKey: string;
 
-describe('MeroJs E2E', () => {
+describe('MeroJs E2E — Full Flow', () => {
   // ---- Auth ----
 
   describe('Authentication', () => {
@@ -57,34 +60,6 @@ describe('MeroJs E2E', () => {
     });
   });
 
-  // ---- Admin: Applications ----
-
-  describe('Applications', () => {
-    it('should list installed applications', async () => {
-      const response = await mero.admin.listApplications();
-      const apps = (response as any)?.apps ?? [];
-      expect(apps.length).toBeGreaterThan(0);
-
-      const kvApp = apps.find((a: any) => a.package === KV_STORE_PACKAGE);
-      expect(kvApp).toBeTruthy();
-      expect(kvApp.signer_id).toBe(DEV_SIGNER_ID);
-      applicationId = kvApp.id;
-    });
-
-    it('should get application by ID', async () => {
-      const response = await mero.admin.getApplication(applicationId);
-      const app = (response as any)?.application ?? response;
-      expect(app.id).toBe(applicationId);
-      expect(app.package).toBe(KV_STORE_PACKAGE);
-    });
-
-    it('should get latest package version (requires auth)', async () => {
-      const response = await mero.admin.getLatestPackageVersion(KV_STORE_PACKAGE);
-      expect(response.applicationId).toBeTruthy();
-      expect(response.version).toBeTruthy();
-    });
-  });
-
   // ---- Admin: Health ----
 
   describe('Health', () => {
@@ -99,85 +74,100 @@ describe('MeroJs E2E', () => {
     });
   });
 
-  // ---- Admin: Contexts ----
+  // ---- Admin: Applications ----
 
-  describe('Contexts', () => {
-    it('should create a context', async () => {
-      const response = await mero.admin.createContext({
-        applicationId,
-        protocol: 'near',
-        initializationParams: [],
-      } as any);
-      contextId = (response as any)?.contextId;
-      expect(contextId).toBeTruthy();
+  describe('Applications', () => {
+    it('should list installed applications', async () => {
+      const response = await mero.admin.listApplications();
+      expect(response.apps.length).toBeGreaterThan(0);
 
-      const memberKey = (response as any)?.memberPublicKey;
-      expect(memberKey).toBeTruthy();
-      executorPublicKey = memberKey;
+      const kvApp = response.apps.find((a) => a.package === KV_STORE_PACKAGE);
+      expect(kvApp).toBeTruthy();
+      applicationId = kvApp!.id;
     });
 
-    it('should list contexts', async () => {
+    it('should get application by ID', async () => {
+      const response = await mero.admin.getApplication(applicationId);
+      expect(response.application).toBeDefined();
+      expect(response.application!.id).toBe(applicationId);
+      expect(response.application!.package).toBe(KV_STORE_PACKAGE);
+    });
+
+    it('should get latest package version', async () => {
+      const response = await mero.admin.getLatestPackageVersion(KV_STORE_PACKAGE);
+      expect(response.applicationId).toBeTruthy();
+      expect(response.version).toBeTruthy();
+    });
+  });
+
+  // ---- Admin: Namespace -> Group -> Context ----
+
+  describe('Namespace & Context Creation', () => {
+    it('should create a namespace for the application', async () => {
+      const response = await mero.admin.createNamespace({
+        applicationId,
+        upgradePolicy: 'manual',
+        alias: 'e2e-full',
+      });
+      expect(response.namespaceId).toBeTruthy();
+      namespaceId = response.namespaceId;
+      // The namespace ID is also the root group ID
+      groupId = namespaceId;
+    });
+
+    it('should get namespace identity', async () => {
+      const identity = await mero.admin.getNamespaceIdentity(namespaceId);
+      expect(identity.publicKey).toBeTruthy();
+    });
+
+    it('should get group info for the namespace root group', async () => {
+      const info = await mero.admin.getGroupInfo(groupId);
+      expect(info.groupId).toBe(groupId);
+      expect(info.targetApplicationId).toBe(applicationId);
+      expect(info.memberCount).toBeGreaterThan(0);
+    });
+
+    it('should create a context in the group', async () => {
+      const response = await mero.admin.createContext({
+        applicationId,
+        groupId,
+      });
+      expect(response.contextId).toBeTruthy();
+      expect(response.memberPublicKey).toBeTruthy();
+      contextId = response.contextId;
+      executorPublicKey = response.memberPublicKey;
+    });
+
+    it('should list contexts and find the created one', async () => {
       const response = await mero.admin.getContexts();
-      const contexts = (response as any)?.contexts ?? [];
-      expect(contexts.length).toBeGreaterThan(0);
-      expect(contexts.find((c: any) => c.id === contextId)).toBeTruthy();
+      const found = response.contexts.find((c) => c.id === contextId);
+      expect(found).toBeTruthy();
     });
 
     it('should get context by ID', async () => {
-      const response = await mero.admin.getContext(contextId);
-      expect((response as any)?.id || (response as any)?.context?.id).toBeTruthy();
+      const ctx = await mero.admin.getContext(contextId);
+      expect(ctx.id).toBe(contextId);
+      expect(ctx.applicationId).toBe(applicationId);
     });
 
-    it('should get context identities (all)', async () => {
+    it('should get context identities', async () => {
       const response = await mero.admin.getContextIdentities(contextId);
-      const identities = (response as any)?.identities ?? [];
-      expect(identities.length).toBeGreaterThan(0);
-      expect(identities).toContain(executorPublicKey);
+      expect(response.identities.length).toBeGreaterThan(0);
+      expect(response.identities).toContain(executorPublicKey);
     });
 
-    it('should get context identities owned (this node)', async () => {
+    it('should get context identities owned', async () => {
       const response = await mero.admin.getContextIdentitiesOwned(contextId);
-      const identities = (response as any)?.identities ?? [];
-      expect(identities.length).toBeGreaterThan(0);
-      expect(identities).toContain(executorPublicKey);
+      expect(response.identities.length).toBeGreaterThan(0);
+      expect(response.identities).toContain(executorPublicKey);
     });
   });
 
   // ---- RPC ----
 
   describe('JSON-RPC', () => {
-    let clientMero: MeroJs;
-
-    beforeAll(async () => {
-      // Generate a client key scoped to the context
-      const response = await fetch(`${NODE_URL}/admin/client-key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${mero.getTokenData()!.access_token}`,
-        },
-        body: JSON.stringify({
-          context_id: contextId,
-          context_identity: executorPublicKey,
-          permissions: [
-            `context[${contextId},${executorPublicKey}]`,
-            `context:execute[${applicationId}]`,
-          ],
-        }),
-      });
-      const json = await response.json();
-      const clientToken = json.data;
-
-      clientMero = new MeroJs({ baseUrl: NODE_URL });
-      clientMero.setTokenData({
-        access_token: clientToken.access_token,
-        refresh_token: clientToken.refresh_token,
-        expires_at: Date.now() + 3_600_000,
-      });
-    });
-
     it('should execute "entries" (read)', async () => {
-      const result = await clientMero.rpc.execute({
+      const result = await mero.rpc.execute({
         contextId,
         method: 'entries',
         argsJson: {},
@@ -186,15 +176,15 @@ describe('MeroJs E2E', () => {
       expect(result).toBeDefined();
     });
 
-    it('should execute "set" (write)', async () => {
-      await clientMero.rpc.execute({
+    it('should execute "set" (write) and verify', async () => {
+      await mero.rpc.execute({
         contextId,
         method: 'set',
         argsJson: { key: 'e2e-test', value: 'hello' },
         executorPublicKey,
       });
 
-      const entries = await clientMero.rpc.execute<Record<string, string>>({
+      const entries = await mero.rpc.execute<Record<string, string>>({
         contextId,
         method: 'entries',
         argsJson: {},
@@ -204,7 +194,7 @@ describe('MeroJs E2E', () => {
     });
 
     it('should execute "get" (read single)', async () => {
-      const value = await clientMero.rpc.execute<string | null>({
+      const value = await mero.rpc.execute<string | null>({
         contextId,
         method: 'get',
         argsJson: { key: 'e2e-test' },
@@ -214,19 +204,18 @@ describe('MeroJs E2E', () => {
     });
 
     it('should execute "remove" (write)', async () => {
-      const result = await clientMero.rpc.execute({
+      const result = await mero.rpc.execute({
         contextId,
         method: 'remove',
         argsJson: { key: 'e2e-test' },
         executorPublicKey,
       });
-      // remove returns the removed value or null
       expect(result).toBeDefined();
     });
 
     it('should throw RpcError on non-existent method', async () => {
       await expect(
-        clientMero.rpc.execute({
+        mero.rpc.execute({
           contextId,
           method: 'nonexistent_method',
           argsJson: {},
@@ -239,37 +228,8 @@ describe('MeroJs E2E', () => {
   // ---- SSE ----
 
   describe('SSE Events', () => {
-    let clientMero: MeroJs;
-
-    beforeAll(async () => {
-      const response = await fetch(`${NODE_URL}/admin/client-key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${mero.getTokenData()!.access_token}`,
-        },
-        body: JSON.stringify({
-          context_id: contextId,
-          context_identity: executorPublicKey,
-          permissions: [
-            `context[${contextId},${executorPublicKey}]`,
-            `context:execute[${applicationId}]`,
-          ],
-        }),
-      });
-      const json = await response.json();
-      const clientToken = json.data;
-
-      clientMero = new MeroJs({ baseUrl: NODE_URL });
-      clientMero.setTokenData({
-        access_token: clientToken.access_token,
-        refresh_token: clientToken.refresh_token,
-        expires_at: Date.now() + 3_600_000,
-      });
-    });
-
     it('should connect to SSE and get session', async () => {
-      const sse = clientMero.events;
+      const sse = mero.events;
       const sessionId = await new Promise<string>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('SSE connect timeout')), 5000);
         sse.on('connect', (id: string) => {
@@ -284,13 +244,13 @@ describe('MeroJs E2E', () => {
     });
 
     it('should subscribe to context events', async () => {
-      const sse = clientMero.events;
+      const sse = mero.events;
       await sse.subscribe([contextId]);
       // If no error thrown, subscription succeeded
     });
 
     it('should receive event on state mutation', async () => {
-      const sse = clientMero.events;
+      const sse = mero.events;
 
       const eventPromise = new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Event timeout')), 10000);
@@ -301,7 +261,7 @@ describe('MeroJs E2E', () => {
       });
 
       // Trigger a state mutation
-      await clientMero.rpc.execute({
+      await mero.rpc.execute({
         contextId,
         method: 'set',
         argsJson: { key: 'sse-test', value: 'event-trigger' },
@@ -312,8 +272,8 @@ describe('MeroJs E2E', () => {
       expect(event).toBeTruthy();
       expect(event.contextId).toBe(contextId);
 
-      // Cleanup
-      clientMero.close();
+      // Cleanup SSE
+      mero.events.close();
     });
   });
 
@@ -389,13 +349,6 @@ describe('MeroJs E2E', () => {
   });
 
   // ---- Token Refresh ----
-  //
-  // To test token refresh E2E, configure node with:
-  //   access_token_expiry = 1
-  // The jsonwebtoken crate has a 60s default leeway, so the token is actually
-  // valid for ~61 seconds. Set TOKEN_REFRESH_WAIT_MS env var to override.
-  //
-  // Run: TOKEN_REFRESH_WAIT_MS=62000 pnpm test:e2e -- tests/e2e/full-api.test.ts
 
   const REFRESH_WAIT = parseInt(process.env.TOKEN_REFRESH_WAIT_MS || '0', 10);
 
@@ -411,10 +364,10 @@ describe('MeroJs E2E', () => {
       const contexts1 = await shortMero.admin.getContexts();
       expect(contexts1).toBeTruthy();
 
-      // Wait for token to expire (expiry + 60s jsonwebtoken leeway + buffer)
+      // Wait for token to expire
       await new Promise((r) => setTimeout(r, REFRESH_WAIT));
 
-      // The token is now expired. The next call should trigger refresh automatically.
+      // The next call should trigger refresh automatically
       const contexts2 = await shortMero.admin.getContexts();
       expect(contexts2).toBeTruthy();
 
@@ -429,6 +382,18 @@ describe('MeroJs E2E', () => {
   // ---- Cleanup ----
 
   describe('Cleanup', () => {
+    it('should delete context', async () => {
+      if (!contextId) return;
+      const result = await mero.admin.deleteContext(contextId);
+      expect(result.isDeleted).toBe(true);
+    });
+
+    it('should delete namespace', async () => {
+      if (!namespaceId) return;
+      const result = await mero.admin.deleteNamespace(namespaceId);
+      expect(result.isDeleted).toBe(true);
+    });
+
     it('should close MeroJs', () => {
       mero.close();
     });

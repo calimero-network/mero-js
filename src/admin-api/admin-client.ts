@@ -9,24 +9,37 @@ import type {
   ListApplicationsResponseData,
   GetApplicationResponseData,
   GetLatestVersionResponseData,
+  ListPackagesResponseData,
+  ListVersionsResponseData,
   CreateContextRequest,
   CreateContextResponseData,
+  DeleteContextRequest,
   DeleteContextResponseData,
   GetContextsResponseData,
   Context,
   GenerateContextIdentityResponseData,
   GetContextIdentitiesResponseData,
   JoinContextResponseData,
+  ContextGroupResponseData,
+  ContextStorageResponseData,
+  InviteSpecializedNodeRequest,
+  InviteSpecializedNodeResponseData,
+  UpdateContextApplicationRequest,
+  ContextsWithExecutorsResponseData,
   UploadBlobRequest,
   UploadBlobResponseData,
   DeleteBlobResponseData,
   ListBlobsResponseData,
   GetBlobResponseData,
   CreateAliasRequest,
-  ListAliasesResponseData,
   CreateAliasResponseData,
   LookupAliasResponseData,
   DeleteAliasResponseData,
+  ListAliasesResponseData,
+  ListContextIdentityAliasesResponseData,
+  CreateContextIdentityAliasResponseData,
+  LookupContextIdentityAliasResponseData,
+  DeleteContextIdentityAliasResponseData,
   ListNamespacesResponseData,
   CreateNamespaceRequest,
   CreateNamespaceResponseData,
@@ -34,39 +47,30 @@ import type {
   DeleteNamespaceResponseData,
   CreateNamespaceInvitationRequest,
   CreateNamespaceInvitationResponseData,
+  CreateRecursiveInvitationResponseData,
   JoinNamespaceRequest,
   JoinNamespaceResponseData,
   CreateGroupInNamespaceRequest,
   CreateGroupInNamespaceResponseData,
   SubgroupEntry,
-  SubscribeNamespaceResponseData,
   Namespace,
   NamespaceIdentity,
   GroupInfoResponseData,
+  DeleteGroupRequest,
   DeleteGroupResponseData,
   ListGroupMembersResponseData,
   ListGroupContextsResponseData,
   AddGroupMembersRequest,
-  AddGroupMembersResponseData,
   RemoveGroupMembersRequest,
-  RemoveGroupMembersResponseData,
   UpdateMemberRoleRequest,
-  UpdateMemberRoleResponseData,
   MemberCapabilities,
   SetMemberCapabilitiesRequest,
-  SetMemberCapabilitiesResponseData,
   SetDefaultCapabilitiesRequest,
-  SetDefaultCapabilitiesResponseData,
   SetDefaultVisibilityRequest,
-  SetDefaultVisibilityResponseData,
   SetTeeAdmissionPolicyRequest,
-  SetTeeAdmissionPolicyResponseData,
   UpdateGroupSettingsRequest,
-  UpdateGroupSettingsResponseData,
   SetGroupAliasRequest,
-  SetGroupAliasResponseData,
   SetMemberAliasRequest,
-  SetMemberAliasResponseData,
   SyncGroupRequest,
   SyncGroupResponseData,
   RegisterGroupSigningKeyRequest,
@@ -77,23 +81,13 @@ import type {
   RetryGroupUpgradeRequest,
   RetryGroupUpgradeResponseData,
   NestGroupRequest,
-  NestGroupResponseData,
   UnnestGroupRequest,
-  UnnestGroupResponseData,
   DetachContextFromGroupRequest,
-  DetachContextFromGroupResponseData,
-  ContextGroupResponseData,
-  ContextStorageResponseData,
-  SyncContextResponseData,
-  InviteSpecializedNodeRequest,
-  InviteSpecializedNodeResponseData,
-  UpdateContextApplicationRequest,
-  UpdateContextApplicationResponseData,
-  ContextsWithExecutorsResponseData,
-  ListContextIdentityAliasesResponseData,
-  CreateContextIdentityAliasResponseData,
-  LookupContextIdentityAliasResponseData,
-  DeleteContextIdentityAliasResponseData,
+  CreateGroupInvitationRequest,
+  CreateGroupInvitationResponseData,
+  CreateRecursiveGroupInvitationResponseData,
+  JoinGroupRequest,
+  JoinGroupResponseData,
   TeeInfoResponseData,
   TeeAttestRequest,
   TeeAttestResponseData,
@@ -146,6 +140,18 @@ export class AdminApiClient {
 
   // ---- Package Management ----
 
+  async listPackages(): Promise<ListPackagesResponseData> {
+    return unwrap(await this.httpClient.get<{ data: ListPackagesResponseData }>('/admin-api/packages'));
+  }
+
+  async listPackageVersions(packageName: string): Promise<ListVersionsResponseData> {
+    return unwrap(
+      await this.httpClient.get<{ data: ListVersionsResponseData }>(
+        `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
+      ),
+    );
+  }
+
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
     return this.httpClient.get<GetLatestVersionResponseData>(
       `/admin-api/packages/${encodeURIComponent(packageName)}/latest`,
@@ -158,7 +164,16 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', request));
   }
 
-  async deleteContext(contextId: string): Promise<DeleteContextResponseData> {
+  async deleteContext(contextId: string, request?: DeleteContextRequest): Promise<DeleteContextResponseData> {
+    if (request) {
+      return unwrap(
+        await this.httpClient.request<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`, {
+          method: 'DELETE',
+          body: JSON.stringify(request),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
     return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`));
   }
 
@@ -196,6 +211,44 @@ export class AdminApiClient {
     );
   }
 
+  // ---- Context group / storage / sync ----
+
+  async getContextGroup(contextId: string): Promise<ContextGroupResponseData> {
+    return unwrap(await this.httpClient.get<{ data: ContextGroupResponseData }>(`/admin-api/contexts/${contextId}/group`));
+  }
+
+  async getContextStorage(contextId: string): Promise<ContextStorageResponseData> {
+    return unwrap(await this.httpClient.get<{ data: ContextStorageResponseData }>(`/admin-api/contexts/${contextId}/storage`));
+  }
+
+  async syncContext(contextId?: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/sync/${contextId ?? ''}`, {});
+  }
+
+  async inviteSpecializedNode(request: InviteSpecializedNodeRequest): Promise<InviteSpecializedNodeResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: InviteSpecializedNodeResponseData }>(
+        '/admin-api/contexts/invite-specialized-node',
+        request,
+      ),
+    );
+  }
+
+  async updateContextApplication(
+    contextId: string,
+    request: UpdateContextApplicationRequest,
+  ): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/${contextId}/application`, request);
+  }
+
+  async getContextsWithExecutorsForApplication(applicationId: string): Promise<ContextsWithExecutorsResponseData> {
+    return unwrap(
+      await this.httpClient.get<{ data: ContextsWithExecutorsResponseData }>(
+        `/admin-api/contexts/with-executors/for-application/${applicationId}`,
+      ),
+    );
+  }
+
   // ---- Blob Management ----
 
   async uploadBlob(data: UploadBlobRequest): Promise<UploadBlobResponseData> {
@@ -215,30 +268,49 @@ export class AdminApiClient {
   }
 
   // ---- Alias Management ----
-  // Server uses type-specific alias routes: /admin-api/alias/{create,lookup,delete,list}/{context,application}
 
   async createContextAlias(request: CreateAliasRequest): Promise<CreateAliasResponseData> {
-    return this.httpClient.post<CreateAliasResponseData>('/admin-api/alias/create/context', request);
+    return unwrap(await this.httpClient.post<{ data: CreateAliasResponseData }>('/admin-api/alias/create/context', request));
   }
 
   async createApplicationAlias(request: CreateAliasRequest): Promise<CreateAliasResponseData> {
-    return this.httpClient.post<CreateAliasResponseData>('/admin-api/alias/create/application', request);
+    return unwrap(await this.httpClient.post<{ data: CreateAliasResponseData }>('/admin-api/alias/create/application', request));
   }
 
   async lookupContextAlias(name: string): Promise<LookupAliasResponseData> {
-    return this.httpClient.post<LookupAliasResponseData>(`/admin-api/alias/lookup/context/${encodeURIComponent(name)}`, {});
+    return unwrap(
+      await this.httpClient.post<{ data: LookupAliasResponseData }>(
+        `/admin-api/alias/lookup/context/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
   }
 
   async lookupApplicationAlias(name: string): Promise<LookupAliasResponseData> {
-    return this.httpClient.post<LookupAliasResponseData>(`/admin-api/alias/lookup/application/${encodeURIComponent(name)}`, {});
+    return unwrap(
+      await this.httpClient.post<{ data: LookupAliasResponseData }>(
+        `/admin-api/alias/lookup/application/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
   }
 
   async deleteContextAlias(name: string): Promise<DeleteAliasResponseData> {
-    return this.httpClient.post<DeleteAliasResponseData>(`/admin-api/alias/delete/context/${encodeURIComponent(name)}`, {});
+    return unwrap(
+      await this.httpClient.post<{ data: DeleteAliasResponseData }>(
+        `/admin-api/alias/delete/context/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
   }
 
   async deleteApplicationAlias(name: string): Promise<DeleteAliasResponseData> {
-    return this.httpClient.post<DeleteAliasResponseData>(`/admin-api/alias/delete/application/${encodeURIComponent(name)}`, {});
+    return unwrap(
+      await this.httpClient.post<{ data: DeleteAliasResponseData }>(
+        `/admin-api/alias/delete/application/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
   }
 
   async listContextAliases(): Promise<ListAliasesResponseData> {
@@ -249,10 +321,60 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/application'));
   }
 
+  // ---- Context Identity Aliases ----
+
+  async listContextIdentityAliases(contextId: string): Promise<ListContextIdentityAliasesResponseData> {
+    return unwrap(
+      await this.httpClient.get<{ data: ListContextIdentityAliasesResponseData }>(
+        `/admin-api/alias/list/identity/${contextId}`,
+      ),
+    );
+  }
+
+  async createContextIdentityAlias(
+    contextId: string,
+    request: CreateAliasRequest,
+  ): Promise<CreateContextIdentityAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreateContextIdentityAliasResponseData }>(
+        `/admin-api/alias/create/identity/${contextId}`,
+        request,
+      ),
+    );
+  }
+
+  async lookupContextIdentityAlias(
+    contextId: string,
+    name: string,
+  ): Promise<LookupContextIdentityAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: LookupContextIdentityAliasResponseData }>(
+        `/admin-api/alias/lookup/identity/${contextId}/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
+  }
+
+  async deleteContextIdentityAlias(
+    contextId: string,
+    name: string,
+  ): Promise<DeleteContextIdentityAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: DeleteContextIdentityAliasResponseData }>(
+        `/admin-api/alias/delete/identity/${contextId}/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
+  }
+
   // ---- Namespace Management ----
 
   async listNamespaces(): Promise<ListNamespacesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>('/admin-api/namespaces'));
+  }
+
+  async getNamespace(namespaceId: string): Promise<Namespace> {
+    return unwrap(await this.httpClient.get<{ data: Namespace }>(`/admin-api/namespaces/${namespaceId}`));
   }
 
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
@@ -265,10 +387,6 @@ export class AdminApiClient {
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
     return unwrap(await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request));
-  }
-
-  async getNamespace(namespaceId: string): Promise<Namespace> {
-    return unwrap(await this.httpClient.get<{ data: Namespace }>(`/admin-api/namespaces/${namespaceId}`));
   }
 
   async deleteNamespace(
@@ -287,9 +405,9 @@ export class AdminApiClient {
   async createNamespaceInvitation(
     namespaceId: string,
     request?: CreateNamespaceInvitationRequest,
-  ): Promise<CreateNamespaceInvitationResponseData> {
+  ): Promise<CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData }>(
+      await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData }>(
         `/admin-api/namespaces/${namespaceId}/invite`,
         request ?? {},
       ),
@@ -325,22 +443,22 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/namespaces/${namespaceId}/groups`));
   }
 
-  async subscribeNamespace(namespaceId: string): Promise<SubscribeNamespaceResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: SubscribeNamespaceResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/subscribe`,
-        {},
-      ),
-    );
-  }
-
   // ---- Group Management ----
 
   async getGroupInfo(groupId: string): Promise<GroupInfoResponseData> {
     return unwrap(await this.httpClient.get<{ data: GroupInfoResponseData }>(`/admin-api/groups/${groupId}`));
   }
 
-  async deleteGroup(groupId: string): Promise<DeleteGroupResponseData> {
+  async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
+    if (request) {
+      return unwrap(
+        await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
+          method: 'DELETE',
+          body: JSON.stringify(request),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
     return unwrap(await this.httpClient.delete<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`));
   }
 
@@ -352,23 +470,20 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${groupId}/contexts`));
   }
 
-  async addGroupMembers(groupId: string, request: AddGroupMembersRequest): Promise<AddGroupMembersResponseData> {
-    return this.httpClient.post<AddGroupMembersResponseData>(`/admin-api/groups/${groupId}/members`, request);
+  async addGroupMembers(groupId: string, request: AddGroupMembersRequest): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/members`, request);
   }
 
-  async removeGroupMembers(groupId: string, request: RemoveGroupMembersRequest): Promise<RemoveGroupMembersResponseData> {
-    return this.httpClient.post<RemoveGroupMembersResponseData>(`/admin-api/groups/${groupId}/members/remove`, request);
+  async removeGroupMembers(groupId: string, request: RemoveGroupMembersRequest): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/members/remove`, request);
   }
 
   async updateMemberRole(
     groupId: string,
     identity: string,
     request: UpdateMemberRoleRequest,
-  ): Promise<UpdateMemberRoleResponseData> {
-    return this.httpClient.put<UpdateMemberRoleResponseData>(
-      `/admin-api/groups/${groupId}/members/${identity}/role`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/role`, request);
   }
 
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
@@ -383,63 +498,48 @@ export class AdminApiClient {
     groupId: string,
     identity: string,
     request: SetMemberCapabilitiesRequest,
-  ): Promise<SetMemberCapabilitiesResponseData> {
-    return this.httpClient.put<SetMemberCapabilitiesResponseData>(
-      `/admin-api/groups/${groupId}/members/${identity}/capabilities`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/capabilities`, request);
   }
 
   async setDefaultCapabilities(
     groupId: string,
     request: SetDefaultCapabilitiesRequest,
-  ): Promise<SetDefaultCapabilitiesResponseData> {
-    return this.httpClient.put<SetDefaultCapabilitiesResponseData>(
-      `/admin-api/groups/${groupId}/settings/default-capabilities`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-capabilities`, request);
   }
 
   async setDefaultVisibility(
     groupId: string,
     request: SetDefaultVisibilityRequest,
-  ): Promise<SetDefaultVisibilityResponseData> {
-    return this.httpClient.put<SetDefaultVisibilityResponseData>(
-      `/admin-api/groups/${groupId}/settings/default-visibility`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-visibility`, request);
   }
 
   async setTeeAdmissionPolicy(
     groupId: string,
     request: SetTeeAdmissionPolicyRequest,
-  ): Promise<SetTeeAdmissionPolicyResponseData> {
-    return this.httpClient.put<SetTeeAdmissionPolicyResponseData>(
-      `/admin-api/groups/${groupId}/settings/tee-admission-policy`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-admission-policy`, request);
   }
 
   async updateGroupSettings(
     groupId: string,
     request: UpdateGroupSettingsRequest,
-  ): Promise<UpdateGroupSettingsResponseData> {
-    return this.httpClient.patch<UpdateGroupSettingsResponseData>(`/admin-api/groups/${groupId}`, request);
+  ): Promise<void> {
+    await this.httpClient.patch(`/admin-api/groups/${groupId}`, request);
   }
 
-  async setGroupAlias(groupId: string, request: SetGroupAliasRequest): Promise<SetGroupAliasResponseData> {
-    return this.httpClient.put<SetGroupAliasResponseData>(`/admin-api/groups/${groupId}/alias`, request);
+  async setGroupAlias(groupId: string, request: SetGroupAliasRequest): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/alias`, request);
   }
 
   async setMemberAlias(
     groupId: string,
     identity: string,
     request: SetMemberAliasRequest,
-  ): Promise<SetMemberAliasResponseData> {
-    return this.httpClient.put<SetMemberAliasResponseData>(
-      `/admin-api/groups/${groupId}/members/${identity}/alias`,
-      request,
-    );
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/alias`, request);
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
@@ -480,12 +580,12 @@ export class AdminApiClient {
     );
   }
 
-  async nestGroup(parentGroupId: string, request: NestGroupRequest): Promise<NestGroupResponseData> {
-    return this.httpClient.post<NestGroupResponseData>(`/admin-api/groups/${parentGroupId}/nest`, request);
+  async nestGroup(parentGroupId: string, request: NestGroupRequest): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${parentGroupId}/nest`, request);
   }
 
-  async unnestGroup(parentGroupId: string, request: UnnestGroupRequest): Promise<UnnestGroupResponseData> {
-    return this.httpClient.post<UnnestGroupResponseData>(`/admin-api/groups/${parentGroupId}/unnest`, request);
+  async unnestGroup(parentGroupId: string, request: UnnestGroupRequest): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${parentGroupId}/unnest`, request);
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {
@@ -496,93 +596,31 @@ export class AdminApiClient {
     groupId: string,
     contextId: string,
     request?: DetachContextFromGroupRequest,
-  ): Promise<DetachContextFromGroupResponseData> {
-    return this.httpClient.post<DetachContextFromGroupResponseData>(
-      `/admin-api/groups/${groupId}/contexts/${contextId}/remove`,
-      request ?? {},
-    );
+  ): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, request ?? {});
   }
 
-  async getContextGroup(contextId: string): Promise<ContextGroupResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ContextGroupResponseData }>(`/admin-api/contexts/${contextId}/group`));
-  }
+  // ---- Group Invitation & Join ----
 
-  async getContextStorage(contextId: string): Promise<ContextStorageResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ContextStorageResponseData }>(`/admin-api/contexts/${contextId}/storage`));
-  }
-
-  async syncContext(contextId?: string): Promise<SyncContextResponseData> {
+  async createGroupInvitation(
+    groupId: string,
+    request?: CreateGroupInvitationRequest,
+  ): Promise<CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: SyncContextResponseData }>(`/admin-api/contexts/sync/${contextId ?? ''}`, {}),
-    );
-  }
-
-  async inviteSpecializedNode(request: InviteSpecializedNodeRequest): Promise<InviteSpecializedNodeResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: InviteSpecializedNodeResponseData }>(
-        '/admin-api/contexts/invite-specialized-node',
-        request,
+      await this.httpClient.post<{ data: CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData }>(
+        `/admin-api/groups/${groupId}/invite`,
+        request ?? {},
       ),
     );
   }
 
-  async updateContextApplication(
-    contextId: string,
-    request: UpdateContextApplicationRequest,
-  ): Promise<UpdateContextApplicationResponseData> {
+  async joinGroup(request: JoinGroupRequest): Promise<JoinGroupResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: UpdateContextApplicationResponseData }>(
-        `/admin-api/contexts/${contextId}/application`,
-        request,
-      ),
+      await this.httpClient.post<{ data: JoinGroupResponseData }>('/admin-api/groups/join', request),
     );
   }
 
-  async getContextsWithExecutorsForApplication(applicationId: string): Promise<ContextsWithExecutorsResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ContextsWithExecutorsResponseData }>(
-        `/admin-api/contexts/with-executors/for-application/${applicationId}`,
-      ),
-    );
-  }
-
-  async listContextIdentityAliases(contextId: string): Promise<ListContextIdentityAliasesResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ListContextIdentityAliasesResponseData }>(
-        `/admin-api/alias/list/identity/${contextId}`,
-      ),
-    );
-  }
-
-  async createContextIdentityAlias(
-    contextId: string,
-    request: CreateAliasRequest,
-  ): Promise<CreateContextIdentityAliasResponseData> {
-    return this.httpClient.post<CreateContextIdentityAliasResponseData>(
-      `/admin-api/alias/create/identity/${contextId}`,
-      request,
-    );
-  }
-
-  async lookupContextIdentityAlias(
-    contextId: string,
-    name: string,
-  ): Promise<LookupContextIdentityAliasResponseData> {
-    return this.httpClient.post<LookupContextIdentityAliasResponseData>(
-      `/admin-api/alias/lookup/identity/${contextId}/${encodeURIComponent(name)}`,
-      {},
-    );
-  }
-
-  async deleteContextIdentityAlias(
-    contextId: string,
-    name: string,
-  ): Promise<DeleteContextIdentityAliasResponseData> {
-    return this.httpClient.post<DeleteContextIdentityAliasResponseData>(
-      `/admin-api/alias/delete/identity/${contextId}/${encodeURIComponent(name)}`,
-      {},
-    );
-  }
+  // ---- TEE ----
 
   async getTeeInfo(): Promise<TeeInfoResponseData> {
     return unwrap(await this.httpClient.get<{ data: TeeInfoResponseData }>('/admin-api/tee/info'));
