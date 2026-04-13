@@ -4,6 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Calimero | mero-js — Architecture</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="mero-js architecture — HttpClient, auth layer, token lifecycle, and dependency injection.">
 <meta name="theme-color" content="#0d1117">
 </head>
 <body>
@@ -12,78 +14,104 @@
 <div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Architecture</span></div>
 
 <h1>Architecture</h1>
-<p class="page-subtitle">Web Standards first — fetch, AbortController, zero dependencies</p>
+<p class="page-subtitle">How the SDK is structured — HttpClient, API clients, token lifecycle, and event streams</p>
 
 <div class="g4" style="margin-bottom:36px;">
   <div class="stat"><div class="v">0</div><div class="l">dependencies</div></div>
-  <div class="stat"><div class="v">DI</div><div class="l">dependency injection</div></div>
-  <div class="stat"><div class="v">ES2020</div><div class="l">target</div></div>
-  <div class="stat"><div class="v">ESM</div><div class="l">module format</div></div>
+  <div class="stat"><div class="v">5</div><div class="l">client types</div></div>
+  <div class="stat"><div class="v">fetch</div><div class="l">transport</div></div>
+  <div class="stat"><div class="v">JWT</div><div class="l">auth tokens</div></div>
 </div>
 
 <div class="card ga">
-<h2>SDK Layers</h2>
-<p style="margin-bottom:18px;">MeroJs is structured as a set of composable clients, all built on a single <span class="code">HttpClient</span> abstraction. You create a <span class="code">MeroJs</span> instance which wires everything together.</p>
-
-<div class="fr"><div class="fp">src/mero-js.ts</div><div class="fd">Main <span class="code">MeroJs</span> class. Creates and holds all sub-clients. Entry point for all operations.</div></div>
-<div class="fr"><div class="fp">src/http-client/</div><div class="fd"><span class="code">HttpClient</span> — thin wrapper around <span class="code">fetch</span>. Handles base URL, auth headers, timeout, and signal combination.</div></div>
-<div class="fr"><div class="fp">src/auth-api/</div><div class="fd"><span class="code">AuthApiClient</span> — login, logout, refresh token. Writes tokens to <span class="code">TokenStore</span>.</div></div>
-<div class="fr"><div class="fp">src/auth/</div><div class="fd">Auth helpers: <span class="code">parseAuthCallback()</span> reads tokens from URL hash. <span class="code">buildAuthLoginUrl()</span> constructs the auth redirect URL.</div></div>
-<div class="fr"><div class="fp">src/admin-api/</div><div class="fd"><span class="code">AdminApiClient</span> — manage contexts, applications, identities, and node resources.</div></div>
-<div class="fr"><div class="fp">src/rpc/</div><div class="fd"><span class="code">RpcClient</span> — execute WASM application methods (query/mutate) on a context.</div></div>
-<div class="fr"><div class="fp">src/events/sse.ts</div><div class="fd"><span class="code">SseClient</span> — Server-Sent Events subscription for real-time node events.</div></div>
-<div class="fr"><div class="fp">src/events/ws.ts</div><div class="fd"><span class="code">WsClient</span> — WebSocket subscription for real-time node events.</div></div>
-<div class="fr"><div class="fp">src/token-store/</div><div class="fd"><span class="code">TokenStore</span> interface and <span class="code">LocalStorageTokenStore</span> implementation. Pluggable token persistence.</div></div>
+<h2>Layered Design</h2>
+<p style="margin-bottom:14px;">The SDK is a thin composition of focused clients. <span class="code">MeroJs</span> is the entry point — it owns the HTTP transport and lazily initialises the specialised clients behind property accessors.</p>
+<div class="g2">
+  <div>
+    <h4 style="color:#a5ff11;margin-bottom:10px;">Layer 1 — Transport</h4>
+    <div class="fr"><div class="fp">HttpClient</div><div class="fd">Web-standards <span class="code">fetch</span> wrapper. Injects <span class="code">Authorization</span> header on every request. Handles 401 by calling the <span class="code">refreshToken</span> hook transparently.</div></div>
+    <div class="fr"><div class="fp">createBrowserHttpClient</div><div class="fd">Factory used in browser and Tauri apps. Sets <span class="code">credentials: 'omit'</span> automatically when running inside Tauri.</div></div>
+  </div>
+  <div>
+    <h4 style="color:#58a6ff;margin-bottom:10px;">Layer 2 — API Clients</h4>
+    <div class="fr"><div class="fp">AuthApiClient</div><div class="fd">Direct HTTP to <span class="code">/api/v1/identity</span> — login, token generation, key management.</div></div>
+    <div class="fr"><div class="fp">AdminApiClient</div><div class="fd">Direct HTTP to <span class="code">/api/v1/admin</span> — 65+ methods covering contexts, apps, namespaces, groups.</div></div>
+    <div class="fr"><div class="fp">RpcClient</div><div class="fd">JSON-RPC over HTTP to <span class="code">/api/v1/rpc</span> — executes WASM contract methods.</div></div>
+  </div>
+</div>
+<div class="g2" style="margin-top:16px;">
+  <div>
+    <h4 style="color:#39d0d8;margin-bottom:10px;">Layer 3 — Event Streams</h4>
+    <div class="fr"><div class="fp">SseClient</div><div class="fd">Server-Sent Events from <span class="code">/api/v1/subscribe</span>. Reconnects automatically. Use this in production.</div></div>
+    <div class="fr"><div class="fp">WsClient</div><div class="fd">WebSocket alternative. <em>Experimental</em> — logs a warning on first use.</div></div>
+  </div>
+  <div>
+    <h4 style="color:#f0883e;margin-bottom:10px;">Layer 4 — Token Store</h4>
+    <div class="fr"><div class="fp">MemoryTokenStore</div><div class="fd">Ephemeral — tokens lost on page reload. Safe for server-side use.</div></div>
+    <div class="fr"><div class="fp">LocalStorageTokenStore</div><div class="fd">Persists to <span class="code">localStorage</span>. Constructor takes an optional storage key.</div></div>
+  </div>
+</div>
 </div>
 
 <div class="card gb">
-<h2 id="error-model">Error Model</h2>
-<p style="margin-bottom:16px;">The SDK <strong>throws</strong> on errors. There are two error categories:</p>
-<div class="g2">
-  <div class="cb">
-    <h4><span style="color:var(--red)">HTTPError</span></h4>
-    <p>Thrown when <span class="code">response.ok === false</span> (status 4xx, 5xx). Contains <span class="code">status</span>, <span class="code">statusText</span>, and the response body.</p>
-    <div class="typedef" style="margin-top:10px;"><span class="kw">try</span> &#123;<br>&nbsp;&nbsp;<span class="kw">await</span> client.<span class="ty">execute</span>(...);<br>&#125; <span class="kw">catch</span> (err) &#123;<br>&nbsp;&nbsp;<span class="kw">if</span> (err <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// err.status, err.body</span><br>&nbsp;&nbsp;&#125;<br>&#125;</div>
-  </div>
-  <div class="cb">
-    <h4><span style="color:var(--amber)">Network / Abort Errors</span></h4>
-    <p>Network failures, DNS errors, and <span class="code">AbortError</span> (user cancellation or timeout) are re-thrown as-is. The SDK distinguishes user aborts from timeout aborts for intelligent retry logic.</p>
-    <div class="typedef" style="margin-top:10px;"><span class="kw">if</span> (err.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>&nbsp;&nbsp;<span class="comment">// Check if timeout or user cancel</span><br>&nbsp;&nbsp;<span class="kw">if</span> (err.<span class="field">isTimeout</span>) &#123; <span class="comment">/* retry */</span> &#125;<br>&#125;</div>
-  </div>
+<h2>Token Lifecycle</h2>
+<p style="margin-bottom:14px;">The SDK manages JWT tokens reactively — it never proactively refreshes, only reacts to 401 responses.</p>
+<div class="g3">
+  <div class="step"><div class="n">1</div><h4>Authenticate</h4><p>Call <span class="code">sdk.authenticate()</span> to exchange username + password for an access token and refresh token. Tokens are stored in memory (and in the <span class="code">tokenStore</span> if provided).</p></div>
+  <div class="step"><div class="n">2</div><h4>Request</h4><p>Every request reads the current access token and injects it as <span class="code">Authorization: Bearer &lt;token&gt;</span>. The JWT <span class="code">exp</span> claim is parsed to track expiry.</p></div>
+  <div class="step"><div class="n">3</div><h4>401 → Refresh</h4><p>When the server returns 401, the <span class="code">HttpClient</span> calls <span class="code">performTokenRefresh()</span> transparently, retries the original request with the new token, and updates the store. Multiple concurrent 401s are deduplicated via a shared <span class="code">refreshPromise</span>.</p></div>
+</div>
+<div class="typedef" style="margin-top:16px;">
+<span class="comment">// The refresh flow (transparent to callers)</span><br>
+<span class="comment">// 1. Request with access_token → 401</span><br>
+<span class="comment">// 2. POST /api/v1/identity/refresh-token</span><br>
+<span class="comment">// 3. Store new access_token + refresh_token</span><br>
+<span class="comment">// 4. Retry original request with new token</span>
 </div>
 </div>
 
 <div class="card gc">
-<h2 id="cancellation">Signal Combination &amp; Cancellation</h2>
-<p style="margin-bottom:16px;">mero-js implements <strong>signal combination</strong> — you can pass your own <span class="code">AbortSignal</span> and the SDK internally merges it with a timeout signal:</p>
+<h2>SSO Integration</h2>
+<p style="margin-bottom:12px;">When your app is opened from Calimero Desktop, the desktop process appends auth tokens to the URL hash. The SDK reads them with <span class="code">parseAuthCallback()</span> and bypasses the normal login flow:</p>
 <div class="typedef">
-<span class="comment">// The SDK creates its own timeout signal internally</span><br>
-<span class="comment">// and combines it with your signal:</span><br><br>
-<span class="kw">const</span> <span class="field">controller</span> = <span class="kw">new</span> <span class="ty">AbortController</span>();<br>
-<span class="kw">const</span> <span class="field">result</span> = <span class="kw">await</span> client.<span class="ty">get</span>(<span class="comment">'/api/data'</span>, &#123;<br>
-&nbsp;&nbsp;<span class="field">signal</span>: controller.<span class="field">signal</span>, <span class="comment">// user cancellation</span><br>
-&nbsp;&nbsp;<span class="field">timeoutMs</span>: <span class="field">5000</span>,         <span class="comment">// timeout signal (merged)</span><br>
-&#125;);<br><br>
-<span class="comment">// Abort from your side at any time:</span><br>
-controller.<span class="ty">abort</span>();
+<span class="comment">// Desktop opens app at:</span><br>
+<span class="comment">// https://my-app.example.com/#access_token=...&amp;refresh_token=...&amp;node_url=...&amp;application_id=...&amp;context_id=...&amp;context_identity=...</span><br><br>
+<span class="kw">const</span> <span class="field">auth</span> = <span class="ty">parseAuthCallback</span>(window.location.hash);<br>
+<span class="kw">if</span> (<span class="field">auth</span>) &#123;<br>
+&nbsp;&nbsp;sdk.<span class="ty">setTokenData</span>(&#123; <span class="field">access_token</span>: auth.<span class="field">accessToken</span>, <span class="field">refresh_token</span>: auth.<span class="field">refreshToken</span>, <span class="field">expires_at</span>: 0 &#125;);<br>
+&nbsp;&nbsp;<span class="comment">// expires_at = 0 triggers JWT exp parsing automatically</span><br>
+&#125;
 </div>
-<p style="margin-top:12px;">This ensures requests always clean up properly — either from a user-initiated cancel or from a timeout — without leaving dangling fetch calls.</p>
 </div>
 
 <div class="card gd">
-<h2>Dependency Injection</h2>
-<p>No global singletons. Create one <span class="code">MeroJs</span> instance per application context:</p>
+<h2>Lazy Initialisation</h2>
+<p style="margin-bottom:12px;"><span class="code">RpcClient</span>, <span class="code">SseClient</span>, and <span class="code">WsClient</span> are created on first access — no cost if unused:</p>
 <div class="typedef">
-<span class="kw">import</span> &#123; <span class="ty">MeroJs</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
-<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123;<br>
-&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="comment">'https://node.example.com'</span>,<br>
-&nbsp;&nbsp;<span class="field">timeoutMs</span>: <span class="field">10_000</span>,<br>
-&nbsp;&nbsp;<span class="field">tokenStore</span>: myCustomStore, <span class="comment">// optional</span><br>
-&#125;);<br><br>
-<span class="comment">// All sub-clients share the same HttpClient instance</span><br>
-sdk.<span class="field">auth</span>   <span class="comment">// AuthApiClient</span><br>
-sdk.<span class="field">admin</span>  <span class="comment">// AdminApiClient</span><br>
-sdk.<span class="field">rpc</span>    <span class="comment">// RpcClient</span>
+<span class="comment">// Only instantiated when accessed:</span><br>
+sdk.<span class="field">rpc</span>     <span class="comment">// RpcClient (lazy)</span><br>
+sdk.<span class="field">events</span>  <span class="comment">// SseClient (lazy)</span><br>
+sdk.<span class="field">ws</span>      <span class="comment">// WsClient (lazy, experimental)</span><br><br>
+<span class="comment">// Always available:</span><br>
+sdk.<span class="field">auth</span>    <span class="comment">// AuthApiClient</span><br>
+sdk.<span class="field">admin</span>   <span class="comment">// AdminApiClient</span>
+</div>
+</div>
+
+<div class="card ge">
+<h2>Zero Dependencies</h2>
+<p style="margin-bottom:12px;">The SDK is built on Web Platform APIs only:</p>
+<div class="g2">
+  <div>
+    <div class="fr"><div class="fp">fetch</div><div class="fd">HTTP requests — available in browser, Node 18+, Deno, Bun, edge workers</div></div>
+    <div class="fr"><div class="fp">EventSource</div><div class="fd">SSE client — native browser API, polyfillable for server environments</div></div>
+    <div class="fr"><div class="fp">WebSocket</div><div class="fd">WS client — available everywhere</div></div>
+  </div>
+  <div>
+    <div class="fr"><div class="fp">AbortController</div><div class="fd">Request cancellation and timeout signals</div></div>
+    <div class="fr"><div class="fp">atob</div><div class="fd">Base64 decoding for JWT payload parsing</div></div>
+    <div class="fr"><div class="fp">localStorage</div><div class="fd">Optional token persistence (browser only)</div></div>
+  </div>
 </div>
 </div>
 

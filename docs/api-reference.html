@@ -4,6 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Calimero | mero-js — API Reference</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="Full API reference for mero-js — MeroJs class, config, methods, and TypeScript types.">
 <meta name="theme-color" content="#0d1117">
 </head>
 <body>
@@ -12,60 +14,101 @@
 <div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>API Reference</span></div>
 
 <h1>API Reference</h1>
-<p class="page-subtitle">Complete reference for MeroJs, all sub-clients, and utility functions</p>
+<p class="page-subtitle">MeroJs class, property accessors, instance methods, static utilities, and types</p>
 
 <div class="card ga">
-<h2>MeroJs (main class)</h2>
+<h2>MeroJs Constructor</h2>
 <div class="typedef">
-<span class="kw">class</span> <span class="ty">MeroJs</span> &#123;<br>
-&nbsp;&nbsp;<span class="field">auth</span>: <span class="ty">AuthApiClient</span>;<br>
-&nbsp;&nbsp;<span class="field">admin</span>: <span class="ty">AdminApiClient</span>;<br>
-&nbsp;&nbsp;<span class="field">rpc</span>: <span class="ty">RpcClient</span>;<br>
-&nbsp;&nbsp;<span class="field">sse</span>: <span class="ty">SseClient</span>;<br>
-&nbsp;&nbsp;<span class="field">ws</span>: <span class="ty">WsClient</span>;<br><br>
-&nbsp;&nbsp;<span class="kw">constructor</span>(<span class="field">config</span>: <span class="ty">MeroJsConfig</span>);<br>
-&#125;<br><br>
-<span class="kw">interface</span> <span class="ty">MeroJsConfig</span> &#123;<br>
-&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Node HTTP base URL</span><br>
-&nbsp;&nbsp;<span class="field">timeoutMs</span>?: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Request timeout (default: no timeout)</span><br>
-&nbsp;&nbsp;<span class="field">tokenStore</span>?: <span class="ty">TokenStore</span>;<span class="comment">// Custom token storage</span><br>
-&nbsp;&nbsp;<span class="field">requestCredentials</span>?: <span class="ty">RequestCredentials</span>;<span class="comment">// fetch credentials mode</span><br>
+<span class="kw">new</span> <span class="ty">MeroJs</span>(<span class="field">config</span>: <span class="ty">MeroJsConfig</span>)
+</div>
+<div class="fr" style="margin-top:12px;"><div class="fp">baseUrl</div><div class="fd"><strong>Required.</strong> Base URL of the Calimero node, e.g. <span class="code">'http://localhost:2428'</span>.</div></div>
+<div class="fr"><div class="fp">timeoutMs</div><div class="fd">Request timeout in milliseconds. Default: <span class="code">10000</span>.</div></div>
+<div class="fr"><div class="fp">credentials</div><div class="fd">Optional <span class="code">&#123; username, password &#125;</span> — auto-authenticate on first call if set.</div></div>
+<div class="fr"><div class="fp">requestCredentials</div><div class="fd">Fetch <span class="code">credentials</span> mode (<span class="code">'omit'</span>, <span class="code">'same-origin'</span>, <span class="code">'include'</span>). Defaults to <span class="code">'omit'</span> in Tauri environments.</div></div>
+<div class="fr"><div class="fp">tokenStore</div><div class="fd">Optional <span class="code">TokenStore</span> for persisting tokens across sessions.</div></div>
+</div>
+
+<div class="card gb">
+<h2>Property Accessors</h2>
+<p style="margin-bottom:12px;">Read-only getters on <span class="code">MeroJs</span>. <span class="code">rpc</span>, <span class="code">events</span>, and <span class="code">ws</span> are lazily initialised on first access.</p>
+<div class="fr"><div class="fp">sdk.auth</div><div class="fd"><span class="ty">AuthApiClient</span> — access the raw auth API (login, refresh, key management).</div></div>
+<div class="fr"><div class="fp">sdk.admin</div><div class="fd"><span class="ty">AdminApiClient</span> — access the admin API (contexts, apps, namespaces, groups).</div></div>
+<div class="fr"><div class="fp">sdk.rpc</div><div class="fd"><span class="ty">RpcClient</span> — execute WASM contract methods via JSON-RPC. Lazy.</div></div>
+<div class="fr"><div class="fp">sdk.events</div><div class="fd"><span class="ty">SseClient</span> — subscribe to real-time events via SSE. Lazy.</div></div>
+<div class="fr"><div class="fp">sdk.ws</div><div class="fd"><span class="ty">WsClient</span> — experimental WebSocket client. Lazy. Logs a warning on first access.</div></div>
+</div>
+
+<div class="card gc">
+<h2>Instance Methods</h2>
+<div class="fr"><div class="fp">authenticate(credentials?)</div><div class="fd">Exchange username + password for tokens. Accepts optional <span class="code">&#123; username, password &#125;</span> override (falls back to <span class="code">config.credentials</span>). Returns <span class="code">Promise&lt;TokenData&gt;</span>.</div></div>
+<div class="fr"><div class="fp">setTokenData(data)</div><div class="fd">Set tokens directly — used for SSO flows where tokens arrive via URL hash. If <span class="code">expires_at</span> is 0, parses the JWT <span class="code">exp</span> claim automatically.</div></div>
+<div class="fr"><div class="fp">getTokenData()</div><div class="fd">Returns the current <span class="code">TokenData | null</span>. Useful for debugging.</div></div>
+<div class="fr"><div class="fp">isAuthenticated()</div><div class="fd">Returns <span class="code">boolean</span> — <span class="code">true</span> if token data is present.</div></div>
+<div class="fr"><div class="fp">clearToken()</div><div class="fd">Remove the current token data and clear the token store.</div></div>
+<div class="fr"><div class="fp">close()</div><div class="fd">Close all open SSE/WebSocket connections and release resources.</div></div>
+</div>
+
+<div class="card gd">
+<h2>Static Methods</h2>
+<div class="fr"><div class="fp">MeroJs.parseAuthCallback(url)</div><div class="fd">Parse the hash fragment from a Calimero SSO callback URL. Returns <span class="code">AuthCallbackResult | null</span>.</div></div>
+<div class="fr"><div class="fp">MeroJs.buildAuthLoginUrl(nodeUrl, opts)</div><div class="fd">Build a redirect URL for the Calimero auth login flow. Returns the URL string.</div></div>
+<p style="margin-top:12px;">Both are also exported as standalone functions: <span class="code">parseAuthCallback</span>, <span class="code">buildAuthLoginUrl</span>.</p>
+</div>
+
+<div class="card ge">
+<h2>TokenData</h2>
+<div class="typedef">
+<span class="kw">interface</span> <span class="ty">TokenData</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">access_token</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;<span class="comment">// JWT access token</span><br>
+&nbsp;&nbsp;<span class="field">refresh_token</span>: <span class="ty">string</span>;&nbsp;&nbsp;<span class="comment">// refresh token</span><br>
+&nbsp;&nbsp;<span class="field">expires_at</span>: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// ms timestamp; 0 = parse from JWT exp</span><br>
 &#125;
 </div>
 </div>
 
-<div class="card gb">
-<h2>AuthApiClient — sdk.auth</h2>
-<div class="fr"><div class="fp">login(params)</div><div class="fd">Authenticates with username + password. Stores tokens in <span class="code">TokenStore</span>. Returns <span class="code">TokenData</span>.</div></div>
-<div class="fr"><div class="fp">logout()</div><div class="fd">Revokes tokens and clears <span class="code">TokenStore</span>.</div></div>
-<div class="fr"><div class="fp">refresh()</div><div class="fd">Exchanges the stored refresh token for a new access token. Called automatically before expiry.</div></div>
-<div class="fr"><div class="fp">initFromTokens(tokens)</div><div class="fd">Initialises auth state from pre-existing tokens (e.g. from URL hash SSO). Does not call the network.</div></div>
-<div class="fr"><div class="fp">isAuthenticated()</div><div class="fd">Returns <span class="code">true</span> if a valid (non-expired) access token is available.</div></div>
+<div class="card gf">
+<h2>AuthCallbackResult</h2>
+<div class="typedef">
+<span class="kw">interface</span> <span class="ty">AuthCallbackResult</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">accessToken</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">refreshToken</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">nodeUrl</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">applicationId</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">contextIdentity</span>: <span class="ty">string</span>;<br>
+&#125;
+</div>
 </div>
 
-<div class="card gc">
-<h2>AdminApiClient — sdk.admin</h2>
-<div class="fr"><div class="fp">getContexts()</div><div class="fd">List all contexts on the node. Returns <span class="code">Context[]</span>.</div></div>
-<div class="fr"><div class="fp">getContext(contextId)</div><div class="fd">Get a single context by ID with full detail.</div></div>
-<div class="fr"><div class="fp">createContext(params)</div><div class="fd">Create a new context, optionally installing an application at the same time.</div></div>
-<div class="fr"><div class="fp">getApplications()</div><div class="fd">List all installed applications.</div></div>
-<div class="fr"><div class="fp">installApplication(params)</div><div class="fd">Install an application into a context by package ID.</div></div>
-<div class="fr"><div class="fp">getIdentities()</div><div class="fd">List node identities.</div></div>
-<div class="fr"><div class="fp">generateClientKey(params)</div><div class="fd">Generate a client signing key for a context. Params: <span class="code">contextId</span>, <span class="code">contextIdentity</span> (camelCase in v2).</div></div>
+<div class="card gg">
+<h2>RpcClient</h2>
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">RpcClient</span> &#123;<br>
+&nbsp;&nbsp;<span class="kw">execute</span>&lt;<span class="ty">T</span> = <span class="ty">unknown</span>&gt;(<span class="field">params</span>: <span class="ty">ExecuteParams</span>): <span class="ty">Promise</span>&lt;<span class="ty">T</span>&gt;;<br>
+&#125;<br><br>
+<span class="kw">interface</span> <span class="ty">ExecuteParams</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">method</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">argsJson</span>?: <span class="ty">Record</span>&lt;<span class="ty">string</span>, <span class="ty">unknown</span>&gt;;&nbsp;&nbsp;<span class="comment">// method arguments</span><br>
+&#125;
+</div>
+<p style="margin-top:10px;">Access via <span class="code">sdk.rpc</span>. Throws <span class="code">RpcError</span> on JSON-RPC errors. See <a href="errors.html">Error Model</a>.</p>
 </div>
 
-<div class="card gd">
-<h2>RpcClient — sdk.rpc</h2>
-<div class="fr"><div class="fp">execute(params)</div><div class="fd">Execute a WASM application method. <span class="code">params</span>: <span class="code">contextId</span>, <span class="code">method</span>, <span class="code">argsJson</span>. Returns raw JSON response.</div></div>
-<div class="fr"><div class="fp">query(params)</div><div class="fd">Alias for execute — read-only operations. Same signature.</div></div>
-<div class="fr"><div class="fp">mutate(params)</div><div class="fd">Alias for execute — state-changing operations. Same signature.</div></div>
+<div class="card gh">
+<h2>TokenStore</h2>
+<div class="typedef">
+<span class="kw">interface</span> <span class="ty">TokenStore</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">getTokens</span>(): <span class="ty">TokenData</span> | <span class="ty">null</span>;<br>
+&nbsp;&nbsp;<span class="field">setTokens</span>(<span class="field">data</span>: <span class="ty">TokenData</span>): <span class="ty">void</span>;<br>
+&nbsp;&nbsp;<span class="field">clear</span>(): <span class="ty">void</span>;<br>
+&#125;<br><br>
+<span class="comment">// Built-in implementations:</span><br>
+<span class="kw">class</span> <span class="ty">MemoryTokenStore</span> <span class="kw">implements</span> <span class="ty">TokenStore</span> &#123; &#125;<br>
+<span class="kw">class</span> <span class="ty">LocalStorageTokenStore</span> <span class="kw">implements</span> <span class="ty">TokenStore</span> &#123;<br>
+&nbsp;&nbsp;<span class="kw">constructor</span>(<span class="field">key</span>?: <span class="ty">string</span>); <span class="comment">// default key: 'mero-tokens'</span><br>
+&#125;
 </div>
-
-<div class="card ga">
-<h2>Utility Functions</h2>
-<div class="fr"><div class="fp">parseAuthCallback(hash)</div><div class="fd">Parses <span class="code">window.location.hash</span> for SSO tokens. Returns <span class="code">{ accessToken, refreshToken, nodeUrl, applicationId }</span> or <span class="code">null</span>.</div></div>
-<div class="fr"><div class="fp">buildAuthLoginUrl(options)</div><div class="fd">Constructs the URL for redirecting to the auth frontend. Used when triggering the full auth flow from an app.</div></div>
-<div class="fr"><div class="fp">HTTPError</div><div class="fd">Error class thrown on non-OK HTTP responses. Properties: <span class="code">status</span>, <span class="code">statusText</span>, <span class="code">body</span>.</div></div>
 </div>
 
 </div>
