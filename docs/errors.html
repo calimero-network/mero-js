@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Error Model</title>
+<link rel="stylesheet" href="styles.css">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Error Model</span></div>
+
+<h1>Error Model</h1>
+<p class="page-subtitle">HTTPError vs network errors — what throws and how to handle each</p>
+
+<div class="card ga">
+<h2>HTTPError</h2>
+<p style="margin-bottom:14px;">Thrown when the server responds with a non-OK status (<span class="code">response.ok === false</span>, i.e. 4xx or 5xx):</p>
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">HTTPError</span> <span class="kw">extends</span> <span class="ty">Error</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">status</span>: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// HTTP status code (400, 404, 500, …)</span><br>
+&nbsp;&nbsp;<span class="field">statusText</span>: <span class="ty">string</span>; <span class="comment">// HTTP status text</span><br>
+&nbsp;&nbsp;<span class="field">body</span>: <span class="ty">unknown</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Parsed response body (JSON or text)</span><br>
+&#125;
+</div>
+<div class="typedef" style="margin-top:10px;">
+<span class="kw">import</span> &#123; <span class="ty">HTTPError</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">try</span> &#123;<br>
+&nbsp;&nbsp;<span class="kw">await</span> sdk.<span class="field">admin</span>.<span class="ty">getContext</span>(<span class="comment">'ctx_abc'</span>);<br>
+&#125; <span class="kw">catch</span> (err) &#123;<br>
+&nbsp;&nbsp;<span class="kw">if</span> (err <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> (err.<span class="field">status</span> === <span class="field">404</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="comment">'Context not found'</span>);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else if</span> (err.<span class="field">status</span> === <span class="field">401</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Token expired — refresh and retry</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">await</span> sdk.<span class="field">auth</span>.<span class="ty">refresh</span>();<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&#125;<br>
+&#125;
+</div>
+</div>
+
+<div class="card gb">
+<h2>Network &amp; Abort Errors</h2>
+<p style="margin-bottom:14px;">Network failures and aborts are re-thrown as-is:</p>
+<div class="fr"><div class="fp">TypeError (fetch failed)</div><div class="fd">DNS failure, refused connection, or other network-level error. Check <span class="code">err instanceof TypeError</span>.</div></div>
+<div class="fr"><div class="fp">AbortError (user cancel)</div><div class="fd">The user's <span class="code">AbortSignal</span> fired. <span class="code">err.name === 'AbortError'</span> and <span class="code">err.isTimeout === false</span>.</div></div>
+<div class="fr"><div class="fp">AbortError (timeout)</div><div class="fd">The SDK's internal timeout signal fired. <span class="code">err.name === 'AbortError'</span> and <span class="code">err.isTimeout === true</span>. Safe to retry.</div></div>
+</div>
+
+<div class="card gc">
+<h2>Full Error Handler Pattern</h2>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">HTTPError</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">async function</span> <span class="ty">withRetry</span>(<span class="field">fn</span>: () =&gt; <span class="ty">Promise</span>&lt;<span class="ty">unknown</span>&gt;) &#123;<br>
+&nbsp;&nbsp;<span class="kw">try</span> &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return await</span> <span class="field">fn</span>();<br>
+&nbsp;&nbsp;&#125; <span class="kw">catch</span> (err) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> (err <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> (err.<span class="field">status</span> === <span class="field">401</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">await</span> sdk.<span class="field">auth</span>.<span class="ty">refresh</span>(); <span class="comment">// refresh token</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return await</span> <span class="field">fn</span>(); <span class="comment">// retry once</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">throw</span> err; <span class="comment">// other HTTP errors: rethrow</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else if</span> (err <span class="kw">instanceof</span> <span class="ty">Error</span> &amp;&amp; err.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> ((err <span class="kw">as any</span>).<span class="field">isTimeout</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return await</span> <span class="field">fn</span>(); <span class="comment">// timeout: safe to retry</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// user abort: don't retry</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else</span> &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">throw</span> err; <span class="comment">// network error: rethrow</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&#125;<br>
+&#125;
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

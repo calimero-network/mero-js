@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Subscriptions</title>
+<link rel="stylesheet" href="styles.css">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Subscriptions</span></div>
+
+<h1>Subscriptions</h1>
+<p class="page-subtitle">Real-time event streaming via SSE and WebSocket</p>
+
+<div class="card ga">
+<h2>SSE Client — sdk.sse</h2>
+<p style="margin-bottom:12px;">Server-Sent Events — one-directional, HTTP-based event stream. Works through firewalls and proxies that may block WebSockets:</p>
+<div class="typedef">
+<span class="comment">// Subscribe to node events over SSE</span><br>
+<span class="kw">const</span> <span class="field">sse</span> = sdk.<span class="field">sse</span>;<br><br>
+<span class="kw">const</span> <span class="field">unsub</span> = <span class="field">sse</span>.<span class="ty">subscribe</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="comment">'ctx_...'</span>,<br>
+&nbsp;&nbsp;<span class="field">onEvent</span>: (<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="comment">'Event:'</span>, event);<br>
+&nbsp;&nbsp;&#125;,<br>
+&nbsp;&nbsp;<span class="field">onError</span>: (<span class="field">err</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="comment">'SSE error:'</span>, err);<br>
+&nbsp;&nbsp;&#125;,<br>
+&#125;);<br><br>
+<span class="comment">// Stop listening:</span><br>
+<span class="field">unsub</span>();
+</div>
+</div>
+
+<div class="card gb">
+<h2>WebSocket Client — sdk.ws</h2>
+<p style="margin-bottom:12px;">Full-duplex WebSocket connection. Lower latency for high-frequency events:</p>
+<div class="typedef">
+<span class="kw">const</span> <span class="field">ws</span> = sdk.<span class="field">ws</span>;<br><br>
+<span class="kw">const</span> <span class="field">unsub</span> = <span class="field">ws</span>.<span class="ty">subscribe</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="comment">'ctx_...'</span>,<br>
+&nbsp;&nbsp;<span class="field">onEvent</span>: (<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="comment">'WS event:'</span>, event);<br>
+&nbsp;&nbsp;&#125;,<br>
+&#125;);<br><br>
+<span class="comment">// Stop and close connection:</span><br>
+<span class="field">unsub</span>();
+</div>
+</div>
+
+<div class="card gc">
+<h2>Event Shape</h2>
+<div class="typedef">
+<span class="kw">interface</span> <span class="ty">NodeEvent</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;<br>
+&nbsp;&nbsp;<span class="field">eventType</span>: <span class="ty">string</span>;&nbsp;&nbsp;<span class="comment">// e.g. 'StateMutation', 'ContextCreated', …</span><br>
+&nbsp;&nbsp;<span class="field">payload</span>: <span class="ty">unknown</span>;&nbsp;&nbsp;<span class="comment">// event-specific data (JSON)</span><br>
+&nbsp;&nbsp;<span class="field">timestamp</span>: <span class="ty">number</span>; <span class="comment">// Unix timestamp ms</span><br>
+&#125;
+</div>
+</div>
+
+<div class="card gd">
+<h2>Choosing SSE vs WebSocket</h2>
+<div class="g2">
+  <div class="cb"><h4>Use SSE when</h4><ul><li style="margin-bottom:4px;">Firewall or proxy environment</li><li style="margin-bottom:4px;">Read-only event stream (no need to send)</li><li>Simpler reconnect behaviour needed</li></ul></div>
+  <div class="cb"><h4>Use WebSocket when</h4><ul><li style="margin-bottom:4px;">Low-latency is critical</li><li style="margin-bottom:4px;">High-frequency events (&gt;10/sec)</li><li>Bidirectional communication in future</li></ul></div>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

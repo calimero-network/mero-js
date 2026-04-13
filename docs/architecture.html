@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Architecture</title>
+<link rel="stylesheet" href="styles.css">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Architecture</span></div>
+
+<h1>Architecture</h1>
+<p class="page-subtitle">Web Standards first — fetch, AbortController, zero dependencies</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">0</div><div class="l">dependencies</div></div>
+  <div class="stat"><div class="v">DI</div><div class="l">dependency injection</div></div>
+  <div class="stat"><div class="v">ES2020</div><div class="l">target</div></div>
+  <div class="stat"><div class="v">ESM</div><div class="l">module format</div></div>
+</div>
+
+<div class="card ga">
+<h2>SDK Layers</h2>
+<p style="margin-bottom:18px;">MeroJs is structured as a set of composable clients, all built on a single <span class="code">HttpClient</span> abstraction. You create a <span class="code">MeroJs</span> instance which wires everything together.</p>
+
+<div class="fr"><div class="fp">src/mero-js.ts</div><div class="fd">Main <span class="code">MeroJs</span> class. Creates and holds all sub-clients. Entry point for all operations.</div></div>
+<div class="fr"><div class="fp">src/http-client/</div><div class="fd"><span class="code">HttpClient</span> — thin wrapper around <span class="code">fetch</span>. Handles base URL, auth headers, timeout, and signal combination.</div></div>
+<div class="fr"><div class="fp">src/auth-api/</div><div class="fd"><span class="code">AuthApiClient</span> — login, logout, refresh token. Writes tokens to <span class="code">TokenStore</span>.</div></div>
+<div class="fr"><div class="fp">src/auth/</div><div class="fd">Auth helpers: <span class="code">parseAuthCallback()</span> reads tokens from URL hash. <span class="code">buildAuthLoginUrl()</span> constructs the auth redirect URL.</div></div>
+<div class="fr"><div class="fp">src/admin-api/</div><div class="fd"><span class="code">AdminApiClient</span> — manage contexts, applications, identities, and node resources.</div></div>
+<div class="fr"><div class="fp">src/rpc/</div><div class="fd"><span class="code">RpcClient</span> — execute WASM application methods (query/mutate) on a context.</div></div>
+<div class="fr"><div class="fp">src/events/sse.ts</div><div class="fd"><span class="code">SseClient</span> — Server-Sent Events subscription for real-time node events.</div></div>
+<div class="fr"><div class="fp">src/events/ws.ts</div><div class="fd"><span class="code">WsClient</span> — WebSocket subscription for real-time node events.</div></div>
+<div class="fr"><div class="fp">src/token-store/</div><div class="fd"><span class="code">TokenStore</span> interface and <span class="code">LocalStorageTokenStore</span> implementation. Pluggable token persistence.</div></div>
+</div>
+
+<div class="card gb">
+<h2 id="error-model">Error Model</h2>
+<p style="margin-bottom:16px;">The SDK <strong>throws</strong> on errors. There are two error categories:</p>
+<div class="g2">
+  <div class="cb">
+    <h4><span style="color:var(--red)">HTTPError</span></h4>
+    <p>Thrown when <span class="code">response.ok === false</span> (status 4xx, 5xx). Contains <span class="code">status</span>, <span class="code">statusText</span>, and the response body.</p>
+    <div class="typedef" style="margin-top:10px;"><span class="kw">try</span> &#123;<br>&nbsp;&nbsp;<span class="kw">await</span> client.<span class="ty">execute</span>(...);<br>&#125; <span class="kw">catch</span> (err) &#123;<br>&nbsp;&nbsp;<span class="kw">if</span> (err <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// err.status, err.body</span><br>&nbsp;&nbsp;&#125;<br>&#125;</div>
+  </div>
+  <div class="cb">
+    <h4><span style="color:var(--amber)">Network / Abort Errors</span></h4>
+    <p>Network failures, DNS errors, and <span class="code">AbortError</span> (user cancellation or timeout) are re-thrown as-is. The SDK distinguishes user aborts from timeout aborts for intelligent retry logic.</p>
+    <div class="typedef" style="margin-top:10px;"><span class="kw">if</span> (err.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>&nbsp;&nbsp;<span class="comment">// Check if timeout or user cancel</span><br>&nbsp;&nbsp;<span class="kw">if</span> (err.<span class="field">isTimeout</span>) &#123; <span class="comment">/* retry */</span> &#125;<br>&#125;</div>
+  </div>
+</div>
+</div>
+
+<div class="card gc">
+<h2 id="cancellation">Signal Combination &amp; Cancellation</h2>
+<p style="margin-bottom:16px;">mero-js implements <strong>signal combination</strong> — you can pass your own <span class="code">AbortSignal</span> and the SDK internally merges it with a timeout signal:</p>
+<div class="typedef">
+<span class="comment">// The SDK creates its own timeout signal internally</span><br>
+<span class="comment">// and combines it with your signal:</span><br><br>
+<span class="kw">const</span> <span class="field">controller</span> = <span class="kw">new</span> <span class="ty">AbortController</span>();<br>
+<span class="kw">const</span> <span class="field">result</span> = <span class="kw">await</span> client.<span class="ty">get</span>(<span class="comment">'/api/data'</span>, &#123;<br>
+&nbsp;&nbsp;<span class="field">signal</span>: controller.<span class="field">signal</span>, <span class="comment">// user cancellation</span><br>
+&nbsp;&nbsp;<span class="field">timeoutMs</span>: <span class="field">5000</span>,         <span class="comment">// timeout signal (merged)</span><br>
+&#125;);<br><br>
+<span class="comment">// Abort from your side at any time:</span><br>
+controller.<span class="ty">abort</span>();
+</div>
+<p style="margin-top:12px;">This ensures requests always clean up properly — either from a user-initiated cancel or from a timeout — without leaving dangling fetch calls.</p>
+</div>
+
+<div class="card gd">
+<h2>Dependency Injection</h2>
+<p>No global singletons. Create one <span class="code">MeroJs</span> instance per application context:</p>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">MeroJs</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="comment">'https://node.example.com'</span>,<br>
+&nbsp;&nbsp;<span class="field">timeoutMs</span>: <span class="field">10_000</span>,<br>
+&nbsp;&nbsp;<span class="field">tokenStore</span>: myCustomStore, <span class="comment">// optional</span><br>
+&#125;);<br><br>
+<span class="comment">// All sub-clients share the same HttpClient instance</span><br>
+sdk.<span class="field">auth</span>   <span class="comment">// AuthApiClient</span><br>
+sdk.<span class="field">admin</span>  <span class="comment">// AdminApiClient</span><br>
+sdk.<span class="field">rpc</span>    <span class="comment">// RpcClient</span>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

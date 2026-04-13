@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — API Reference</title>
+<link rel="stylesheet" href="styles.css">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>API Reference</span></div>
+
+<h1>API Reference</h1>
+<p class="page-subtitle">Complete reference for MeroJs, all sub-clients, and utility functions</p>
+
+<div class="card ga">
+<h2>MeroJs (main class)</h2>
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">MeroJs</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">auth</span>: <span class="ty">AuthApiClient</span>;<br>
+&nbsp;&nbsp;<span class="field">admin</span>: <span class="ty">AdminApiClient</span>;<br>
+&nbsp;&nbsp;<span class="field">rpc</span>: <span class="ty">RpcClient</span>;<br>
+&nbsp;&nbsp;<span class="field">sse</span>: <span class="ty">SseClient</span>;<br>
+&nbsp;&nbsp;<span class="field">ws</span>: <span class="ty">WsClient</span>;<br><br>
+&nbsp;&nbsp;<span class="kw">constructor</span>(<span class="field">config</span>: <span class="ty">MeroJsConfig</span>);<br>
+&#125;<br><br>
+<span class="kw">interface</span> <span class="ty">MeroJsConfig</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Node HTTP base URL</span><br>
+&nbsp;&nbsp;<span class="field">timeoutMs</span>?: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Request timeout (default: no timeout)</span><br>
+&nbsp;&nbsp;<span class="field">tokenStore</span>?: <span class="ty">TokenStore</span>;<span class="comment">// Custom token storage</span><br>
+&nbsp;&nbsp;<span class="field">requestCredentials</span>?: <span class="ty">RequestCredentials</span>;<span class="comment">// fetch credentials mode</span><br>
+&#125;
+</div>
+</div>
+
+<div class="card gb">
+<h2>AuthApiClient — sdk.auth</h2>
+<div class="fr"><div class="fp">login(params)</div><div class="fd">Authenticates with username + password. Stores tokens in <span class="code">TokenStore</span>. Returns <span class="code">TokenData</span>.</div></div>
+<div class="fr"><div class="fp">logout()</div><div class="fd">Revokes tokens and clears <span class="code">TokenStore</span>.</div></div>
+<div class="fr"><div class="fp">refresh()</div><div class="fd">Exchanges the stored refresh token for a new access token. Called automatically before expiry.</div></div>
+<div class="fr"><div class="fp">initFromTokens(tokens)</div><div class="fd">Initialises auth state from pre-existing tokens (e.g. from URL hash SSO). Does not call the network.</div></div>
+<div class="fr"><div class="fp">isAuthenticated()</div><div class="fd">Returns <span class="code">true</span> if a valid (non-expired) access token is available.</div></div>
+</div>
+
+<div class="card gc">
+<h2>AdminApiClient — sdk.admin</h2>
+<div class="fr"><div class="fp">getContexts()</div><div class="fd">List all contexts on the node. Returns <span class="code">Context[]</span>.</div></div>
+<div class="fr"><div class="fp">getContext(contextId)</div><div class="fd">Get a single context by ID with full detail.</div></div>
+<div class="fr"><div class="fp">createContext(params)</div><div class="fd">Create a new context, optionally installing an application at the same time.</div></div>
+<div class="fr"><div class="fp">getApplications()</div><div class="fd">List all installed applications.</div></div>
+<div class="fr"><div class="fp">installApplication(params)</div><div class="fd">Install an application into a context by package ID.</div></div>
+<div class="fr"><div class="fp">getIdentities()</div><div class="fd">List node identities.</div></div>
+<div class="fr"><div class="fp">generateClientKey(params)</div><div class="fd">Generate a client signing key for a context. Params: <span class="code">contextId</span>, <span class="code">contextIdentity</span> (camelCase in v2).</div></div>
+</div>
+
+<div class="card gd">
+<h2>RpcClient — sdk.rpc</h2>
+<div class="fr"><div class="fp">execute(params)</div><div class="fd">Execute a WASM application method. <span class="code">params</span>: <span class="code">contextId</span>, <span class="code">method</span>, <span class="code">argsJson</span>. Returns raw JSON response.</div></div>
+<div class="fr"><div class="fp">query(params)</div><div class="fd">Alias for execute — read-only operations. Same signature.</div></div>
+<div class="fr"><div class="fp">mutate(params)</div><div class="fd">Alias for execute — state-changing operations. Same signature.</div></div>
+</div>
+
+<div class="card ga">
+<h2>Utility Functions</h2>
+<div class="fr"><div class="fp">parseAuthCallback(hash)</div><div class="fd">Parses <span class="code">window.location.hash</span> for SSO tokens. Returns <span class="code">{ accessToken, refreshToken, nodeUrl, applicationId }</span> or <span class="code">null</span>.</div></div>
+<div class="fr"><div class="fp">buildAuthLoginUrl(options)</div><div class="fd">Constructs the URL for redirecting to the auth frontend. Used when triggering the full auth flow from an app.</div></div>
+<div class="fr"><div class="fp">HTTPError</div><div class="fd">Error class thrown on non-OK HTTP responses. Properties: <span class="code">status</span>, <span class="code">statusText</span>, <span class="code">body</span>.</div></div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
