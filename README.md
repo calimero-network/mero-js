@@ -456,7 +456,7 @@ const ctx = await admin.createContext({
 
 ### Cloud (TEE High Availability)
 ```typescript
-import { CloudClient } from 'mero-js';
+import { CloudClient } from '@calimero-network/mero-js';
 const cloud = new CloudClient();
 cloud.enableHA({ groupId, contextId, redirectUrl });
 ```

@@ -23,7 +23,9 @@
 <span class="kw">class</span> <span class="ty">HTTPError</span> <span class="kw">extends</span> <span class="ty">Error</span> &#123;<br>
 &nbsp;&nbsp;<span class="field">status</span>: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// HTTP status code (e.g. 401, 403, 404)</span><br>
 &nbsp;&nbsp;<span class="field">statusText</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// HTTP status text</span><br>
-&nbsp;&nbsp;<span class="field">body</span>?: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// raw response body if available</span><br>
+&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// request URL that failed</span><br>
+&nbsp;&nbsp;<span class="field">headers</span>: <span class="ty">Headers</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// response headers</span><br>
+&nbsp;&nbsp;<span class="field">bodyText</span>?: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// raw response body if available (capped at ~64KB)</span><br>
 &#125;
 </div>
 <p style="margin-top:10px;">Common statuses to handle: <span class="code">401</span> (not authenticated — SDK retries via refresh), <span class="code">403</span> (insufficient permissions), <span class="code">404</span> (resource not found), <span class="code">422</span> (validation failure).</p>

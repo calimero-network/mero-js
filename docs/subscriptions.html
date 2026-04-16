@@ -25,7 +25,7 @@
 <span class="kw">await</span> sdk.<span class="ty">authenticate</span>(&#123; <span class="field">username</span>: <span class="comment">'admin'</span>, <span class="field">password</span>: <span class="comment">'pass'</span> &#125;);<br><br>
 <span class="comment">// Subscribe to events in a context</span><br>
 <span class="kw">const</span> <span class="field">unsubscribe</span> = sdk.<span class="field">events</span>.<span class="ty">subscribe</span>([<span class="comment">'context-id-1'</span>], (<span class="field">event</span>) =&gt; &#123;<br>
-&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="field">event</span>.<span class="field">contextId</span>, <span class="field">event</span>.<span class="field">executorPublicKey</span>, <span class="field">event</span>.<span class="field">data</span>);<br>
+&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="field">event</span>.<span class="field">contextId</span>, <span class="field">event</span>.<span class="field">data</span>);<br>
 &#125;);<br><br>
 <span class="comment">// Stop listening</span><br>
 <span class="field">unsubscribe</span>();<br><br>
@@ -38,10 +38,8 @@ sdk.<span class="ty">close</span>();
 <h2>SseEventData</h2>
 <div class="typedef">
 <span class="kw">interface</span> <span class="ty">SseEventData</span> &#123;<br>
-&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// context the event came from</span><br>
-&nbsp;&nbsp;<span class="field">executorPublicKey</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// identity that executed the call</span><br>
-&nbsp;&nbsp;<span class="field">outcome</span>: <span class="ty">Record</span>&lt;<span class="ty">string</span>, <span class="ty">unknown</span>&gt;; <span class="comment">// execution result</span><br>
-&nbsp;&nbsp;<span class="field">data</span>?: <span class="ty">unknown</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// event payload from WASM</span><br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// context the event came from</span><br>
+&nbsp;&nbsp;<span class="field">data</span>: <span class="ty">unknown</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// event payload from WASM</span><br>
 &#125;
 </div>
 </div>
