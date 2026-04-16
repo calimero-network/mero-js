@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Getting Started</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="Install mero-js, authenticate, and make your first API call in minutes.">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Getting Started</span></div>
+
+<h1>Getting Started</h1>
+<p class="page-subtitle">Install, connect, and make your first API call in minutes</p>
+
+<div class="card ga">
+<h2>Installation</h2>
+<div class="g3">
+  <div class="cb"><h4>npm</h4><div class="typedef"><span class="field">npm install</span> @calimero-network/mero-js</div></div>
+  <div class="cb"><h4>pnpm</h4><div class="typedef"><span class="field">pnpm add</span> @calimero-network/mero-js</div></div>
+  <div class="cb"><h4>yarn</h4><div class="typedef"><span class="field">yarn add</span> @calimero-network/mero-js</div></div>
+</div>
+<p style="margin-top:12px;">Requires Node.js 18+ or any modern browser. Zero runtime dependencies — built on the Fetch API and Web Streams.</p>
+</div>
+
+<div class="card gb">
+<h2>Basic Example — Username &amp; Password Auth</h2>
+
+<div class="step"><div class="n">1</div><h4>Create an SDK instance</h4>
+<div class="typedef" style="margin-top:8px;">
+<span class="kw">import</span> &#123; <span class="ty">MeroJs</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="comment">'http://localhost:2428'</span>,<br>
+&nbsp;&nbsp;<span class="field">timeoutMs</span>: <span class="field">10_000</span>,<span class="comment"> // optional, default 10s</span><br>
+&#125;);
+</div>
+</div>
+
+<div class="step"><div class="n">2</div><h4>Authenticate</h4>
+<div class="typedef" style="margin-top:8px;">
+<span class="comment">// Authenticate with username and password</span><br>
+<span class="kw">await</span> sdk.<span class="ty">authenticate</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">username</span>: <span class="comment">'admin'</span>,<br>
+&nbsp;&nbsp;<span class="field">password</span>: <span class="comment">'your-password'</span>,<br>
+&#125;);<br><br>
+<span class="comment">// Check auth state</span><br>
+console.<span class="ty">log</span>(sdk.<span class="ty">isAuthenticated</span>()); <span class="comment">// true</span>
+</div>
+</div>
+
+<div class="step"><div class="n">3</div><h4>List contexts</h4>
+<div class="typedef" style="margin-top:8px;">
+<span class="kw">const</span> <span class="field">res</span> = <span class="kw">await</span> sdk.<span class="field">admin</span>.<span class="ty">getContexts</span>();<br>
+console.<span class="ty">log</span>(<span class="field">res</span>.<span class="field">data</span>); <span class="comment">// Context[]</span>
+</div>
+</div>
+
+<div class="step"><div class="n">4</div><h4>Execute a WASM method</h4>
+<div class="typedef" style="margin-top:8px;">
+<span class="kw">const</span> <span class="field">result</span> = <span class="kw">await</span> sdk.<span class="field">rpc</span>.<span class="ty">execute</span>&#123;<span class="ty">&lt;&#123; value: string &#125;&gt;</span>&#125;(&#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="comment">'ctx-id-here'</span>,<br>
+&nbsp;&nbsp;<span class="field">method</span>: <span class="comment">'get_value'</span>,<br>
+&nbsp;&nbsp;<span class="field">argsJson</span>: &#123; <span class="field">key</span>: <span class="comment">'hello'</span> &#125;,<br>
+&#125;);<br>
+console.<span class="ty">log</span>(<span class="field">result</span>);
+</div>
+</div>
+
+<div class="step"><div class="n">5</div><h4>Clean up</h4>
+<div class="typedef" style="margin-top:8px;">
+<span class="comment">// Close SSE/WS connections when done</span><br>
+sdk.<span class="ty">close</span>();
+</div>
+</div>
+</div>
+
+<div class="card gc">
+<h2>SSO — Receiving Tokens from URL Hash</h2>
+<p style="margin-bottom:14px;">When your app is opened from Calimero Desktop, tokens arrive in <span class="code">window.location.hash</span>. Use <span class="code">parseAuthCallback()</span> to read them and <span class="code">sdk.setTokenData()</span> to apply them:</p>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">MeroJs</span>, <span class="ty">parseAuthCallback</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">const</span> <span class="field">auth</span> = <span class="ty">parseAuthCallback</span>(window.location.hash);<br><br>
+<span class="kw">if</span> (<span class="field">auth</span>) &#123;<br>
+&nbsp;&nbsp;<span class="comment">// auth.nodeUrl, auth.accessToken, auth.refreshToken</span><br>
+&nbsp;&nbsp;<span class="comment">// auth.applicationId, auth.contextId, auth.contextIdentity</span><br>
+&nbsp;&nbsp;<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123; <span class="field">baseUrl</span>: <span class="field">auth</span>.<span class="field">nodeUrl</span> &#125;);<br>
+&nbsp;&nbsp;sdk.<span class="ty">setTokenData</span>(&#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">access_token</span>: <span class="field">auth</span>.<span class="field">accessToken</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">refresh_token</span>: <span class="field">auth</span>.<span class="field">refreshToken</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">expires_at</span>: <span class="field">0</span>, <span class="comment">// parsed from JWT automatically</span><br>
+&nbsp;&nbsp;&#125;);<br>
+&nbsp;&nbsp;<span class="comment">// Remove tokens from URL bar (security best practice)</span><br>
+&nbsp;&nbsp;history.<span class="ty">replaceState</span>(null, <span class="comment">''</span>, location.pathname);<br>
+&#125;
+</div>
+<p style="margin-top:12px;">The hash fragment format is: <span class="code">#access_token=...&amp;refresh_token=...&amp;node_url=...&amp;application_id=...&amp;context_id=...&amp;context_identity=...</span></p>
+</div>
+
+<div class="card gd">
+<h2>Token Persistence</h2>
+<p style="margin-bottom:14px;">Pass a <span class="code">tokenStore</span> to automatically persist and restore tokens across page loads:</p>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">MeroJs</span>, <span class="ty">LocalStorageTokenStore</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123;<br>
+&nbsp;&nbsp;<span class="field">baseUrl</span>: <span class="comment">'http://localhost:2428'</span>,<br>
+&nbsp;&nbsp;<span class="field">tokenStore</span>: <span class="kw">new</span> <span class="ty">LocalStorageTokenStore</span>(<span class="comment">'my-app-tokens'</span>),<br>
+&#125;);<br><br>
+<span class="comment">// On next page load, tokens are restored automatically.</span><br>
+<span class="comment">// sdk.isAuthenticated() returns true if valid tokens exist.</span>
+</div>
+</div>
+
+<div class="card ge">
+<h2>Error Handling</h2>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">HTTPError</span>, <span class="ty">RpcError</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">try</span> &#123;<br>
+&nbsp;&nbsp;<span class="kw">const</span> <span class="field">result</span> = <span class="kw">await</span> sdk.<span class="field">rpc</span>.<span class="ty">execute</span>(&#123; ... &#125;);<br>
+&#125; <span class="kw">catch</span> (<span class="field">err</span>) &#123;<br>
+&nbsp;&nbsp;<span class="kw">if</span> (<span class="field">err</span> <span class="kw">instanceof</span> <span class="ty">RpcError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="field">`RPC error ${err.code}: ${err.message}`</span>);<br>
+&nbsp;&nbsp;&#125; <span class="kw">else if</span> (<span class="field">err</span> <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="field">`HTTP ${err.status}: ${err.statusText}`</span>);<br>
+&nbsp;&nbsp;&#125; <span class="kw">else if</span> (<span class="field">err</span>.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="comment">'Request timed out or was cancelled'</span>);<br>
+&nbsp;&nbsp;&#125;<br>
+&#125;
+</div>
+<p style="margin-top:12px;">See <a href="errors.html">Error Model</a> for full details.</p>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
