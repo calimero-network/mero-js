@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Architecture</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="mero-js architecture — HttpClient, auth layer, token lifecycle, and dependency injection.">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Architecture</span></div>
+
+<h1>Architecture</h1>
+<p class="page-subtitle">How the SDK is structured — HttpClient, API clients, token lifecycle, and event streams</p>
+
+<div class="g4" style="margin-bottom:36px;">
+  <div class="stat"><div class="v">0</div><div class="l">dependencies</div></div>
+  <div class="stat"><div class="v">5</div><div class="l">client types</div></div>
+  <div class="stat"><div class="v">fetch</div><div class="l">transport</div></div>
+  <div class="stat"><div class="v">JWT</div><div class="l">auth tokens</div></div>
+</div>
+
+<div class="card ga">
+<h2>Layered Design</h2>
+<p style="margin-bottom:14px;">The SDK is a thin composition of focused clients. <span class="code">MeroJs</span> is the entry point — it owns the HTTP transport and lazily initialises the specialised clients behind property accessors.</p>
+<div class="g2">
+  <div>
+    <h4 style="color:#a5ff11;margin-bottom:10px;">Layer 1 — Transport</h4>
+    <div class="fr"><div class="fp">HttpClient</div><div class="fd">Web-standards <span class="code">fetch</span> wrapper. Injects <span class="code">Authorization</span> header on every request. Handles 401 by calling the <span class="code">refreshToken</span> hook transparently.</div></div>
+    <div class="fr"><div class="fp">createBrowserHttpClient</div><div class="fd">Factory used in browser and Tauri apps. Sets <span class="code">credentials: 'omit'</span> automatically when running inside Tauri.</div></div>
+  </div>
+  <div>
+    <h4 style="color:#58a6ff;margin-bottom:10px;">Layer 2 — API Clients</h4>
+    <div class="fr"><div class="fp">AuthApiClient</div><div class="fd">Direct HTTP to <span class="code">/api/v1/identity</span> — login, token generation, key management.</div></div>
+    <div class="fr"><div class="fp">AdminApiClient</div><div class="fd">Direct HTTP to <span class="code">/api/v1/admin</span> — 65+ methods covering contexts, apps, namespaces, groups.</div></div>
+    <div class="fr"><div class="fp">RpcClient</div><div class="fd">JSON-RPC over HTTP to <span class="code">/api/v1/rpc</span> — executes WASM contract methods.</div></div>
+  </div>
+</div>
+<div class="g2" style="margin-top:16px;">
+  <div>
+    <h4 style="color:#39d0d8;margin-bottom:10px;">Layer 3 — Event Streams</h4>
+    <div class="fr"><div class="fp">SseClient</div><div class="fd">Server-Sent Events from <span class="code">/api/v1/subscribe</span>. Reconnects automatically. Use this in production.</div></div>
+    <div class="fr"><div class="fp">WsClient</div><div class="fd">WebSocket alternative. <em>Experimental</em> — logs a warning on first use.</div></div>
+  </div>
+  <div>
+    <h4 style="color:#f0883e;margin-bottom:10px;">Layer 4 — Token Store</h4>
+    <div class="fr"><div class="fp">MemoryTokenStore</div><div class="fd">Ephemeral — tokens lost on page reload. Safe for server-side use.</div></div>
+    <div class="fr"><div class="fp">LocalStorageTokenStore</div><div class="fd">Persists to <span class="code">localStorage</span>. Constructor takes an optional storage key.</div></div>
+  </div>
+</div>
+</div>
+
+<div class="card gb">
+<h2>Token Lifecycle</h2>
+<p style="margin-bottom:14px;">The SDK manages JWT tokens reactively — it never proactively refreshes, only reacts to 401 responses.</p>
+<div class="g3">
+  <div class="step"><div class="n">1</div><h4>Authenticate</h4><p>Call <span class="code">sdk.authenticate()</span> to exchange username + password for an access token and refresh token. Tokens are stored in memory (and in the <span class="code">tokenStore</span> if provided).</p></div>
+  <div class="step"><div class="n">2</div><h4>Request</h4><p>Every request reads the current access token and injects it as <span class="code">Authorization: Bearer &lt;token&gt;</span>. The JWT <span class="code">exp</span> claim is parsed to track expiry.</p></div>
+  <div class="step"><div class="n">3</div><h4>401 → Refresh</h4><p>When the server returns 401, the <span class="code">HttpClient</span> calls <span class="code">performTokenRefresh()</span> transparently, retries the original request with the new token, and updates the store. Multiple concurrent 401s are deduplicated via a shared <span class="code">refreshPromise</span>.</p></div>
+</div>
+<div class="typedef" style="margin-top:16px;">
+<span class="comment">// The refresh flow (transparent to callers)</span><br>
+<span class="comment">// 1. Request with access_token → 401</span><br>
+<span class="comment">// 2. POST /api/v1/identity/refresh-token</span><br>
+<span class="comment">// 3. Store new access_token + refresh_token</span><br>
+<span class="comment">// 4. Retry original request with new token</span>
+</div>
+</div>
+
+<div class="card gc">
+<h2>SSO Integration</h2>
+<p style="margin-bottom:12px;">When your app is opened from Calimero Desktop, the desktop process appends auth tokens to the URL hash. The SDK reads them with <span class="code">parseAuthCallback()</span> and bypasses the normal login flow:</p>
+<div class="typedef">
+<span class="comment">// Desktop opens app at:</span><br>
+<span class="comment">// https://my-app.example.com/#access_token=...&amp;refresh_token=...&amp;node_url=...&amp;application_id=...&amp;context_id=...&amp;context_identity=...</span><br><br>
+<span class="kw">const</span> <span class="field">auth</span> = <span class="ty">parseAuthCallback</span>(window.location.hash);<br>
+<span class="kw">if</span> (<span class="field">auth</span>) &#123;<br>
+&nbsp;&nbsp;sdk.<span class="ty">setTokenData</span>(&#123; <span class="field">access_token</span>: auth.<span class="field">accessToken</span>, <span class="field">refresh_token</span>: auth.<span class="field">refreshToken</span>, <span class="field">expires_at</span>: 0 &#125;);<br>
+&nbsp;&nbsp;<span class="comment">// expires_at = 0 triggers JWT exp parsing automatically</span><br>
+&#125;
+</div>
+</div>
+
+<div class="card gd">
+<h2>Lazy Initialisation</h2>
+<p style="margin-bottom:12px;"><span class="code">RpcClient</span>, <span class="code">SseClient</span>, and <span class="code">WsClient</span> are created on first access — no cost if unused:</p>
+<div class="typedef">
+<span class="comment">// Only instantiated when accessed:</span><br>
+sdk.<span class="field">rpc</span>     <span class="comment">// RpcClient (lazy)</span><br>
+sdk.<span class="field">events</span>  <span class="comment">// SseClient (lazy)</span><br>
+sdk.<span class="field">ws</span>      <span class="comment">// WsClient (lazy, experimental)</span><br><br>
+<span class="comment">// Always available:</span><br>
+sdk.<span class="field">auth</span>    <span class="comment">// AuthApiClient</span><br>
+sdk.<span class="field">admin</span>   <span class="comment">// AdminApiClient</span>
+</div>
+</div>
+
+<div class="card ge">
+<h2>Zero Dependencies</h2>
+<p style="margin-bottom:12px;">The SDK is built on Web Platform APIs only:</p>
+<div class="g2">
+  <div>
+    <div class="fr"><div class="fp">fetch</div><div class="fd">HTTP requests — available in browser, Node 18+, Deno, Bun, edge workers</div></div>
+    <div class="fr"><div class="fp">EventSource</div><div class="fd">SSE client — native browser API, polyfillable for server environments</div></div>
+    <div class="fr"><div class="fp">WebSocket</div><div class="fd">WS client — available everywhere</div></div>
+  </div>
+  <div>
+    <div class="fr"><div class="fp">AbortController</div><div class="fd">Request cancellation and timeout signals</div></div>
+    <div class="fr"><div class="fp">atob</div><div class="fd">Base64 decoding for JWT payload parsing</div></div>
+    <div class="fr"><div class="fp">localStorage</div><div class="fd">Optional token persistence (browser only)</div></div>
+  </div>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

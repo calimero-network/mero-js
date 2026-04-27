@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — JavaScript SDK</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="mero-js — zero-dependency JavaScript SDK for Calimero Network. Browser, Node.js, and edge runtimes.">
+<meta property="og:title" content="Calimero | mero-js — JavaScript SDK">
+<meta property="og:description" content="Pure JavaScript SDK for Calimero — zero dependencies, full TypeScript support.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+
+<div class="hero">
+  <h1>Calimero <em>mero-js</em></h1>
+  <p class="tagline">JavaScript client for the Calimero node — auth, admin, contract execution, and real-time subscriptions.</p>
+</div>
+
+<div class="card ga">
+<h2>Start Here</h2>
+<p style="margin-bottom:18px;">New to mero-js? Follow this path.</p>
+<div class="g3">
+  <div class="step"><div class="n">1</div><h4>Getting Started</h4><p>Install the SDK, authenticate, and make your first API call in minutes.</p><p style="margin-top:8px;"><a href="getting-started.html">Quick Start &rarr;</a></p></div>
+  <div class="step"><div class="n">2</div><h4>Architecture</h4><p>Understand how the SDK layers work — HttpClient, auth, admin, RPC, and event clients.</p><p style="margin-top:8px;"><a href="architecture.html">Read Architecture &rarr;</a></p></div>
+  <div class="step"><div class="n">3</div><h4>API Reference</h4><p>Full reference for MeroJs, all property accessors, methods, and TypeScript types.</p><p style="margin-top:8px;"><a href="api-reference.html">API Reference &rarr;</a></p></div>
+</div>
+</div>
+
+<div class="card gb">
+<h2>SDK Architecture</h2>
+<svg viewBox="0 0 860 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="ga1"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#a5ff11" flood-opacity="0.3"/></filter>
+    <filter id="gb1"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#58a6ff" flood-opacity="0.3"/></filter>
+    <filter id="gp1"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#f778ba" flood-opacity="0.3"/></filter>
+    <filter id="gv1"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#a371f7" flood-opacity="0.3"/></filter>
+    <filter id="gc1"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#39d0d8" flood-opacity="0.3"/></filter>
+    <marker id="arr1" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L6,3 z" fill="#444c56"/>
+    </marker>
+  </defs>
+  <!-- Your App -->
+  <rect x="10" y="100" width="120" height="55" rx="8" fill="#8b8b9b10" stroke="#8b8b9b" stroke-width="1.2"/>
+  <text x="70" y="124" text-anchor="middle" fill="#8b8b9b" font-family="JetBrains Mono" font-size="11" font-weight="700">Your App</text>
+  <text x="70" y="143" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="9">Browser / Node / Edge</text>
+  <!-- Arrow -->
+  <path d="M131 127 L160 127" stroke="#444c56" stroke-width="1.5" marker-end="url(#arr1)"/>
+  <!-- MeroJs -->
+  <rect x="161" y="70" width="145" height="115" rx="10" fill="#a5ff1108" stroke="#a5ff11" stroke-width="1.8" filter="url(#ga1)"/>
+  <text x="234" y="96" text-anchor="middle" fill="#a5ff11" font-family="JetBrains Mono" font-size="13" font-weight="700">MeroJs</text>
+  <text x="234" y="115" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="10">authenticate()</text>
+  <text x="234" y="131" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="10">setTokenData()</text>
+  <text x="234" y="147" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="10">isAuthenticated()</text>
+  <text x="234" y="163" text-anchor="middle" fill="#a5ff1180" font-family="JetBrains Mono" font-size="8">token lifecycle</text>
+  <!-- Arrows from MeroJs -->
+  <path d="M307 100 L340 78" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <path d="M307 127 L340 127" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <path d="M307 155 L340 178" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <!-- AuthApiClient -->
+  <rect x="341" y="50" width="145" height="58" rx="8" fill="#58a6ff08" stroke="#58a6ff" stroke-width="1.4" filter="url(#gb1)"/>
+  <text x="414" y="75" text-anchor="middle" fill="#58a6ff" font-family="JetBrains Mono" font-size="11" font-weight="700">AuthApiClient</text>
+  <text x="414" y="93" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="9">generateTokens · refresh · keys</text>
+  <text x="414" y="104" text-anchor="middle" fill="#58a6ff80" font-family="JetBrains Mono" font-size="7">.auth</text>
+  <!-- AdminApiClient -->
+  <rect x="341" y="118" width="145" height="58" rx="8" fill="#f778ba08" stroke="#f778ba" stroke-width="1.4" filter="url(#gp1)"/>
+  <text x="414" y="143" text-anchor="middle" fill="#f778ba" font-family="JetBrains Mono" font-size="11" font-weight="700">AdminApiClient</text>
+  <text x="414" y="161" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="9">contexts · apps · groups</text>
+  <text x="414" y="172" text-anchor="middle" fill="#f778ba80" font-family="JetBrains Mono" font-size="7">.admin</text>
+  <!-- RpcClient -->
+  <rect x="341" y="186" width="145" height="58" rx="8" fill="#a371f708" stroke="#a371f7" stroke-width="1.4" filter="url(#gv1)"/>
+  <text x="414" y="211" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="11" font-weight="700">RpcClient</text>
+  <text x="414" y="229" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="9">execute WASM methods</text>
+  <text x="414" y="240" text-anchor="middle" fill="#a371f780" font-family="JetBrains Mono" font-size="7">.rpc</text>
+  <!-- Arrows to node -->
+  <path d="M487 79 L540 100" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <path d="M487 147 L540 147" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <path d="M487 215 L540 195" stroke="#444c56" stroke-width="1.2" marker-end="url(#arr1)"/>
+  <!-- SseClient -->
+  <rect x="541" y="30" width="130" height="50" rx="8" fill="#39d0d808" stroke="#39d0d8" stroke-width="1.4" filter="url(#gc1)"/>
+  <text x="606" y="52" text-anchor="middle" fill="#39d0d8" font-family="JetBrains Mono" font-size="11" font-weight="700">SseClient</text>
+  <text x="606" y="68" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="9">real-time events</text>
+  <text x="606" y="78" text-anchor="middle" fill="#39d0d880" font-family="JetBrains Mono" font-size="7">.events</text>
+  <!-- Calimero Node -->
+  <rect x="541" y="100" width="240" height="100" rx="10" fill="#3fb95008" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="661" y="126" text-anchor="middle" fill="#3fb950" font-family="JetBrains Mono" font-size="13" font-weight="700">Calimero Node</text>
+  <text x="661" y="148" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="10">REST API · JSON-RPC · SSE</text>
+  <text x="661" y="168" text-anchor="middle" fill="#6b6b80" font-family="DM Sans" font-size="10">port 2428</text>
+  <text x="661" y="192" text-anchor="middle" fill="#3fb95080" font-family="JetBrains Mono" font-size="8">merod process</text>
+  <path d="M606 80 L606 99" stroke="#39d0d8" stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#arr1)"/>
+</svg>
+</div>
+
+<div class="card gc">
+<h2>Quick Install</h2>
+<div class="g3">
+  <div class="cb"><h4>npm</h4><div class="typedef"><span class="field">npm install</span> @calimero-network/mero-js</div></div>
+  <div class="cb"><h4>pnpm</h4><div class="typedef"><span class="field">pnpm add</span> @calimero-network/mero-js</div></div>
+  <div class="cb"><h4>yarn</h4><div class="typedef"><span class="field">yarn add</span> @calimero-network/mero-js</div></div>
+</div>
+</div>
+
+<div class="card gd">
+<h2>What's in the SDK</h2>
+<div class="g2">
+  <div>
+    <h4 style="color:#a5ff11;margin-bottom:10px;">Clients</h4>
+    <div class="fr"><div class="fp">MeroJs</div><div class="fd">Main SDK class — wraps all clients, manages JWT token lifecycle</div></div>
+    <div class="fr"><div class="fp">AuthApiClient</div><div class="fd">Login, token refresh, root keys, client keys</div></div>
+    <div class="fr"><div class="fp">AdminApiClient</div><div class="fd">Contexts, applications, namespaces, groups (65+ methods)</div></div>
+    <div class="fr"><div class="fp">RpcClient</div><div class="fd">Execute WASM contract methods via JSON-RPC</div></div>
+    <div class="fr"><div class="fp">SseClient</div><div class="fd">Server-Sent Events for real-time application events</div></div>
+    <div class="fr"><div class="fp">WsClient</div><div class="fd">WebSocket client (experimental — use SSE for production)</div></div>
+  </div>
+  <div>
+    <h4 style="color:#58a6ff;margin-bottom:10px;">Utilities</h4>
+    <div class="fr"><div class="fp">parseAuthCallback</div><div class="fd">Parse SSO tokens from URL hash (Desktop SSO integration)</div></div>
+    <div class="fr"><div class="fp">buildAuthLoginUrl</div><div class="fd">Build redirect URL for the Calimero auth flow</div></div>
+    <div class="fr"><div class="fp">MemoryTokenStore</div><div class="fd">In-memory token persistence (no side-effects)</div></div>
+    <div class="fr"><div class="fp">LocalStorageTokenStore</div><div class="fd">localStorage-backed token persistence</div></div>
+    <div class="fr"><div class="fp">HTTPError</div><div class="fd">Typed HTTP error with <span class="code">status</span> and <span class="code">statusText</span></div></div>
+    <div class="fr"><div class="fp">RpcError</div><div class="fd">JSON-RPC error with numeric <span class="code">code</span> and optional <span class="code">data</span></div></div>
+  </div>
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

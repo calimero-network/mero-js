@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Error Model</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="mero-js error types — HTTPError, RpcError, AbortError, and handling strategies.">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Error Model</span></div>
+
+<h1>Error Model</h1>
+<p class="page-subtitle">Three error types cover every failure mode in the SDK</p>
+
+<div class="card ga">
+<h2>HTTPError</h2>
+<p style="margin-bottom:12px;">Thrown when the server returns a non-2xx HTTP response. Extends <span class="code">Error</span>.</p>
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">HTTPError</span> <span class="kw">extends</span> <span class="ty">Error</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">status</span>: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// HTTP status code (e.g. 401, 403, 404)</span><br>
+&nbsp;&nbsp;<span class="field">statusText</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// HTTP status text</span><br>
+&nbsp;&nbsp;<span class="field">url</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// request URL that failed</span><br>
+&nbsp;&nbsp;<span class="field">headers</span>: <span class="ty">Headers</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// response headers</span><br>
+&nbsp;&nbsp;<span class="field">bodyText</span>?: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// raw response body if available (capped at ~64KB)</span><br>
+&#125;
+</div>
+<p style="margin-top:10px;">Common statuses to handle: <span class="code">401</span> (not authenticated — SDK retries via refresh), <span class="code">403</span> (insufficient permissions), <span class="code">404</span> (resource not found), <span class="code">422</span> (validation failure).</p>
+</div>
+
+<div class="card gb">
+<h2>RpcError</h2>
+<p style="margin-bottom:12px;">Thrown by <span class="code">sdk.rpc.execute()</span> when the WASM contract returns a JSON-RPC error object. Extends <span class="code">Error</span>.</p>
+<div class="typedef">
+<span class="kw">class</span> <span class="ty">RpcError</span> <span class="kw">extends</span> <span class="ty">Error</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">code</span>: <span class="ty">number</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// JSON-RPC error code</span><br>
+&nbsp;&nbsp;<span class="field">type</span>?: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// optional error type from contract</span><br>
+&nbsp;&nbsp;<span class="field">data</span>?: <span class="ty">unknown</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// optional structured error data</span><br>
+&#125;
+</div>
+<p style="margin-top:10px;">The <span class="code">message</span> field (from <span class="code">Error</span>) contains the human-readable error description from the contract.</p>
+</div>
+
+<div class="card gc">
+<h2>AbortError</h2>
+<p style="margin-bottom:12px;">Thrown when a request is cancelled or times out. This is a browser-native <span class="code">DOMException</span> with <span class="code">name === 'AbortError'</span>, not a custom class.</p>
+<div class="typedef">
+<span class="comment">// Timeout fires after config.timeoutMs (default: 10 000 ms)</span><br>
+<span class="kw">try</span> &#123;<br>
+&nbsp;&nbsp;<span class="kw">await</span> sdk.<span class="field">admin</span>.<span class="ty">getContexts</span>();<br>
+&#125; <span class="kw">catch</span> (<span class="field">err</span>) &#123;<br>
+&nbsp;&nbsp;<span class="kw">if</span> (<span class="field">err</span>.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// timed out or manually cancelled</span><br>
+&nbsp;&nbsp;&#125;<br>
+&#125;
+</div>
+</div>
+
+<div class="card gd">
+<h2>Full Handling Pattern</h2>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">HTTPError</span>, <span class="ty">RpcError</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">async function</span> <span class="ty">safeExecute</span>() &#123;<br>
+&nbsp;&nbsp;<span class="kw">try</span> &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">const</span> <span class="field">result</span> = <span class="kw">await</span> sdk.<span class="field">rpc</span>.<span class="ty">execute</span>(&#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">contextId</span>: <span class="comment">'ctx-id'</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">method</span>: <span class="comment">'get_value'</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="field">argsJson</span>: &#123; <span class="field">key</span>: <span class="comment">'foo'</span> &#125;,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125;);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">return</span> <span class="field">result</span>;<br>
+&nbsp;&nbsp;&#125; <span class="kw">catch</span> (<span class="field">err</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> (<span class="field">err</span> <span class="kw">instanceof</span> <span class="ty">RpcError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Contract-level error — the WASM returned an error object</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="field">`Contract error ${err.code}: ${err.message}`</span>, <span class="field">err</span>.<span class="field">data</span>);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else if</span> (<span class="field">err</span> <span class="kw">instanceof</span> <span class="ty">HTTPError</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Transport-level error — HTTP 4xx/5xx</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">if</span> (<span class="field">err</span>.<span class="field">status</span> === <span class="field">403</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="comment">'Permission denied'</span>);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else</span> &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">error</span>(<span class="field">`HTTP ${err.status}: ${err.statusText}`</span>);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else if</span> (<span class="field">err</span>.<span class="field">name</span> === <span class="comment">'AbortError'</span>) &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Timeout or manual cancellation</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">warn</span>(<span class="comment">'Request timed out'</span>);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125; <span class="kw">else</span> &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Network error (offline, CORS, DNS)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">throw</span> <span class="field">err</span>;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&#125;<br>
+&nbsp;&nbsp;&#125;<br>
+&#125;
+</div>
+</div>
+
+<div class="card ge">
+<h2>Note on 401s</h2>
+<p>The SDK handles <span class="code">401 Unauthorized</span> responses internally — it triggers a token refresh and retries the original request transparently. Your code will only see a <span class="code">401 HTTPError</span> if the refresh itself fails (e.g. the refresh token is also expired). In that case, call <span class="code">sdk.clearToken()</span> and prompt the user to re-authenticate.</p>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,3 +1,9 @@
+## <small>1.4.1 (2026-04-16)</small>
+
+* fix: cleanup cards ([928326c](https://github.com/calimero-network/mero-js/commit/928326c))
+* Add simple docs (#31) ([75b4a7a](https://github.com/calimero-network/mero-js/commit/75b4a7a)), closes [#31](https://github.com/calimero-network/mero-js/issues/31)
+* Create static.yml ([0bb6bf9](https://github.com/calimero-network/mero-js/commit/0bb6bf9))
+
 ## 1.4.0 (2026-04-07)
 
 * feat: align mero-js with core namespace model (#28) ([fb4b2ae](https://github.com/calimero-network/mero-js/commit/fb4b2ae)), closes [#28](https://github.com/calimero-network/mero-js/issues/28) [#29](https://github.com/calimero-network/mero-js/issues/29)

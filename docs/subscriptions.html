@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calimero | mero-js — Subscriptions</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="Real-time event subscriptions in mero-js — SseClient and WsClient.">
+<meta name="theme-color" content="#0d1117">
+</head>
+<body>
+<div class="main">
+<div class="content">
+<div class="breadcrumb"><a href="index.html">Home</a><span class="sep">/</span><span>Subscriptions</span></div>
+
+<h1>Subscriptions</h1>
+<p class="page-subtitle">Real-time events from the node via Server-Sent Events or WebSocket</p>
+
+<div class="card ga">
+<h2>SseClient — Recommended</h2>
+<p style="margin-bottom:12px;">Access via <span class="code">sdk.events</span>. Uses the browser native <span class="code">EventSource</span> API to receive a continuous stream of events from the node.</p>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">MeroJs</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-js'</span>;<br><br>
+<span class="kw">const</span> <span class="field">sdk</span> = <span class="kw">new</span> <span class="ty">MeroJs</span>(&#123; <span class="field">baseUrl</span>: <span class="comment">'http://localhost:2428'</span> &#125;);<br>
+<span class="kw">await</span> sdk.<span class="ty">authenticate</span>(&#123; <span class="field">username</span>: <span class="comment">'admin'</span>, <span class="field">password</span>: <span class="comment">'pass'</span> &#125;);<br><br>
+<span class="comment">// Subscribe to events in a context</span><br>
+<span class="kw">const</span> <span class="field">unsubscribe</span> = sdk.<span class="field">events</span>.<span class="ty">subscribe</span>([<span class="comment">'context-id-1'</span>], (<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="field">event</span>.<span class="field">contextId</span>, <span class="field">event</span>.<span class="field">data</span>);<br>
+&#125;);<br><br>
+<span class="comment">// Stop listening</span><br>
+<span class="field">unsubscribe</span>();<br><br>
+<span class="comment">// Or close all connections</span><br>
+sdk.<span class="ty">close</span>();
+</div>
+</div>
+
+<div class="card gb">
+<h2>SseEventData</h2>
+<div class="typedef">
+<span class="kw">interface</span> <span class="ty">SseEventData</span> &#123;<br>
+&nbsp;&nbsp;<span class="field">contextId</span>: <span class="ty">string</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// context the event came from</span><br>
+&nbsp;&nbsp;<span class="field">data</span>: <span class="ty">unknown</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// event payload from WASM</span><br>
+&#125;
+</div>
+</div>
+
+<div class="card gc">
+<h2>WsClient — Experimental</h2>
+<p style="margin-bottom:12px;">Access via <span class="code">sdk.ws</span>. Provides the same interface as <span class="code">SseClient</span> over WebSocket. Logs a console warning on first use — prefer SSE in production.</p>
+<div class="typedef">
+<span class="comment">// Same interface as SseClient:</span><br>
+<span class="kw">const</span> <span class="field">unsubscribe</span> = sdk.<span class="field">ws</span>.<span class="ty">subscribe</span>([<span class="comment">'ctx-id'</span>], (<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="field">event</span>);<br>
+&#125;);
+</div>
+<p style="margin-top:10px; color: var(--amber);">⚠ WsClient is experimental. The API may change in a future release.</p>
+</div>
+
+<div class="card gd">
+<h2>Multi-context Subscriptions</h2>
+<p style="margin-bottom:12px;">Pass multiple context IDs to subscribe to all of them with a single connection:</p>
+<div class="typedef">
+<span class="kw">const</span> <span class="field">unsub</span> = sdk.<span class="field">events</span>.<span class="ty">subscribe</span>(<br>
+&nbsp;&nbsp;[<span class="comment">'ctx-1'</span>, <span class="comment">'ctx-2'</span>, <span class="comment">'ctx-3'</span>],<br>
+&nbsp;&nbsp;(<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// event.contextId tells you which context fired</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.<span class="ty">log</span>(<span class="field">`Event from ${event.contextId}`</span>);<br>
+&nbsp;&nbsp;&#125;<br>
+);
+</div>
+</div>
+
+<div class="card ge">
+<h2>React Usage</h2>
+<p style="margin-bottom:12px;">If you're using React, use the <span class="code">useSubscription</span> hook from <span class="code">@calimero-network/mero-react</span> instead — it handles lifecycle automatically:</p>
+<div class="typedef">
+<span class="kw">import</span> &#123; <span class="ty">useSubscription</span> &#125; <span class="kw">from</span> <span class="comment">'@calimero-network/mero-react'</span>;<br><br>
+<span class="ty">useSubscription</span>([<span class="field">contextId</span>], (<span class="field">event</span>) =&gt; &#123;<br>
+&nbsp;&nbsp;<span class="comment">// auto-unsubscribes on unmount</span><br>
+&nbsp;&nbsp;<span class="comment">// re-subscribes if contextIds change</span><br>
+&nbsp;&nbsp;handleEvent(<span class="field">event</span>);<br>
+&#125;);
+</div>
+</div>
+
+</div>
+</div>
+<script src="nav.js"></script>
+</body>
+</html>
