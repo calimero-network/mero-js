@@ -483,7 +483,7 @@ describe('AdminApiClient', () => {
         memberCount: 3,
         contextCount: 2,
         defaultCapabilities: 7,
-        defaultVisibility: 'open',
+        subgroupVisibility: 'open',
         alias: 'Lobby',
         activeUpgrade: null,
       };
@@ -491,7 +491,7 @@ describe('AdminApiClient', () => {
       const result = await client.getGroupInfo('g-1');
       expect(result.memberCount).toBe(3);
       expect(result.defaultCapabilities).toBe(7);
-      expect(result.defaultVisibility).toBe('open');
+      expect(result.subgroupVisibility).toBe('open');
     });
 
     it('deleteGroup without requester', async () => {
@@ -574,11 +574,23 @@ describe('AdminApiClient', () => {
       });
     });
 
-    it('setDefaultVisibility sends visibility string', async () => {
-      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/default-visibility', {});
-      await client.setDefaultVisibility('g-1', { defaultVisibility: 'open' });
-      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-visibility')).toEqual({
-        defaultVisibility: 'open',
+    it('setSubgroupVisibility sends visibility string', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility', {});
+      await client.setSubgroupVisibility('g-1', { subgroupVisibility: 'open' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
+        subgroupVisibility: 'open',
+      });
+    });
+
+    it('setSubgroupVisibility forwards requester when provided', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility', {});
+      await client.setSubgroupVisibility('g-1', {
+        subgroupVisibility: 'restricted',
+        requester: 'pk-admin',
+      });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
+        subgroupVisibility: 'restricted',
+        requester: 'pk-admin',
       });
     });
 
