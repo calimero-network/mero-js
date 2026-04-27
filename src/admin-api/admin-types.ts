@@ -370,7 +370,7 @@ export interface GroupInfo {
   contextCount: number;
   activeUpgrade?: GroupUpgradeStatus;
   defaultCapabilities: number;
-  defaultVisibility: string;
+  subgroupVisibility: string;
   alias?: string;
 }
 
@@ -455,13 +455,13 @@ export interface SetDefaultCapabilitiesRequest {
 // Returns empty
 export type SetDefaultCapabilitiesResponseData = Record<string, never>;
 
-export interface SetDefaultVisibilityRequest {
-  defaultVisibility: string;
+export interface SetSubgroupVisibilityRequest {
+  subgroupVisibility: string;
   requester?: string;
 }
 
 // Returns empty
-export type SetDefaultVisibilityResponseData = Record<string, never>;
+export type SetSubgroupVisibilityResponseData = Record<string, never>;
 
 export interface SetTeeAdmissionPolicyRequest {
   allowedMrtd: string[];

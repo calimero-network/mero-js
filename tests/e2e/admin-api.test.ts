@@ -160,7 +160,7 @@ describe('Admin API E2E — Namespace Model', () => {
       expect(typeof info.memberCount).toBe('number');
       expect(typeof info.contextCount).toBe('number');
       expect(typeof info.defaultCapabilities).toBe('number');
-      expect(typeof info.defaultVisibility).toBe('string');
+      expect(typeof info.subgroupVisibility).toBe('string');
       namespaceGroupId = info.groupId;
     });
 
@@ -280,10 +280,10 @@ describe('Admin API E2E — Namespace Model', () => {
   // ---- Group Settings ----
 
   describe('Group Settings', () => {
-    it('should set default visibility', async () => {
-      await mero.admin.setDefaultVisibility(namespaceGroupId, { defaultVisibility: 'open' });
+    it('should set subgroup visibility', async () => {
+      await mero.admin.setSubgroupVisibility(namespaceGroupId, { subgroupVisibility: 'open' });
       const info = await mero.admin.getGroupInfo(namespaceGroupId);
-      expect(info.defaultVisibility).toBe('open');
+      expect(info.subgroupVisibility).toBe('open');
     });
 
     it('should set default capabilities', async () => {

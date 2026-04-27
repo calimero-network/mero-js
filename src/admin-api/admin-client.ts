@@ -66,7 +66,7 @@ import type {
   MemberCapabilities,
   SetMemberCapabilitiesRequest,
   SetDefaultCapabilitiesRequest,
-  SetDefaultVisibilityRequest,
+  SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   UpdateGroupSettingsRequest,
   SetGroupAliasRequest,
@@ -509,11 +509,11 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-capabilities`, request);
   }
 
-  async setDefaultVisibility(
+  async setSubgroupVisibility(
     groupId: string,
-    request: SetDefaultVisibilityRequest,
+    request: SetSubgroupVisibilityRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-visibility`, request);
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/subgroup-visibility`, request);
   }
 
   async setTeeAdmissionPolicy(
