@@ -582,6 +582,18 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('setSubgroupVisibility forwards requester when provided', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility', {});
+      await client.setSubgroupVisibility('g-1', {
+        subgroupVisibility: 'restricted',
+        requester: 'pk-admin',
+      });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
+        subgroupVisibility: 'restricted',
+        requester: 'pk-admin',
+      });
+    });
+
     it('setTeeAdmissionPolicy sends full policy', async () => {
       const policy = {
         allowedMrtd: ['abc'],
