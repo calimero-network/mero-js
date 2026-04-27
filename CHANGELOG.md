@@ -1,3 +1,21 @@
+## 2.0.0 (2026-04-27)
+
+* feat(admin)!: rename DefaultVisibility → SubgroupVisibility to match core (#33) ([ecd2101](https://github.com/calimero-network/mero-js/commit/ecd2101)), closes [#33](https://github.com/calimero-network/mero-js/issues/33) [calimero-network/core#2261](https://github.com/calimero-network/core/issues/2261) [#33](https://github.com/calimero-network/mero-js/issues/33)
+
+
+### BREAKING CHANGE
+
+* setDefaultVisibility, SetDefaultVisibilityRequest,
+SetDefaultVisibilityResponseData, and GroupInfo.defaultVisibility have
+been renamed to setSubgroupVisibility, SetSubgroupVisibilityRequest,
+SetSubgroupVisibilityResponseData, and GroupInfo.subgroupVisibility
+respectively. The HTTP route moved to /settings/subgroup-visibility and
+the request body field is now subgroupVisibility.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+* test(admin): cover SetSubgroupVisibilityRequest.requester forwarding
+
 ## <small>1.4.1 (2026-04-16)</small>
 
 * fix: cleanup cards ([928326c](https://github.com/calimero-network/mero-js/commit/928326c))
