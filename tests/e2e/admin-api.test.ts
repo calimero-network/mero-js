@@ -166,16 +166,16 @@ describe('Admin API E2E — Namespace Model', () => {
 
     it('should list group members', async () => {
       const response = await mero.admin.listGroupMembers(namespaceGroupId);
-      expect(response.data).toBeDefined();
-      expect(response.data.length).toBeGreaterThan(0);
-      expect(response.data[0].identity).toBeTruthy();
-      expect(response.data[0].role).toBeTruthy();
+      expect(response.members).toBeDefined();
+      expect(response.members.length).toBeGreaterThan(0);
+      expect(response.members[0].identity).toBeTruthy();
+      expect(response.members[0].role).toBeTruthy();
       expect(response.selfIdentity).toBeTruthy();
     });
 
     it('should get member capabilities', async () => {
-      const members = await mero.admin.listGroupMembers(namespaceGroupId);
-      const firstMember = members.data[0].identity;
+      const response = await mero.admin.listGroupMembers(namespaceGroupId);
+      const firstMember = response.members[0].identity;
       const caps = await mero.admin.getMemberCapabilities(namespaceGroupId, firstMember);
       expect(typeof caps.capabilities).toBe('number');
     });

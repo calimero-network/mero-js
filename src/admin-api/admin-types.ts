@@ -383,8 +383,15 @@ export interface GroupMember {
 }
 
 export interface ListGroupMembersResponseData {
-  data: GroupMember[];
+  members: GroupMember[];
   selfIdentity?: string;
+  /**
+   * @deprecated The server response uses `members`, not `data`. This alias
+   * is retained so existing callers compile during the upgrade window; it
+   * is never populated by the client and will be removed in the next
+   * major. Switch reads to `response.members`.
+   */
+  data?: GroupMember[];
 }
 
 export interface GroupContextEntry {
