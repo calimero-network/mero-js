@@ -463,16 +463,20 @@ export class AdminApiClient {
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
-    // Defensive default: the type contract is `members: GroupMember[]` (non-
-    // optional) so callers can rely on it. If a future merod build, an empty
-    // group, or any non-conforming proxy response omits the field, surface
-    // an empty array rather than letting `undefined` leak through and
-    // surprise consumers — the original incarnation of this method had
-    // exactly that bug under a different field name (`data`).
-    const raw = await this.httpClient.get<Partial<ListGroupMembersResponseData>>(
+    const response = await this.httpClient.get<ListGroupMembersResponseData>(
       `/admin-api/groups/${groupId}/members`,
     );
-    return { ...raw, members: raw.members ?? [] };
+    // Validate the field we declare as non-optional in the type so a
+    // contract-violating response (proxy error body, future API drift,
+    // etc.) surfaces as a clear error rather than silently producing an
+    // empty list. Empty groups still satisfy this — merod returns
+    // `members: []`, not an omitted field.
+    if (!Array.isArray(response?.members)) {
+      throw new Error(
+        `Invalid listGroupMembers response for group ${groupId}: missing or non-array \`members\` field`,
+      );
+    }
+    return response;
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
