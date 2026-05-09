@@ -517,12 +517,7 @@ describe('AdminApiClient', () => {
       expect(result.selfIdentity).toBe('self-1');
     });
 
-    it('listGroupMembers throws when the server omits the members field', async () => {
-      // Contract violation: the type declares `members: GroupMember[]` as
-      // non-optional, so a response without the field is malformed. Surface
-      // it as an explicit error rather than silently returning an empty
-      // list and burying the diagnostic. Empty groups (members: []) still
-      // pass — that's a valid response, this guards only the missing case.
+    it('listGroupMembers rejects with an explicit error when the response omits members', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
         selfIdentity: 'self-1',
       });
