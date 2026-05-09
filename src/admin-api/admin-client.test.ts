@@ -509,11 +509,11 @@ describe('AdminApiClient', () => {
 
     it('listGroupMembers preserves selfIdentity', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
-        data: [{ identity: 'member-1', role: 'Member' }],
+        members: [{ identity: 'member-1', role: 'Member' }],
         selfIdentity: 'self-1',
       });
       const result = await client.listGroupMembers('g-1');
-      expect(result.data).toHaveLength(1);
+      expect(result.members).toHaveLength(1);
       expect(result.selfIdentity).toBe('self-1');
     });
 

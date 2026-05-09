@@ -383,7 +383,7 @@ export interface GroupMember {
 }
 
 export interface ListGroupMembersResponseData {
-  data: GroupMember[];
+  members: GroupMember[];
   selfIdentity?: string;
 }
 
