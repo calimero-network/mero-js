@@ -463,7 +463,16 @@ export class AdminApiClient {
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
-    return this.httpClient.get<ListGroupMembersResponseData>(`/admin-api/groups/${groupId}/members`);
+    // Defensive default: the type contract is `members: GroupMember[]` (non-
+    // optional) so callers can rely on it. If a future merod build, an empty
+    // group, or any non-conforming proxy response omits the field, surface
+    // an empty array rather than letting `undefined` leak through and
+    // surprise consumers — the original incarnation of this method had
+    // exactly that bug under a different field name (`data`).
+    const raw = await this.httpClient.get<Partial<ListGroupMembersResponseData>>(
+      `/admin-api/groups/${groupId}/members`,
+    );
+    return { ...raw, members: raw.members ?? [] };
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {

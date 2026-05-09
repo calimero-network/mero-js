@@ -517,6 +517,18 @@ describe('AdminApiClient', () => {
       expect(result.selfIdentity).toBe('self-1');
     });
 
+    it('listGroupMembers defaults missing members field to []', async () => {
+      // Server payload without the `members` key (degenerate / future proxy
+      // / empty-group edge case): the client must still surface an array so
+      // the typed contract holds for callers.
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
+        selfIdentity: 'self-1',
+      });
+      const result = await client.listGroupMembers('g-1');
+      expect(result.members).toEqual([]);
+      expect(result.selfIdentity).toBe('self-1');
+    });
+
     it('listGroupContexts unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/contexts', { data: [{ contextId: 'ctx-1', alias: 'Chat' }] });
       const result = await client.listGroupContexts('g-1');
