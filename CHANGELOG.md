@@ -1,3 +1,7 @@
+## <small>2.0.1 (2026-05-09)</small>
+
+* fix(admin): align listGroupMembers response shape with merod (#34) ([29be1b5](https://github.com/calimero-network/mero-js/commit/29be1b5)), closes [#34](https://github.com/calimero-network/mero-js/issues/34)
+
 ## 2.0.0 (2026-04-27)
 
 * feat(admin)!: rename DefaultVisibility → SubgroupVisibility to match core (#33) ([ecd2101](https://github.com/calimero-network/mero-js/commit/ecd2101)), closes [#33](https://github.com/calimero-network/mero-js/issues/33) [calimero-network/core#2261](https://github.com/calimero-network/core/issues/2261) [#33](https://github.com/calimero-network/mero-js/issues/33)
