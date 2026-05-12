@@ -82,7 +82,9 @@ export interface CreateContextRequest {
   contextSeed?: string;
   initializationParams?: number[];
   identitySecret?: string;
-  alias?: string;
+  // Renamed from `alias` in core (`context create --alias` -> `--group-name`)
+  // because `--name` was already the node-local alias flag.
+  groupName?: string;
 }
 
 export interface CreateContextResponseData {
@@ -252,7 +254,7 @@ export interface SignedGroupOpenInvitation {
 export interface RecursiveInvitationEntry {
   groupId: string;
   invitation: SignedGroupOpenInvitation;
-  groupAlias?: string;
+  groupName?: string;
 }
 
 // ---- Namespaces ----
@@ -263,7 +265,7 @@ export interface Namespace {
   targetApplicationId: string;
   upgradePolicy: string;
   createdAt: number;
-  alias?: string;
+  name?: string;
   memberCount: number;
   contextCount: number;
   subgroupCount: number;
@@ -279,7 +281,7 @@ export interface NamespaceIdentity {
 export interface CreateNamespaceRequest {
   applicationId: string;
   upgradePolicy: string;
-  alias?: string;
+  name?: string;
 }
 
 export interface CreateNamespaceResponseData {
@@ -302,7 +304,7 @@ export interface CreateNamespaceInvitationRequest {
 
 export interface CreateNamespaceInvitationResponseData {
   invitation: SignedGroupOpenInvitation;
-  groupAlias?: string;
+  groupName?: string;
 }
 
 export interface CreateRecursiveInvitationResponseData {
@@ -311,7 +313,7 @@ export interface CreateRecursiveInvitationResponseData {
 
 export interface JoinNamespaceRequest {
   invitation: SignedGroupOpenInvitation;
-  groupAlias?: string;
+  groupName?: string;
 }
 
 export interface JoinNamespaceResponseData {
@@ -322,7 +324,7 @@ export interface JoinNamespaceResponseData {
 
 export interface CreateGroupInNamespaceRequest {
   groupId?: string;
-  alias?: string;
+  name?: string;
 }
 
 export interface CreateGroupInNamespaceResponseData {
@@ -331,7 +333,7 @@ export interface CreateGroupInNamespaceResponseData {
 
 export interface SubgroupEntry {
   groupId: string;
-  alias?: string;
+  name?: string;
 }
 
 // ---- Groups ----
@@ -341,7 +343,7 @@ export interface CreateGroupRequest {
   upgradePolicy: string;
   groupId?: string;
   appKey?: string;
-  alias?: string;
+  name?: string;
   parentGroupId?: string;
 }
 
@@ -371,7 +373,11 @@ export interface GroupInfo {
   activeUpgrade?: GroupUpgradeStatus;
   defaultCapabilities: number;
   subgroupVisibility: string;
-  alias?: string;
+  /**
+   * The group's generic metadata record (replaces the old `alias` field).
+   * `null` if no metadata has ever been set for this group.
+   */
+  metadata?: MetadataRecord | null;
 }
 
 export type GroupInfoResponseData = GroupInfo;
@@ -379,7 +385,7 @@ export type GroupInfoResponseData = GroupInfo;
 export interface GroupMember {
   identity: string;
   role: string;
-  alias?: string;
+  name?: string;
 }
 
 export interface ListGroupMembersResponseData {
@@ -396,7 +402,7 @@ export interface ListGroupMembersResponseData {
 
 export interface GroupContextEntry {
   contextId: string;
-  alias?: string;
+  name?: string;
 }
 
 export type ListGroupContextsResponseData = GroupContextEntry[];
@@ -492,21 +498,51 @@ export interface UpdateGroupSettingsRequest {
 // Returns empty
 export type UpdateGroupSettingsResponseData = Record<string, never>;
 
-export interface SetGroupAliasRequest {
-  alias: string;
+// ---- Group / member / context metadata ----
+
+/**
+ * Generic metadata record attached to a group, group member, or
+ * context-registered-in-a-group (core `calimero_primitives::metadata::MetadataRecord`).
+ *
+ * `data` is application-defined and opaque to core — it is stored verbatim.
+ * Server-enforced size limits: `name` <= 64 bytes; at most 64 entries in
+ * `data`; each key <= 64 bytes; each value <= 4096 bytes. Clients do not need
+ * to enforce these — the server validates.
+ */
+export interface MetadataRecord {
+  name: string | null;
+  data: Record<string, string>;
+  updatedAt: number;
+  /** Public key (hex) of the member that last updated the record. */
+  updatedBy: string;
+}
+
+/**
+ * Request body for setting a metadata record. **This wholly replaces the
+ * record**: `data` defaults to `{}` server-side and replaces the stored map,
+ * while omitting `name` keeps the current name. To change `name` while
+ * preserving existing `data`, GET the record first and pass its `data` back.
+ */
+export interface SetMetadataRequest {
+  name?: string;
+  data?: Record<string, string>;
   requester?: string;
 }
 
-// Returns empty
-export type SetGroupAliasResponseData = Record<string, never>;
+export type SetGroupMetadataRequest = SetMetadataRequest;
+export type SetMemberMetadataRequest = SetMetadataRequest;
+export type SetContextMetadataRequest = SetMetadataRequest;
 
-export interface SetMemberAliasRequest {
-  alias: string;
-  requester?: string;
+// Set-metadata returns empty
+export type SetMetadataResponseData = Record<string, never>;
+
+/**
+ * Inner payload of a GET metadata response. `data` is `null` if no metadata
+ * has ever been set for the target group/member/context.
+ */
+export interface GetMetadataResponseData {
+  data: MetadataRecord | null;
 }
-
-// Returns empty
-export type SetMemberAliasResponseData = Record<string, never>;
 
 // ---- Group Sync, Signing & Upgrades ----
 
@@ -588,7 +624,7 @@ export interface CreateGroupInvitationRequest {
 
 export interface CreateGroupInvitationResponseData {
   invitation: SignedGroupOpenInvitation;
-  groupAlias?: string;
+  groupName?: string;
 }
 
 export interface CreateRecursiveGroupInvitationResponseData {
@@ -597,7 +633,7 @@ export interface CreateRecursiveGroupInvitationResponseData {
 
 export interface JoinGroupRequest {
   invitation: SignedGroupOpenInvitation;
-  groupAlias?: string;
+  groupName?: string;
 }
 
 export interface JoinGroupResponseData {
