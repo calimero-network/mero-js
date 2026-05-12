@@ -421,12 +421,12 @@ describe('AdminApiClient', () => {
 
     it('createNamespace sends correct fields', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
-      const result = await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', alias: 'My NS' });
+      const result = await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', name: 'My NS' });
       expect(result).toEqual({ namespaceId: 'ns-1' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
         applicationId: 'app-1',
         upgradePolicy: 'manual',
-        alias: 'My NS',
+        name: 'My NS',
       });
     });
 
@@ -442,9 +442,9 @@ describe('AdminApiClient', () => {
         invitation: { inviterIdentity: [1], groupId: [2], expirationTimestamp: 999, secretSalt: [3], invitedRole: 1 },
         inviterSignature: 'sig-1',
       };
-      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/invite', { data: { invitation, groupAlias: 'NS' } });
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/invite', { data: { invitation, groupName: 'NS' } });
       const result = await client.createNamespaceInvitation('ns-1', { expirationTimestamp: 999 });
-      expect(result).toEqual({ invitation, groupAlias: 'NS' });
+      expect(result).toEqual({ invitation, groupName: 'NS' });
     });
 
     it('joinNamespace sends structured invitation', async () => {
@@ -455,21 +455,21 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
         data: { groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' },
       });
-      const result = await client.joinNamespace('ns-1', { invitation, groupAlias: 'My NS' });
+      const result = await client.joinNamespace('ns-1', { invitation, groupName: 'My NS' });
       expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' });
-      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({ invitation, groupAlias: 'My NS' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({ invitation, groupName: 'My NS' });
     });
 
     it('createGroupInNamespace sends request', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/groups', { data: { groupId: 'g-1' } });
-      const result = await client.createGroupInNamespace('ns-1', { alias: 'Sub' });
+      const result = await client.createGroupInNamespace('ns-1', { name: 'Sub' });
       expect(result).toEqual({ groupId: 'g-1' });
     });
 
     it('listNamespaceGroups unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/groups', { data: [{ groupId: 'g-1', alias: 'Sub' }] });
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/groups', { data: [{ groupId: 'g-1', name: 'Sub' }] });
       const result = await client.listNamespaceGroups('ns-1');
-      expect(result).toEqual([{ groupId: 'g-1', alias: 'Sub' }]);
+      expect(result).toEqual([{ groupId: 'g-1', name: 'Sub' }]);
     });
   });
 
@@ -484,7 +484,7 @@ describe('AdminApiClient', () => {
         contextCount: 2,
         defaultCapabilities: 7,
         subgroupVisibility: 'open',
-        alias: 'Lobby',
+        metadata: null,
         activeUpgrade: null,
       };
       mock.setMockResponse('GET', '/admin-api/groups/g-1', { data: info });
@@ -492,6 +492,38 @@ describe('AdminApiClient', () => {
       expect(result.memberCount).toBe(3);
       expect(result.defaultCapabilities).toBe(7);
       expect(result.subgroupVisibility).toBe('open');
+    });
+
+    it('getDefaultCapabilities returns the bitmask from getGroupInfo', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1', {
+        data: {
+          groupId: 'g-1',
+          appKey: 'key',
+          targetApplicationId: 'app-1',
+          upgradePolicy: 'manual',
+          memberCount: 1,
+          contextCount: 0,
+          defaultCapabilities: 37,
+          subgroupVisibility: 'open',
+        },
+      });
+      expect(await client.getDefaultCapabilities('g-1')).toBe(37);
+    });
+
+    it('getSubgroupVisibility returns the value from getGroupInfo', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1', {
+        data: {
+          groupId: 'g-1',
+          appKey: 'key',
+          targetApplicationId: 'app-1',
+          upgradePolicy: 'manual',
+          memberCount: 1,
+          contextCount: 0,
+          defaultCapabilities: 0,
+          subgroupVisibility: 'open',
+        },
+      });
+      expect(await client.getSubgroupVisibility('g-1')).toBe('open');
     });
 
     it('deleteGroup without requester', async () => {
@@ -633,17 +665,52 @@ describe('AdminApiClient', () => {
       await client.updateGroupSettings('g-1', { upgradePolicy: 'automatic' });
       expect(mock.getRequestBody('PATCH', '/admin-api/groups/g-1')).toEqual({ upgradePolicy: 'automatic' });
     });
+  });
 
-    it('setGroupAlias sends alias', async () => {
-      mock.setMockResponse('PUT', '/admin-api/groups/g-1/alias', {});
-      await client.setGroupAlias('g-1', { alias: 'My Group' });
-      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/alias')).toEqual({ alias: 'My Group' });
+  describe('Group / member / context metadata', () => {
+    const record = { name: 'Reports', data: { color: '#f80' }, updatedAt: 123, updatedBy: 'abc' };
+
+    it('setGroupMetadata sends PUT with the request body', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g1/metadata', {});
+      await client.setGroupMetadata('g1', { name: 'Reports', data: { color: '#f80' } });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g1/metadata')).toEqual({
+        name: 'Reports',
+        data: { color: '#f80' },
+      });
     });
 
-    it('setMemberAlias sends alias', async () => {
-      mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/pk-1/alias', {});
-      await client.setMemberAlias('g-1', 'pk-1', { alias: 'Alice' });
-      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/pk-1/alias')).toEqual({ alias: 'Alice' });
+    it('getGroupMetadata returns the inner MetadataRecord', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: { data: record } });
+      expect(await client.getGroupMetadata('g1')).toEqual(record);
+    });
+
+    it('getGroupMetadata returns null when no metadata has been set', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: { data: null } });
+      expect(await client.getGroupMetadata('g1')).toBeNull();
+    });
+
+    it('setMemberMetadata sends PUT to the member path', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g1/members/pk-1/metadata', {});
+      await client.setMemberMetadata('g1', 'pk-1', { name: 'Alice' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g1/members/pk-1/metadata')).toEqual({ name: 'Alice' });
+    });
+
+    it('getMemberMetadata returns the inner MetadataRecord', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: { data: record } });
+      expect(await client.getMemberMetadata('g1', 'pk-1')).toEqual(record);
+    });
+
+    it('setContextMetadata sends PUT to the context path', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g1/contexts/ctx-1/metadata', {});
+      await client.setContextMetadata('g1', 'ctx-1', { data: { region: 'eu' } });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g1/contexts/ctx-1/metadata')).toEqual({
+        data: { region: 'eu' },
+      });
+    });
+
+    it('getContextMetadata returns the inner MetadataRecord', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: { data: record } });
+      expect(await client.getContextMetadata('g1', 'ctx-1')).toEqual(record);
     });
   });
 
@@ -738,15 +805,15 @@ describe('AdminApiClient', () => {
 
     it('createGroupInvitation returns structured invitation', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/invite', {
-        data: { invitation: mockInvitation, groupAlias: 'Lobby' },
+        data: { invitation: mockInvitation, groupName: 'Lobby' },
       });
       const result = await client.createGroupInvitation('g-1', { expirationTimestamp: 999 });
-      expect(result).toEqual({ invitation: mockInvitation, groupAlias: 'Lobby' });
+      expect(result).toEqual({ invitation: mockInvitation, groupName: 'Lobby' });
     });
 
     it('createGroupInvitation with recursive returns list', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/invite', {
-        data: { invitations: [{ groupId: 'g-1', invitation: mockInvitation, groupAlias: 'Lobby' }] },
+        data: { invitations: [{ groupId: 'g-1', invitation: mockInvitation, groupName: 'Lobby' }] },
       });
       const result = await client.createGroupInvitation('g-1', { recursive: true });
       expect('invitations' in result).toBe(true);
@@ -756,11 +823,11 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/groups/join', {
         data: { groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' },
       });
-      const result = await client.joinGroup({ invitation: mockInvitation, groupAlias: 'Lobby' });
+      const result = await client.joinGroup({ invitation: mockInvitation, groupName: 'Lobby' });
       expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' });
       expect(mock.getRequestBody('POST', '/admin-api/groups/join')).toEqual({
         invitation: mockInvitation,
-        groupAlias: 'Lobby',
+        groupName: 'Lobby',
       });
     });
   });

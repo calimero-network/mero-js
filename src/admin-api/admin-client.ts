@@ -69,8 +69,11 @@ import type {
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   UpdateGroupSettingsRequest,
-  SetGroupAliasRequest,
-  SetMemberAliasRequest,
+  SetGroupMetadataRequest,
+  SetMemberMetadataRequest,
+  SetContextMetadataRequest,
+  MetadataRecord,
+  GetMetadataResponseData,
   SyncGroupRequest,
   SyncGroupResponseData,
   RegisterGroupSigningKeyRequest,
@@ -449,6 +452,16 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: GroupInfoResponseData }>(`/admin-api/groups/${groupId}`));
   }
 
+  /** Thin wrapper over {@link getGroupInfo}: returns the group's `defaultCapabilities` bitmask. */
+  async getDefaultCapabilities(groupId: string): Promise<number> {
+    return (await this.getGroupInfo(groupId)).defaultCapabilities;
+  }
+
+  /** Thin wrapper over {@link getGroupInfo}: returns the group's `subgroupVisibility`. */
+  async getSubgroupVisibility(groupId: string): Promise<string> {
+    return (await this.getGroupInfo(groupId)).subgroupVisibility;
+  }
+
   async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
     if (request) {
       return unwrap(
@@ -547,16 +560,42 @@ export class AdminApiClient {
     await this.httpClient.patch(`/admin-api/groups/${groupId}`, request);
   }
 
-  async setGroupAlias(groupId: string, request: SetGroupAliasRequest): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/alias`, request);
+  // ---- Group / member / context metadata ----
+
+  async setGroupMetadata(groupId: string, request: SetGroupMetadataRequest): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/metadata`, request);
   }
 
-  async setMemberAlias(
+  async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
+    return unwrap(await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/metadata`)).data;
+  }
+
+  async setMemberMetadata(
     groupId: string,
     identity: string,
-    request: SetMemberAliasRequest,
+    request: SetMemberMetadataRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/alias`, request);
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/metadata`, request);
+  }
+
+  async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
+    return unwrap(
+      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/members/${identity}/metadata`),
+    ).data;
+  }
+
+  async setContextMetadata(
+    groupId: string,
+    contextId: string,
+    request: SetContextMetadataRequest,
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`, request);
+  }
+
+  async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
+    return unwrap(
+      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`),
+    ).data;
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {

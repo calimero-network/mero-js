@@ -33,4 +33,7 @@ export type { SseEventData, WsEventData } from './events';
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud';
 
+// Member capability bitmask constants & helpers
+export * from './capabilities';
+
 // Utilities
