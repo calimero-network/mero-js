@@ -1,3 +1,7 @@
+## 2.1.0 (2026-05-12)
+
+* feat: generic metadata records + capability constants (#35) ([d19bb64](https://github.com/calimero-network/mero-js/commit/d19bb64)), closes [#35](https://github.com/calimero-network/mero-js/issues/35) [#2338](https://github.com/calimero-network/mero-js/issues/2338)
+
 ## <small>2.0.1 (2026-05-09)</small>
 
 * fix(admin): align listGroupMembers response shape with merod (#34) ([29be1b5](https://github.com/calimero-network/mero-js/commit/29be1b5)), closes [#34](https://github.com/calimero-network/mero-js/issues/34)
