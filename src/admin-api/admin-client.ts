@@ -567,7 +567,14 @@ export class AdminApiClient {
   }
 
   async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
-    return unwrap(await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/metadata`)).data;
+    // The "no record yet" wire shape varies across server versions:
+    // `{data:{data:null}}`, `{data:null}`, and a bare `null` body have all
+    // been observed. Optional-chain + ?? collapses every flavour to `null`
+    // so callers always see a clean `MetadataRecord | null`.
+    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+      `/admin-api/groups/${groupId}/metadata`,
+    );
+    return response?.data?.data ?? null;
   }
 
   async setMemberMetadata(
@@ -579,9 +586,10 @@ export class AdminApiClient {
   }
 
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
-    return unwrap(
-      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/members/${identity}/metadata`),
-    ).data;
+    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+      `/admin-api/groups/${groupId}/members/${identity}/metadata`,
+    );
+    return response?.data?.data ?? null;
   }
 
   async setContextMetadata(
@@ -593,9 +601,10 @@ export class AdminApiClient {
   }
 
   async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
-    return unwrap(
-      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`),
-    ).data;
+    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+      `/admin-api/groups/${groupId}/contexts/${contextId}/metadata`,
+    );
+    return response?.data?.data ?? null;
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
