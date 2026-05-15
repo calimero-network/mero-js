@@ -1,3 +1,7 @@
+## 2.2.0 (2026-05-15)
+
+* feat(admin): add joinSubgroupInheritance method (#37) ([7479e2c](https://github.com/calimero-network/mero-js/commit/7479e2c)), closes [#37](https://github.com/calimero-network/mero-js/issues/37) [calimero-network/core#2357](https://github.com/calimero-network/core/issues/2357)
+
 ## 2.1.0 (2026-05-12)
 
 * feat: generic metadata records + capability constants (#35) ([d19bb64](https://github.com/calimero-network/mero-js/commit/d19bb64)), closes [#35](https://github.com/calimero-network/mero-js/issues/35) [#2338](https://github.com/calimero-network/mero-js/issues/2338)
