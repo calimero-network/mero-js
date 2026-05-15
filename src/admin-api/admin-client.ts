@@ -20,6 +20,7 @@ import type {
   GenerateContextIdentityResponseData,
   GetContextIdentitiesResponseData,
   JoinContextResponseData,
+  JoinSubgroupInheritanceResponseData,
   ContextGroupResponseData,
   ContextStorageResponseData,
   InviteSpecializedNodeRequest,
@@ -673,6 +674,15 @@ export class AdminApiClient {
   async joinGroup(request: JoinGroupRequest): Promise<JoinGroupResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: JoinGroupResponseData }>('/admin-api/groups/join', request),
+    );
+  }
+
+  async joinSubgroupInheritance(groupId: string): Promise<JoinSubgroupInheritanceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: JoinSubgroupInheritanceResponseData }>(
+        `/admin-api/groups/${groupId}/join-via-inheritance`,
+        {},
+      ),
     );
   }
 

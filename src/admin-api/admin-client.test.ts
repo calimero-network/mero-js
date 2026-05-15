@@ -830,6 +830,23 @@ describe('AdminApiClient', () => {
         groupName: 'Lobby',
       });
     });
+
+    it('joinSubgroupInheritance posts to groups/:id/join-via-inheritance and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/join-via-inheritance', {
+        data: { groupId: 'g-1', memberPublicKey: 'pk-1', wasInherited: true },
+      });
+      const result = await client.joinSubgroupInheritance('g-1');
+      expect(result).toEqual({ groupId: 'g-1', memberPublicKey: 'pk-1', wasInherited: true });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/join-via-inheritance')).toEqual({});
+    });
+
+    it('joinSubgroupInheritance returns wasInherited=false on direct-member no-op', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-2/join-via-inheritance', {
+        data: { groupId: 'g-2', memberPublicKey: 'pk-2', wasInherited: false },
+      });
+      const result = await client.joinSubgroupInheritance('g-2');
+      expect(result.wasInherited).toBe(false);
+    });
   });
 
   describe('TEE', () => {
