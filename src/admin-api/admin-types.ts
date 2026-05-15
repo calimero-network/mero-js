@@ -135,6 +135,17 @@ export interface JoinContextResponseData {
   memberPublicKey: string;
 }
 
+// ---- Open subgroup join via inheritance (POST /groups/:group_id/join-via-inheritance) ----
+
+export interface JoinSubgroupInheritanceResponseData {
+  groupId: string;
+  memberPublicKey: string;
+  // `true` if the call had to publish a `MemberJoinedOpen` op to materialise
+  // inherited membership; `false` if the caller was already a direct member
+  // and the call was a no-op.
+  wasInherited: boolean;
+}
+
 // ---- Context group / storage / sync ----
 
 export type ContextGroupResponseData = string | null;
