@@ -646,7 +646,10 @@ export class AdminApiClient {
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {
-    return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/groups/${groupId}/subgroups`));
+    const response = await this.httpClient.get<{ subgroups?: SubgroupEntry[]; data?: SubgroupEntry[] }>(
+      `/admin-api/groups/${groupId}/subgroups`,
+    );
+    return response.subgroups ?? response.data ?? [];
   }
 
   async detachContextFromGroup(

@@ -784,10 +784,27 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/groups/parent-1/unnest')).toEqual({ childGroupId: 'child-1' });
     });
 
-    it('listSubgroups unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g-1/subgroups', { data: [{ groupId: 'sub-1', alias: 'Sub' }] });
+    it('listSubgroups reads the `subgroups` field (current server shape)', async () => {
+      // merod returns `{ subgroups: [...] }` for this endpoint
+      // (see ListSubgroupsApiResponse in core/crates/server/primitives/src/admin/mod.rs).
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/subgroups', { subgroups: [{ groupId: 'sub-1', name: 'Sub' }] });
       const result = await client.listSubgroups('g-1');
-      expect(result).toEqual([{ groupId: 'sub-1', alias: 'Sub' }]);
+      expect(result).toEqual([{ groupId: 'sub-1', name: 'Sub' }]);
+    });
+
+    it('listSubgroups falls back to `data` if the server normalizes the wrapper', async () => {
+      // Forward-compat: if core ever standardizes this endpoint to the common
+      // `{ data: [...] }` wrapper used by the rest of the admin API, the SDK
+      // keeps working without a coordinated release.
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/subgroups', { data: [{ groupId: 'sub-1', name: 'Sub' }] });
+      const result = await client.listSubgroups('g-1');
+      expect(result).toEqual([{ groupId: 'sub-1', name: 'Sub' }]);
+    });
+
+    it('listSubgroups returns [] when neither wrapper field is present', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/subgroups', {});
+      const result = await client.listSubgroups('g-1');
+      expect(result).toEqual([]);
     });
 
     it('detachContextFromGroup sends request', async () => {
