@@ -1,3 +1,7 @@
+## <small>2.2.1 (2026-05-22)</small>
+
+* fix(admin): listSubgroups reads `subgroups` field from server response (#38) ([8772557](https://github.com/calimero-network/mero-js/commit/8772557)), closes [#38](https://github.com/calimero-network/mero-js/issues/38)
+
 ## 2.2.0 (2026-05-15)
 
 * feat(admin): add joinSubgroupInheritance method (#37) ([7479e2c](https://github.com/calimero-network/mero-js/commit/7479e2c)), closes [#37](https://github.com/calimero-network/mero-js/issues/37) [calimero-network/core#2357](https://github.com/calimero-network/core/issues/2357)
