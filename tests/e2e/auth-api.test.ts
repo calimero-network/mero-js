@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '@calimero-network/mero-js';
+import { ensureMerobox, runMerobox } from '@calimero-network/merobox-js';
 
 // Test configuration
 const AUTH_CONFIG = {
@@ -17,11 +18,13 @@ describe('Auth API E2E Tests', () => {
   beforeAll(async () => {
     console.log('🚀 Starting merobox environment...');
 
-    // Start merobox with auth service
+    // Resolve the merobox binary via @calimero-network/merobox-js so the test
+    // does not depend on a globally-installed merobox on PATH.
     const { spawn } = await import('child_process');
+    const meroboxBin = await ensureMerobox();
 
     console.log('🔧 Starting Calimero node with auth service...');
-    const meroboxProcess = spawn('merobox', ['run', '--auth-service'], {
+    const meroboxProcess = spawn(meroboxBin, ['run', '--auth-service'], {
       stdio: 'pipe',
       cwd: process.cwd(),
     });
@@ -61,39 +64,15 @@ describe('Auth API E2E Tests', () => {
     console.log('🧹 Cleaning up merobox environment...');
 
     try {
-      const { spawn } = await import('child_process');
-
       console.log('🗑️ Running merobox nuke --force...');
-      const nukeProcess = spawn('merobox', ['nuke', '--force'], {
+      await runMerobox(['nuke', '--force'], {
         stdio: 'inherit',
         cwd: process.cwd(),
+        timeout: 90000, // 90 second timeout
       });
-
-      // Wait for nuke to complete with timeout
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          console.warn('⚠️ Merobox cleanup timeout, killing process...');
-          nukeProcess.kill('SIGTERM');
-          resolve(void 0);
-        }, 90000); // 90 second timeout
-
-        nukeProcess.on('close', (code) => {
-          clearTimeout(timeout);
-          if (code === 0) {
-            console.log('✅ Merobox cleanup completed successfully');
-            resolve(void 0);
-          } else {
-            console.warn('⚠️ Merobox cleanup completed with code:', code);
-            resolve(void 0); // Don't fail the test for cleanup issues
-          }
-        });
-        nukeProcess.on('error', (error) => {
-          clearTimeout(timeout);
-          console.warn('⚠️ Merobox cleanup failed:', error);
-          resolve(void 0); // Don't fail the test for cleanup issues
-        });
-      });
+      console.log('✅ Merobox cleanup completed successfully');
     } catch (error) {
+      // Don't fail the test run for cleanup issues (non-zero exit or timeout).
       console.warn('⚠️ Merobox cleanup failed:', error);
     }
 

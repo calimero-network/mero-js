@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@calimero-network/merobox-js':
+        specifier: github:calimero-network/merobox-js#fix/update-to-merobox-0.6.35
+        version: git+https://git@github.com:calimero-network/merobox-js.git#7581adb4bcd3b750626bba0899f080108151ed61
       '@semantic-release/changelog':
         specifier: ^6.0.3
         version: 6.0.3(semantic-release@24.2.9(typescript@4.9.5))
@@ -69,6 +72,12 @@ packages:
   '@babel/helper-validator-identifier@7.28.5':
     resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
     engines: {node: '>=6.9.0'}
+
+  '@calimero-network/merobox-js@git+https://git@github.com:calimero-network/merobox-js.git#7581adb4bcd3b750626bba0899f080108151ed61':
+    resolution: {commit: 7581adb4bcd3b750626bba0899f080108151ed61, repo: git@github.com:calimero-network/merobox-js.git, type: git}
+    version: 0.0.3
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@colors/colors@1.5.0':
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
@@ -2443,6 +2452,8 @@ snapshots:
       picocolors: 1.1.1
 
   '@babel/helper-validator-identifier@7.28.5': {}
+
+  '@calimero-network/merobox-js@git+https://git@github.com:calimero-network/merobox-js.git#7581adb4bcd3b750626bba0899f080108151ed61': {}
 
   '@colors/colors@1.5.0':
     optional: true

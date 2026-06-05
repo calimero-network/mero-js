@@ -16,8 +16,8 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
-  "dependencies": {},
   "devDependencies": {
+    "@calimero-network/merobox-js": "github:calimero-network/merobox-js#fix/update-to-merobox-0.6.35",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/exec": "^7.0.0",
@@ -25,10 +25,10 @@
     "@semantic-release/github": "^9.2.6",
     "@semantic-release/npm": "^12.0.1",
     "@semantic-release/release-notes-generator": "^12.1.0",
-    "conventional-changelog-conventionalcommits": "^7.0.0",
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
+    "conventional-changelog-conventionalcommits": "^7.0.0",
     "esbuild": "^0.25.8",
     "eslint": "^8.57.0",
     "rimraf": "^3.0.0",
@@ -83,6 +83,11 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@calimero-network/merobox-js"
+    ]
   },
   "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
 }
