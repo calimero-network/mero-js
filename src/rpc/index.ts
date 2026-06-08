@@ -1,5 +1,11 @@
 import type { HttpClient } from '../http-client';
 
+/** Result of the owner-driven `migrate_my_entries` convert (counts are u32). */
+export interface MigrateMyEntriesSummary {
+  converted: number;
+  remaining: number;
+}
+
 export interface ExecuteParams {
   contextId: string;
   method: string;
@@ -75,5 +81,20 @@ export class RpcClient {
     }
 
     return response.result as T;
+  }
+
+  /**
+   * One-tap owner-driven convert: re-signs the caller's identity-gated entries
+   * to the current schema. The export converts all of the caller's
+   * below-target entries in a single sweep, so this issues one call and returns
+   * the resulting summary — it does not loop.
+   */
+  async migrateMyEntries(contextId: string): Promise<MigrateMyEntriesSummary> {
+    return this.execute<MigrateMyEntriesSummary>({ contextId, method: 'migrate_my_entries' });
+  }
+
+  /** Read-only count of the caller's entries still below the target schema. */
+  async countMyPending(contextId: string): Promise<number> {
+    return this.execute<number>({ contextId, method: 'count_my_pending' });
   }
 }
