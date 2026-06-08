@@ -3,6 +3,13 @@ export interface SseEventData {
   data: unknown;
 }
 
+/** Parsed `AppVersionChanged` context event (bundle-version flip; skew #2). */
+export interface AppVersionChangedEvent {
+  contextId: string;
+  fromVersion?: string;
+  toVersion?: string;
+}
+
 type SseEventHandler = (event: SseEventData) => void;
 type SseConnectHandler = (sessionId: string) => void;
 type SseErrorHandler = (error: Error) => void;
@@ -57,6 +64,23 @@ export class SseClient {
       const idx = arr.indexOf(handler);
       if (idx !== -1) arr.splice(idx, 1);
     }
+  }
+
+  /**
+   * Typed convenience over the generic `'event'` stream: invokes `handler` only
+   * for `AppVersionChanged` context events, with the payload already parsed.
+   * Returns an unsubscribe closure (so callers need not retain the listener).
+   */
+  onAppVersionChanged(handler: (e: AppVersionChangedEvent) => void): () => void {
+    const listener: SseEventHandler = (ev) => {
+      const d = ev.data as
+        | { type?: string; data?: { fromVersion?: string; toVersion?: string } }
+        | undefined;
+      if (d?.type !== 'AppVersionChanged') return;
+      handler({ contextId: ev.contextId, fromVersion: d.data?.fromVersion, toVersion: d.data?.toVersion });
+    };
+    this.on('event', listener);
+    return () => this.off('event', listener);
   }
 
   private emit(event: 'connect', sessionId: string): void;

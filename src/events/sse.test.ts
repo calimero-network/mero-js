@@ -45,6 +45,42 @@ describe('SseClient', () => {
     });
   });
 
+  describe('onAppVersionChanged', () => {
+    it('fires with parsed payload for AppVersionChanged events', () => {
+      const seen: Array<{ contextId: string; fromVersion?: string; toVersion?: string }> = [];
+      client.onAppVersionChanged((e) => seen.push(e));
+
+      (client as any).emit('event', {
+        contextId: 'ctx1',
+        data: { type: 'AppVersionChanged', data: { fromVersion: '1.0.0', toVersion: '2.0.0' } },
+      });
+
+      expect(seen).toEqual([{ contextId: 'ctx1', fromVersion: '1.0.0', toVersion: '2.0.0' }]);
+    });
+
+    it('ignores events of other types', () => {
+      const handler = vi.fn();
+      client.onAppVersionChanged(handler);
+
+      (client as any).emit('event', { contextId: 'ctx1', data: { type: 'StateMutation', data: {} } });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('returns an unsubscribe handle that stops delivery', () => {
+      const handler = vi.fn();
+      const off = client.onAppVersionChanged(handler);
+      off();
+
+      (client as any).emit('event', {
+        contextId: 'ctx1',
+        data: { type: 'AppVersionChanged', data: { toVersion: '2.0.0' } },
+      });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleMessage', () => {
     it('emits connect on connect message', () => {
       const handler = vi.fn();
