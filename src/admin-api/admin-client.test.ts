@@ -771,6 +771,77 @@ describe('AdminApiClient', () => {
     });
   });
 
+  describe('Migration status', () => {
+    it('getMigrationStatus reads the top-level rollup (no data envelope)', async () => {
+      const body = {
+        targetVersion: 2,
+        expectedMembers: 3,
+        rollup: {
+          migrated: 2,
+          inProgress: 0,
+          unknown: 1,
+          total: 3,
+          allMigrated: false,
+          membersPendingSignature: 1,
+        },
+        members: [
+          {
+            peer: 'aa',
+            report: {
+              schemaVersion: 2,
+              residueAuto: 0,
+              residueIdentity: 0,
+              syncedUpToHlc: 0,
+              reportedAt: 0,
+              authoredRemaining: 0,
+            },
+            state: 'migrated',
+          },
+          {
+            peer: 'bb',
+            report: {
+              schemaVersion: 1,
+              residueAuto: 0,
+              residueIdentity: 0,
+              syncedUpToHlc: 0,
+              reportedAt: 0,
+              authoredRemaining: 2,
+            },
+            state: 'in_progress',
+          },
+          { peer: 'cc', report: null, state: 'unknown' },
+        ],
+      };
+      mock.setMockResponse('GET', '/admin-api/groups/ns1/migration-status', body);
+      const res = await client.getMigrationStatus('ns1');
+      expect(res.rollup.membersPendingSignature).toBe(1);
+      expect(res.members[1].report?.authoredRemaining).toBe(2);
+      expect(res.members[2].report).toBeNull();
+    });
+
+    it('getCascadeStatus unwraps the data array', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/ns1/cascade-status', {
+        data: [
+          {
+            groupId: 'g1',
+            upgrade: {
+              fromVersion: '1.0.0',
+              toVersion: '2.0.0',
+              initiatedAt: 1,
+              initiatedBy: 'x',
+              status: 'completed',
+            },
+            cascadeHlc: 'h1',
+          },
+        ],
+      });
+      const res = await client.getCascadeStatus('ns1');
+      expect(res).toHaveLength(1);
+      expect(res[0].cascadeHlc).toBe('h1');
+      expect(res[0].upgrade.toVersion).toBe('2.0.0');
+    });
+  });
+
   describe('Group Nesting', () => {
     it('nestGroup sends childGroupId', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/parent-1/nest', {});

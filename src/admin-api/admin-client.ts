@@ -82,6 +82,8 @@ import type {
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
+  MigrationStatus,
+  CascadeStatusEntry,
   RetryGroupUpgradeRequest,
   RetryGroupUpgradeResponseData,
   NestGroupRequest,
@@ -622,6 +624,22 @@ export class AdminApiClient {
   async getGroupUpgradeStatus(groupId: string): Promise<GroupUpgradeStatusResponseData> {
     return unwrap(
       await this.httpClient.get<{ data: GroupUpgradeStatusResponseData }>(`/admin-api/groups/${groupId}/upgrade/status`),
+    );
+  }
+
+  /**
+   * The operator-facing "have all peers migrated?" rollup for a namespace.
+   * The handler serializes the payload directly, so there is no `{ data }`
+   * envelope to unwrap here (unlike most admin reads).
+   */
+  async getMigrationStatus(namespaceId: string): Promise<MigrationStatus> {
+    return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${namespaceId}/migration-status`);
+  }
+
+  /** Per-group cascade-migration snapshots for a namespace. */
+  async getCascadeStatus(namespaceId: string): Promise<CascadeStatusEntry[]> {
+    return unwrap(
+      await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${namespaceId}/cascade-status`),
     );
   }
 
