@@ -137,4 +137,36 @@ describe('RpcClient', () => {
       }),
     }));
   });
+
+  it('migrateMyEntries returns the convert summary', async () => {
+    const httpClient = createMockHttpClient({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { output: { converted: 2, remaining: 0 } },
+    });
+
+    const rpc = new RpcClient({ httpClient });
+    const summary = await rpc.migrateMyEntries('ctx-1');
+
+    expect(summary).toEqual({ converted: 2, remaining: 0 });
+    expect(httpClient.post).toHaveBeenCalledWith('/jsonrpc', expect.objectContaining({
+      params: expect.objectContaining({ contextId: 'ctx-1', method: 'migrate_my_entries' }),
+    }));
+  });
+
+  it('countMyPending returns the pending count', async () => {
+    const httpClient = createMockHttpClient({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { output: 3 },
+    });
+
+    const rpc = new RpcClient({ httpClient });
+    const n = await rpc.countMyPending('ctx-1');
+
+    expect(n).toBe(3);
+    expect(httpClient.post).toHaveBeenCalledWith('/jsonrpc', expect.objectContaining({
+      params: expect.objectContaining({ contextId: 'ctx-1', method: 'count_my_pending' }),
+    }));
+  });
 });
