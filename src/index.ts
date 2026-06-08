@@ -28,7 +28,7 @@ export type { ExecuteParams } from './rpc';
 
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from './events';
-export type { SseEventData, WsEventData } from './events';
+export type { SseEventData, WsEventData, AppVersionChangedEvent } from './events';
 
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud';
