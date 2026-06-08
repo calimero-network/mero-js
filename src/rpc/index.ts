@@ -1,5 +1,10 @@
 import type { HttpClient } from '../http-client';
-import type { MigrateMyEntriesSummary } from '../admin-api/admin-types';
+
+/** Result of the owner-driven `migrate_my_entries` convert (counts are u32). */
+export interface MigrateMyEntriesSummary {
+  converted: number;
+  remaining: number;
+}
 
 export interface ExecuteParams {
   contextId: string;

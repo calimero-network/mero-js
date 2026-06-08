@@ -423,13 +423,6 @@ export interface CascadeStatusEntry {
   cascadeHlc?: string;
 }
 
-// ---- Authored-entry convert (migrate_my_entries / count_my_pending) ----
-
-export interface MigrateMyEntriesSummary {
-  converted: number;
-  remaining: number;
-}
-
 export interface GroupInfo {
   groupId: string;
   appKey: string;

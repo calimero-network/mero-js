@@ -633,13 +633,15 @@ export class AdminApiClient {
    * envelope to unwrap here (unlike most admin reads).
    */
   async getMigrationStatus(namespaceId: string): Promise<MigrationStatus> {
-    return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${namespaceId}/migration-status`);
+    const id = encodeURIComponent(namespaceId);
+    return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${id}/migration-status`);
   }
 
   /** Per-group cascade-migration snapshots for a namespace. */
   async getCascadeStatus(namespaceId: string): Promise<CascadeStatusEntry[]> {
+    const id = encodeURIComponent(namespaceId);
     return unwrap(
-      await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${namespaceId}/cascade-status`),
+      await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${id}/cascade-status`),
     );
   }
 

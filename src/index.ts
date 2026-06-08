@@ -24,6 +24,7 @@ export type { TokenStore } from './token-store';
 
 // RPC client
 export { RpcClient, RpcError } from './rpc';
+export type { MigrateMyEntriesSummary } from './rpc';
 export type { ExecuteParams } from './rpc';
 
 // Events (SSE / WebSocket)
