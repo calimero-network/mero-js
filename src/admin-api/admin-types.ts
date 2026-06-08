@@ -108,6 +108,8 @@ export interface Context {
   serviceName?: string;
   rootHash: string;
   dagHeads: number[][];
+  /** Bundle semver of the installed application (skew #2). Absent on older nodes. */
+  applicationVersion?: string;
 }
 
 export interface ContextWithGroup extends Context {
@@ -372,6 +374,60 @@ export interface GroupUpgradeStatus {
   completed?: number;
   failed?: number;
   completedAt?: number;
+}
+
+// ---- Migration status (migration-UX core surfaces) ----
+
+export type MemberMigrationState = 'migrated' | 'in_progress' | 'unknown';
+
+export interface MemberMigrationReport {
+  schemaVersion: number;
+  residueAuto: number;
+  residueIdentity: number;
+  syncedUpToHlc: number;
+  reportedAt: number;
+  /** Member's self-reported pending-authored count (best-effort; skew #1). */
+  authoredRemaining: number;
+}
+
+export interface MemberMigrationStatusEntry {
+  peer: string;
+  /** Freshest reported facts, or `null` when the member's state is `unknown`. */
+  report: MemberMigrationReport | null;
+  state: MemberMigrationState;
+}
+
+export interface MigrationStatusRollup {
+  migrated: number;
+  inProgress: number;
+  unknown: number;
+  total: number;
+  allMigrated: boolean;
+  /** Count of members with authoredRemaining > 0 (owners still to re-sign). */
+  membersPendingSignature: number;
+}
+
+export interface MigrationStatus {
+  targetVersion: number;
+  expectedMembers: number;
+  cohortPinnedAtHlc?: string;
+  rollup: MigrationStatusRollup;
+  members: MemberMigrationStatusEntry[];
+}
+
+// ---- Cascade status ----
+
+export interface CascadeStatusEntry {
+  groupId: string;
+  upgrade: GroupUpgradeStatus;
+  cascadeHlc?: string;
+}
+
+// ---- Authored-entry convert (migrate_my_entries / count_my_pending) ----
+
+export interface MigrateMyEntriesSummary {
+  converted: number;
+  remaining: number;
 }
 
 export interface GroupInfo {
