@@ -1,3 +1,7 @@
+## 2.3.0 (2026-06-08)
+
+* feat: migration-UX SDK surfaces — migration/cascade status, typed SSE, migrateMyEntries (6g, #2539)  ([3b1cc18](https://github.com/calimero-network/mero-js/commit/3b1cc18)), closes [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#42](https://github.com/calimero-network/mero-js/issues/42)
+
 ## <small>2.2.1 (2026-05-22)</small>
 
 * fix(admin): listSubgroups reads `subgroups` field from server response (#38) ([8772557](https://github.com/calimero-network/mero-js/commit/8772557)), closes [#38](https://github.com/calimero-network/mero-js/issues/38)
