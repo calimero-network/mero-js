@@ -82,6 +82,56 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ applicationId: 'app-1' });
     });
 
+    it('installFromRegistry resolves the artifact URL and installs', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe(
+          'https://registry.example.com/api/v2/bundles/com.acme.app/2.0.0',
+        );
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ package: 'com.acme.app', appVersion: '2.0.0' }),
+        } as Response;
+      }) as typeof fetch;
+      try {
+        mock.setMockResponse('POST', '/admin-api/install-application', {
+          data: { applicationId: 'app-9' },
+        });
+        const result = await client.installFromRegistry(
+          'https://registry.example.com',
+          'com.acme.app',
+          '2.0.0',
+        );
+        expect(result.applicationId).toBe('app-9');
+        const body = mock.getRequestBody('POST', '/admin-api/install-application') as {
+          url: string;
+          package?: string;
+          version?: string;
+        };
+        expect(body.url).toBe(
+          'https://registry.example.com/artifacts/com.acme.app/2.0.0/com.acme.app-2.0.0.mpk',
+        );
+        expect(body.package).toBe('com.acme.app');
+        expect(body.version).toBe('2.0.0');
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('installFromRegistry throws on a registry error', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        ({ ok: false, status: 404, json: async () => ({}) }) as Response) as typeof fetch;
+      try {
+        await expect(
+          client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
+        ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
     it('installDevApplication unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-dev-application', { data: { applicationId: 'app-2' } });
       const result = await client.installDevApplication({ path: '/tmp/app.mpk', metadata: [] });

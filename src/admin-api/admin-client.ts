@@ -11,6 +11,7 @@ import type {
   GetLatestVersionResponseData,
   ListPackagesResponseData,
   ListVersionsResponseData,
+  RegistryBundleManifest,
   CreateContextRequest,
   CreateContextResponseData,
   DeleteContextRequest,
@@ -126,6 +127,40 @@ export class AdminApiClient {
 
   async installApplication(request: InstallApplicationRequest): Promise<InstallApplicationResponseData> {
     return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-application', request));
+  }
+
+  /**
+   * Resolve a `package@version` to its registry artifact URL and install it.
+   * Node install is URL-based (no node-side package+version resolution), so this
+   * fetches the bundle manifest from the registry, derives the `.mpk` artifact
+   * URL, then calls {@link installApplication}. `registryUrl` is the registry
+   * origin. This is the discrete "download" step an Updates flow pairs with a
+   * subsequent `upgradeGroup`.
+   */
+  async installFromRegistry(
+    registryUrl: string,
+    packageName: string,
+    version: string,
+  ): Promise<InstallApplicationResponseData> {
+    const base = new URL(registryUrl).origin;
+    const manifestUrl = new URL(
+      `/api/v2/bundles/${packageName}/${version}`,
+      base,
+    ).toString();
+    const resp = await fetch(manifestUrl);
+    if (!resp.ok) {
+      throw new Error(
+        `registry manifest fetch failed (${resp.status}) for ${packageName}@${version}`,
+      );
+    }
+    const bundle = (await resp.json()) as RegistryBundleManifest;
+    const artifactUrl = `${base}/artifacts/${bundle.package}/${bundle.appVersion}/${bundle.package}-${bundle.appVersion}.mpk`;
+    return this.installApplication({
+      url: artifactUrl,
+      package: bundle.package,
+      version: bundle.appVersion,
+      metadata: [],
+    });
   }
 
   async installDevApplication(request: InstallDevApplicationRequest): Promise<InstallApplicationResponseData> {
