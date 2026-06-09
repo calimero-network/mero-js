@@ -73,6 +73,33 @@ export interface ListVersionsResponseData {
   versions: string[];
 }
 
+// ---- Bundle migration metadata ----
+
+/**
+ * Per-service migration descriptor carried in a multi-service bundle manifest,
+ * emitted from the app's `#[app::migrate]` declaration. `toSchemaVersion` is the
+ * CRDT schema version the migrate targets (the engine's gate); `toVersion` is
+ * the user-facing bundle semver an admin matches on; `method` is the migrate
+ * entrypoint.
+ */
+export interface BundleMigration {
+  method: string;
+  toSchemaVersion: number;
+  toVersion?: string;
+}
+
+/**
+ * The subset of a registry bundle manifest that `installFromRegistry` consumes
+ * to resolve an artifact URL. The registry serves it at
+ * `GET {registry}/api/v2/bundles/{package}/{version}`.
+ */
+export interface RegistryBundleManifest {
+  package: string;
+  appVersion: string;
+  /** Present when this bundle's app declares a migration. */
+  migration?: BundleMigration;
+}
+
 // ---- Contexts ----
 
 export interface CreateContextRequest {
@@ -378,7 +405,14 @@ export interface GroupUpgradeStatus {
 
 // ---- Migration status (migration-UX core surfaces) ----
 
-export type MemberMigrationState = 'migrated' | 'in_progress' | 'unknown';
+export type MemberMigrationState =
+  | 'migrated'
+  | 'in_progress'
+  | 'unknown'
+  | 'failed';
+
+/** Why a member's migration did not complete. */
+export type MigrationFailureReason = 'check_aborted' | 'apply_failed';
 
 export interface MemberMigrationReport {
   schemaVersion: number;
@@ -388,6 +422,11 @@ export interface MemberMigrationReport {
   reportedAt: number;
   /** Member's self-reported pending-authored count (best-effort; skew #1). */
   authoredRemaining: number;
+  /**
+   * Set when the member's migrate did not complete (its migration-check
+   * aborted, or the apply errored). Absent otherwise.
+   */
+  migrationFailed?: MigrationFailureReason;
 }
 
 export interface MemberMigrationStatusEntry {
@@ -401,6 +440,8 @@ export interface MigrationStatusRollup {
   migrated: number;
   inProgress: number;
   unknown: number;
+  /** Members whose migrate aborted (migration-check failed or apply errored). */
+  failed: number;
   total: number;
   allMigrated: boolean;
   /** Count of members with authoredRemaining > 0 (owners still to re-sign). */

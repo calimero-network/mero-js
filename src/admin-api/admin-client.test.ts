@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AdminApiClient } from './admin-client';
+import { AdminApiClient, compareSemver } from './admin-client';
 import { HttpClient } from '../http-client';
 
 // Mock HttpClient that stores expected responses and records request bodies
@@ -80,6 +80,88 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/install-application', { data: { applicationId: 'app-1' } });
       const result = await client.installApplication({ url: 'http://...', metadata: [] });
       expect(result).toEqual({ applicationId: 'app-1' });
+    });
+
+    it('installFromRegistry resolves the artifact URL and installs', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        // Manifest is fetched by the CALLER's package@version...
+        expect(String(input)).toBe(
+          'https://registry.example.com/api/v2/bundles/com.acme.app/2.0.0',
+        );
+        // ...but resolves to the registry's canonical appVersion (here it
+        // differs from the arg, so the asserts below prove the manifest value
+        // — not the caller's arg — builds the artifact URL + install request).
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ package: 'com.acme.app', appVersion: '2.0.1' }),
+        } as Response;
+      }) as typeof fetch;
+      try {
+        mock.setMockResponse('POST', '/admin-api/install-application', {
+          data: { applicationId: 'app-9' },
+        });
+        const result = await client.installFromRegistry(
+          'https://registry.example.com',
+          'com.acme.app',
+          '2.0.0',
+        );
+        expect(result.applicationId).toBe('app-9');
+        const body = mock.getRequestBody('POST', '/admin-api/install-application') as {
+          url: string;
+          package?: string;
+          version?: string;
+        };
+        expect(body.url).toBe(
+          'https://registry.example.com/artifacts/com.acme.app/2.0.1/com.acme.app-2.0.1.mpk',
+        );
+        expect(body.package).toBe('com.acme.app');
+        expect(body.version).toBe('2.0.1');
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('installFromRegistry throws on a registry error', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        ({ ok: false, status: 404, json: async () => ({}) }) as Response) as typeof fetch;
+      try {
+        await expect(
+          client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
+        ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions returns versions newest-first by semver', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe(
+          'https://registry.example.com/api/v2/bundles?package=com.acme.app',
+        );
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { package: 'com.acme.app', appVersion: '1.9.0' },
+            { package: 'com.acme.app', appVersion: '1.10.0' },
+            { package: 'com.acme.app', appVersion: '1.2.0' },
+          ],
+        } as Response;
+      }) as typeof fetch;
+      try {
+        const versions = await client.getRegistryVersions(
+          'https://registry.example.com',
+          'com.acme.app',
+        );
+        // 1.10.0 must sort ABOVE 1.9.0 — numeric, not lexical.
+        expect(versions).toEqual(['1.10.0', '1.9.0', '1.2.0']);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
     });
 
     it('installDevApplication unwraps data', async () => {
@@ -989,5 +1071,18 @@ describe('AdminApiClient', () => {
       const result = await client.getPeersCount();
       expect(result).toEqual({ count: 3 });
     });
+  });
+});
+
+describe('compareSemver', () => {
+  it('orders numerically, not lexically', () => {
+    expect(compareSemver('1.10.0', '1.9.0')).toBeGreaterThan(0);
+    expect(compareSemver('2.0.0', '1.9.9')).toBeGreaterThan(0);
+    expect(compareSemver('1.9.0', '1.10.0')).toBeLessThan(0);
+  });
+
+  it('treats equal and zero-padded versions as equal', () => {
+    expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
+    expect(compareSemver('1.2', '1.2.0')).toBe(0);
   });
 });
