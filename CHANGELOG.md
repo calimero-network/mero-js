@@ -1,3 +1,7 @@
+## <small>2.4.1 (2026-06-09)</small>
+
+* fix(admin): tolerate null metadata payload in metadata getters (#45) ([4491675](https://github.com/calimero-network/mero-js/commit/4491675)), closes [#45](https://github.com/calimero-network/mero-js/issues/45)
+
 ## 2.4.0 (2026-06-09)
 
 * feat(admin): failed migration state + BundleMigration type + installFromRegistry (#2539) (#44) ([e72a3a5](https://github.com/calimero-network/mero-js/commit/e72a3a5)), closes [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#44](https://github.com/calimero-network/mero-js/issues/44) [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#2539](https://github.com/calimero-network/mero-js/issues/2539)
