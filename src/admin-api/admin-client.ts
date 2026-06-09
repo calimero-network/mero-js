@@ -110,6 +110,31 @@ function unwrap<T>(response: { data: T }): T {
   return response.data;
 }
 
+/**
+ * Compare two dotted version strings, ascending: negative if `a < b`, positive
+ * if `a > b`, `0` if equal. Components are compared numerically when both parse
+ * as integers (so `1.10.0 > 1.9.0`), else lexically; a missing component is `0`.
+ * Minimal by design — sufficient for the `major.minor.patch` registry versions.
+ */
+export function compareSemver(a: string, b: string): number {
+  const pa = a.split('.');
+  const pb = b.split('.');
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i++) {
+    const sa = pa[i] ?? '0';
+    const sb = pb[i] ?? '0';
+    const na = Number.parseInt(sa, 10);
+    const nb = Number.parseInt(sb, 10);
+    if (Number.isNaN(na) || Number.isNaN(nb)) {
+      const c = sa.localeCompare(sb);
+      if (c !== 0) return c;
+    } else if (na !== nb) {
+      return na - nb;
+    }
+  }
+  return 0;
+}
+
 export class AdminApiClient {
   constructor(private httpClient: HttpClient) {}
 
@@ -144,7 +169,7 @@ export class AdminApiClient {
   ): Promise<InstallApplicationResponseData> {
     const base = new URL(registryUrl).origin;
     const manifestUrl = new URL(
-      `/api/v2/bundles/${packageName}/${version}`,
+      `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
       base,
     ).toString();
     const resp = await fetch(manifestUrl);
@@ -154,13 +179,42 @@ export class AdminApiClient {
       );
     }
     const bundle = (await resp.json()) as RegistryBundleManifest;
-    const artifactUrl = `${base}/artifacts/${bundle.package}/${bundle.appVersion}/${bundle.package}-${bundle.appVersion}.mpk`;
+    // Encode the path segments — the package/version come from a (best-effort
+    // trusted) registry response, so guard against odd characters breaking or
+    // traversing the artifact path. For normal ids/semvers this is a no-op.
+    const pkg = encodeURIComponent(bundle.package);
+    const ver = encodeURIComponent(bundle.appVersion);
+    const artifactUrl = `${base}/artifacts/${pkg}/${ver}/${pkg}-${ver}.mpk`;
     return this.installApplication({
       url: artifactUrl,
       package: bundle.package,
       version: bundle.appVersion,
       metadata: [],
     });
+  }
+
+  /**
+   * List a package's published versions from the registry, newest-first by
+   * semver. Reads the registry's V2 bundle listing
+   * (`GET {registry}/api/v2/bundles?package={package}`), taking each bundle's
+   * `appVersion`. Registry-side data — distinct from the node's
+   * installed-version list — and the source an Updates view compares against
+   * the running `Context.applicationVersion` to detect "a new version exists".
+   */
+  async getRegistryVersions(registryUrl: string, packageName: string): Promise<string[]> {
+    const url = new URL('/api/v2/bundles', new URL(registryUrl).origin);
+    url.searchParams.set('package', packageName);
+    const resp = await fetch(url.toString());
+    if (!resp.ok) {
+      throw new Error(
+        `registry versions fetch failed (${resp.status}) for ${packageName}`,
+      );
+    }
+    const bundles = (await resp.json()) as RegistryBundleManifest[];
+    return (Array.isArray(bundles) ? bundles : [])
+      .map((b) => b.appVersion)
+      .filter((v): v is string => typeof v === 'string')
+      .sort((a, b) => compareSemver(b, a));
   }
 
   async installDevApplication(request: InstallDevApplicationRequest): Promise<InstallApplicationResponseData> {
