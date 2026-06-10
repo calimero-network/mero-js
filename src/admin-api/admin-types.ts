@@ -671,6 +671,11 @@ export interface UpgradeGroupRequest {
   targetApplicationId: string;
   requester?: string;
   migrateMethod?: string;
+  /** Fan the upgrade out to every descendant subgroup running the same app
+   *  (one atomic cascade op). Without it the upgrade applies to the target
+   *  group only — members' subgroups never learn the migration. Server
+   *  default: false. */
+  cascade?: boolean;
 }
 
 export interface UpgradeGroupResponseData {
