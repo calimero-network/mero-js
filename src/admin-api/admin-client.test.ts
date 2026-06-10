@@ -771,6 +771,14 @@ describe('AdminApiClient', () => {
       expect(await client.getGroupMetadata('g1')).toBeNull();
     });
 
+    // Server omits the inner envelope entirely (`{ data: null }`) when no
+    // metadata row exists — the unwrapped payload is then null, so reading
+    // `.data` off it used to throw "Cannot read properties of null".
+    it('getGroupMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: null });
+      expect(await client.getGroupMetadata('g1')).toBeNull();
+    });
+
     it('setMemberMetadata sends PUT to the member path', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g1/members/pk-1/metadata', {});
       await client.setMemberMetadata('g1', 'pk-1', { name: 'Alice' });
@@ -780,6 +788,13 @@ describe('AdminApiClient', () => {
     it('getMemberMetadata returns the inner MetadataRecord', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: { data: record } });
       expect(await client.getMemberMetadata('g1', 'pk-1')).toEqual(record);
+    });
+
+    // The display-name lookup that surfaced the crash: a member with no name
+    // set yields `{ data: null }`, which must read back as null, not throw.
+    it('getMemberMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: null });
+      expect(await client.getMemberMetadata('g1', 'pk-1')).toBeNull();
     });
 
     it('setContextMetadata sends PUT to the context path', async () => {
@@ -793,6 +808,11 @@ describe('AdminApiClient', () => {
     it('getContextMetadata returns the inner MetadataRecord', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: { data: record } });
       expect(await client.getContextMetadata('g1', 'ctx-1')).toEqual(record);
+    });
+
+    it('getContextMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: null });
+      expect(await client.getContextMetadata('g1', 'ctx-1')).toBeNull();
     });
   });
 

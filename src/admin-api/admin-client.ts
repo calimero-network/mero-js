@@ -659,7 +659,10 @@ export class AdminApiClient {
   }
 
   async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
-    return unwrap(await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/metadata`)).data;
+    // Server sends `{ data: null }` when no metadata is set, so the unwrapped
+    // payload can be null — guard the trailing `.data` (else it throws
+    // "Cannot read properties of null (reading 'data')").
+    return unwrap(await this.httpClient.get<{ data: GetMetadataResponseData | null }>(`/admin-api/groups/${groupId}/metadata`))?.data ?? null;
   }
 
   async setMemberMetadata(
@@ -671,9 +674,11 @@ export class AdminApiClient {
   }
 
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
+    // `{ data: null }` when no metadata (e.g. no display name set) → the
+    // unwrapped payload is null; guard the trailing `.data`.
     return unwrap(
-      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/members/${identity}/metadata`),
-    ).data;
+      await this.httpClient.get<{ data: GetMetadataResponseData | null }>(`/admin-api/groups/${groupId}/members/${identity}/metadata`),
+    )?.data ?? null;
   }
 
   async setContextMetadata(
@@ -685,9 +690,11 @@ export class AdminApiClient {
   }
 
   async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
+    // `{ data: null }` when no metadata → the unwrapped payload is null; guard
+    // the trailing `.data`.
     return unwrap(
-      await this.httpClient.get<{ data: GetMetadataResponseData }>(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`),
-    ).data;
+      await this.httpClient.get<{ data: GetMetadataResponseData | null }>(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`),
+    )?.data ?? null;
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
