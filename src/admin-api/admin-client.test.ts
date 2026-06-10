@@ -849,6 +849,22 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('upgradeGroup forwards cascade so the upgrade fans out to subgroups', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+      });
+      await client.upgradeGroup('g-1', {
+        targetApplicationId: 'app-2',
+        migrateMethod: 'migrate_v2',
+        cascade: true,
+      });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        migrateMethod: 'migrate_v2',
+        cascade: true,
+      });
+    });
+
     it('getGroupUpgradeStatus returns status', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', {
         data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', total: 3, completed: 3, failed: 0, completedAt: 456 },
