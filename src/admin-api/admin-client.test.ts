@@ -189,6 +189,16 @@ describe('AdminApiClient', () => {
       const result = await client.getApplication('app-1');
       expect(result).toEqual({ application: { id: 'app-1' } });
     });
+
+    it('listApplicationVersions unwraps the installed-blob inventory', async () => {
+      const entries = [
+        { version: '1.0.0', blobId: 'blob-1', size: 100, package: 'pkg-a' },
+        { version: '2.0.0', blobId: 'blob-2', size: 200, package: 'pkg-a' },
+      ];
+      mock.setMockResponse('GET', '/admin-api/applications/app-1/versions', { data: entries });
+      const result = await client.listApplicationVersions('app-1');
+      expect(result).toEqual(entries);
+    });
   });
 
   describe('Package Management', () => {
@@ -331,6 +341,24 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/')).toEqual({});
     });
 
+    it('resyncContext posts force and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
+        data: { contextId: 'ctx-1', resyncStarted: true },
+      });
+      const result = await client.resyncContext('ctx-1', { force: true });
+      expect(result).toEqual({ contextId: 'ctx-1', resyncStarted: true });
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/resync')).toEqual({ force: true });
+    });
+
+    it('resyncContext defaults to an empty request body', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
+        data: { contextId: 'ctx-1', resyncStarted: false },
+      });
+      const result = await client.resyncContext('ctx-1');
+      expect(result.resyncStarted).toBe(false);
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/resync')).toEqual({});
+    });
+
     it('getContextsWithExecutorsForApplication unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/contexts/with-executors/for-application/app-1', {
         data: [{ contextId: 'ctx-1', executors: ['exec-1'] }],
@@ -364,12 +392,10 @@ describe('AdminApiClient', () => {
       await client.updateContextApplication('ctx-1', {
         applicationId: 'app-2',
         executorPublicKey: 'pk-1',
-        migrateMethod: 'migrate_v2',
       });
       expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/application')).toEqual({
         applicationId: 'app-2',
         executorPublicKey: 'pk-1',
-        migrateMethod: 'migrate_v2',
       });
     });
   });
@@ -511,6 +537,16 @@ describe('AdminApiClient', () => {
         applicationId: 'app-1',
         upgradePolicy: 'manual',
         name: 'My NS',
+      });
+    });
+
+    it('createNamespace forwards the appKey version pin', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
+      await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', appKey: 'deadbeef' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        applicationId: 'app-1',
+        upgradePolicy: 'manual',
+        appKey: 'deadbeef',
       });
     });
 
@@ -852,18 +888,16 @@ describe('AdminApiClient', () => {
   });
 
   describe('Group Upgrade', () => {
-    it('upgradeGroup sends request with migrateMethod', async () => {
+    it('upgradeGroup sends request and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
         data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
       });
       const result = await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
       });
       expect(result.status).toBe('in_progress');
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
       });
     });
 
@@ -873,12 +907,10 @@ describe('AdminApiClient', () => {
       });
       await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
         cascade: true,
       });
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
         cascade: true,
       });
     });

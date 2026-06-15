@@ -58,6 +58,18 @@ export interface GetApplicationResponseData {
   application: Application | null;
 }
 
+/** One installed blob for an application (distinct from the package registry). */
+export interface ApplicationVersionEntry {
+  version: string;
+  blobId: string;
+  size: number;
+  package: string;
+}
+
+export interface ListApplicationVersionsResponseData {
+  data: ApplicationVersionEntry[];
+}
+
 // ---- Packages ----
 
 export interface GetLatestVersionResponseData {
@@ -202,11 +214,22 @@ export interface InviteSpecializedNodeResponseData {
 export interface UpdateContextApplicationRequest {
   applicationId: string;
   executorPublicKey: string;
-  migrateMethod?: string;
 }
 
 // Update context application returns empty
 export type UpdateContextApplicationResponseData = Record<string, never>;
+
+// ---- Resync Context ----
+
+export interface ResyncContextRequest {
+  /** Force a full re-pull even if the context is not detected as stranded. */
+  force?: boolean;
+}
+
+export interface ResyncContextResponseData {
+  contextId: string;
+  resyncStarted: boolean;
+}
 
 // ---- Contexts With Executors ----
 
@@ -322,6 +345,8 @@ export interface CreateNamespaceRequest {
   applicationId: string;
   upgradePolicy: string;
   name?: string;
+  /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
+  appKey?: string;
 }
 
 export interface CreateNamespaceResponseData {
@@ -670,7 +695,6 @@ export interface RegisterGroupSigningKeyResponseData {
 export interface UpgradeGroupRequest {
   targetApplicationId: string;
   requester?: string;
-  migrateMethod?: string;
   /** Fan the upgrade out to every descendant subgroup running the same app
    *  (one atomic cascade op). Without it the upgrade applies to the target
    *  group only — members' subgroups never learn the migration. Server

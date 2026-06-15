@@ -8,6 +8,7 @@ import type {
   UninstallApplicationResponseData,
   ListApplicationsResponseData,
   GetApplicationResponseData,
+  ApplicationVersionEntry,
   GetLatestVersionResponseData,
   ListPackagesResponseData,
   ListVersionsResponseData,
@@ -27,6 +28,8 @@ import type {
   InviteSpecializedNodeRequest,
   InviteSpecializedNodeResponseData,
   UpdateContextApplicationRequest,
+  ResyncContextRequest,
+  ResyncContextResponseData,
   ContextsWithExecutorsResponseData,
   UploadBlobRequest,
   UploadBlobResponseData,
@@ -233,6 +236,17 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: GetApplicationResponseData }>(`/admin-api/applications/${appId}`));
   }
 
+  /**
+   * Installed-blob inventory for an application — one entry per locally installed
+   * version. This is the *installed* inventory (source for a "pick a version to
+   * pin" UI); the registry equivalent is `listPackageVersions`.
+   */
+  async listApplicationVersions(applicationId: string): Promise<ApplicationVersionEntry[]> {
+    return unwrap(
+      await this.httpClient.get<{ data: ApplicationVersionEntry[] }>(`/admin-api/applications/${applicationId}/versions`),
+    );
+  }
+
   // ---- Package Management ----
 
   async listPackages(): Promise<ListPackagesResponseData> {
@@ -318,6 +332,23 @@ export class AdminApiClient {
 
   async syncContext(contextId?: string): Promise<void> {
     await this.httpClient.post(`/admin-api/contexts/sync/${contextId ?? ''}`, {});
+  }
+
+  /**
+   * Kick off a full state re-pull for a context (operator recovery for a
+   * stranded context). `force` re-pulls even when the node does not flag the
+   * context as stranded.
+   */
+  async resyncContext(
+    contextId: string,
+    request: ResyncContextRequest = {},
+  ): Promise<ResyncContextResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: ResyncContextResponseData }>(
+        `/admin-api/contexts/${contextId}/resync`,
+        request,
+      ),
+    );
   }
 
   async inviteSpecializedNode(request: InviteSpecializedNodeRequest): Promise<InviteSpecializedNodeResponseData> {
