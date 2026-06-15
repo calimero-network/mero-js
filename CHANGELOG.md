@@ -1,3 +1,16 @@
+## 3.0.0 (2026-06-15)
+
+* feat(admin)!: align admin SDK with migrations-v2 core API (#49) ([1766888](https://github.com/calimero-network/mero-js/commit/1766888)), closes [#49](https://github.com/calimero-network/mero-js/issues/49)
+
+
+### BREAKING CHANGE
+
+* `migrateMethod` is removed from `UpdateContextApplicationRequest`
+and `UpgradeGroupRequest`. Callers must stop passing it; the node derives the
+migrate method from the bundle ABI.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 ## <small>2.5.1 (2026-06-10)</small>
 
 * fix(admin): tolerate a bare-null body in the metadata getters (#47) ([8ef7cfc](https://github.com/calimero-network/mero-js/commit/8ef7cfc)), closes [#47](https://github.com/calimero-network/mero-js/issues/47) [#36](https://github.com/calimero-network/mero-js/issues/36) [#45](https://github.com/calimero-network/mero-js/issues/45)
