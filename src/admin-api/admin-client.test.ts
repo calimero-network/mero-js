@@ -17,11 +17,13 @@ class MockHttpClient implements HttpClient {
 
   private getResponse(method: string, path: string): unknown {
     const key = `${method} ${path}`;
-    const response = this.mockResponses.get(key);
-    if (!response) {
+    // .has(...) rather than truthiness so an explicitly-mocked `null` body
+    // (the "no metadata record" wire shape) is "set to null", not
+    // "never registered".
+    if (!this.mockResponses.has(key)) {
       throw new Error(`No mock response for ${key}`);
     }
-    return response;
+    return this.mockResponses.get(key);
   }
 
   async get<T>(path: string): Promise<T> { return this.getResponse('GET', path) as T; }
@@ -815,6 +817,12 @@ describe('AdminApiClient', () => {
       expect(await client.getGroupMetadata('g1')).toBeNull();
     });
 
+    // Third observed "no record" shape: a bare `null` body, no envelope at all.
+    it('getGroupMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', null);
+      expect(await client.getGroupMetadata('g1')).toBeNull();
+    });
+
     it('setMemberMetadata sends PUT to the member path', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g1/members/pk-1/metadata', {});
       await client.setMemberMetadata('g1', 'pk-1', { name: 'Alice' });
@@ -833,6 +841,11 @@ describe('AdminApiClient', () => {
       expect(await client.getMemberMetadata('g1', 'pk-1')).toBeNull();
     });
 
+    it('getMemberMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', null);
+      expect(await client.getMemberMetadata('g1', 'pk-1')).toBeNull();
+    });
+
     it('setContextMetadata sends PUT to the context path', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g1/contexts/ctx-1/metadata', {});
       await client.setContextMetadata('g1', 'ctx-1', { data: { region: 'eu' } });
@@ -848,6 +861,11 @@ describe('AdminApiClient', () => {
 
     it('getContextMetadata returns null (not throws) when the payload itself is null', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: null });
+      expect(await client.getContextMetadata('g1', 'ctx-1')).toBeNull();
+    });
+
+    it('getContextMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', null);
       expect(await client.getContextMetadata('g1', 'ctx-1')).toBeNull();
     });
   });

@@ -1,3 +1,7 @@
+## <small>2.5.1 (2026-06-10)</small>
+
+* fix(admin): tolerate a bare-null body in the metadata getters (#47) ([8ef7cfc](https://github.com/calimero-network/mero-js/commit/8ef7cfc)), closes [#47](https://github.com/calimero-network/mero-js/issues/47) [#36](https://github.com/calimero-network/mero-js/issues/36) [#45](https://github.com/calimero-network/mero-js/issues/45)
+
 ## 2.5.0 (2026-06-10)
 
 * feat(admin): cascade flag on UpgradeGroupRequest (#46) ([86c9fa6](https://github.com/calimero-network/mero-js/commit/86c9fa6)), closes [#46](https://github.com/calimero-network/mero-js/issues/46)
