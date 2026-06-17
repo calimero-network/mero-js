@@ -341,9 +341,11 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/')).toEqual({});
     });
 
-    it('resyncContext posts force and unwraps data', async () => {
+    it('resyncContext posts force and parses the flat (un-enveloped) payload', async () => {
+      // Core's ResyncContextApiResponse is flat — no `data` envelope.
       mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
-        data: { contextId: 'ctx-1', resyncStarted: true },
+        contextId: 'ctx-1',
+        resyncStarted: true,
       });
       const result = await client.resyncContext('ctx-1', { force: true });
       expect(result).toEqual({ contextId: 'ctx-1', resyncStarted: true });
@@ -352,7 +354,8 @@ describe('AdminApiClient', () => {
 
     it('resyncContext defaults to an empty request body', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
-        data: { contextId: 'ctx-1', resyncStarted: false },
+        contextId: 'ctx-1',
+        resyncStarted: false,
       });
       const result = await client.resyncContext('ctx-1');
       expect(result.resyncStarted).toBe(false);
@@ -407,8 +410,9 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ blobId: 'blob-1', size: 3 });
     });
 
-    it('deleteBlob unwraps data', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/blobs/blob-1', { data: { blobId: 'blob-1', deleted: true } });
+    it('deleteBlob parses the flat snake_case payload and maps to camelCase', async () => {
+      // Core's BlobDeleteResponse is flat AND snake_case (`{ blob_id, deleted }`).
+      mock.setMockResponse('DELETE', '/admin-api/blobs/blob-1', { blob_id: 'blob-1', deleted: true });
       const result = await client.deleteBlob('blob-1');
       expect(result).toEqual({ blobId: 'blob-1', deleted: true });
     });

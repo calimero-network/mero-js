@@ -343,11 +343,12 @@ export class AdminApiClient {
     contextId: string,
     request: ResyncContextRequest = {},
   ): Promise<ResyncContextResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: ResyncContextResponseData }>(
-        `/admin-api/contexts/${contextId}/resync`,
-        request,
-      ),
+    // Core's `ResyncContextApiResponse` is a flat payload (no inner `data`
+    // field), so parse the body directly — do NOT `unwrap`, or `resyncStarted`
+    // reads as undefined and the resync silently appears to never start.
+    return this.httpClient.post<ResyncContextResponseData>(
+      `/admin-api/contexts/${contextId}/resync`,
+      request,
     );
   }
 
@@ -382,7 +383,13 @@ export class AdminApiClient {
   }
 
   async deleteBlob(blobId: string): Promise<DeleteBlobResponseData> {
-    return unwrap(await this.httpClient.delete<{ data: DeleteBlobResponseData }>(`/admin-api/blobs/${blobId}`));
+    // Core's `BlobDeleteResponse` is a flat, snake_case payload (`{ blob_id,
+    // deleted }`) — the lone admin DTO without a camelCase rename and without an
+    // inner `data` field. Parse directly (no `unwrap`) and map to camelCase.
+    const body = await this.httpClient.delete<{ blob_id: string; deleted: boolean }>(
+      `/admin-api/blobs/${blobId}`,
+    );
+    return { blobId: body.blob_id, deleted: body.deleted };
   }
 
   async listBlobs(): Promise<ListBlobsResponseData> {

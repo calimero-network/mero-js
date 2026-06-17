@@ -437,7 +437,10 @@ export type MemberMigrationState =
   | 'failed';
 
 /** Why a member's migration did not complete. */
-export type MigrationFailureReason = 'check_aborted' | 'apply_failed';
+export type MigrationFailureReason =
+  | 'check_aborted'
+  | 'apply_failed'
+  | 'no_migration_path';
 
 export interface MemberMigrationReport {
   schemaVersion: number;
