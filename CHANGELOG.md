@@ -1,3 +1,7 @@
+## <small>3.0.1 (2026-06-17)</small>
+
+* fix(admin): correct migrations-v2 response envelopes + AppVersionChanged event (#50) ([1038bb2](https://github.com/calimero-network/mero-js/commit/1038bb2)), closes [#50](https://github.com/calimero-network/mero-js/issues/50) [calimero-network/core#2773](https://github.com/calimero-network/core/issues/2773)
+
 ## 3.0.0 (2026-06-15)
 
 * feat(admin)!: align admin SDK with migrations-v2 core API (#49) ([1766888](https://github.com/calimero-network/mero-js/commit/1766888)), closes [#49](https://github.com/calimero-network/mero-js/issues/49)
