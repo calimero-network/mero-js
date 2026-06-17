@@ -46,14 +46,18 @@ describe('SseClient', () => {
   });
 
   describe('onAppVersionChanged', () => {
+    // Core serializes context events with `type` as a SIBLING of `data` (the
+    // tag is flattened): `result: { contextId, type, data }`. Drive the tests
+    // through handleMessage with that real wire shape rather than hand-crafting
+    // the emitted event, so they exercise the full parse path.
+    const appVersionMsg = (contextId: string, data: Record<string, unknown>) =>
+      JSON.stringify({ result: { contextId, type: 'AppVersionChanged', data } });
+
     it('fires with parsed payload for AppVersionChanged events', () => {
       const seen: Array<{ contextId: string; fromVersion?: string; toVersion?: string }> = [];
       client.onAppVersionChanged((e) => seen.push(e));
 
-      (client as any).emit('event', {
-        contextId: 'ctx1',
-        data: { type: 'AppVersionChanged', data: { fromVersion: '1.0.0', toVersion: '2.0.0' } },
-      });
+      (client as any).handleMessage(appVersionMsg('ctx1', { fromVersion: '1.0.0', toVersion: '2.0.0' }));
 
       expect(seen).toEqual([{ contextId: 'ctx1', fromVersion: '1.0.0', toVersion: '2.0.0' }]);
     });
@@ -62,7 +66,9 @@ describe('SseClient', () => {
       const handler = vi.fn();
       client.onAppVersionChanged(handler);
 
-      (client as any).emit('event', { contextId: 'ctx1', data: { type: 'StateMutation', data: {} } });
+      (client as any).handleMessage(
+        JSON.stringify({ result: { contextId: 'ctx1', type: 'StateMutation', data: {} } }),
+      );
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -72,10 +78,7 @@ describe('SseClient', () => {
       const off = client.onAppVersionChanged(handler);
       off();
 
-      (client as any).emit('event', {
-        contextId: 'ctx1',
-        data: { type: 'AppVersionChanged', data: { toVersion: '2.0.0' } },
-      });
+      (client as any).handleMessage(appVersionMsg('ctx1', { toVersion: '2.0.0' }));
 
       expect(handler).not.toHaveBeenCalled();
     });

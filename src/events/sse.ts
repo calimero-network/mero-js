@@ -1,5 +1,8 @@
 export interface SseEventData {
   contextId: string;
+  /** The context-event discriminator (core serializes it as a sibling of
+   * `data`, e.g. `"AppVersionChanged"`). Undefined for events without a tag. */
+  type?: string;
   data: unknown;
 }
 
@@ -73,11 +76,11 @@ export class SseClient {
    */
   onAppVersionChanged(handler: (e: AppVersionChangedEvent) => void): () => void {
     const listener: SseEventHandler = (ev) => {
-      const d = ev.data as
-        | { type?: string; data?: { fromVersion?: string; toVersion?: string } }
-        | undefined;
-      if (d?.type !== 'AppVersionChanged') return;
-      handler({ contextId: ev.contextId, fromVersion: d.data?.fromVersion, toVersion: d.data?.toVersion });
+      // Core flattens the tagged payload: the event carries `type` as a sibling
+      // of `data`, and `data` is the `{ fromVersion?, toVersion? }` payload.
+      if (ev.type !== 'AppVersionChanged') return;
+      const d = ev.data as { fromVersion?: string; toVersion?: string } | undefined;
+      handler({ contextId: ev.contextId, fromVersion: d?.fromVersion, toVersion: d?.toVersion });
     };
     this.on('event', listener);
     return () => this.off('event', listener);
@@ -216,6 +219,9 @@ export class SseClient {
 
         this.emit('event', {
           contextId: msg.result.contextId,
+          // Forward the event tag (sibling of `data` in core's flattened
+          // payload) so typed helpers like `onAppVersionChanged` can discriminate.
+          type: msg.result.type,
           data: eventData,
         });
       }
