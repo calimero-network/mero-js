@@ -36,7 +36,9 @@ import type {
   DeleteBlobResponseData,
   ListBlobsResponseData,
   GetBlobResponseData,
-  CreateAliasRequest,
+  CreateContextAliasRequest,
+  CreateApplicationAliasRequest,
+  CreateContextIdentityAliasRequest,
   CreateAliasResponseData,
   LookupAliasResponseData,
   DeleteAliasResponseData,
@@ -378,8 +380,30 @@ export class AdminApiClient {
 
   // ---- Blob Management ----
 
-  async uploadBlob(data: UploadBlobRequest): Promise<UploadBlobResponseData> {
-    return unwrap(await this.httpClient.put<{ data: UploadBlobResponseData }>('/admin-api/blobs', data));
+  async uploadBlob(request: UploadBlobRequest): Promise<UploadBlobResponseData> {
+    // Core streams the raw request body into blob storage (no JSON) and takes
+    // its params from the query string (`hash`, `context_id` — snake_case).
+    const params = new URLSearchParams();
+    if (request.hash) params.set('hash', request.hash);
+    if (request.contextId) params.set('context_id', request.contextId);
+    const query = params.toString();
+    const path = query ? `/admin-api/blobs?${query}` : '/admin-api/blobs';
+    const body =
+      request.data instanceof Uint8Array
+        ? request.data.buffer.slice(
+            request.data.byteOffset,
+            request.data.byteOffset + request.data.byteLength,
+          )
+        : request.data;
+    // Core's BlobInfo is snake_case (`blob_id`); map to camelCase like deleteBlob.
+    const res = unwrap(
+      await this.httpClient.request<{ data: { blob_id: string; size: number } }>(path, {
+        method: 'PUT',
+        body: body as BodyInit,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      }),
+    );
+    return { blobId: res.blob_id, size: res.size };
   }
 
   async deleteBlob(blobId: string): Promise<DeleteBlobResponseData> {
@@ -393,21 +417,46 @@ export class AdminApiClient {
   }
 
   async listBlobs(): Promise<ListBlobsResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ListBlobsResponseData }>('/admin-api/blobs'));
+    // Core's BlobInfo is snake_case (`blob_id`); map to camelCase.
+    const res = unwrap(
+      await this.httpClient.get<{ data: { blobs: Array<{ blob_id: string; size: number }> } }>(
+        '/admin-api/blobs',
+      ),
+    );
+    return { blobs: res.blobs.map((b) => ({ blobId: b.blob_id, size: b.size })) };
   }
 
   async getBlob(blobId: string): Promise<GetBlobResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetBlobResponseData }>(`/admin-api/blobs/${blobId}`));
+    const res = unwrap(
+      await this.httpClient.get<{ data: { blob_id: string; size: number } }>(
+        `/admin-api/blobs/${blobId}`,
+      ),
+    );
+    return { blobId: res.blob_id, size: res.size };
   }
 
   // ---- Alias Management ----
 
-  async createContextAlias(request: CreateAliasRequest): Promise<CreateAliasResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateAliasResponseData }>('/admin-api/alias/create/context', request));
+  async createContextAlias(
+    request: CreateContextAliasRequest,
+  ): Promise<CreateAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreateAliasResponseData }>(
+        '/admin-api/alias/create/context',
+        { alias: request.alias, contextId: request.contextId },
+      ),
+    );
   }
 
-  async createApplicationAlias(request: CreateAliasRequest): Promise<CreateAliasResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateAliasResponseData }>('/admin-api/alias/create/application', request));
+  async createApplicationAlias(
+    request: CreateApplicationAliasRequest,
+  ): Promise<CreateAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreateAliasResponseData }>(
+        '/admin-api/alias/create/application',
+        { alias: request.alias, applicationId: request.applicationId },
+      ),
+    );
   }
 
   async lookupContextAlias(name: string): Promise<LookupAliasResponseData> {
@@ -466,12 +515,12 @@ export class AdminApiClient {
 
   async createContextIdentityAlias(
     contextId: string,
-    request: CreateAliasRequest,
+    request: CreateContextIdentityAliasRequest,
   ): Promise<CreateContextIdentityAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: CreateContextIdentityAliasResponseData }>(
         `/admin-api/alias/create/identity/${contextId}`,
-        request,
+        { alias: request.alias, identity: request.identity },
       ),
     );
   }

@@ -145,7 +145,12 @@ export interface Context {
   id: string;
   applicationId: string;
   serviceName?: string;
-  rootHash: string;
+  /**
+   * Context state/root hash. Core's wire key is `contextStateHash` (part of the
+   * cross-DAG auth three-level naming: contextStateHash / groupStateHash /
+   * namespaceStateHash). Renamed from `rootHash`, which never populated.
+   */
+  contextStateHash: string;
   dagHeads: number[][];
   /** Bundle semver of the installed application (skew #2). Absent on older nodes. */
   applicationVersion?: string;
@@ -243,7 +248,12 @@ export type ContextsWithExecutorsResponseData = ContextWithExecutors[];
 // ---- Blobs ----
 
 export interface UploadBlobRequest {
-  data: Uint8Array | ArrayBuffer;
+  /** Raw blob bytes; streamed verbatim as the request body (octet-stream). */
+  data: Uint8Array | ArrayBuffer | Blob;
+  /** Optional expected blob hash; sent as the `hash` query param for server-side verification. */
+  hash?: string;
+  /** Optional context to announce the blob to; sent as the `context_id` query param. */
+  contextId?: string;
 }
 
 export interface BlobInfo {
@@ -266,9 +276,21 @@ export type GetBlobResponseData = BlobInfo;
 
 // ---- Aliases ----
 
-export interface CreateAliasRequest {
-  name: string;
-  value: string;
+// Core's CreateAliasRequest is `{ alias, #[serde(flatten)] value }`, so each
+// alias kind flattens a different id field at the top level of the body.
+export interface CreateContextAliasRequest {
+  alias: string;
+  contextId: string;
+}
+
+export interface CreateApplicationAliasRequest {
+  alias: string;
+  applicationId: string;
+}
+
+export interface CreateContextIdentityAliasRequest {
+  alias: string;
+  identity: string;
 }
 
 export interface AliasEntry {
