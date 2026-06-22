@@ -132,6 +132,15 @@ export interface DeleteClientResponse {
 }
 
 // Permission Management Types
+// Core applies an { add, remove } delta (remove first, then add) — NOT a
+// full-set replacement. A `permissions` field is ignored by core.
+export interface UpdateKeyPermissionsRequest {
+  /** Permission strings to add (OR-ed onto the key's current set). */
+  add?: string[];
+  /** Permission strings to remove (applied before `add`). */
+  remove?: string[];
+}
+
 export interface PermissionResponse {
   data: {
     permissions: string[];

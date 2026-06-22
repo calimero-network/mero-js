@@ -261,20 +261,22 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('DELETE', '/admin-api/contexts/ctx-1')).toEqual({ requester: 'pk-admin' });
     });
 
-    it('getContexts returns contexts with groupId', async () => {
-      const ctx = { id: 'ctx-1', applicationId: 'app-1', rootHash: 'abc', dagHeads: [], groupId: 'g-1' };
+    it('getContexts returns contexts with groupId and contextStateHash', async () => {
+      const ctx = { id: 'ctx-1', applicationId: 'app-1', contextStateHash: 'abc', dagHeads: [], groupId: 'g-1' };
       mock.setMockResponse('GET', '/admin-api/contexts', { data: { contexts: [ctx] } });
       const result = await client.getContexts();
       expect(result.contexts).toHaveLength(1);
       expect(result.contexts[0].id).toBe('ctx-1');
       expect(result.contexts[0].groupId).toBe('g-1');
+      expect(result.contexts[0].contextStateHash).toBe('abc');
     });
 
-    it('getContext unwraps data', async () => {
-      const ctx = { id: 'ctx-1', applicationId: 'app-1', rootHash: 'abc', dagHeads: [] };
+    it('getContext unwraps data and exposes contextStateHash (core wire key)', async () => {
+      const ctx = { id: 'ctx-1', applicationId: 'app-1', contextStateHash: 'abc', dagHeads: [] };
       mock.setMockResponse('GET', '/admin-api/contexts/ctx-1', { data: ctx });
       const result = await client.getContext('ctx-1');
       expect(result.id).toBe('ctx-1');
+      expect(result.contextStateHash).toBe('abc');
     });
 
     it('getContextsForApplication unwraps data', async () => {
@@ -404,10 +406,23 @@ describe('AdminApiClient', () => {
   });
 
   describe('Blob Management', () => {
-    it('uploadBlob uses PUT and unwraps data', async () => {
-      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blobId: 'blob-1', size: 3 } });
-      const result = await client.uploadBlob({ data: new Uint8Array([1, 2, 3]) });
+    it('uploadBlob streams the raw Uint8Array with snake_case query params and maps blob_id', async () => {
+      const bytes = new Uint8Array([1, 2, 3]);
+      mock.setMockResponse('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1', {
+        data: { blob_id: 'blob-1', size: 3 },
+      });
+      const result = await client.uploadBlob({ data: bytes, hash: 'h1', contextId: 'ctx-1' });
       expect(result).toEqual({ blobId: 'blob-1', size: 3 });
+      // the exact bytes are streamed verbatim, NOT a JSON wrapper like {"data":{"0":1,...}}
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1')).toBe(bytes);
+    });
+
+    it('uploadBlob streams an ArrayBuffer body and omits the query when no hash/contextId', async () => {
+      const buf = new Uint8Array([9, 9]).buffer;
+      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blob_id: 'blob-2', size: 2 } });
+      const result = await client.uploadBlob({ data: buf });
+      expect(result).toEqual({ blobId: 'blob-2', size: 2 });
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs')).toBe(buf);
     });
 
     it('deleteBlob parses the flat snake_case payload and maps to camelCase', async () => {
@@ -417,30 +432,38 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ blobId: 'blob-1', deleted: true });
     });
 
-    it('listBlobs unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/blobs', { data: { blobs: [{ blobId: 'blob-1', size: 100 }] } });
+    it('listBlobs maps snake_case blob_id to blobId', async () => {
+      mock.setMockResponse('GET', '/admin-api/blobs', { data: { blobs: [{ blob_id: 'blob-1', size: 100 }] } });
       const result = await client.listBlobs();
       expect(result).toEqual({ blobs: [{ blobId: 'blob-1', size: 100 }] });
     });
 
-    it('getBlob unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', { data: { blobId: 'blob-1', size: 100 } });
+    it('getBlob maps snake_case blob_id to blobId', async () => {
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', { data: { blob_id: 'blob-1', size: 100 } });
       const result = await client.getBlob('blob-1');
       expect(result).toEqual({ blobId: 'blob-1', size: 100 });
     });
   });
 
   describe('Alias Management', () => {
-    it('createContextAlias unwraps data', async () => {
+    it('createContextAlias sends { alias, contextId }', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/context', { data: {} });
-      const result = await client.createContextAlias({ name: 'my-ctx', value: 'ctx-1' });
+      const result = await client.createContextAlias({ alias: 'my-ctx', contextId: 'ctx-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/context')).toEqual({
+        alias: 'my-ctx',
+        contextId: 'ctx-1',
+      });
     });
 
-    it('createApplicationAlias unwraps data', async () => {
+    it('createApplicationAlias sends { alias, applicationId }', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/application', { data: {} });
-      const result = await client.createApplicationAlias({ name: 'my-app', value: 'app-1' });
+      const result = await client.createApplicationAlias({ alias: 'my-app', applicationId: 'app-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/application')).toEqual({
+        alias: 'my-app',
+        applicationId: 'app-1',
+      });
     });
 
     it('lookupContextAlias unwraps data', async () => {
@@ -487,10 +510,14 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ aliases: [{ name: 'alice', value: 'pk-1' }] });
     });
 
-    it('createContextIdentityAlias unwraps data', async () => {
+    it('createContextIdentityAlias sends { alias, identity } with context in the path', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/identity/ctx-1', { data: {} });
-      const result = await client.createContextIdentityAlias('ctx-1', { name: 'alice', value: 'pk-1' });
+      const result = await client.createContextIdentityAlias('ctx-1', { alias: 'alice', identity: 'pk-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/identity/ctx-1')).toEqual({
+        alias: 'alice',
+        identity: 'pk-1',
+      });
     });
 
     it('lookupContextIdentityAlias unwraps data', async () => {
