@@ -1,3 +1,42 @@
+## 4.0.0 (2026-06-22)
+
+* fix(admin,auth)!: correct 4 wire-contract drifts vs core (alias, blob, context hash, key permissions ([4ad230a](https://github.com/calimero-network/mero-js/commit/4ad230a)), closes [#51](https://github.com/calimero-network/mero-js/issues/51)
+
+
+### BREAKING CHANGE
+
+* CreateAliasRequest is replaced by CreateContextAliasRequest /
+CreateApplicationAliasRequest / CreateContextIdentityAliasRequest;
+UploadBlobRequest gains optional hash/contextId; Context.rootHash is renamed to
+Context.contextStateHash.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* fix(auth)!: send { add, remove } delta for updateKeyPermissions
+
+updateKeyPermissions sent `{ permissions }`, which core ignores — the call was a
+silent no-op that echoed the old permissions back with 200. Core expects an
+{ add, remove } delta (remove applied first, then add). The method now takes an
+UpdateKeyPermissionsRequest delta and sends the correct body. Adds a
+body-asserting test (the first guard on this endpoint's request shape).
+* updateKeyPermissions(keyId, permissions: string[]) is now
+updateKeyPermissions(keyId, { add?, remove? }).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* refactor(admin): drop unsafe BodyInit cast in uploadBlob; cover ArrayBuffer path
+
+Addresses meroreviewer warnings on uploadBlob:
+- Pass request.data (Uint8Array | ArrayBuffer | Blob) directly as the body. All
+  three are valid BodyInit, so the `as BodyInit` cast (which silenced type
+  errors) is removed and the type is now compiler-enforced. fetch honors a
+  Uint8Array view's byteOffset/byteLength, so the manual buffer slice (and its
+  SharedArrayBuffer edge) is no longer needed.
+- Add a test exercising the ArrayBuffer body path (the Blob path is the same
+  verbatim pass-through), asserting the exact body object is streamed.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 ## <small>3.0.1 (2026-06-17)</small>
 
 * fix(admin): correct migrations-v2 response envelopes + AppVersionChanged event (#50) ([1038bb2](https://github.com/calimero-network/mero-js/commit/1038bb2)), closes [#50](https://github.com/calimero-network/mero-js/issues/50) [calimero-network/core#2773](https://github.com/calimero-network/core/issues/2773)
