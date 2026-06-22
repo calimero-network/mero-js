@@ -388,18 +388,14 @@ export class AdminApiClient {
     if (request.contextId) params.set('context_id', request.contextId);
     const query = params.toString();
     const path = query ? `/admin-api/blobs?${query}` : '/admin-api/blobs';
-    const body =
-      request.data instanceof Uint8Array
-        ? request.data.buffer.slice(
-            request.data.byteOffset,
-            request.data.byteOffset + request.data.byteLength,
-          )
-        : request.data;
+    // request.data (Uint8Array view | ArrayBuffer | Blob) is a valid BodyInit and
+    // is streamed verbatim — no JSON, no cast. fetch honors a Uint8Array view's
+    // byteOffset/byteLength, so subarrays upload the correct region.
     // Core's BlobInfo is snake_case (`blob_id`); map to camelCase like deleteBlob.
     const res = unwrap(
       await this.httpClient.request<{ data: { blob_id: string; size: number } }>(path, {
         method: 'PUT',
-        body: body as BodyInit,
+        body: request.data,
         headers: { 'Content-Type': 'application/octet-stream' },
       }),
     );

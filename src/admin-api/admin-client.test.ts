@@ -406,21 +406,23 @@ describe('AdminApiClient', () => {
   });
 
   describe('Blob Management', () => {
-    it('uploadBlob streams raw bytes with snake_case query params and maps blob_id', async () => {
+    it('uploadBlob streams the raw Uint8Array with snake_case query params and maps blob_id', async () => {
+      const bytes = new Uint8Array([1, 2, 3]);
       mock.setMockResponse('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1', {
         data: { blob_id: 'blob-1', size: 3 },
       });
-      const result = await client.uploadBlob({ data: new Uint8Array([1, 2, 3]), hash: 'h1', contextId: 'ctx-1' });
+      const result = await client.uploadBlob({ data: bytes, hash: 'h1', contextId: 'ctx-1' });
       expect(result).toEqual({ blobId: 'blob-1', size: 3 });
-      // body must be the RAW bytes, not a JSON wrapper like {"data":{"0":1,...}}
-      const body = mock.getRequestBody('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1');
-      expect(Array.from(new Uint8Array(body as ArrayBuffer))).toEqual([1, 2, 3]);
+      // the exact bytes are streamed verbatim, NOT a JSON wrapper like {"data":{"0":1,...}}
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1')).toBe(bytes);
     });
 
-    it('uploadBlob omits the query string when no hash/contextId given', async () => {
-      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blob_id: 'blob-2', size: 1 } });
-      const result = await client.uploadBlob({ data: new Uint8Array([9]) });
-      expect(result).toEqual({ blobId: 'blob-2', size: 1 });
+    it('uploadBlob streams an ArrayBuffer body and omits the query when no hash/contextId', async () => {
+      const buf = new Uint8Array([9, 9]).buffer;
+      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blob_id: 'blob-2', size: 2 } });
+      const result = await client.uploadBlob({ data: buf });
+      expect(result).toEqual({ blobId: 'blob-2', size: 2 });
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs')).toBe(buf);
     });
 
     it('deleteBlob parses the flat snake_case payload and maps to camelCase', async () => {
