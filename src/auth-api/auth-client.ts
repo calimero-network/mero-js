@@ -27,6 +27,7 @@ import {
   DeleteClientResponse,
   // Permissions
   PermissionResponse,
+  UpdateKeyPermissionsRequest,
   // Auth Status
   AuthStatus,
 } from './auth-types';
@@ -184,11 +185,12 @@ export class AuthApiClient {
 
   async updateKeyPermissions(
     keyId: string,
-    permissions: string[],
+    changes: UpdateKeyPermissionsRequest,
   ): Promise<PermissionResponse> {
+    // Core expects an { add, remove } delta, not a { permissions } replacement.
     return this.httpClient.put<PermissionResponse>(
       `/admin/keys/${keyId}/permissions`,
-      { permissions },
+      { add: changes.add, remove: changes.remove },
     );
   }
 }
