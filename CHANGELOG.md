@@ -1,3 +1,28 @@
+## 6.0.0 (2026-06-23)
+
+* fix(admin)!: align group reparent + createContext label with core wire contract (#53) ([269c412](https://github.com/calimero-network/mero-js/commit/269c412)), closes [#53](https://github.com/calimero-network/mero-js/issues/53)
+* test(auth): cover success:false payloads in revokeTokens/createRootKey (#54) ([100828a](https://github.com/calimero-network/mero-js/commit/100828a)), closes [#54](https://github.com/calimero-network/mero-js/issues/54)
+
+
+### BREAKING CHANGE
+
+* `AdminApiClient.nestGroup`/`unnestGroup` are removed in favor of
+`reparentGroup`; `CreateContextRequest.groupName` is renamed to `name`. Downstream
+`mero-react` exposes `useNestGroup`/`useUnnestGroup` hooks that need a
+corresponding `useReparentGroup` (those hooks already 404 against current core).
+
+Verified: 219 unit tests pass (2 new reparent tests RED→green), typecheck, lint,
+build all clean.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+* style(admin): trim verbose explainer comments on reparent/createContext
+
+Reduce the narrative comments (wire path/body, "core renamed X") to terse
+one-liners; the contract lives in the PR/commit, not inline.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 ## 5.0.0 (2026-06-23)
 
 * fix(auth)!: align auth-api key/token/health methods with core wire contract (#52) ([bc1ceda](https://github.com/calimero-network/mero-js/commit/bc1ceda)), closes [#52](https://github.com/calimero-network/mero-js/issues/52) [#51](https://github.com/calimero-network/mero-js/issues/51)
