@@ -1,3 +1,19 @@
+## 5.0.0 (2026-06-23)
+
+* fix(auth)!: align auth-api key/token/health methods with core wire contract (#52) ([bc1ceda](https://github.com/calimero-network/mero-js/commit/bc1ceda)), closes [#52](https://github.com/calimero-network/mero-js/issues/52) [#51](https://github.com/calimero-network/mero-js/issues/51)
+
+
+### BREAKING CHANGE
+
+* AuthApiClient.getChallenge() and isAuthed() removed (use
+AdminApiClient.isAuthed()). Changed request/response types: RevokeTokenRequest
+({client_id}), CreateKeyRequest/CreateKeyResponse, GenerateClientKeyRequest,
+MockTokenRequest (snake_case); listRootKeys/listClientKeys now return
+RootKey[]/ClientKey[] (RootKeysResponse/ClientKeysResponse, ChallengeResponse and
+AuthStatus types removed); HealthResponse/IdentityResponse field changes.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 ## 4.0.0 (2026-06-22)
 
 * fix(admin,auth)!: correct 4 wire-contract drifts vs core (alias, blob, context hash, key permissions ([4ad230a](https://github.com/calimero-network/mero-js/commit/4ad230a)), closes [#51](https://github.com/calimero-network/mero-js/issues/51)
