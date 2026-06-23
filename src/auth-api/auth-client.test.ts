@@ -98,6 +98,25 @@ describe('AuthApiClient', () => {
       expect(result).toEqual({ success: true, message: 'Tokens revoked successfully' });
       expect(mock.getRequestBody('POST', '/admin/revoke')).toEqual({ client_id: 'client-1' });
     });
+
+    it('returns a success:false payload rather than throwing', async () => {
+      mock.setMockResponse('POST', '/admin/revoke', {
+        data: { success: false, message: 'no active client tokens' },
+        error: null,
+      });
+      const result = await client.revokeTokens({ client_id: 'client-1' });
+      expect(result).toEqual({ success: false, message: 'no active client tokens' });
+    });
+
+    it('throws when the payload is absent (data: null error envelope)', async () => {
+      mock.setMockResponse('POST', '/admin/revoke', {
+        data: null,
+        error: { message: 'unauthorized' },
+      });
+      await expect(client.revokeTokens({ client_id: 'client-1' })).rejects.toThrow(
+        /response data is null/,
+      );
+    });
   });
 
   describe('createRootKey', () => {
@@ -117,6 +136,19 @@ describe('AuthApiClient', () => {
         auth_method: 'user_password',
         provider_data: {},
       });
+    });
+
+    it('returns a status:false payload rather than throwing', async () => {
+      mock.setMockResponse('POST', '/admin/keys', {
+        data: { status: false, message: 'key already exists' },
+        error: null,
+      });
+      const result = await client.createRootKey({
+        public_key: 'ed25519:pk',
+        auth_method: 'user_password',
+        provider_data: {},
+      });
+      expect(result).toEqual({ status: false, message: 'key already exists' });
     });
   });
 
