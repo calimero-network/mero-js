@@ -87,4 +87,119 @@ describe('AuthApiClient', () => {
       expect(mock.getRequestBody('PUT', '/admin/keys/key1/permissions')).toEqual({ add: ['b'] });
     });
   });
+
+  describe('revokeTokens', () => {
+    it('sends { client_id } and unwraps the { data } envelope', async () => {
+      mock.setMockResponse('POST', '/admin/revoke', {
+        data: { success: true, message: 'Tokens revoked successfully' },
+        error: null,
+      });
+      const result = await client.revokeTokens({ client_id: 'client-1' });
+      expect(result).toEqual({ success: true, message: 'Tokens revoked successfully' });
+      expect(mock.getRequestBody('POST', '/admin/revoke')).toEqual({ client_id: 'client-1' });
+    });
+  });
+
+  describe('createRootKey', () => {
+    it('sends { public_key, auth_method, provider_data } and unwraps the { data } envelope', async () => {
+      mock.setMockResponse('POST', '/admin/keys', {
+        data: { status: true, message: 'Key was created' },
+        error: null,
+      });
+      const result = await client.createRootKey({
+        public_key: 'ed25519:pk',
+        auth_method: 'user_password',
+        provider_data: {},
+      });
+      expect(result).toEqual({ status: true, message: 'Key was created' });
+      expect(mock.getRequestBody('POST', '/admin/keys')).toEqual({
+        public_key: 'ed25519:pk',
+        auth_method: 'user_password',
+        provider_data: {},
+      });
+    });
+  });
+
+  describe('listRootKeys', () => {
+    it('unwraps the flat data array of root keys', async () => {
+      const keys = [
+        {
+          key_id: 'k1',
+          public_key: 'pk',
+          auth_method: 'user_password',
+          created_at: 1,
+          revoked_at: null,
+          permissions: ['admin'],
+        },
+      ];
+      mock.setMockResponse('GET', '/admin/keys', { data: keys, error: null });
+      expect(await client.listRootKeys()).toEqual(keys);
+    });
+  });
+
+  describe('listClientKeys', () => {
+    it('unwraps the flat data array of client keys', async () => {
+      const clients = [
+        {
+          client_id: 'c1',
+          root_key_id: 'k1',
+          name: 'ctx client',
+          permissions: ['context:execute'],
+          created_at: 1,
+          revoked_at: null,
+          is_valid: true,
+        },
+      ];
+      mock.setMockResponse('GET', '/admin/keys/clients', { data: clients, error: null });
+      expect(await client.listClientKeys()).toEqual(clients);
+    });
+  });
+
+  describe('generateClientKey', () => {
+    it('sends the context_id/context_identity/permissions body', async () => {
+      mock.setMockResponse('POST', '/admin/client-key', {
+        data: { access_token: 'a', refresh_token: 'r' },
+        error: null,
+      });
+      await client.generateClientKey({
+        context_id: 'ctx-1',
+        context_identity: 'id-1',
+        permissions: ['context:execute'],
+      });
+      expect(mock.getRequestBody('POST', '/admin/client-key')).toEqual({
+        context_id: 'ctx-1',
+        context_identity: 'id-1',
+        permissions: ['context:execute'],
+      });
+    });
+  });
+
+  describe('generateMockTokens', () => {
+    it('sends snake_case { client_name, access_token_expiry }', async () => {
+      mock.setMockResponse('POST', '/auth/mock-token', {
+        data: { access_token: 'a', refresh_token: 'r' },
+        error: null,
+      });
+      await client.generateMockTokens({
+        client_name: 'cli',
+        permissions: ['admin'],
+        access_token_expiry: 3600,
+      });
+      expect(mock.getRequestBody('POST', '/auth/mock-token')).toEqual({
+        client_name: 'cli',
+        permissions: ['admin'],
+        access_token_expiry: 3600,
+      });
+    });
+  });
+
+  describe('getHealth', () => {
+    it('exposes the alive/not_alive status and uptime_seconds (snake_case)', async () => {
+      mock.setMockResponse('GET', '/auth/health', {
+        data: { status: 'alive', storage: true, uptime_seconds: 42 },
+        error: null,
+      });
+      expect(await client.getHealth()).toEqual({ status: 'alive', storage: true, uptime_seconds: 42 });
+    });
+  });
 });
