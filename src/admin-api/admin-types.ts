@@ -121,11 +121,7 @@ export interface CreateContextRequest {
   contextSeed?: string;
   initializationParams?: number[];
   identitySecret?: string;
-  /**
-   * Optional human-readable label for the context. Core's `CreateContextRequest`
-   * field is `name` (camelCase wire key) — there is no `groupName`/`alias` field,
-   * so any other key is silently dropped by the node.
-   */
+  /** Optional human-readable label for the context. */
   name?: string;
 }
 
@@ -749,20 +745,13 @@ export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
 // ---- Group Reparent & Context Attachments ----
 
-/**
- * Atomically move a group under a new parent. Replaces the old nest/unnest pair
- * (core `ReparentGroupApiRequest`): the child being moved is passed in the URL
- * path, and `newParentId` is the destination parent. Orphan state is structurally
- * impossible. `newParentId` must be a 64-char group id.
- */
 export interface ReparentGroupRequest {
+  /** 64-char id of the destination parent group. */
   newParentId: string;
-  /** Optional explicit requester; the authenticated identity takes precedence. */
   requester?: string;
 }
 
 export interface ReparentGroupResponseData {
-  /** False when the group was already under `newParentId` (the op was a no-op). */
   reparented: boolean;
 }
 

@@ -247,8 +247,6 @@ describe('AdminApiClient', () => {
         identitySecret: 'secret',
         name: 'my-ctx',
       });
-      // Regression guard: core's CreateContextRequest has no `groupName`/`alias`
-      // field, so the human label must be sent as `name` or it is silently dropped.
       expect(body).not.toHaveProperty('groupName');
       expect(body).not.toHaveProperty('alias');
     });
@@ -1047,9 +1045,6 @@ describe('AdminApiClient', () => {
   });
 
   describe('Group Reparent', () => {
-    // Core replaced the nest/unnest pair with a single atomic edge-swap:
-    // POST /admin-api/groups/:childGroupId/reparent  body { newParentId, requester? }
-    // (child is in the PATH, new parent is in the BODY) → { data: { reparented } }.
     it('reparentGroup moves the child (path) under newParentId (body) and unwraps { reparented }', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: true } });
       const result = await client.reparentGroup('child-1', { newParentId: 'parent-2' });

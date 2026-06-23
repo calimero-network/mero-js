@@ -840,11 +840,7 @@ export class AdminApiClient {
     );
   }
 
-  /**
-   * Atomically move `childGroupId` (path) under `request.newParentId` (body).
-   * Replaces the removed `nestGroup`/`unnestGroup` pair — core exposes a single
-   * `POST /admin-api/groups/:group_id/reparent` edge-swap.
-   */
+  /** Move `childGroupId` under `request.newParentId`. */
   async reparentGroup(
     childGroupId: string,
     request: ReparentGroupRequest,
