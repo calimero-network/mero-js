@@ -121,9 +121,8 @@ export interface CreateContextRequest {
   contextSeed?: string;
   initializationParams?: number[];
   identitySecret?: string;
-  // Renamed from `alias` in core (`context create --alias` -> `--group-name`)
-  // because `--name` was already the node-local alias flag.
-  groupName?: string;
+  /** Optional human-readable label for the context. */
+  name?: string;
 }
 
 export interface CreateContextResponseData {
@@ -744,23 +743,17 @@ export interface RetryGroupUpgradeRequest {
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
-// ---- Group Nesting & Context Attachments ----
+// ---- Group Reparent & Context Attachments ----
 
-export interface NestGroupRequest {
-  childGroupId: string;
+export interface ReparentGroupRequest {
+  /** 64-char id of the destination parent group. */
+  newParentId: string;
   requester?: string;
 }
 
-// Returns empty
-export type NestGroupResponseData = Record<string, never>;
-
-export interface UnnestGroupRequest {
-  childGroupId: string;
-  requester?: string;
+export interface ReparentGroupResponseData {
+  reparented: boolean;
 }
-
-// Returns empty
-export type UnnestGroupResponseData = Record<string, never>;
 
 export interface DetachContextFromGroupRequest {
   requester?: string;
