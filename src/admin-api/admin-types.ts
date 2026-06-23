@@ -121,9 +121,12 @@ export interface CreateContextRequest {
   contextSeed?: string;
   initializationParams?: number[];
   identitySecret?: string;
-  // Renamed from `alias` in core (`context create --alias` -> `--group-name`)
-  // because `--name` was already the node-local alias flag.
-  groupName?: string;
+  /**
+   * Optional human-readable label for the context. Core's `CreateContextRequest`
+   * field is `name` (camelCase wire key) — there is no `groupName`/`alias` field,
+   * so any other key is silently dropped by the node.
+   */
+  name?: string;
 }
 
 export interface CreateContextResponseData {
@@ -744,23 +747,24 @@ export interface RetryGroupUpgradeRequest {
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
-// ---- Group Nesting & Context Attachments ----
+// ---- Group Reparent & Context Attachments ----
 
-export interface NestGroupRequest {
-  childGroupId: string;
+/**
+ * Atomically move a group under a new parent. Replaces the old nest/unnest pair
+ * (core `ReparentGroupApiRequest`): the child being moved is passed in the URL
+ * path, and `newParentId` is the destination parent. Orphan state is structurally
+ * impossible. `newParentId` must be a 64-char group id.
+ */
+export interface ReparentGroupRequest {
+  newParentId: string;
+  /** Optional explicit requester; the authenticated identity takes precedence. */
   requester?: string;
 }
 
-// Returns empty
-export type NestGroupResponseData = Record<string, never>;
-
-export interface UnnestGroupRequest {
-  childGroupId: string;
-  requester?: string;
+export interface ReparentGroupResponseData {
+  /** False when the group was already under `newParentId` (the op was a no-op). */
+  reparented: boolean;
 }
-
-// Returns empty
-export type UnnestGroupResponseData = Record<string, never>;
 
 export interface DetachContextFromGroupRequest {
   requester?: string;

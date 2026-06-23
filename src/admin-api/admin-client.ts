@@ -92,8 +92,8 @@ import type {
   CascadeStatusEntry,
   RetryGroupUpgradeRequest,
   RetryGroupUpgradeResponseData,
-  NestGroupRequest,
-  UnnestGroupRequest,
+  ReparentGroupRequest,
+  ReparentGroupResponseData,
   DetachContextFromGroupRequest,
   CreateGroupInvitationRequest,
   CreateGroupInvitationResponseData,
@@ -840,12 +840,21 @@ export class AdminApiClient {
     );
   }
 
-  async nestGroup(parentGroupId: string, request: NestGroupRequest): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${parentGroupId}/nest`, request);
-  }
-
-  async unnestGroup(parentGroupId: string, request: UnnestGroupRequest): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${parentGroupId}/unnest`, request);
+  /**
+   * Atomically move `childGroupId` (path) under `request.newParentId` (body).
+   * Replaces the removed `nestGroup`/`unnestGroup` pair — core exposes a single
+   * `POST /admin-api/groups/:group_id/reparent` edge-swap.
+   */
+  async reparentGroup(
+    childGroupId: string,
+    request: ReparentGroupRequest,
+  ): Promise<ReparentGroupResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: ReparentGroupResponseData }>(
+        `/admin-api/groups/${childGroupId}/reparent`,
+        request,
+      ),
+    );
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {

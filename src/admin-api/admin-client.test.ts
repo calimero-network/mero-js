@@ -228,24 +228,29 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ contextId: 'ctx-1', memberPublicKey: 'key-1' });
     });
 
-    it('createContext sends all optional fields', async () => {
+    it('createContext sends all optional fields incl. the `name` label (core wire key, not groupName/alias)', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts', { data: { contextId: 'ctx-1', memberPublicKey: 'key-1', groupId: 'g-1', groupCreated: true } });
       const result = await client.createContext({
         applicationId: 'app-1',
         groupId: 'group-1',
         serviceName: 'chat',
         identitySecret: 'secret',
-        alias: 'my-ctx',
+        name: 'my-ctx',
       });
       expect(result.groupId).toBe('g-1');
       expect(result.groupCreated).toBe(true);
-      expect(mock.getRequestBody('POST', '/admin-api/contexts')).toEqual({
+      const body = mock.getRequestBody('POST', '/admin-api/contexts') as Record<string, unknown>;
+      expect(body).toEqual({
         applicationId: 'app-1',
         groupId: 'group-1',
         serviceName: 'chat',
         identitySecret: 'secret',
-        alias: 'my-ctx',
+        name: 'my-ctx',
       });
+      // Regression guard: core's CreateContextRequest has no `groupName`/`alias`
+      // field, so the human label must be sent as `name` or it is silently dropped.
+      expect(body).not.toHaveProperty('groupName');
+      expect(body).not.toHaveProperty('alias');
     });
 
     it('deleteContext unwraps data', async () => {
@@ -1041,17 +1046,25 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Group Nesting', () => {
-    it('nestGroup sends childGroupId', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/parent-1/nest', {});
-      await client.nestGroup('parent-1', { childGroupId: 'child-1' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/parent-1/nest')).toEqual({ childGroupId: 'child-1' });
+  describe('Group Reparent', () => {
+    // Core replaced the nest/unnest pair with a single atomic edge-swap:
+    // POST /admin-api/groups/:childGroupId/reparent  body { newParentId, requester? }
+    // (child is in the PATH, new parent is in the BODY) → { data: { reparented } }.
+    it('reparentGroup moves the child (path) under newParentId (body) and unwraps { reparented }', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: true } });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2' });
+      expect(result).toEqual({ reparented: true });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({ newParentId: 'parent-2' });
     });
 
-    it('unnestGroup sends childGroupId', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/parent-1/unnest', {});
-      await client.unnestGroup('parent-1', { childGroupId: 'child-1' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/parent-1/unnest')).toEqual({ childGroupId: 'child-1' });
+    it('reparentGroup forwards an explicit requester', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: false } });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2', requester: 'pk-admin' });
+      expect(result.reparented).toBe(false);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({
+        newParentId: 'parent-2',
+        requester: 'pk-admin',
+      });
     });
 
     it('listSubgroups reads the `subgroups` field (current server shape)', async () => {
