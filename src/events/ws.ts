@@ -1,5 +1,8 @@
 export interface WsEventData {
   contextId: string;
+  /** The context-event discriminator (core serializes it as a sibling of
+   * `data`, e.g. `"AppVersionChanged"`). Undefined for events without a tag. */
+  type?: string;
   data: unknown;
 }
 
@@ -148,6 +151,9 @@ export class WsClient {
 
         this.emit('event', {
           contextId: msg.result.contextId,
+          // Forward the event tag (sibling of `data` in core's flattened
+          // payload) so consumers can discriminate, matching `SseClient`.
+          type: msg.result.type,
           data: eventData,
         });
       }
