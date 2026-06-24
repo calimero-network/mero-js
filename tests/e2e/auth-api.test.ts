@@ -1,14 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '@calimero-network/mero-js';
-import { startNode, resolveBaseUrl, type StartedNode } from './harness';
+import { startNode, resolveBaseUrl, resolveCreds, type StartedNode } from './harness';
 
 // Test configuration
 const AUTH_CONFIG = {
   baseUrl: resolveBaseUrl(),
-  credentials: {
-    username: 'admin',
-    password: 'admin123',
-  },
+  credentials: resolveCreds(),
   timeoutMs: 10000,
 };
 
@@ -54,7 +51,7 @@ describe('Auth API E2E Tests', () => {
 
       expect(health).toBeDefined();
       expect(health.status).toBeDefined();
-      expect(health.status).toBe('healthy');
+      expect(health.status).toBe('alive');
     });
 
     it('should get service identity', async () => {
@@ -144,10 +141,7 @@ describe('Auth API E2E Tests', () => {
         public_key: 'test-public-key-refresh',
         client_name: 'e2e-test-client-refresh',
         timestamp: Math.floor(Date.now() / 1000),
-        provider_data: {
-          username: 'admin',
-          password: 'admin123',
-        },
+        provider_data: { ...AUTH_CONFIG.credentials },
       });
 
       try {

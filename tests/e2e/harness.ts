@@ -13,18 +13,51 @@
  *   AUTH_API_BASE_URL  legacy override for the auth base URL (default http://localhost).
  */
 import type { ChildProcess } from 'child_process';
+import { fileURLToPath } from 'node:url';
+import type { MeroJs } from '../../src/mero-js';
+
+/** The demo app the e2e suite exercises (bundled at ./assets/kv-store.mpk). */
+export const KV_STORE_PACKAGE = 'com.calimero.kv-store';
+
+/**
+ * Ensure the kv-store app is installed on the target node, returning its id.
+ * Installs it from the local bundle if absent — so the suite is self-provisioning
+ * and reproducible on a fresh node (instead of assuming a pre-installed app).
+ */
+export async function ensureApplication(mero: MeroJs): Promise<string> {
+  const { apps } = await mero.admin.listApplications();
+  const existing = apps.find((a) => a.package === KV_STORE_PACKAGE);
+  if (existing) return existing.id;
+  const path = fileURLToPath(new URL('./assets/kv-store.mpk', import.meta.url));
+  const res = await mero.admin.installDevApplication({ path, metadata: [] });
+  return res.applicationId;
+}
+
+/** Short per-run suffix so resources don't collide on a persistent node. */
+export function runId(): string {
+  return Math.floor(Number(process.hrtime.bigint() % 1_000_000_000n)).toString(36);
+}
 
 export function resolveBaseUrl(): string {
   return (
     process.env.NODE_BASE_URL ||
+    process.env.NODE_URL ||
     process.env.AUTH_API_BASE_URL ||
     'http://localhost'
   );
 }
 
+/** Credentials for the e2e suite, overridable via env (default dev/dev). */
+export function resolveCreds(): { username: string; password: string } {
+  return {
+    username: process.env.MERO_E2E_USER || 'dev',
+    password: process.env.MERO_E2E_PASS || 'dev',
+  };
+}
+
 /** True when an external node is already running and the suite must not spawn one. */
 export function usingInjectedNode(): boolean {
-  return Boolean(process.env.NODE_BASE_URL);
+  return Boolean(process.env.NODE_BASE_URL || process.env.NODE_URL);
 }
 
 export interface StartedNode {

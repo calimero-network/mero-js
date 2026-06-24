@@ -252,15 +252,19 @@ export class AdminApiClient {
   // ---- Package Management ----
 
   async listPackages(): Promise<ListPackagesResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ListPackagesResponseData }>('/admin-api/packages'));
+    // Core returns this flat ({ packages: [...] }), not under `data`; tolerate both.
+    const r = await this.httpClient.get<ListPackagesResponseData & { data?: ListPackagesResponseData }>(
+      '/admin-api/packages',
+    );
+    return (r.data ?? r) as ListPackagesResponseData;
   }
 
   async listPackageVersions(packageName: string): Promise<ListVersionsResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ListVersionsResponseData }>(
-        `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
-      ),
+    // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
+    const r = await this.httpClient.get<ListVersionsResponseData & { data?: ListVersionsResponseData }>(
+      `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
     );
+    return (r.data ?? r) as ListVersionsResponseData;
   }
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
@@ -272,7 +276,10 @@ export class AdminApiClient {
   // ---- Context Management ----
 
   async createContext(request: CreateContextRequest): Promise<CreateContextResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', request));
+    // Core requires `initializationParams` (no default); default it to an empty
+    // byte array so callers that pass none don't get a 400.
+    const body = { ...request, initializationParams: request.initializationParams ?? [] };
+    return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', body));
   }
 
   async deleteContext(contextId: string, request?: DeleteContextRequest): Promise<DeleteContextResponseData> {
@@ -556,7 +563,12 @@ export class AdminApiClient {
   }
 
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
-    return unwrap(await this.httpClient.get<{ data: NamespaceIdentity }>(`/admin-api/namespaces/${namespaceId}/identity`));
+    // Core returns this endpoint flat ({ namespaceId, publicKey }), not under
+    // `data`. Tolerate both so it works whether or not the envelope is present.
+    const r = await this.httpClient.get<NamespaceIdentity & { data?: NamespaceIdentity }>(
+      `/admin-api/namespaces/${namespaceId}/identity`,
+    );
+    return (r.data ?? r) as NamespaceIdentity;
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
@@ -571,11 +583,13 @@ export class AdminApiClient {
     namespaceId: string,
     request?: DeleteNamespaceRequest,
   ): Promise<DeleteNamespaceResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even when the
+    // body is empty, so always send the header and a (possibly empty) JSON body.
     return unwrap(
       await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${namespaceId}`, {
         method: 'DELETE',
-        body: request ? JSON.stringify(request) : undefined,
-        headers: request ? { 'Content-Type': 'application/json' } : undefined,
+        body: JSON.stringify(request ?? {}),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   }
@@ -638,16 +652,15 @@ export class AdminApiClient {
   }
 
   async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
-    if (request) {
-      return unwrap(
-        await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
-          method: 'DELETE',
-          body: JSON.stringify(request),
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    return unwrap(await this.httpClient.delete<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`));
+    // Core requires `Content-Type: application/json` on this DELETE even with an
+    // empty body, so always send the header and a (possibly empty) JSON body.
+    return unwrap(
+      await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
+        method: 'DELETE',
+        body: JSON.stringify(request ?? {}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
