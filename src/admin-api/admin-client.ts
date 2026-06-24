@@ -109,10 +109,11 @@ import type {
 
 /**
  * Helper: server wraps most responses in `{ data: T }`.
- * This extracts `.data` so callers get the inner payload directly.
+ * This extracts `.data` so callers get the inner payload directly. Null-safe so an
+ * empty 2xx body (parsed as null) yields undefined instead of throwing.
  */
 function unwrap<T>(response: { data: T }): T {
-  return response.data;
+  return response?.data as T;
 }
 
 /**
@@ -378,10 +379,17 @@ export class AdminApiClient {
   }
 
   async getContextsWithExecutorsForApplication(applicationId: string): Promise<ContextsWithExecutorsResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ContextsWithExecutorsResponseData }>(
-        `/admin-api/contexts/with-executors/for-application/${applicationId}`,
-      ),
+    // Core returns this flat as { contexts: [...] } (not a bare array under `data`).
+    const r = await this.httpClient.get<
+      | ContextsWithExecutorsResponseData
+      | { contexts: ContextsWithExecutorsResponseData }
+      | { data: ContextsWithExecutorsResponseData }
+    >(`/admin-api/contexts/with-executors/for-application/${applicationId}`);
+    if (Array.isArray(r)) return r;
+    return (
+      (r as { contexts?: ContextsWithExecutorsResponseData }).contexts ??
+      (r as { data?: ContextsWithExecutorsResponseData }).data ??
+      []
     );
   }
 
@@ -858,12 +866,11 @@ export class AdminApiClient {
     childGroupId: string,
     request: ReparentGroupRequest,
   ): Promise<ReparentGroupResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: ReparentGroupResponseData }>(
-        `/admin-api/groups/${childGroupId}/reparent`,
-        request,
-      ),
-    );
+    // Core returns this flat ({ reparented }); tolerate the { data } envelope too.
+    const r = await this.httpClient.post<
+      ReparentGroupResponseData & { data?: ReparentGroupResponseData }
+    >(`/admin-api/groups/${childGroupId}/reparent`, request);
+    return (r.data ?? r) as ReparentGroupResponseData;
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {

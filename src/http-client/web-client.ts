@@ -440,8 +440,12 @@ export class WebHttpClient implements HttpClient {
       case 'response':
         return response as T;
       case 'json':
-      default:
-        return await response.json();
+      default: {
+        // Tolerate empty 2xx bodies (e.g. 204 No Content from delete/resync):
+        // `response.json()` throws on '', so read text and return null when empty.
+        const text = await response.text();
+        return (text ? JSON.parse(text) : null) as T;
+      }
     }
   }
 
