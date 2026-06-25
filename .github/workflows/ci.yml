@@ -34,3 +34,55 @@ jobs:
       - run: pnpm test:unit
       - run: pnpm typecheck
       - run: pnpm lint
+
+  e2e:
+    name: E2E (vs released merod)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download released merod
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
+          # gh's --json assets exposes the download URL as `.url` (not `.browser_download_url`).
+          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
+          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
+          echo "Downloading merod from $TAG"
+          curl -sL "$URL" | tar xz
+          chmod +x ./merod
+
+      - name: Boot merod (embedded auth, single node)
+        run: |
+          ./merod --home ./e2e-node --node e2e init \
+            --server-port 4001 --swarm-port 4002 --auth-mode embedded
+          ./merod --home ./e2e-node --node e2e run &
+          echo $! > merod.pid
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && { echo "merod healthy"; break; }
+            sleep 2
+            [ "$i" = "30" ] && { echo "merod did not become healthy"; exit 1; }
+          done
+
+      # The e2e harness self-provisions (installs kv-store if absent) and reads
+      # NODE_URL / MERO_E2E_USER, so no manual token/install bootstrapping is needed.
+      - name: Run e2e against released merod
+        env:
+          NODE_URL: http://localhost:4001
+          MERO_E2E_USER: dev
+          MERO_E2E_PASS: dev
+        run: pnpm test:e2e
+
+      - name: Stop merod
+        if: always()
+        run: kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
