@@ -54,8 +54,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
+          # gh's --json assets exposes the download URL as `.url` (not `.browser_download_url`).
           URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
-            -q '.assets[] | select(.name | test("merod_x86_64.*linux.*tar.gz")) | .browser_download_url')
+            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
           test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
           echo "Downloading merod from $TAG"
           curl -sL "$URL" | tar xz
