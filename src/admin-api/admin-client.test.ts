@@ -246,6 +246,8 @@ describe('AdminApiClient', () => {
         serviceName: 'chat',
         identitySecret: 'secret',
         name: 'my-ctx',
+        // Core requires initializationParams; the client defaults it to [].
+        initializationParams: [],
       });
       expect(body).not.toHaveProperty('groupName');
       expect(body).not.toHaveProperty('alias');

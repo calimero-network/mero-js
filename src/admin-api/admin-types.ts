@@ -362,9 +362,12 @@ export interface NamespaceIdentity {
   publicKey: string;
 }
 
+/** Core's `UpgradePolicy` enum — how a namespace/group adopts new app versions. */
+export type UpgradePolicy = 'Automatic' | 'LazyOnAccess';
+
 export interface CreateNamespaceRequest {
   applicationId: string;
-  upgradePolicy: string;
+  upgradePolicy: UpgradePolicy;
   name?: string;
   /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
   appKey?: string;

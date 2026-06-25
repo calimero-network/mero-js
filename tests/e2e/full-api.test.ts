@@ -12,11 +12,12 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js';
+import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness';
 import { parseAuthCallback, buildAuthLoginUrl } from '../../src/auth';
 
-const NODE_URL = process.env.NODE_URL || 'http://localhost:4001';
-const USERNAME = 'dev';
-const PASSWORD = 'dev';
+const NODE_URL = resolveBaseUrl();
+const { username: USERNAME, password: PASSWORD } = resolveCreds();
+
 const KV_STORE_PACKAGE = 'com.calimero.kv-store';
 
 let mero: MeroJs;
@@ -77,13 +78,14 @@ describe('MeroJs E2E — Full Flow', () => {
   // ---- Admin: Applications ----
 
   describe('Applications', () => {
-    it('should list installed applications', async () => {
+    it('should list installed applications (installing kv-store if absent)', async () => {
+      applicationId = await ensureApplication(mero);
+      expect(applicationId).toBeTruthy();
+
       const response = await mero.admin.listApplications();
       expect(response.apps.length).toBeGreaterThan(0);
-
       const kvApp = response.apps.find((a) => a.package === KV_STORE_PACKAGE);
       expect(kvApp).toBeTruthy();
-      applicationId = kvApp!.id;
     });
 
     it('should get application by ID', async () => {
@@ -106,8 +108,8 @@ describe('MeroJs E2E — Full Flow', () => {
     it('should create a namespace for the application', async () => {
       const response = await mero.admin.createNamespace({
         applicationId,
-        upgradePolicy: 'manual',
-        alias: 'e2e-full',
+        upgradePolicy: 'Automatic',
+        alias: `e2e-full-${runId()}`,
       });
       expect(response.namespaceId).toBeTruthy();
       namespaceId = response.namespaceId;
@@ -384,7 +386,10 @@ describe('MeroJs E2E — Full Flow', () => {
   describe('Cleanup', () => {
     it('should delete context', async () => {
       if (!contextId) return;
-      const result = await mero.admin.deleteContext(contextId);
+      // Core requires a requester to delete a group context.
+      const result = await mero.admin.deleteContext(contextId, {
+        requester: executorPublicKey,
+      });
       expect(result.isDeleted).toBe(true);
     });
 

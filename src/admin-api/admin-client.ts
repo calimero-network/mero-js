@@ -109,10 +109,11 @@ import type {
 
 /**
  * Helper: server wraps most responses in `{ data: T }`.
- * This extracts `.data` so callers get the inner payload directly.
+ * This extracts `.data` so callers get the inner payload directly. Null-safe so an
+ * empty 2xx body (parsed as null) yields undefined instead of throwing.
  */
 function unwrap<T>(response: { data: T }): T {
-  return response.data;
+  return response?.data as T;
 }
 
 /**
@@ -252,15 +253,19 @@ export class AdminApiClient {
   // ---- Package Management ----
 
   async listPackages(): Promise<ListPackagesResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ListPackagesResponseData }>('/admin-api/packages'));
+    // Core returns this flat ({ packages: [...] }), not under `data`; tolerate both.
+    const r = await this.httpClient.get<ListPackagesResponseData & { data?: ListPackagesResponseData }>(
+      '/admin-api/packages',
+    );
+    return (r?.data ?? r) as ListPackagesResponseData;
   }
 
   async listPackageVersions(packageName: string): Promise<ListVersionsResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ListVersionsResponseData }>(
-        `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
-      ),
+    // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
+    const r = await this.httpClient.get<ListVersionsResponseData & { data?: ListVersionsResponseData }>(
+      `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
     );
+    return (r?.data ?? r) as ListVersionsResponseData;
   }
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
@@ -272,7 +277,10 @@ export class AdminApiClient {
   // ---- Context Management ----
 
   async createContext(request: CreateContextRequest): Promise<CreateContextResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', request));
+    // Core requires `initializationParams` (no default); default it to an empty
+    // byte array so callers that pass none don't get a 400.
+    const body = { ...request, initializationParams: request.initializationParams ?? [] };
+    return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', body));
   }
 
   async deleteContext(contextId: string, request?: DeleteContextRequest): Promise<DeleteContextResponseData> {
@@ -371,10 +379,17 @@ export class AdminApiClient {
   }
 
   async getContextsWithExecutorsForApplication(applicationId: string): Promise<ContextsWithExecutorsResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ContextsWithExecutorsResponseData }>(
-        `/admin-api/contexts/with-executors/for-application/${applicationId}`,
-      ),
+    // Core returns this flat as { contexts: [...] } (not a bare array under `data`).
+    const r = await this.httpClient.get<
+      | ContextsWithExecutorsResponseData
+      | { contexts: ContextsWithExecutorsResponseData }
+      | { data: ContextsWithExecutorsResponseData }
+    >(`/admin-api/contexts/with-executors/for-application/${applicationId}`);
+    if (Array.isArray(r)) return r;
+    return (
+      (r as { contexts?: ContextsWithExecutorsResponseData } | null)?.contexts ??
+      (r as { data?: ContextsWithExecutorsResponseData } | null)?.data ??
+      []
     );
   }
 
@@ -556,7 +571,12 @@ export class AdminApiClient {
   }
 
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
-    return unwrap(await this.httpClient.get<{ data: NamespaceIdentity }>(`/admin-api/namespaces/${namespaceId}/identity`));
+    // Core returns this endpoint flat ({ namespaceId, publicKey }), not under
+    // `data`. Tolerate both so it works whether or not the envelope is present.
+    const r = await this.httpClient.get<NamespaceIdentity & { data?: NamespaceIdentity }>(
+      `/admin-api/namespaces/${namespaceId}/identity`,
+    );
+    return (r?.data ?? r) as NamespaceIdentity;
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
@@ -571,11 +591,13 @@ export class AdminApiClient {
     namespaceId: string,
     request?: DeleteNamespaceRequest,
   ): Promise<DeleteNamespaceResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even when the
+    // body is empty, so always send the header and a (possibly empty) JSON body.
     return unwrap(
       await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${namespaceId}`, {
         method: 'DELETE',
-        body: request ? JSON.stringify(request) : undefined,
-        headers: request ? { 'Content-Type': 'application/json' } : undefined,
+        body: JSON.stringify(request ?? {}),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   }
@@ -638,16 +660,15 @@ export class AdminApiClient {
   }
 
   async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
-    if (request) {
-      return unwrap(
-        await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
-          method: 'DELETE',
-          body: JSON.stringify(request),
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    return unwrap(await this.httpClient.delete<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`));
+    // Core requires `Content-Type: application/json` on this DELETE even with an
+    // empty body, so always send the header and a (possibly empty) JSON body.
+    return unwrap(
+      await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
+        method: 'DELETE',
+        body: JSON.stringify(request ?? {}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
@@ -845,12 +866,11 @@ export class AdminApiClient {
     childGroupId: string,
     request: ReparentGroupRequest,
   ): Promise<ReparentGroupResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: ReparentGroupResponseData }>(
-        `/admin-api/groups/${childGroupId}/reparent`,
-        request,
-      ),
-    );
+    // Core returns this flat ({ reparented }); tolerate the { data } envelope too.
+    const r = await this.httpClient.post<
+      ReparentGroupResponseData & { data?: ReparentGroupResponseData }
+    >(`/admin-api/groups/${childGroupId}/reparent`, request);
+    return (r?.data ?? r) as ReparentGroupResponseData;
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {
@@ -917,5 +937,74 @@ export class AdminApiClient {
 
   async getPeersCount(): Promise<{ count: number }> {
     return this.httpClient.get<{ count: number }>('/admin-api/peers');
+  }
+
+  /** Node network status (GET /admin-api/network/status). */
+  async getNetworkStatus(): Promise<unknown> {
+    return this.httpClient.get<unknown>('/admin-api/network/status');
+  }
+
+  /** Node storage/usage stats (GET /admin-api/usage). */
+  async getUsage(): Promise<unknown> {
+    return this.httpClient.get<unknown>('/admin-api/usage');
+  }
+
+  /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
+  async getCertificate(): Promise<string> {
+    return this.httpClient.get<string>('/admin-api/certificate', { parse: 'text' });
+  }
+
+  // ---- Group / context / namespace membership ----
+
+  /** Create a standalone group (POST /admin-api/groups). */
+  async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
+    return unwrap(
+      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', request),
+    );
+  }
+
+  /** Leave a group (POST /admin-api/groups/:group_id/leave). */
+  async leaveGroup(groupId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, request ?? {});
+  }
+
+  /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
+  async leaveContext(contextId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, request ?? {});
+  }
+
+  /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
+  async leaveNamespace(namespaceId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, request ?? {});
+  }
+
+  /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
+  async issueOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(`/admin-api/groups/${groupId}/issue-ownership-proof`, request ?? {});
+  }
+
+  /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
+  async issueNamespaceOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(
+      `/admin-api/groups/${groupId}/issue-namespace-ownership-proof`,
+      request ?? {},
+    );
+  }
+
+  /** Set a member's auto-follow flag (PUT /admin-api/groups/:group_id/members/:identity/auto-follow). */
+  async setMemberAutoFollow(
+    groupId: string,
+    identity: string,
+    request: Record<string, unknown>,
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/auto-follow`, request);
+  }
+
+  /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
+  async abortMigration(namespaceId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(
+      `/admin-api/groups/${namespaceId}/migration/abort`,
+      request ?? {},
+    );
   }
 }
