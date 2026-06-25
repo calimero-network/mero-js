@@ -938,4 +938,73 @@ export class AdminApiClient {
   async getPeersCount(): Promise<{ count: number }> {
     return this.httpClient.get<{ count: number }>('/admin-api/peers');
   }
+
+  /** Node network status (GET /admin-api/network/status). */
+  async getNetworkStatus(): Promise<unknown> {
+    return this.httpClient.get<unknown>('/admin-api/network/status');
+  }
+
+  /** Node storage/usage stats (GET /admin-api/usage). */
+  async getUsage(): Promise<unknown> {
+    return this.httpClient.get<unknown>('/admin-api/usage');
+  }
+
+  /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
+  async getCertificate(): Promise<string> {
+    return this.httpClient.get<string>('/admin-api/certificate', { parse: 'text' });
+  }
+
+  // ---- Group / context / namespace membership ----
+
+  /** Create a standalone group (POST /admin-api/groups). */
+  async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
+    return unwrap(
+      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', request),
+    );
+  }
+
+  /** Leave a group (POST /admin-api/groups/:group_id/leave). */
+  async leaveGroup(groupId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, request ?? {});
+  }
+
+  /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
+  async leaveContext(contextId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, request ?? {});
+  }
+
+  /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
+  async leaveNamespace(namespaceId: string, request?: Record<string, unknown>): Promise<void> {
+    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, request ?? {});
+  }
+
+  /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
+  async issueOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(`/admin-api/groups/${groupId}/issue-ownership-proof`, request ?? {});
+  }
+
+  /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
+  async issueNamespaceOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(
+      `/admin-api/groups/${groupId}/issue-namespace-ownership-proof`,
+      request ?? {},
+    );
+  }
+
+  /** Set a member's auto-follow flag (PUT /admin-api/groups/:group_id/members/:identity/auto-follow). */
+  async setMemberAutoFollow(
+    groupId: string,
+    identity: string,
+    request: Record<string, unknown>,
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/auto-follow`, request);
+  }
+
+  /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
+  async abortMigration(namespaceId: string, request?: Record<string, unknown>): Promise<unknown> {
+    return this.httpClient.post<unknown>(
+      `/admin-api/groups/${namespaceId}/migration/abort`,
+      request ?? {},
+    );
+  }
 }
