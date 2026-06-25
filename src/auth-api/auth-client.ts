@@ -10,7 +10,6 @@ import {
   TokenRequest,
   TokenResponse,
   RefreshTokenRequest,
-  ChallengeResponse,
   // Mock Token (testing)
   MockTokenRequest,
   // Token Management
@@ -20,15 +19,14 @@ import {
   CreateKeyRequest,
   CreateKeyResponse,
   DeleteKeyResponse,
-  RootKeysResponse,
+  RootKey,
   // Client Management
-  ClientKeysResponse,
+  ClientKey,
   GenerateClientKeyRequest,
   DeleteClientResponse,
   // Permissions
   PermissionResponse,
-  // Auth Status
-  AuthStatus,
+  UpdateKeyPermissionsRequest,
 } from './auth-types';
 
 export class AuthApiClient {
@@ -83,10 +81,6 @@ export class AuthApiClient {
     return this.httpClient.post<TokenResponse>('/auth/mock-token', request);
   }
 
-  async getChallenge(): Promise<ChallengeResponse> {
-    return this.httpClient.get<ChallengeResponse>('/auth/challenge');
-  }
-
   async validateToken(token: string): Promise<{
     valid: boolean;
     headers: Record<string, string>;
@@ -120,21 +114,26 @@ export class AuthApiClient {
     };
   }
 
-  async isAuthed(): Promise<AuthStatus> {
-    return this.httpClient.get<AuthStatus>('/auth/is-authed');
-  }
-
   // Token Management Endpoints
+  // NOTE: node auth status lives on AdminApiClient.isAuthed() (/admin-api/is-authed);
+  // there is no /auth/is-authed on the auth service.
   async revokeTokens(
     request: RevokeTokenRequest,
   ): Promise<RevokeTokenResponse> {
-    return this.httpClient.post<RevokeTokenResponse>('/admin/revoke', request);
+    const response = await this.httpClient.post<ApiResponse<RevokeTokenResponse>>(
+      '/admin/revoke',
+      request,
+    );
+    if (!response.data) {
+      throw new Error('Revoke tokens response data is null');
+    }
+    return response.data;
   }
 
   // Key Management Endpoints
-  async listRootKeys(): Promise<RootKeysResponse> {
+  async listRootKeys(): Promise<RootKey[]> {
     const response =
-      await this.httpClient.get<ApiResponse<RootKeysResponse>>('/admin/keys');
+      await this.httpClient.get<ApiResponse<RootKey[]>>('/admin/keys');
     if (!response.data) {
       throw new Error('Root keys response data is null');
     }
@@ -142,7 +141,14 @@ export class AuthApiClient {
   }
 
   async createRootKey(request: CreateKeyRequest): Promise<CreateKeyResponse> {
-    return this.httpClient.post<CreateKeyResponse>('/admin/keys', request);
+    const response = await this.httpClient.post<ApiResponse<CreateKeyResponse>>(
+      '/admin/keys',
+      request,
+    );
+    if (!response.data) {
+      throw new Error('Create root key response data is null');
+    }
+    return response.data;
   }
 
   async deleteRootKey(keyId: string): Promise<DeleteKeyResponse> {
@@ -150,8 +156,8 @@ export class AuthApiClient {
   }
 
   // Client Management Endpoints
-  async listClientKeys(): Promise<ClientKeysResponse> {
-    const response = await this.httpClient.get<ApiResponse<ClientKeysResponse>>(
+  async listClientKeys(): Promise<ClientKey[]> {
+    const response = await this.httpClient.get<ApiResponse<ClientKey[]>>(
       '/admin/keys/clients',
     );
     if (!response.data) {
@@ -184,11 +190,12 @@ export class AuthApiClient {
 
   async updateKeyPermissions(
     keyId: string,
-    permissions: string[],
+    changes: UpdateKeyPermissionsRequest,
   ): Promise<PermissionResponse> {
+    // Core expects an { add, remove } delta, not a { permissions } replacement.
     return this.httpClient.put<PermissionResponse>(
       `/admin/keys/${keyId}/permissions`,
-      { permissions },
+      { add: changes.add, remove: changes.remove },
     );
   }
 }

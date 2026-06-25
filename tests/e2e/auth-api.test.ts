@@ -1,47 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '@calimero-network/mero-js';
+import { MeroJs } from '../../src/mero-js';
+import { startNode, resolveBaseUrl, resolveCreds, type StartedNode } from './harness';
 
 // Test configuration
 const AUTH_CONFIG = {
-  baseUrl: process.env.AUTH_API_BASE_URL || 'http://localhost',
-  credentials: {
-    username: 'admin',
-    password: 'admin123',
-  },
+  baseUrl: resolveBaseUrl(),
+  credentials: resolveCreds(),
   timeoutMs: 10000,
 };
 
 describe('Auth API E2E Tests', () => {
   let meroJs: MeroJs;
+  let node: StartedNode;
 
   beforeAll(async () => {
-    console.log('🚀 Starting merobox environment...');
-
-    // Start merobox with auth service
-    const { spawn } = await import('child_process');
-
-    console.log('🔧 Starting Calimero node with auth service...');
-    const meroboxProcess = spawn('merobox', ['run', '--auth-service'], {
-      stdio: 'pipe',
-      cwd: process.cwd(),
-    });
-
-    // Add error handling for merobox process
-    meroboxProcess.on('error', (error) => {
-      console.error('❌ Merobox process error:', error);
-    });
-
-    meroboxProcess.stderr.on('data', (data) => {
-      console.error('❌ Merobox stderr:', data.toString());
-    });
-
-    meroboxProcess.stdout.on('data', (data) => {
-      console.log('📝 Merobox stdout:', data.toString());
-    });
-
-    // Wait for services to be ready
-    console.log('⏳ Waiting for services to start...');
-    await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds
+    // Attaches to NODE_BASE_URL when set (core CI injects its merod), else spawns
+    // merobox/merod locally. See ./harness.
+    node = await startNode();
 
     console.log('🔧 Creating MeroJs SDK...');
     console.log('Auth API URL:', AUTH_CONFIG.baseUrl);
@@ -58,45 +33,12 @@ describe('Auth API E2E Tests', () => {
   }, 120000); // 2 minute timeout for beforeAll
 
   afterAll(async () => {
-    console.log('🧹 Cleaning up merobox environment...');
-
+    // No-op when attached to an injected node; tears down a locally-spawned one.
     try {
-      const { spawn } = await import('child_process');
-
-      console.log('🗑️ Running merobox nuke --force...');
-      const nukeProcess = spawn('merobox', ['nuke', '--force'], {
-        stdio: 'inherit',
-        cwd: process.cwd(),
-      });
-
-      // Wait for nuke to complete with timeout
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          console.warn('⚠️ Merobox cleanup timeout, killing process...');
-          nukeProcess.kill('SIGTERM');
-          resolve(void 0);
-        }, 90000); // 90 second timeout
-
-        nukeProcess.on('close', (code) => {
-          clearTimeout(timeout);
-          if (code === 0) {
-            console.log('✅ Merobox cleanup completed successfully');
-            resolve(void 0);
-          } else {
-            console.warn('⚠️ Merobox cleanup completed with code:', code);
-            resolve(void 0); // Don't fail the test for cleanup issues
-          }
-        });
-        nukeProcess.on('error', (error) => {
-          clearTimeout(timeout);
-          console.warn('⚠️ Merobox cleanup failed:', error);
-          resolve(void 0); // Don't fail the test for cleanup issues
-        });
-      });
+      await node?.stop();
     } catch (error) {
-      console.warn('⚠️ Merobox cleanup failed:', error);
+      console.warn('⚠️ node cleanup failed:', error);
     }
-
     console.log('🧹 Test cleanup completed');
   }, 120000); // 2 minute timeout for afterAll
 
@@ -109,7 +51,7 @@ describe('Auth API E2E Tests', () => {
 
       expect(health).toBeDefined();
       expect(health.status).toBeDefined();
-      expect(health.status).toBe('healthy');
+      expect(health.status).toBe('alive');
     });
 
     it('should get service identity', async () => {
@@ -199,10 +141,7 @@ describe('Auth API E2E Tests', () => {
         public_key: 'test-public-key-refresh',
         client_name: 'e2e-test-client-refresh',
         timestamp: Math.floor(Date.now() / 1000),
-        provider_data: {
-          username: 'admin',
-          password: 'admin123',
-        },
+        provider_data: { ...AUTH_CONFIG.credentials },
       });
 
       try {

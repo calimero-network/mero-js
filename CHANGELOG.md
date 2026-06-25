@@ -1,3 +1,116 @@
+## 6.0.0 (2026-06-23)
+
+* fix(admin)!: align group reparent + createContext label with core wire contract (#53) ([269c412](https://github.com/calimero-network/mero-js/commit/269c412)), closes [#53](https://github.com/calimero-network/mero-js/issues/53)
+* test(auth): cover success:false payloads in revokeTokens/createRootKey (#54) ([100828a](https://github.com/calimero-network/mero-js/commit/100828a)), closes [#54](https://github.com/calimero-network/mero-js/issues/54)
+
+
+### BREAKING CHANGE
+
+* `AdminApiClient.nestGroup`/`unnestGroup` are removed in favor of
+`reparentGroup`; `CreateContextRequest.groupName` is renamed to `name`. Downstream
+`mero-react` exposes `useNestGroup`/`useUnnestGroup` hooks that need a
+corresponding `useReparentGroup` (those hooks already 404 against current core).
+
+Verified: 219 unit tests pass (2 new reparent tests RED→green), typecheck, lint,
+build all clean.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+* style(admin): trim verbose explainer comments on reparent/createContext
+
+Reduce the narrative comments (wire path/body, "core renamed X") to terse
+one-liners; the contract lives in the PR/commit, not inline.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+## 5.0.0 (2026-06-23)
+
+* fix(auth)!: align auth-api key/token/health methods with core wire contract (#52) ([bc1ceda](https://github.com/calimero-network/mero-js/commit/bc1ceda)), closes [#52](https://github.com/calimero-network/mero-js/issues/52) [#51](https://github.com/calimero-network/mero-js/issues/51)
+
+
+### BREAKING CHANGE
+
+* AuthApiClient.getChallenge() and isAuthed() removed (use
+AdminApiClient.isAuthed()). Changed request/response types: RevokeTokenRequest
+({client_id}), CreateKeyRequest/CreateKeyResponse, GenerateClientKeyRequest,
+MockTokenRequest (snake_case); listRootKeys/listClientKeys now return
+RootKey[]/ClientKey[] (RootKeysResponse/ClientKeysResponse, ChallengeResponse and
+AuthStatus types removed); HealthResponse/IdentityResponse field changes.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+## 4.0.0 (2026-06-22)
+
+* fix(admin,auth)!: correct 4 wire-contract drifts vs core (alias, blob, context hash, key permissions ([4ad230a](https://github.com/calimero-network/mero-js/commit/4ad230a)), closes [#51](https://github.com/calimero-network/mero-js/issues/51)
+
+
+### BREAKING CHANGE
+
+* CreateAliasRequest is replaced by CreateContextAliasRequest /
+CreateApplicationAliasRequest / CreateContextIdentityAliasRequest;
+UploadBlobRequest gains optional hash/contextId; Context.rootHash is renamed to
+Context.contextStateHash.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* fix(auth)!: send { add, remove } delta for updateKeyPermissions
+
+updateKeyPermissions sent `{ permissions }`, which core ignores — the call was a
+silent no-op that echoed the old permissions back with 200. Core expects an
+{ add, remove } delta (remove applied first, then add). The method now takes an
+UpdateKeyPermissionsRequest delta and sends the correct body. Adds a
+body-asserting test (the first guard on this endpoint's request shape).
+* updateKeyPermissions(keyId, permissions: string[]) is now
+updateKeyPermissions(keyId, { add?, remove? }).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* refactor(admin): drop unsafe BodyInit cast in uploadBlob; cover ArrayBuffer path
+
+Addresses meroreviewer warnings on uploadBlob:
+- Pass request.data (Uint8Array | ArrayBuffer | Blob) directly as the body. All
+  three are valid BodyInit, so the `as BodyInit` cast (which silenced type
+  errors) is removed and the type is now compiler-enforced. fetch honors a
+  Uint8Array view's byteOffset/byteLength, so the manual buffer slice (and its
+  SharedArrayBuffer edge) is no longer needed.
+- Add a test exercising the ArrayBuffer body path (the Blob path is the same
+  verbatim pass-through), asserting the exact body object is streamed.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+## <small>3.0.1 (2026-06-17)</small>
+
+* fix(admin): correct migrations-v2 response envelopes + AppVersionChanged event (#50) ([1038bb2](https://github.com/calimero-network/mero-js/commit/1038bb2)), closes [#50](https://github.com/calimero-network/mero-js/issues/50) [calimero-network/core#2773](https://github.com/calimero-network/core/issues/2773)
+
+## 3.0.0 (2026-06-15)
+
+* feat(admin)!: align admin SDK with migrations-v2 core API (#49) ([1766888](https://github.com/calimero-network/mero-js/commit/1766888)), closes [#49](https://github.com/calimero-network/mero-js/issues/49)
+
+
+### BREAKING CHANGE
+
+* `migrateMethod` is removed from `UpdateContextApplicationRequest`
+and `UpgradeGroupRequest`. Callers must stop passing it; the node derives the
+migrate method from the bundle ABI.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+## <small>2.5.1 (2026-06-10)</small>
+
+* fix(admin): tolerate a bare-null body in the metadata getters (#47) ([8ef7cfc](https://github.com/calimero-network/mero-js/commit/8ef7cfc)), closes [#47](https://github.com/calimero-network/mero-js/issues/47) [#36](https://github.com/calimero-network/mero-js/issues/36) [#45](https://github.com/calimero-network/mero-js/issues/45)
+
+## 2.5.0 (2026-06-10)
+
+* feat(admin): cascade flag on UpgradeGroupRequest (#46) ([86c9fa6](https://github.com/calimero-network/mero-js/commit/86c9fa6)), closes [#46](https://github.com/calimero-network/mero-js/issues/46)
+
+## <small>2.4.1 (2026-06-09)</small>
+
+* fix(admin): tolerate null metadata payload in metadata getters (#45) ([4491675](https://github.com/calimero-network/mero-js/commit/4491675)), closes [#45](https://github.com/calimero-network/mero-js/issues/45)
+
+## 2.4.0 (2026-06-09)
+
+* feat(admin): failed migration state + BundleMigration type + installFromRegistry (#2539) (#44) ([e72a3a5](https://github.com/calimero-network/mero-js/commit/e72a3a5)), closes [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#44](https://github.com/calimero-network/mero-js/issues/44) [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#2539](https://github.com/calimero-network/mero-js/issues/2539)
+
 ## 2.3.0 (2026-06-08)
 
 * feat: migration-UX SDK surfaces — migration/cascade status, typed SSE, migrateMyEntries (6g, #2539)  ([3b1cc18](https://github.com/calimero-network/mero-js/commit/3b1cc18)), closes [#2539](https://github.com/calimero-network/mero-js/issues/2539) [#42](https://github.com/calimero-network/mero-js/issues/42)

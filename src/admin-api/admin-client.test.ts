@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AdminApiClient } from './admin-client';
+import { AdminApiClient, compareSemver } from './admin-client';
 import { HttpClient } from '../http-client';
 
 // Mock HttpClient that stores expected responses and records request bodies
@@ -17,11 +17,13 @@ class MockHttpClient implements HttpClient {
 
   private getResponse(method: string, path: string): unknown {
     const key = `${method} ${path}`;
-    const response = this.mockResponses.get(key);
-    if (!response) {
+    // .has(...) rather than truthiness so an explicitly-mocked `null` body
+    // (the "no metadata record" wire shape) is "set to null", not
+    // "never registered".
+    if (!this.mockResponses.has(key)) {
       throw new Error(`No mock response for ${key}`);
     }
-    return response;
+    return this.mockResponses.get(key);
   }
 
   async get<T>(path: string): Promise<T> { return this.getResponse('GET', path) as T; }
@@ -82,6 +84,88 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ applicationId: 'app-1' });
     });
 
+    it('installFromRegistry resolves the artifact URL and installs', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        // Manifest is fetched by the CALLER's package@version...
+        expect(String(input)).toBe(
+          'https://registry.example.com/api/v2/bundles/com.acme.app/2.0.0',
+        );
+        // ...but resolves to the registry's canonical appVersion (here it
+        // differs from the arg, so the asserts below prove the manifest value
+        // — not the caller's arg — builds the artifact URL + install request).
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ package: 'com.acme.app', appVersion: '2.0.1' }),
+        } as Response;
+      }) as typeof fetch;
+      try {
+        mock.setMockResponse('POST', '/admin-api/install-application', {
+          data: { applicationId: 'app-9' },
+        });
+        const result = await client.installFromRegistry(
+          'https://registry.example.com',
+          'com.acme.app',
+          '2.0.0',
+        );
+        expect(result.applicationId).toBe('app-9');
+        const body = mock.getRequestBody('POST', '/admin-api/install-application') as {
+          url: string;
+          package?: string;
+          version?: string;
+        };
+        expect(body.url).toBe(
+          'https://registry.example.com/artifacts/com.acme.app/2.0.1/com.acme.app-2.0.1.mpk',
+        );
+        expect(body.package).toBe('com.acme.app');
+        expect(body.version).toBe('2.0.1');
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('installFromRegistry throws on a registry error', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        ({ ok: false, status: 404, json: async () => ({}) }) as Response) as typeof fetch;
+      try {
+        await expect(
+          client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
+        ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions returns versions newest-first by semver', async () => {
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe(
+          'https://registry.example.com/api/v2/bundles?package=com.acme.app',
+        );
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { package: 'com.acme.app', appVersion: '1.9.0' },
+            { package: 'com.acme.app', appVersion: '1.10.0' },
+            { package: 'com.acme.app', appVersion: '1.2.0' },
+          ],
+        } as Response;
+      }) as typeof fetch;
+      try {
+        const versions = await client.getRegistryVersions(
+          'https://registry.example.com',
+          'com.acme.app',
+        );
+        // 1.10.0 must sort ABOVE 1.9.0 — numeric, not lexical.
+        expect(versions).toEqual(['1.10.0', '1.9.0', '1.2.0']);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
     it('installDevApplication unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-dev-application', { data: { applicationId: 'app-2' } });
       const result = await client.installDevApplication({ path: '/tmp/app.mpk', metadata: [] });
@@ -104,6 +188,16 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/applications/app-1', { data: { application: { id: 'app-1' } } });
       const result = await client.getApplication('app-1');
       expect(result).toEqual({ application: { id: 'app-1' } });
+    });
+
+    it('listApplicationVersions unwraps the installed-blob inventory', async () => {
+      const entries = [
+        { version: '1.0.0', blobId: 'blob-1', size: 100, package: 'pkg-a' },
+        { version: '2.0.0', blobId: 'blob-2', size: 200, package: 'pkg-a' },
+      ];
+      mock.setMockResponse('GET', '/admin-api/applications/app-1/versions', { data: entries });
+      const result = await client.listApplicationVersions('app-1');
+      expect(result).toEqual(entries);
     });
   });
 
@@ -134,24 +228,29 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ contextId: 'ctx-1', memberPublicKey: 'key-1' });
     });
 
-    it('createContext sends all optional fields', async () => {
+    it('createContext sends all optional fields incl. the `name` label (core wire key, not groupName/alias)', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts', { data: { contextId: 'ctx-1', memberPublicKey: 'key-1', groupId: 'g-1', groupCreated: true } });
       const result = await client.createContext({
         applicationId: 'app-1',
         groupId: 'group-1',
         serviceName: 'chat',
         identitySecret: 'secret',
-        alias: 'my-ctx',
+        name: 'my-ctx',
       });
       expect(result.groupId).toBe('g-1');
       expect(result.groupCreated).toBe(true);
-      expect(mock.getRequestBody('POST', '/admin-api/contexts')).toEqual({
+      const body = mock.getRequestBody('POST', '/admin-api/contexts') as Record<string, unknown>;
+      expect(body).toEqual({
         applicationId: 'app-1',
         groupId: 'group-1',
         serviceName: 'chat',
         identitySecret: 'secret',
-        alias: 'my-ctx',
+        name: 'my-ctx',
+        // Core requires initializationParams; the client defaults it to [].
+        initializationParams: [],
       });
+      expect(body).not.toHaveProperty('groupName');
+      expect(body).not.toHaveProperty('alias');
     });
 
     it('deleteContext unwraps data', async () => {
@@ -167,20 +266,22 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('DELETE', '/admin-api/contexts/ctx-1')).toEqual({ requester: 'pk-admin' });
     });
 
-    it('getContexts returns contexts with groupId', async () => {
-      const ctx = { id: 'ctx-1', applicationId: 'app-1', rootHash: 'abc', dagHeads: [], groupId: 'g-1' };
+    it('getContexts returns contexts with groupId and contextStateHash', async () => {
+      const ctx = { id: 'ctx-1', applicationId: 'app-1', contextStateHash: 'abc', dagHeads: [], groupId: 'g-1' };
       mock.setMockResponse('GET', '/admin-api/contexts', { data: { contexts: [ctx] } });
       const result = await client.getContexts();
       expect(result.contexts).toHaveLength(1);
       expect(result.contexts[0].id).toBe('ctx-1');
       expect(result.contexts[0].groupId).toBe('g-1');
+      expect(result.contexts[0].contextStateHash).toBe('abc');
     });
 
-    it('getContext unwraps data', async () => {
-      const ctx = { id: 'ctx-1', applicationId: 'app-1', rootHash: 'abc', dagHeads: [] };
+    it('getContext unwraps data and exposes contextStateHash (core wire key)', async () => {
+      const ctx = { id: 'ctx-1', applicationId: 'app-1', contextStateHash: 'abc', dagHeads: [] };
       mock.setMockResponse('GET', '/admin-api/contexts/ctx-1', { data: ctx });
       const result = await client.getContext('ctx-1');
       expect(result.id).toBe('ctx-1');
+      expect(result.contextStateHash).toBe('abc');
     });
 
     it('getContextsForApplication unwraps data', async () => {
@@ -247,6 +348,27 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/')).toEqual({});
     });
 
+    it('resyncContext posts force and parses the flat (un-enveloped) payload', async () => {
+      // Core's ResyncContextApiResponse is flat — no `data` envelope.
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
+        contextId: 'ctx-1',
+        resyncStarted: true,
+      });
+      const result = await client.resyncContext('ctx-1', { force: true });
+      expect(result).toEqual({ contextId: 'ctx-1', resyncStarted: true });
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/resync')).toEqual({ force: true });
+    });
+
+    it('resyncContext defaults to an empty request body', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/resync', {
+        contextId: 'ctx-1',
+        resyncStarted: false,
+      });
+      const result = await client.resyncContext('ctx-1');
+      expect(result.resyncStarted).toBe(false);
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/resync')).toEqual({});
+    });
+
     it('getContextsWithExecutorsForApplication unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/contexts/with-executors/for-application/app-1', {
         data: [{ contextId: 'ctx-1', executors: ['exec-1'] }],
@@ -280,53 +402,73 @@ describe('AdminApiClient', () => {
       await client.updateContextApplication('ctx-1', {
         applicationId: 'app-2',
         executorPublicKey: 'pk-1',
-        migrateMethod: 'migrate_v2',
       });
       expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/application')).toEqual({
         applicationId: 'app-2',
         executorPublicKey: 'pk-1',
-        migrateMethod: 'migrate_v2',
       });
     });
   });
 
   describe('Blob Management', () => {
-    it('uploadBlob uses PUT and unwraps data', async () => {
-      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blobId: 'blob-1', size: 3 } });
-      const result = await client.uploadBlob({ data: new Uint8Array([1, 2, 3]) });
+    it('uploadBlob streams the raw Uint8Array with snake_case query params and maps blob_id', async () => {
+      const bytes = new Uint8Array([1, 2, 3]);
+      mock.setMockResponse('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1', {
+        data: { blob_id: 'blob-1', size: 3 },
+      });
+      const result = await client.uploadBlob({ data: bytes, hash: 'h1', contextId: 'ctx-1' });
       expect(result).toEqual({ blobId: 'blob-1', size: 3 });
+      // the exact bytes are streamed verbatim, NOT a JSON wrapper like {"data":{"0":1,...}}
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs?hash=h1&context_id=ctx-1')).toBe(bytes);
     });
 
-    it('deleteBlob unwraps data', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/blobs/blob-1', { data: { blobId: 'blob-1', deleted: true } });
+    it('uploadBlob streams an ArrayBuffer body and omits the query when no hash/contextId', async () => {
+      const buf = new Uint8Array([9, 9]).buffer;
+      mock.setMockResponse('PUT', '/admin-api/blobs', { data: { blob_id: 'blob-2', size: 2 } });
+      const result = await client.uploadBlob({ data: buf });
+      expect(result).toEqual({ blobId: 'blob-2', size: 2 });
+      expect(mock.getRequestBody('PUT', '/admin-api/blobs')).toBe(buf);
+    });
+
+    it('deleteBlob parses the flat snake_case payload and maps to camelCase', async () => {
+      // Core's BlobDeleteResponse is flat AND snake_case (`{ blob_id, deleted }`).
+      mock.setMockResponse('DELETE', '/admin-api/blobs/blob-1', { blob_id: 'blob-1', deleted: true });
       const result = await client.deleteBlob('blob-1');
       expect(result).toEqual({ blobId: 'blob-1', deleted: true });
     });
 
-    it('listBlobs unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/blobs', { data: { blobs: [{ blobId: 'blob-1', size: 100 }] } });
+    it('listBlobs maps snake_case blob_id to blobId', async () => {
+      mock.setMockResponse('GET', '/admin-api/blobs', { data: { blobs: [{ blob_id: 'blob-1', size: 100 }] } });
       const result = await client.listBlobs();
       expect(result).toEqual({ blobs: [{ blobId: 'blob-1', size: 100 }] });
     });
 
-    it('getBlob unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', { data: { blobId: 'blob-1', size: 100 } });
+    it('getBlob maps snake_case blob_id to blobId', async () => {
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', { data: { blob_id: 'blob-1', size: 100 } });
       const result = await client.getBlob('blob-1');
       expect(result).toEqual({ blobId: 'blob-1', size: 100 });
     });
   });
 
   describe('Alias Management', () => {
-    it('createContextAlias unwraps data', async () => {
+    it('createContextAlias sends { alias, contextId }', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/context', { data: {} });
-      const result = await client.createContextAlias({ name: 'my-ctx', value: 'ctx-1' });
+      const result = await client.createContextAlias({ alias: 'my-ctx', contextId: 'ctx-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/context')).toEqual({
+        alias: 'my-ctx',
+        contextId: 'ctx-1',
+      });
     });
 
-    it('createApplicationAlias unwraps data', async () => {
+    it('createApplicationAlias sends { alias, applicationId }', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/application', { data: {} });
-      const result = await client.createApplicationAlias({ name: 'my-app', value: 'app-1' });
+      const result = await client.createApplicationAlias({ alias: 'my-app', applicationId: 'app-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/application')).toEqual({
+        alias: 'my-app',
+        applicationId: 'app-1',
+      });
     });
 
     it('lookupContextAlias unwraps data', async () => {
@@ -373,10 +515,14 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ aliases: [{ name: 'alice', value: 'pk-1' }] });
     });
 
-    it('createContextIdentityAlias unwraps data', async () => {
+    it('createContextIdentityAlias sends { alias, identity } with context in the path', async () => {
       mock.setMockResponse('POST', '/admin-api/alias/create/identity/ctx-1', { data: {} });
-      const result = await client.createContextIdentityAlias('ctx-1', { name: 'alice', value: 'pk-1' });
+      const result = await client.createContextIdentityAlias('ctx-1', { alias: 'alice', identity: 'pk-1' });
       expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/identity/ctx-1')).toEqual({
+        alias: 'alice',
+        identity: 'pk-1',
+      });
     });
 
     it('lookupContextIdentityAlias unwraps data', async () => {
@@ -427,6 +573,16 @@ describe('AdminApiClient', () => {
         applicationId: 'app-1',
         upgradePolicy: 'manual',
         name: 'My NS',
+      });
+    });
+
+    it('createNamespace forwards the appKey version pin', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
+      await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', appKey: 'deadbeef' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        applicationId: 'app-1',
+        upgradePolicy: 'manual',
+        appKey: 'deadbeef',
       });
     });
 
@@ -689,6 +845,20 @@ describe('AdminApiClient', () => {
       expect(await client.getGroupMetadata('g1')).toBeNull();
     });
 
+    // Server omits the inner envelope entirely (`{ data: null }`) when no
+    // metadata row exists — the unwrapped payload is then null, so reading
+    // `.data` off it used to throw "Cannot read properties of null".
+    it('getGroupMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: null });
+      expect(await client.getGroupMetadata('g1')).toBeNull();
+    });
+
+    // Third observed "no record" shape: a bare `null` body, no envelope at all.
+    it('getGroupMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', null);
+      expect(await client.getGroupMetadata('g1')).toBeNull();
+    });
+
     it('setMemberMetadata sends PUT to the member path', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g1/members/pk-1/metadata', {});
       await client.setMemberMetadata('g1', 'pk-1', { name: 'Alice' });
@@ -698,6 +868,18 @@ describe('AdminApiClient', () => {
     it('getMemberMetadata returns the inner MetadataRecord', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: { data: record } });
       expect(await client.getMemberMetadata('g1', 'pk-1')).toEqual(record);
+    });
+
+    // The display-name lookup that surfaced the crash: a member with no name
+    // set yields `{ data: null }`, which must read back as null, not throw.
+    it('getMemberMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: null });
+      expect(await client.getMemberMetadata('g1', 'pk-1')).toBeNull();
+    });
+
+    it('getMemberMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', null);
+      expect(await client.getMemberMetadata('g1', 'pk-1')).toBeNull();
     });
 
     it('setContextMetadata sends PUT to the context path', async () => {
@@ -711,6 +893,16 @@ describe('AdminApiClient', () => {
     it('getContextMetadata returns the inner MetadataRecord', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: { data: record } });
       expect(await client.getContextMetadata('g1', 'ctx-1')).toEqual(record);
+    });
+
+    it('getContextMetadata returns null (not throws) when the payload itself is null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: null });
+      expect(await client.getContextMetadata('g1', 'ctx-1')).toBeNull();
+    });
+
+    it('getContextMetadata returns null (not throws) when the body is bare null', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', null);
+      expect(await client.getContextMetadata('g1', 'ctx-1')).toBeNull();
     });
   });
 
@@ -732,18 +924,30 @@ describe('AdminApiClient', () => {
   });
 
   describe('Group Upgrade', () => {
-    it('upgradeGroup sends request with migrateMethod', async () => {
+    it('upgradeGroup sends request and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
         data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
       });
       const result = await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
       });
       expect(result.status).toBe('in_progress');
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
         targetApplicationId: 'app-2',
-        migrateMethod: 'migrate_v2',
+      });
+    });
+
+    it('upgradeGroup forwards cascade so the upgrade fans out to subgroups', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+      });
+      await client.upgradeGroup('g-1', {
+        targetApplicationId: 'app-2',
+        cascade: true,
+      });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        cascade: true,
       });
     });
 
@@ -842,17 +1046,22 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Group Nesting', () => {
-    it('nestGroup sends childGroupId', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/parent-1/nest', {});
-      await client.nestGroup('parent-1', { childGroupId: 'child-1' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/parent-1/nest')).toEqual({ childGroupId: 'child-1' });
+  describe('Group Reparent', () => {
+    it('reparentGroup moves the child (path) under newParentId (body) and unwraps { reparented }', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: true } });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2' });
+      expect(result).toEqual({ reparented: true });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({ newParentId: 'parent-2' });
     });
 
-    it('unnestGroup sends childGroupId', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/parent-1/unnest', {});
-      await client.unnestGroup('parent-1', { childGroupId: 'child-1' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/parent-1/unnest')).toEqual({ childGroupId: 'child-1' });
+    it('reparentGroup forwards an explicit requester', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: false } });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2', requester: 'pk-admin' });
+      expect(result.reparented).toBe(false);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({
+        newParentId: 'parent-2',
+        requester: 'pk-admin',
+      });
     });
 
     it('listSubgroups reads the `subgroups` field (current server shape)', async () => {
@@ -989,5 +1198,18 @@ describe('AdminApiClient', () => {
       const result = await client.getPeersCount();
       expect(result).toEqual({ count: 3 });
     });
+  });
+});
+
+describe('compareSemver', () => {
+  it('orders numerically, not lexically', () => {
+    expect(compareSemver('1.10.0', '1.9.0')).toBeGreaterThan(0);
+    expect(compareSemver('2.0.0', '1.9.9')).toBeGreaterThan(0);
+    expect(compareSemver('1.9.0', '1.10.0')).toBeLessThan(0);
+  });
+
+  it('treats equal and zero-padded versions as equal', () => {
+    expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
+    expect(compareSemver('1.2', '1.2.0')).toBe(0);
   });
 });

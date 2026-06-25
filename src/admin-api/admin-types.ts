@@ -58,6 +58,18 @@ export interface GetApplicationResponseData {
   application: Application | null;
 }
 
+/** One installed blob for an application (distinct from the package registry). */
+export interface ApplicationVersionEntry {
+  version: string;
+  blobId: string;
+  size: number;
+  package: string;
+}
+
+export interface ListApplicationVersionsResponseData {
+  data: ApplicationVersionEntry[];
+}
+
 // ---- Packages ----
 
 export interface GetLatestVersionResponseData {
@@ -73,6 +85,33 @@ export interface ListVersionsResponseData {
   versions: string[];
 }
 
+// ---- Bundle migration metadata ----
+
+/**
+ * Per-service migration descriptor carried in a multi-service bundle manifest,
+ * emitted from the app's `#[app::migrate]` declaration. `toSchemaVersion` is the
+ * CRDT schema version the migrate targets (the engine's gate); `toVersion` is
+ * the user-facing bundle semver an admin matches on; `method` is the migrate
+ * entrypoint.
+ */
+export interface BundleMigration {
+  method: string;
+  toSchemaVersion: number;
+  toVersion?: string;
+}
+
+/**
+ * The subset of a registry bundle manifest that `installFromRegistry` consumes
+ * to resolve an artifact URL. The registry serves it at
+ * `GET {registry}/api/v2/bundles/{package}/{version}`.
+ */
+export interface RegistryBundleManifest {
+  package: string;
+  appVersion: string;
+  /** Present when this bundle's app declares a migration. */
+  migration?: BundleMigration;
+}
+
 // ---- Contexts ----
 
 export interface CreateContextRequest {
@@ -82,9 +121,8 @@ export interface CreateContextRequest {
   contextSeed?: string;
   initializationParams?: number[];
   identitySecret?: string;
-  // Renamed from `alias` in core (`context create --alias` -> `--group-name`)
-  // because `--name` was already the node-local alias flag.
-  groupName?: string;
+  /** Optional human-readable label for the context. */
+  name?: string;
 }
 
 export interface CreateContextResponseData {
@@ -106,7 +144,12 @@ export interface Context {
   id: string;
   applicationId: string;
   serviceName?: string;
-  rootHash: string;
+  /**
+   * Context state/root hash. Core's wire key is `contextStateHash` (part of the
+   * cross-DAG auth three-level naming: contextStateHash / groupStateHash /
+   * namespaceStateHash). Renamed from `rootHash`, which never populated.
+   */
+  contextStateHash: string;
   dagHeads: number[][];
   /** Bundle semver of the installed application (skew #2). Absent on older nodes. */
   applicationVersion?: string;
@@ -175,11 +218,22 @@ export interface InviteSpecializedNodeResponseData {
 export interface UpdateContextApplicationRequest {
   applicationId: string;
   executorPublicKey: string;
-  migrateMethod?: string;
 }
 
 // Update context application returns empty
 export type UpdateContextApplicationResponseData = Record<string, never>;
+
+// ---- Resync Context ----
+
+export interface ResyncContextRequest {
+  /** Force a full re-pull even if the context is not detected as stranded. */
+  force?: boolean;
+}
+
+export interface ResyncContextResponseData {
+  contextId: string;
+  resyncStarted: boolean;
+}
 
 // ---- Contexts With Executors ----
 
@@ -193,7 +247,12 @@ export type ContextsWithExecutorsResponseData = ContextWithExecutors[];
 // ---- Blobs ----
 
 export interface UploadBlobRequest {
-  data: Uint8Array | ArrayBuffer;
+  /** Raw blob bytes; streamed verbatim as the request body (octet-stream). */
+  data: Uint8Array | ArrayBuffer | Blob;
+  /** Optional expected blob hash; sent as the `hash` query param for server-side verification. */
+  hash?: string;
+  /** Optional context to announce the blob to; sent as the `context_id` query param. */
+  contextId?: string;
 }
 
 export interface BlobInfo {
@@ -216,9 +275,21 @@ export type GetBlobResponseData = BlobInfo;
 
 // ---- Aliases ----
 
-export interface CreateAliasRequest {
-  name: string;
-  value: string;
+// Core's CreateAliasRequest is `{ alias, #[serde(flatten)] value }`, so each
+// alias kind flattens a different id field at the top level of the body.
+export interface CreateContextAliasRequest {
+  alias: string;
+  contextId: string;
+}
+
+export interface CreateApplicationAliasRequest {
+  alias: string;
+  applicationId: string;
+}
+
+export interface CreateContextIdentityAliasRequest {
+  alias: string;
+  identity: string;
 }
 
 export interface AliasEntry {
@@ -291,10 +362,15 @@ export interface NamespaceIdentity {
   publicKey: string;
 }
 
+/** Core's `UpgradePolicy` enum — how a namespace/group adopts new app versions. */
+export type UpgradePolicy = 'Automatic' | 'LazyOnAccess';
+
 export interface CreateNamespaceRequest {
   applicationId: string;
-  upgradePolicy: string;
+  upgradePolicy: UpgradePolicy;
   name?: string;
+  /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
+  appKey?: string;
 }
 
 export interface CreateNamespaceResponseData {
@@ -378,7 +454,17 @@ export interface GroupUpgradeStatus {
 
 // ---- Migration status (migration-UX core surfaces) ----
 
-export type MemberMigrationState = 'migrated' | 'in_progress' | 'unknown';
+export type MemberMigrationState =
+  | 'migrated'
+  | 'in_progress'
+  | 'unknown'
+  | 'failed';
+
+/** Why a member's migration did not complete. */
+export type MigrationFailureReason =
+  | 'check_aborted'
+  | 'apply_failed'
+  | 'no_migration_path';
 
 export interface MemberMigrationReport {
   schemaVersion: number;
@@ -388,6 +474,11 @@ export interface MemberMigrationReport {
   reportedAt: number;
   /** Member's self-reported pending-authored count (best-effort; skew #1). */
   authoredRemaining: number;
+  /**
+   * Set when the member's migrate did not complete (its migration-check
+   * aborted, or the apply errored). Absent otherwise.
+   */
+  migrationFailed?: MigrationFailureReason;
 }
 
 export interface MemberMigrationStatusEntry {
@@ -401,6 +492,8 @@ export interface MigrationStatusRollup {
   migrated: number;
   inProgress: number;
   unknown: number;
+  /** Members whose migrate aborted (migration-check failed or apply errored). */
+  failed: number;
   total: number;
   allMigrated: boolean;
   /** Count of members with authoredRemaining > 0 (owners still to re-sign). */
@@ -629,7 +722,11 @@ export interface RegisterGroupSigningKeyResponseData {
 export interface UpgradeGroupRequest {
   targetApplicationId: string;
   requester?: string;
-  migrateMethod?: string;
+  /** Fan the upgrade out to every descendant subgroup running the same app
+   *  (one atomic cascade op). Without it the upgrade applies to the target
+   *  group only — members' subgroups never learn the migration. Server
+   *  default: false. */
+  cascade?: boolean;
 }
 
 export interface UpgradeGroupResponseData {
@@ -649,23 +746,17 @@ export interface RetryGroupUpgradeRequest {
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
-// ---- Group Nesting & Context Attachments ----
+// ---- Group Reparent & Context Attachments ----
 
-export interface NestGroupRequest {
-  childGroupId: string;
+export interface ReparentGroupRequest {
+  /** 64-char id of the destination parent group. */
+  newParentId: string;
   requester?: string;
 }
 
-// Returns empty
-export type NestGroupResponseData = Record<string, never>;
-
-export interface UnnestGroupRequest {
-  childGroupId: string;
-  requester?: string;
+export interface ReparentGroupResponseData {
+  reparented: boolean;
 }
-
-// Returns empty
-export type UnnestGroupResponseData = Record<string, never>;
 
 export interface DetachContextFromGroupRequest {
   requester?: string;

@@ -5,15 +5,15 @@ export { ApiResponse } from '../http-client';
 
 // Health and Status Types
 export interface HealthResponse {
-  status: 'healthy' | 'unhealthy';
+  status: 'alive' | 'not_alive';
   storage: boolean;
-  uptimeSeconds: number;
+  uptime_seconds: number;
 }
 
 export interface IdentityResponse {
   service: string;
   version: string;
-  authenticationMode: string;
+  authentication_mode: string;
   providers: string[];
 }
 
@@ -52,22 +52,19 @@ export interface RefreshTokenRequest {
   refresh_token: string;
 }
 
-export interface ChallengeResponse {
-  challenge: string;
-  expiresAt: string;
-}
-
-// Mock Token (testing)
+// Mock Token (CI/testing). Core's MockTokenRequest is snake_case.
 export interface MockTokenRequest {
-  clientName: string;
+  client_name: string;
   permissions?: string[];
-  expiresIn?: number;
+  node_url?: string;
+  access_token_expiry?: number;
+  refresh_token_expiry?: number;
 }
 
 // Token Management Types
+// Core revokes by client_id (the request is `{ client_id }`).
 export interface RevokeTokenRequest {
-  token: string;
-  reason?: string;
+  client_id: string;
 }
 
 export interface RevokeTokenResponse {
@@ -77,17 +74,19 @@ export interface RevokeTokenResponse {
 
 // Key Management Types
 export interface CreateKeyRequest {
-  name: string;
-  permissions: string[];
-  expiresAt?: string;
+  /** Public key to register as a root key. */
+  public_key: string;
+  /** Auth method / provider name (e.g. "user_password"). */
+  auth_method: string;
+  /** Provider-specific data. */
+  provider_data: Record<string, unknown>;
+  /** Target node URL to scope the root key to (optional). */
+  target_node_url?: string;
 }
 
 export interface CreateKeyResponse {
-  keyId: string;
-  name: string;
-  permissions: string[];
-  createdAt: string;
-  expiresAt?: string;
+  status: boolean;
+  message: string;
 }
 
 export interface DeleteKeyResponse {
@@ -95,35 +94,37 @@ export interface DeleteKeyResponse {
   message: string;
 }
 
-export interface RootKeysResponse {
-  keys: Array<{
-    key_id: string;
-    name: string;
-    permissions: string[];
-    created_at: string;
-    expires_at?: string;
-  }>;
-  count: number;
+// Core returns a flat array of root keys (the `{ data }` payload).
+export interface RootKey {
+  key_id: string;
+  public_key: string;
+  auth_method: string;
+  created_at: number;
+  revoked_at?: number | null;
+  permissions: string[];
 }
 
 // Client Management Types
-export interface ClientKeysResponse {
-  clients: Array<{
-    client_id: string;
-    key_id: string;
-    name: string;
-    permissions: string[];
-    created_at: string;
-    last_used?: string;
-  }>;
-  count: number;
+// Core returns a flat array of client keys (the `{ data }` payload).
+export interface ClientKey {
+  client_id: string;
+  root_key_id: string;
+  name: string;
+  permissions: string[];
+  created_at: number;
+  revoked_at?: number | null;
+  is_valid: boolean;
 }
 
 export interface GenerateClientKeyRequest {
-  keyId: string;
-  clientName: string;
-  permissions: string[];
-  expiresAt?: string;
+  /** Context the client key is scoped to (optional). */
+  context_id?: string;
+  /** Context identity (executor public key) the client key is for (optional). */
+  context_identity?: string;
+  /** Additional permissions to request (validated against the root key). */
+  permissions?: string[];
+  /** Target node URL to scope the client key/tokens to (optional). */
+  target_node_url?: string;
 }
 
 export interface DeleteClientResponse {
@@ -132,22 +133,20 @@ export interface DeleteClientResponse {
 }
 
 // Permission Management Types
+// Core applies an { add, remove } delta (remove first, then add) — NOT a
+// full-set replacement. A `permissions` field is ignored by core.
+export interface UpdateKeyPermissionsRequest {
+  /** Permission strings to add (OR-ed onto the key's current set). */
+  add?: string[];
+  /** Permission strings to remove (applied before `add`). */
+  remove?: string[];
+}
+
 export interface PermissionResponse {
   data: {
     permissions: string[];
   };
   error?: string | null;
-}
-
-// Auth Status Types
-export interface AuthStatus {
-  status: string;
-  authenticated: boolean;
-  user?: {
-    id: string;
-    name: string;
-    permissions: string[];
-  };
 }
 
 // Client Configuration

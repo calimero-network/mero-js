@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "2.3.0",
+  "version": "6.0.0",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
@@ -49,6 +49,8 @@
     "lint:fix": "eslint . --fix",
     "eslint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
+    "test:contract": "vitest run --config vitest.config.ts src/__contract__",
     "tsc": "tsc -b",
     "prettier": "prettier --check \"src/**/*.{ts,js,json,md}\"",
     "prettier:fix": "prettier --write \"src/**/*.{ts,js,json,md}\"",
