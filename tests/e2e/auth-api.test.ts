@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '@calimero-network/mero-js';
+import { MeroJs } from '../../src/mero-js';
 import { startNode, resolveBaseUrl, resolveCreds, type StartedNode } from './harness';
 
 // Test configuration

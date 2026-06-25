@@ -257,7 +257,7 @@ export class AdminApiClient {
     const r = await this.httpClient.get<ListPackagesResponseData & { data?: ListPackagesResponseData }>(
       '/admin-api/packages',
     );
-    return (r.data ?? r) as ListPackagesResponseData;
+    return (r?.data ?? r) as ListPackagesResponseData;
   }
 
   async listPackageVersions(packageName: string): Promise<ListVersionsResponseData> {
@@ -265,7 +265,7 @@ export class AdminApiClient {
     const r = await this.httpClient.get<ListVersionsResponseData & { data?: ListVersionsResponseData }>(
       `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
     );
-    return (r.data ?? r) as ListVersionsResponseData;
+    return (r?.data ?? r) as ListVersionsResponseData;
   }
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
@@ -387,8 +387,8 @@ export class AdminApiClient {
     >(`/admin-api/contexts/with-executors/for-application/${applicationId}`);
     if (Array.isArray(r)) return r;
     return (
-      (r as { contexts?: ContextsWithExecutorsResponseData }).contexts ??
-      (r as { data?: ContextsWithExecutorsResponseData }).data ??
+      (r as { contexts?: ContextsWithExecutorsResponseData } | null)?.contexts ??
+      (r as { data?: ContextsWithExecutorsResponseData } | null)?.data ??
       []
     );
   }
@@ -576,7 +576,7 @@ export class AdminApiClient {
     const r = await this.httpClient.get<NamespaceIdentity & { data?: NamespaceIdentity }>(
       `/admin-api/namespaces/${namespaceId}/identity`,
     );
-    return (r.data ?? r) as NamespaceIdentity;
+    return (r?.data ?? r) as NamespaceIdentity;
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
@@ -870,7 +870,7 @@ export class AdminApiClient {
     const r = await this.httpClient.post<
       ReparentGroupResponseData & { data?: ReparentGroupResponseData }
     >(`/admin-api/groups/${childGroupId}/reparent`, request);
-    return (r.data ?? r) as ReparentGroupResponseData;
+    return (r?.data ?? r) as ReparentGroupResponseData;
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {

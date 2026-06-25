@@ -444,7 +444,16 @@ export class WebHttpClient implements HttpClient {
         // Tolerate empty 2xx bodies (e.g. 204 No Content from delete/resync):
         // `response.json()` throws on '', so read text and return null when empty.
         const text = await response.text();
-        return (text ? JSON.parse(text) : null) as T;
+        if (!text) return null as T;
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          // Non-JSON body on a 2xx (e.g. an HTML error page) — surface a clear
+          // error with a snippet instead of a bare SyntaxError.
+          throw new Error(
+            `Expected a JSON response (status ${response.status}) but body was not JSON: ${text.slice(0, 200)}`,
+          );
+        }
       }
     }
   }

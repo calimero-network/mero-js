@@ -50,12 +50,23 @@ export function installFetchRecorder(): void {
   installed = true;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    recordUrl(inputToUrl(input));
-    flush();
+    // Recording must never break a request — swallow any record/flush error.
+    try {
+      recordUrl(inputToUrl(input));
+      flush();
+    } catch {
+      /* ignore — coverage recording is best-effort */
+    }
     return original(input, init);
   }) as typeof fetch;
   // Safety net in case a request slips past before the last flush.
-  process.on('exit', flush);
+  process.on('exit', () => {
+    try {
+      flush();
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 // Auto-install when loaded as a setup file.
