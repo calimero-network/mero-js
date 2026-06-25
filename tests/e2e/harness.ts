@@ -35,7 +35,9 @@ export async function ensureApplication(mero: MeroJs): Promise<string> {
 
 /** Short per-run suffix so resources don't collide on a persistent node. */
 export function runId(): string {
-  return Math.floor(Number(process.hrtime.bigint() % 1_000_000_000n)).toString(36);
+  // Full monotonic nanosecond clock (strictly increasing per call) so unique
+  // names don't collide within the same millisecond.
+  return process.hrtime.bigint().toString(36);
 }
 
 export function resolveBaseUrl(): string {

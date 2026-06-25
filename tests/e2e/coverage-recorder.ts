@@ -57,7 +57,8 @@ export function installFetchRecorder(): void {
     } catch {
       /* ignore — coverage recording is best-effort */
     }
-    return original(input, init);
+    // Preserve the native binding (some fetch impls require `this === globalThis`).
+    return original.call(globalThis, input, init);
   }) as typeof fetch;
   // Safety net in case a request slips past before the last flush.
   process.on('exit', () => {
