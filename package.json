@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "6.0.0",
+  "version": "6.0.2",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
@@ -29,7 +29,7 @@
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
-    "esbuild": "^0.25.8",
+    "esbuild": "^0.28.1",
     "eslint": "^8.57.0",
     "rimraf": "^3.0.0",
     "semantic-release": "^24.2.9",
