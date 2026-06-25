@@ -1,3 +1,7 @@
+## <small>6.0.2 (2026-06-25)</small>
+
+* chore(deps-dev): bump esbuild from 0.25.12 to 0.28.1 (#48) ([9f29edd](https://github.com/calimero-network/mero-js/commit/9f29edd)), closes [#48](https://github.com/calimero-network/mero-js/issues/48)
+
 ## <small>6.0.1 (2026-06-25)</small>
 
 * docs(pr): add wire-contract (core gate) PR template (#58) ([1cd4c18](https://github.com/calimero-network/mero-js/commit/1cd4c18)), closes [#58](https://github.com/calimero-network/mero-js/issues/58) [#56](https://github.com/calimero-network/mero-js/issues/56)
