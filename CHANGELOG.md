@@ -1,3 +1,8 @@
+## <small>6.0.1 (2026-06-25)</small>
+
+* docs(pr): add wire-contract (core gate) PR template (#58) ([1cd4c18](https://github.com/calimero-network/mero-js/commit/1cd4c18)), closes [#58](https://github.com/calimero-network/mero-js/issues/58) [#56](https://github.com/calimero-network/mero-js/issues/56)
+* test(e2e): full-flow e2e coverage + recorder; fix 8 SDK wire bugs found live (#57) ([dbe404b](https://github.com/calimero-network/mero-js/commit/dbe404b)), closes [#57](https://github.com/calimero-network/mero-js/issues/57)
+
 ## 6.0.0 (2026-06-23)
 
 * fix(admin)!: align group reparent + createContext label with core wire contract (#53) ([269c412](https://github.com/calimero-network/mero-js/commit/269c412)), closes [#53](https://github.com/calimero-network/mero-js/issues/53)
