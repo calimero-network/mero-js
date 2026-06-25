@@ -1,3 +1,7 @@
+## <small>6.0.3 (2026-06-25)</small>
+
+* chore(deps-dev): bump vitest from 2.1.9 to 3.2.6 (#43) ([e3a0b01](https://github.com/calimero-network/mero-js/commit/e3a0b01)), closes [#43](https://github.com/calimero-network/mero-js/issues/43)
+
 ## <small>6.0.2 (2026-06-25)</small>
 
 * chore(deps-dev): bump esbuild from 0.25.12 to 0.28.1 (#48) ([9f29edd](https://github.com/calimero-network/mero-js/commit/9f29edd)), closes [#48](https://github.com/calimero-network/mero-js/issues/48)
