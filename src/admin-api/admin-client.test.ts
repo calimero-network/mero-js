@@ -443,10 +443,11 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ blobs: [{ blobId: 'blob-1', size: 100 }] });
     });
 
-    it('getBlob maps snake_case blob_id to blobId', async () => {
-      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', { data: { blob_id: 'blob-1', size: 100 } });
+    it('getBlob returns the raw blob bytes (not JSON)', async () => {
+      const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', bytes);
       const result = await client.getBlob('blob-1');
-      expect(result).toEqual({ blobId: 'blob-1', size: 100 });
+      expect(result).toBe(bytes);
     });
   });
 

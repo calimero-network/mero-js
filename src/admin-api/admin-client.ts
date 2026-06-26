@@ -35,7 +35,6 @@ import type {
   UploadBlobResponseData,
   DeleteBlobResponseData,
   ListBlobsResponseData,
-  GetBlobResponseData,
   CreateContextAliasRequest,
   CreateApplicationAliasRequest,
   CreateContextIdentityAliasRequest,
@@ -356,10 +355,13 @@ export class AdminApiClient {
     // Core's `ResyncContextApiResponse` is a flat payload (no inner `data`
     // field), so parse the body directly — do NOT `unwrap`, or `resyncStarted`
     // reads as undefined and the resync silently appears to never start.
-    return this.httpClient.post<ResyncContextResponseData>(
+    const r = await this.httpClient.post<ResyncContextResponseData | null>(
       `/admin-api/contexts/${contextId}/resync`,
       request,
     );
+    // An empty 2xx body means the resync was accepted; synthesize the result so
+    // callers always get a typed value instead of null.
+    return r ?? { contextId, resyncStarted: true };
   }
 
   async inviteSpecializedNode(request: InviteSpecializedNodeRequest): Promise<InviteSpecializedNodeResponseData> {
@@ -437,13 +439,15 @@ export class AdminApiClient {
     return { blobs: res.blobs.map((b) => ({ blobId: b.blob_id, size: b.size })) };
   }
 
-  async getBlob(blobId: string): Promise<GetBlobResponseData> {
-    const res = unwrap(
-      await this.httpClient.get<{ data: { blob_id: string; size: number } }>(
-        `/admin-api/blobs/${blobId}`,
-      ),
-    );
-    return { blobId: res.blob_id, size: res.size };
+  /**
+   * Download a blob's raw bytes. `GET /admin-api/blobs/:id` streams the blob
+   * content (e.g. `application/gzip`), NOT JSON — so fetch it as an ArrayBuffer.
+   * Use {@link listBlobs} for `{ blobId, size }` metadata.
+   */
+  async getBlob(blobId: string): Promise<ArrayBuffer> {
+    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}`, {
+      parse: 'arrayBuffer',
+    });
   }
 
   // ---- Alias Management ----
