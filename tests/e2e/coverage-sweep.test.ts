@@ -64,6 +64,22 @@ describe('Admin API E2E — Route coverage sweep', () => {
     await cover('usage', () => mero.admin.getUsage());
     await cover('certificate', () => mero.admin.getCertificate());
     await cover('resync', () => mero.admin.resyncContext(contextId, { force: true }));
+    await cover('syncOne', () => mero.admin.syncContext(contextId));
+    await cover('syncAll', () => mero.admin.syncContext()); // no-arg → POST /contexts/sync
+    expect(true).toBe(true);
+  });
+
+  it('blob ops: list, get raw bytes, delete', async () => {
+    // 32-zero-byte bs58 id: valid shape, won't exist — DELETE fires safely (no
+    // real blob removed); GET uses a real blob if one exists (read-only).
+    const dummyBlob = '1'.repeat(32);
+    let realBlob = dummyBlob;
+    await cover('listBlobs', async () => {
+      const list = (await mero.admin.listBlobs()) as { blobs?: Array<{ blobId: string }> };
+      if (list?.blobs?.length) realBlob = list.blobs[0].blobId;
+    });
+    await cover('getBlob', () => mero.admin.getBlob(realBlob));
+    await cover('deleteBlob', () => mero.admin.deleteBlob(dummyBlob));
     expect(true).toBe(true);
   });
 
@@ -101,6 +117,8 @@ describe('Admin API E2E — Route coverage sweep', () => {
 
   it('group/context settings + proofs + standalone group', async () => {
     await cover('teePolicy', () => mero.admin.setTeeAdmissionPolicy(groupId, { policy: 'open' } as never));
+    await cover('getTeePolicy', () => mero.admin.getTeeAdmissionPolicy(groupId));
+    await cover('updateGroupSettings', () => mero.admin.updateGroupSettings(groupId, {} as never));
     await cover('signingKey', () => mero.admin.registerGroupSigningKey(groupId, {} as never));
     await cover('ctxMeta', () => mero.admin.setContextMetadata(groupId, contextId, { data: {} } as never));
     await cover('updateApp', () =>
@@ -109,6 +127,18 @@ describe('Admin API E2E — Route coverage sweep', () => {
     await cover('ownProof', () => mero.admin.issueOwnershipProof(groupId, { requester: executor }));
     await cover('nsOwnProof', () => mero.admin.issueNamespaceOwnershipProof(groupId, { requester: executor }));
     await cover('createGroup', () => mero.admin.createGroup({ name: `sweep-grp-${RUN}` }));
+    expect(true).toBe(true);
+  });
+
+  it('metadata getters + member capabilities + app uninstall', async () => {
+    await cover('getGroupMeta', () => mero.admin.getGroupMetadata(groupId));
+    await cover('getMemberMeta', () => mero.admin.getMemberMetadata(groupId, executor));
+    await cover('getCtxMeta', () => mero.admin.getContextMetadata(groupId, contextId));
+    await cover('setMemberCaps', () =>
+      mero.admin.setMemberCapabilities(groupId, memberPk, { capabilities: [] } as never),
+    );
+    // Uninstall a non-existent app — fires DELETE /applications/:id safely.
+    await cover('uninstallApp', () => mero.admin.uninstallApplication('1'.repeat(32)));
     expect(true).toBe(true);
   });
 
