@@ -454,6 +454,22 @@ const ctx = await admin.createContext({
 });
 ```
 
+### Blobs
+```typescript
+const { blobs } = await admin.listBlobs();        // [{ blobId, size }, ...] metadata
+const bytes = await admin.getBlob(blobId);        // ArrayBuffer — the raw blob content
+await admin.deleteBlob(blobId);
+```
+> `getBlob` returns the **raw bytes** as an `ArrayBuffer` (the endpoint streams the
+> blob, e.g. `application/gzip`, not JSON). Use `listBlobs()` for `{ blobId, size }`
+> metadata.
+
+### Group settings (TEE admission policy)
+```typescript
+await admin.setTeeAdmissionPolicy(groupId, policy);
+const current = await admin.getTeeAdmissionPolicy(groupId); // allowed MRTD/RTMR sets, acceptMock, ...
+```
+
 ### Cloud (TEE High Availability)
 ```typescript
 import { CloudClient } from '@calimero-network/mero-js';
@@ -470,12 +486,31 @@ pnpm install
 # Build
 pnpm build
 
-# Test
+# Test (unit)
 pnpm test
 
 # Lint
 pnpm lint
 ```
+
+### Testing & the contract gate
+
+The SDK mirrors core's HTTP wire types by hand, so two layers guard against drift:
+
+- **Unit tests** (`pnpm test`) — mocked, fast, cover the client logic.
+- **E2E** (`pnpm test:e2e`) — runs the real SDK against a live `merod`. Point it at a
+  node and provide credentials:
+  ```bash
+  NODE_URL=http://localhost:2528 MERO_E2E_USER=dev MERO_E2E_PASS=dev pnpm test:e2e
+  ```
+  In CI this runs both against a released `merod` (this repo) and against a
+  PR-built `merod` (core's `sdk-e2e`).
+
+The e2e records every request as `METHOD /path` (see `tests/e2e/coverage-recorder.ts`).
+Core's route-coverage gate is **method-aware**: it fails if any admin route *or verb*
+ships without an SDK test — so e.g. `GET /blobs/:id` can't hide behind `DELETE /blobs/:id`.
+When you add an SDK method for a new endpoint, exercise it in the e2e (the sweep in
+`tests/e2e/coverage-sweep.test.ts` is the catch-all) so coverage stays complete.
 
 ## License
 

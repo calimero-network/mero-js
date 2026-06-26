@@ -643,6 +643,16 @@ export interface SetTeeAdmissionPolicyRequest {
 // Returns empty
 export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
 
+export interface GetTeeAdmissionPolicyResponseData {
+  allowedMrtd: string[];
+  allowedRtmr0: string[];
+  allowedRtmr1: string[];
+  allowedRtmr2: string[];
+  allowedRtmr3: string[];
+  allowedTcbStatuses: string[];
+  acceptMock: boolean;
+}
+
 export interface UpdateGroupSettingsRequest {
   upgradePolicy: string;
   requester?: string;

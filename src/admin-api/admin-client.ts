@@ -74,6 +74,7 @@ import type {
   SetDefaultCapabilitiesRequest,
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
+  GetTeeAdmissionPolicyResponseData,
   UpdateGroupSettingsRequest,
   SetGroupMetadataRequest,
   SetMemberMetadataRequest,
@@ -751,6 +752,15 @@ export class AdminApiClient {
     request: SetTeeAdmissionPolicyRequest,
   ): Promise<void> {
     await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-admission-policy`, request);
+  }
+
+  async getTeeAdmissionPolicy(groupId: string): Promise<GetTeeAdmissionPolicyResponseData> {
+    // Intersection (not union) so the type is unambiguous: `data` is optional, so
+    // `?? response` cleanly falls back to a flat (un-enveloped) response.
+    const response = await this.httpClient.get<
+      GetTeeAdmissionPolicyResponseData & { data?: GetTeeAdmissionPolicyResponseData }
+    >(`/admin-api/groups/${groupId}/settings/tee-admission-policy`);
+    return response.data ?? response;
   }
 
   async updateGroupSettings(
