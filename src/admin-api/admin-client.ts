@@ -755,14 +755,12 @@ export class AdminApiClient {
   }
 
   async getTeeAdmissionPolicy(groupId: string): Promise<GetTeeAdmissionPolicyResponseData> {
+    // Intersection (not union) so the type is unambiguous: `data` is optional, so
+    // `?? response` cleanly falls back to a flat (un-enveloped) response.
     const response = await this.httpClient.get<
-      { data: GetTeeAdmissionPolicyResponseData } | GetTeeAdmissionPolicyResponseData
+      GetTeeAdmissionPolicyResponseData & { data?: GetTeeAdmissionPolicyResponseData }
     >(`/admin-api/groups/${groupId}/settings/tee-admission-policy`);
-    // Tolerate flat or {data}-enveloped responses.
-    return (
-      (response as { data?: GetTeeAdmissionPolicyResponseData })?.data ??
-      (response as GetTeeAdmissionPolicyResponseData)
-    );
+    return response.data ?? response;
   }
 
   async updateGroupSettings(
