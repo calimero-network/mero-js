@@ -1,3 +1,8 @@
+## <small>6.0.4 (2026-06-26)</small>
+
+* fix(sdk): WsClient type parity + getBlob raw bytes + resync empty-body (#60) ([b112aca](https://github.com/calimero-network/mero-js/commit/b112aca)), closes [#60](https://github.com/calimero-network/mero-js/issues/60)
+* ci: run e2e against released merod on every PR (replaces #25) (#59) ([22b298e](https://github.com/calimero-network/mero-js/commit/22b298e)), closes [#25](https://github.com/calimero-network/mero-js/issues/25) [#59](https://github.com/calimero-network/mero-js/issues/59)
+
 ## <small>6.0.3 (2026-06-25)</small>
 
 * chore(deps-dev): bump vitest from 2.1.9 to 3.2.6 (#43) ([e3a0b01](https://github.com/calimero-network/mero-js/commit/e3a0b01)), closes [#43](https://github.com/calimero-network/mero-js/issues/43)
