@@ -797,14 +797,14 @@ export class AdminApiClient {
   }
 
   async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
-    // The "no record yet" wire shape varies across server versions:
-    // `{data:{data:null}}`, `{data:null}`, and a bare `null` body have all
-    // been observed. Optional-chain the whole path so every flavour collapses
-    // to a clean `null`.
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Core single-envelopes the record: `{ data: MetadataRecord | null }`.
+    // "No record yet" is `{ data: null }` (or a bare null body on older nodes),
+    // so optional-chain to a clean null. Returns the full record (name + data +
+    // updatedAt/updatedBy), not just the data map.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async setMemberMetadata(
@@ -816,11 +816,11 @@ export class AdminApiClient {
   }
 
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
-    // Tolerates every observed "no record yet" shape (see getGroupMetadata).
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Single-enveloped record; see getGroupMetadata.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/members/${identity}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async setContextMetadata(
@@ -832,11 +832,11 @@ export class AdminApiClient {
   }
 
   async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
-    // Tolerates every observed "no record yet" shape (see getGroupMetadata).
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Single-enveloped record; see getGroupMetadata.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/contexts/${contextId}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {

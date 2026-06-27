@@ -86,14 +86,16 @@ describe('Round-trip E2E — Metadata set→get', () => {
     const value = { team: `rt-${RUN}`, role: 'lead' };
     await mero.admin.setGroupMetadata(groupId, { data: value } as never);
     const got = await mero.admin.getGroupMetadata(groupId);
-    expect(got).toMatchObject(value);
+    // Returns the full MetadataRecord: the map lives under `.data`.
+    expect(got?.data).toMatchObject(value);
+    expect(got).toHaveProperty('updatedBy');
   });
 
   it('context metadata: set then get returns the same value', async () => {
     const value = { ctx: `rt-${RUN}` };
     await mero.admin.setContextMetadata(groupId, contextId, { data: value } as never);
     const got = await mero.admin.getContextMetadata(groupId, contextId);
-    expect(got).toMatchObject(value);
+    expect(got?.data).toMatchObject(value);
   });
 });
 
@@ -123,7 +125,7 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
 
     await mero.admin.setMemberMetadata(groupId, memberPk, { data: { tag: `rt-${RUN}` } } as never);
     const meta = await mero.admin.getMemberMetadata(groupId, memberPk);
-    expect(meta).toMatchObject({ tag: `rt-${RUN}` });
+    expect(meta?.data).toMatchObject({ tag: `rt-${RUN}` });
 
     await mero.admin.removeGroupMembers(groupId, { members: [memberPk] } as never);
     const post = (await mero.admin.listGroupMembers(groupId)) as {
