@@ -1,3 +1,8 @@
+## 6.1.0 (2026-06-27)
+
+* feat(sdk): add getBlobInfo (HEAD /blobs/:id) (#62) ([7d440ee](https://github.com/calimero-network/mero-js/commit/7d440ee)), closes [#62](https://github.com/calimero-network/mero-js/issues/62)
+* test(e2e): method-aware coverage recorder + getTeeAdmissionPolicy (pairs core #2960) (#61) ([ccae44b](https://github.com/calimero-network/mero-js/commit/ccae44b)), closes [#2960](https://github.com/calimero-network/mero-js/issues/2960) [#61](https://github.com/calimero-network/mero-js/issues/61)
+
 ## <small>6.0.4 (2026-06-26)</small>
 
 * fix(sdk): WsClient type parity + getBlob raw bytes + resync empty-body (#60) ([b112aca](https://github.com/calimero-network/mero-js/commit/b112aca)), closes [#60](https://github.com/calimero-network/mero-js/issues/60)
