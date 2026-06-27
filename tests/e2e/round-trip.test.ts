@@ -66,6 +66,20 @@ describe('Round-trip E2E — Blobs', () => {
   });
 });
 
+describe('Round-trip E2E — Node reads', () => {
+  it('getNetworkStatus returns a parsed object', async () => {
+    const s = await mero.admin.getNetworkStatus();
+    expect(s).toBeTypeOf('object');
+    expect(s).not.toBeNull();
+  });
+
+  it('getUsage returns a parsed object', async () => {
+    const u = await mero.admin.getUsage();
+    expect(u).toBeTypeOf('object');
+    expect(u).not.toBeNull();
+  });
+});
+
 describe('Round-trip E2E — Metadata set→get', () => {
   // core's metadata `data` is a Map<String, String> — values must be strings.
   it('group metadata: set then get returns the same value', async () => {
@@ -84,6 +98,21 @@ describe('Round-trip E2E — Metadata set→get', () => {
 });
 
 describe('Round-trip E2E — Groups', () => {
+  it('TEE admission policy: set then get returns it', async () => {
+    const policy = {
+      allowedMrtd: [],
+      allowedRtmr0: [],
+      allowedRtmr1: [],
+      allowedRtmr2: [],
+      allowedRtmr3: [],
+      allowedTcbStatuses: [],
+      acceptMock: true,
+    };
+    await mero.admin.setTeeAdmissionPolicy(groupId, policy as never);
+    const got = await mero.admin.getTeeAdmissionPolicy(groupId);
+    expect(got.acceptMock).toBe(true);
+  });
+
   // POST /admin-api/groups requires applicationId + upgradePolicy (not just a name).
   it('createGroup then getGroupInfo returns it', async () => {
     const created = await mero.admin.createGroup({
