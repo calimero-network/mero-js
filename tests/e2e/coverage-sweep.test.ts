@@ -79,6 +79,7 @@ describe('Admin API E2E — Route coverage sweep', () => {
       if (list?.blobs?.length) realBlob = list.blobs[0].blobId;
     });
     await cover('getBlob', () => mero.admin.getBlob(realBlob));
+    await cover('getBlobInfo', () => mero.admin.getBlobInfo(realBlob)); // HEAD /blobs/:id
     await cover('deleteBlob', () => mero.admin.deleteBlob(dummyBlob));
     expect(true).toBe(true);
   });

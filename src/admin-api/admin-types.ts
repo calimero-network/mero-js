@@ -273,6 +273,13 @@ export interface ListBlobsResponseData {
 
 export type GetBlobResponseData = BlobInfo;
 
+export interface GetBlobInfoResponseData {
+  blobId: string;
+  size: number;
+  hash?: string;
+  mimeType?: string;
+}
+
 // ---- Aliases ----
 
 // Core's CreateAliasRequest is `{ alias, #[serde(flatten)] value }`, so each

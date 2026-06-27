@@ -457,6 +457,7 @@ const ctx = await admin.createContext({
 ### Blobs
 ```typescript
 const { blobs } = await admin.listBlobs();        // [{ blobId, size }, ...] metadata
+const info = await admin.getBlobInfo(blobId);     // { blobId, size, hash, mimeType } via HEAD (no download)
 const bytes = await admin.getBlob(blobId);        // ArrayBuffer — the raw blob content
 await admin.deleteBlob(blobId);
 ```

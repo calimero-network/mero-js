@@ -35,6 +35,7 @@ import type {
   UploadBlobResponseData,
   DeleteBlobResponseData,
   ListBlobsResponseData,
+  GetBlobInfoResponseData,
   CreateContextAliasRequest,
   CreateApplicationAliasRequest,
   CreateContextIdentityAliasRequest,
@@ -449,6 +450,21 @@ export class AdminApiClient {
     return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}`, {
       parse: 'arrayBuffer',
     });
+  }
+
+  /**
+   * Fetch a blob's metadata without downloading it. `HEAD /admin-api/blobs/:id`
+   * returns the info in response headers (size via `content-length`, plus
+   * `x-blob-id`/`x-blob-hash`/`x-blob-mime-type`).
+   */
+  async getBlobInfo(blobId: string): Promise<GetBlobInfoResponseData> {
+    const { headers } = await this.httpClient.head(`/admin-api/blobs/${blobId}`);
+    return {
+      blobId: headers['x-blob-id'] ?? blobId,
+      size: Number(headers['content-length'] ?? 0),
+      hash: headers['x-blob-hash'],
+      mimeType: headers['x-blob-mime-type'],
+    };
   }
 
   // ---- Alias Management ----
