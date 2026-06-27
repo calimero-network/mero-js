@@ -536,6 +536,12 @@ export interface GroupInfo {
    * `null` if no metadata has ever been set for this group.
    */
   metadata?: MetadataRecord | null;
+  /**
+   * Hex-encoded SHA-256 of the group's authorization-relevant state. Mirrors
+   * `contextStateHash` on contexts — poll it to detect governance convergence
+   * across nodes.
+   */
+  groupStateHash: string;
 }
 
 export type GroupInfoResponseData = GroupInfo;

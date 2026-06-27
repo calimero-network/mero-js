@@ -201,10 +201,15 @@ export class WsClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
-    const delay = Math.min(
+    // Exponential backoff capped at MAX_BACKOFF_MS with half-jitter (avoids a
+    // thundering-herd reconnect). The browser WebSocket API doesn't expose the
+    // handshake status, so an auth (401/403) failure can't be told apart from a
+    // transient drop here — it keeps retrying like any other close.
+    const capped = Math.min(
       1000 * Math.pow(2, this.reconnectAttempt),
       WsClient.MAX_BACKOFF_MS,
     );
+    const delay = capped / 2 + Math.random() * (capped / 2);
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

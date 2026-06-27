@@ -168,7 +168,21 @@ describe('Round-trip E2E — Groups', () => {
       name: `rt-grp-${RUN}`,
     });
     expect(created.groupId).toBeTruthy();
-    const info = (await mero.admin.getGroupInfo(created.groupId)) as Record<string, unknown>;
+    const info = await mero.admin.getGroupInfo(created.groupId);
     expect(info).toBeTruthy();
+    // groupStateHash mirrors contextStateHash — core always populates it.
+    expect(typeof info.groupStateHash).toBe('string');
+    expect(info.groupStateHash.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Round-trip E2E — RPC', () => {
+  it('syncStatus returns a typed status for the context', async () => {
+    const status = await mero.rpc.syncStatus(contextId);
+    expect(status.contextId).toBe(contextId);
+    expect(typeof status.isInitialized).toBe('boolean');
+    expect(typeof status.failureCount).toBe('number');
+    // Internally-tagged on `state` — must be one of the known phases.
+    expect(status.syncState.state).toBeTruthy();
   });
 });

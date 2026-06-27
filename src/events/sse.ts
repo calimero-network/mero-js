@@ -27,6 +27,8 @@ export class SseClient {
   private baseUrl: string;
   private getAuthToken: () => Promise<string>;
   private reconnectDelayMs: number;
+  private reconnectAttempt = 0;
+  private static readonly MAX_BACKOFF_MS = 30000;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,12 +124,21 @@ export class SseClient {
       });
 
       if (!response.ok) {
+        // Auth failures won't fix themselves on retry — stop reconnecting.
+        if (response.status === 401 || response.status === 403) {
+          this.closed = true;
+          this.emit('error', new Error(`SSE auth failed: ${response.status}`));
+          return;
+        }
         throw new Error(`SSE connection failed: ${response.status}`);
       }
 
       if (!response.body) {
         throw new Error('SSE response has no body');
       }
+
+      // Healthy connection — reset backoff.
+      this.reconnectAttempt = 0;
 
       this.readStream(response.body).catch((err) => {
         if (this.closed) return;
@@ -287,10 +298,20 @@ export class SseClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
+    // Exponential backoff capped at MAX_BACKOFF_MS, with half-jitter so a fleet
+    // of clients doesn't reconnect in lockstep. ponytail: no hard attempt cap —
+    // backoff already throttles, and a permanent stop on a transient outage is
+    // worse for a long-lived stream than retrying slowly.
+    const capped = Math.min(
+      this.reconnectDelayMs * 2 ** this.reconnectAttempt,
+      SseClient.MAX_BACKOFF_MS,
+    );
+    const delay = capped / 2 + Math.random() * (capped / 2);
+    this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.forceReconnect();
-    }, this.reconnectDelayMs);
+    }, delay);
   }
 
   close(): void {
