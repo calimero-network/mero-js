@@ -66,7 +66,7 @@ jobs:
         run: |
           ./merod --home ./e2e-node --node e2e init \
             --server-port 4001 --swarm-port 4002 --auth-mode embedded
-          ./merod --home ./e2e-node --node e2e run &
+          ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
           echo $! > merod.pid
           for i in $(seq 1 30); do
             curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && { echo "merod healthy"; break; }
@@ -81,7 +81,22 @@ jobs:
           NODE_URL: http://localhost:4001
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev
-        run: pnpm test:e2e
+        run: |
+          set -o pipefail
+          pnpm test:e2e 2>&1 | tee e2e.log
+          # Guard against a vacuous/all-skipped green: require at least one passing test.
+          grep -qE "Tests +[1-9][0-9]* passed" e2e.log \
+            || { echo "::error::e2e produced no passing tests — refusing a vacuous pass"; exit 1; }
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            e2e.log
+            merod.log
+          if-no-files-found: warn
 
       - name: Stop merod
         if: always()
@@ -116,8 +131,8 @@ jobs:
         run: |
           ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded
           ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded
-          ./merod --home ./n1 --node n1 run & echo $! > n1.pid
-          ./merod --home ./n2 --node n2 run & echo $! > n2.pid
+          ./merod --home ./n1 --node n1 run > n1.log 2>&1 & echo $! > n1.pid
+          ./merod --home ./n2 --node n2 run > n2.log 2>&1 & echo $! > n2.pid
           for port in 4501 4502; do
             for i in $(seq 1 30); do
               curl -sf "http://localhost:$port/admin-api/health" >/dev/null 2>&1 && break
@@ -134,7 +149,23 @@ jobs:
           MERO_NODE2_URL: http://localhost:4502
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev
-        run: pnpm vitest run --config vitest.e2e.config.ts tests/e2e/multinode.test.ts
+        run: |
+          set -o pipefail
+          pnpm vitest run --config vitest.e2e.config.ts tests/e2e/multinode.test.ts 2>&1 | tee mn.log
+          # The multi-node test is MERO_MULTINODE-gated; require it actually ran (not skipped).
+          grep -qE "Tests +[1-9][0-9]* passed" mn.log \
+            || { echo "::error::multi-node test did not run (skipped/vacuous) — failing"; exit 1; }
+
+      - name: Upload multi-node logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multinode-logs
+          path: |
+            mn.log
+            n1.log
+            n2.log
+          if-no-files-found: warn
 
       - name: Stop nodes
         if: always()
