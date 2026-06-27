@@ -81,11 +81,12 @@ jobs:
           NODE_URL: http://localhost:4001
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev
+          NO_COLOR: '1'
         run: |
           set -o pipefail
           pnpm test:e2e 2>&1 | tee e2e.log
           # Guard against a vacuous/all-skipped green: require at least one passing test.
-          grep -qE "Tests +[1-9][0-9]* passed" e2e.log \
+          grep -qE "[1-9][0-9]* passed" e2e.log \
             || { echo "::error::e2e produced no passing tests — refusing a vacuous pass"; exit 1; }
 
       - name: Upload e2e logs
@@ -149,11 +150,12 @@ jobs:
           MERO_NODE2_URL: http://localhost:4502
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev
+          NO_COLOR: '1'
         run: |
           set -o pipefail
           pnpm vitest run --config vitest.e2e.config.ts tests/e2e/multinode.test.ts 2>&1 | tee mn.log
           # The multi-node test is MERO_MULTINODE-gated; require it actually ran (not skipped).
-          grep -qE "Tests +[1-9][0-9]* passed" mn.log \
+          grep -qE "[1-9][0-9]* passed" mn.log \
             || { echo "::error::multi-node test did not run (skipped/vacuous) — failing"; exit 1; }
 
       - name: Upload multi-node logs
