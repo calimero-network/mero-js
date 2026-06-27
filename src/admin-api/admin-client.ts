@@ -458,10 +458,14 @@ export class AdminApiClient {
    * `x-blob-id`/`x-blob-hash`/`x-blob-mime-type`).
    */
   async getBlobInfo(blobId: string): Promise<GetBlobInfoResponseData> {
+    // HEAD throws (HttpError) on a non-2xx status, so we only reach here on success
+    // — the x-blob-* headers are present. Guard size against a missing/non-numeric
+    // content-length anyway (defaults to 0 rather than NaN).
     const { headers } = await this.httpClient.head(`/admin-api/blobs/${blobId}`);
+    const size = Number(headers['content-length']);
     return {
       blobId: headers['x-blob-id'] ?? blobId,
-      size: Number(headers['content-length'] ?? 0),
+      size: Number.isFinite(size) ? size : 0,
       hash: headers['x-blob-hash'],
       mimeType: headers['x-blob-mime-type'],
     };
