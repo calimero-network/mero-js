@@ -86,3 +86,56 @@ jobs:
       - name: Stop merod
         if: always()
         run: kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
+
+  multinode:
+    name: Multi-node E2E (vs released merod)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download released merod
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
+          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
+          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
+          curl -sL "$URL" | tar xz
+          chmod +x ./merod
+
+      - name: Boot 2 merod nodes (embedded auth)
+        run: |
+          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded
+          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded
+          ./merod --home ./n1 --node n1 run & echo $! > n1.pid
+          ./merod --home ./n2 --node n2 run & echo $! > n2.pid
+          for port in 4501 4502; do
+            for i in $(seq 1 30); do
+              curl -sf "http://localhost:$port/admin-api/health" >/dev/null 2>&1 && break
+              sleep 2
+              [ "$i" = "30" ] && { echo "merod on $port did not become healthy"; exit 1; }
+            done
+          done
+          echo "both nodes healthy"
+
+      - name: Run multi-node e2e
+        env:
+          MERO_MULTINODE: "1"
+          MERO_NODE1_URL: http://localhost:4501
+          MERO_NODE2_URL: http://localhost:4502
+          MERO_E2E_USER: dev
+          MERO_E2E_PASS: dev
+        run: pnpm vitest run --config vitest.e2e.config.ts tests/e2e/multinode.test.ts
+
+      - name: Stop nodes
+        if: always()
+        run: kill "$(cat n1.pid 2>/dev/null)" "$(cat n2.pid 2>/dev/null)" 2>/dev/null || true
