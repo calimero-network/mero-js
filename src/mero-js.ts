@@ -1,4 +1,4 @@
-import { createBrowserHttpClient } from './http-client';
+import { createBrowserHttpClient, assertSecureBaseUrl } from './http-client';
 import { createAuthApiClientFromHttpClient } from './auth-api';
 import { createAdminApiClientFromHttpClient } from './admin-api';
 import type { AuthApiClient } from './auth-api';
@@ -25,6 +25,12 @@ export interface MeroJsConfig {
   requestCredentials?: RequestCredentials;
   /** Optional token store for persistence */
   tokenStore?: TokenStore;
+  /**
+   * Allow a cleartext `http://`/`ws://` baseUrl to a non-loopback host. Off by
+   * default — bearer tokens would otherwise be sent unencrypted. Loopback hosts
+   * (localhost/127.0.0.1/::1) are always permitted regardless of this flag.
+   */
+  allowInsecureHttp?: boolean;
 }
 
 export interface TokenData {
@@ -73,6 +79,9 @@ export class MeroJs {
       timeoutMs: 10000,
       ...config,
     };
+
+    // Fail fast if tokens would be sent over cleartext to a remote node.
+    assertSecureBaseUrl(this.config.baseUrl, this.config.allowInsecureHttp);
 
     this.tokenStore = config.tokenStore ?? null;
 

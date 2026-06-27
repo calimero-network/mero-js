@@ -3,7 +3,7 @@ export * from './http-types';
 export * from './api-response';
 
 // Web Standards HTTP client implementation
-export { WebHttpClient, HTTPError } from './web-client';
+export { WebHttpClient, HTTPError, assertSecureBaseUrl } from './web-client';
 
 // Factory functions for easy client creation
 export {

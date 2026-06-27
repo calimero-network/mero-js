@@ -2,67 +2,12 @@ import { AdminApiClient } from './admin-client';
 import { AdminApiClientConfig } from './admin-types';
 import { HttpClient } from '../http-client';
 
-// Mock HTTP client for testing
-class MockHttpClient implements HttpClient {
-  async get<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async post<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async put<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async delete<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async patch<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async head(): Promise<{ headers: Record<string, string>; status: number }> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async request<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-}
-
-// Factory functions for creating Admin API clients
-export function createBrowserAdminApiClient(
-  _config: AdminApiClientConfig,
-): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
-}
-
-export function createNodeAdminApiClient(
-  _config: AdminApiClientConfig,
-): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
-}
-
-export function createAdminApiClient(
-  _config: AdminApiClientConfig,
-): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
-}
-
+/**
+ * Build an AdminApiClient over an already-configured HttpClient. This is the
+ * only supported factory: `MeroJs` owns the transport (auth, refresh, timeouts)
+ * and passes it in. The old `createBrowser/Node/AdminApiClient` helpers were
+ * removed — they wired a stub client that threw on every call.
+ */
 export function createAdminApiClientFromHttpClient(
   httpClient: HttpClient,
   _config: AdminApiClientConfig,

@@ -32,7 +32,8 @@ export class HTTPError extends Error {
       status: this.status,
       statusText: this.statusText,
       url: this.url,
-      headers: headersToRecord(this.headers),
+      // Redact credential-bearing headers so error logs/telemetry don't leak them.
+      headers: redactSensitiveHeaders(headersToRecord(this.headers)),
       bodyText: this.bodyText,
     };
   }
@@ -45,6 +46,58 @@ function headersToRecord(headers: Headers): Record<string, string> {
     record[key] = value;
   });
   return record;
+}
+
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'proxy-authorization',
+]);
+
+// Replace credential header values with a placeholder (keys preserved).
+function redactSensitiveHeaders(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    out[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value;
+  }
+  return out;
+}
+
+/**
+ * Reject a cleartext `http://`/`ws://` baseUrl pointing at a non-loopback host —
+ * bearer tokens would travel in the clear. Loopback (localhost/127.0.0.1/::1)
+ * is always allowed; pass `allowInsecureHttp` to opt into an insecure remote node.
+ */
+export function assertSecureBaseUrl(
+  baseUrl: string,
+  allowInsecureHttp = false,
+): void {
+  if (allowInsecureHttp) return;
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return; // not an absolute URL — nothing to assert
+  }
+  const insecure = url.protocol === 'http:' || url.protocol === 'ws:';
+  if (insecure && !isLoopbackHost(url.hostname)) {
+    throw new Error(
+      `Refusing insecure baseUrl "${baseUrl}": bearer tokens would be sent in cleartext to a non-loopback host. Use https:// (or wss://), or set allowInsecureHttp: true.`,
+    );
+  }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
 }
 
 // Web Standards HTTP client implementation
@@ -147,7 +200,7 @@ export class WebHttpClient implements HttpClient {
     // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
-    const headers = await this.buildHeaders(init?.headers);
+    const headers = await this.buildHeaders(init?.headers, url);
     let headersObj: Record<string, string>;
     if (headers instanceof Headers) {
       headersObj = {};
@@ -389,15 +442,32 @@ export class WebHttpClient implements HttpClient {
     return signals.length > 0 ? combineSignals(signals) : undefined;
   }
 
+  // Attach the bearer token only when the request targets the configured node's
+  // origin. `buildUrl` passes absolute URLs through verbatim, so without this a
+  // caller-supplied absolute URL to another host would receive the token.
+  private isSameOriginAsBase(requestUrl: string): boolean {
+    try {
+      return (
+        new URL(requestUrl).origin === new URL(this.transport.baseUrl).origin
+      );
+    } catch {
+      return false; // unparseable → fail closed, don't attach the token
+    }
+  }
+
   private async buildHeaders(
     initHeaders?: HeadersInit,
+    requestUrl?: string,
   ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       ...this.transport.defaultHeaders,
     };
 
-    // Add auth token if available and not empty
-    if (this.transport.getAuthToken) {
+    // Add auth token if available, not empty, and same-origin as the node
+    if (
+      this.transport.getAuthToken &&
+      (requestUrl === undefined || this.isSameOriginAsBase(requestUrl))
+    ) {
       try {
         const token = await this.transport.getAuthToken();
         if (token && token.trim() !== '') {

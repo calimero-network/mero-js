@@ -215,6 +215,24 @@ describe('SseClient', () => {
       expect((client as any).subscribedContextIds.size).toBe(0);
     });
   });
+
+  describe('auth failure', () => {
+    it('stops reconnecting (sets closed) and emits error on 401/403', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(null, { status: 401 }));
+      vi.stubGlobal('fetch', fetchMock);
+      const onError = vi.fn();
+      client.on('error', onError);
+
+      await client.connect();
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect((client as any).closed).toBe(true);
+      expect((client as any).reconnectTimer).toBeNull();
+      vi.unstubAllGlobals();
+    });
+  });
 });
 
 // Need to import afterEach
