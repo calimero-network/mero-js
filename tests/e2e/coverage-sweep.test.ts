@@ -59,28 +59,13 @@ describe('Admin API E2E — Route coverage sweep', () => {
     mero.close();
   }, 60000);
 
-  it('node reads: network/status, usage, certificate; context resync', async () => {
-    await cover('networkStatus', () => mero.admin.getNetworkStatus());
-    await cover('usage', () => mero.admin.getUsage());
+  // NOTE: blobs, network/usage, group+context metadata, TEE policy, and createGroup
+  // are deeply asserted in round-trip.test.ts — kept out of this tolerant sweep.
+  it('node reads: certificate; context resync/sync', async () => {
     await cover('certificate', () => mero.admin.getCertificate());
     await cover('resync', () => mero.admin.resyncContext(contextId, { force: true }));
     await cover('syncOne', () => mero.admin.syncContext(contextId));
     await cover('syncAll', () => mero.admin.syncContext()); // no-arg → POST /contexts/sync
-    expect(true).toBe(true);
-  });
-
-  it('blob ops: list, get raw bytes, delete', async () => {
-    // 32-zero-byte bs58 id: valid shape, won't exist — DELETE fires safely (no
-    // real blob removed); GET uses a real blob if one exists (read-only).
-    const dummyBlob = '1'.repeat(32);
-    let realBlob = dummyBlob;
-    await cover('listBlobs', async () => {
-      const list = (await mero.admin.listBlobs()) as { blobs?: Array<{ blobId: string }> };
-      if (list?.blobs?.length) realBlob = list.blobs[0].blobId;
-    });
-    await cover('getBlob', () => mero.admin.getBlob(realBlob));
-    await cover('getBlobInfo', () => mero.admin.getBlobInfo(realBlob)); // HEAD /blobs/:id
-    await cover('deleteBlob', () => mero.admin.deleteBlob(dummyBlob));
     expect(true).toBe(true);
   });
 
@@ -116,25 +101,19 @@ describe('Admin API E2E — Route coverage sweep', () => {
     expect(true).toBe(true);
   });
 
-  it('group/context settings + proofs + standalone group', async () => {
-    await cover('teePolicy', () => mero.admin.setTeeAdmissionPolicy(groupId, { policy: 'open' } as never));
-    await cover('getTeePolicy', () => mero.admin.getTeeAdmissionPolicy(groupId));
+  it('group settings + proofs', async () => {
     await cover('updateGroupSettings', () => mero.admin.updateGroupSettings(groupId, {} as never));
     await cover('signingKey', () => mero.admin.registerGroupSigningKey(groupId, {} as never));
-    await cover('ctxMeta', () => mero.admin.setContextMetadata(groupId, contextId, { data: {} } as never));
     await cover('updateApp', () =>
       mero.admin.updateContextApplication(contextId, { applicationId, executorPublicKey: executor }),
     );
     await cover('ownProof', () => mero.admin.issueOwnershipProof(groupId, { requester: executor }));
     await cover('nsOwnProof', () => mero.admin.issueNamespaceOwnershipProof(groupId, { requester: executor }));
-    await cover('createGroup', () => mero.admin.createGroup({ name: `sweep-grp-${RUN}` }));
     expect(true).toBe(true);
   });
 
-  it('metadata getters + member capabilities + app uninstall', async () => {
-    await cover('getGroupMeta', () => mero.admin.getGroupMetadata(groupId));
+  it('member metadata getter + capabilities + app uninstall', async () => {
     await cover('getMemberMeta', () => mero.admin.getMemberMetadata(groupId, executor));
-    await cover('getCtxMeta', () => mero.admin.getContextMetadata(groupId, contextId));
     await cover('setMemberCaps', () =>
       mero.admin.setMemberCapabilities(groupId, memberPk, { capabilities: [] } as never),
     );
