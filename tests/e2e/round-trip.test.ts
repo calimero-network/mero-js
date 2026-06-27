@@ -97,6 +97,53 @@ describe('Round-trip E2E — Metadata set→get', () => {
   });
 });
 
+describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
+  it('add → list (present) → role → capabilities → metadata set/get → remove → gone', async () => {
+    const id = (await mero.admin.generateContextIdentity()) as { publicKey?: string };
+    const memberPk = id.publicKey!;
+    expect(memberPk).toBeTruthy();
+
+    // GroupMemberRole serializes PascalCase: Admin | Member | ReadOnly | ReadOnlyTee.
+    await mero.admin.addGroupMembers(groupId, {
+      members: [{ identity: memberPk, role: 'Member' }],
+    } as never);
+
+    const after = (await mero.admin.listGroupMembers(groupId)) as {
+      members?: Array<{ identity?: string }>;
+    };
+    const members = after.members ?? (after as unknown as Array<{ identity?: string }>);
+    expect(members.some((m) => m.identity === memberPk)).toBe(true);
+
+    await mero.admin.updateMemberRole(groupId, memberPk, { role: 'Admin' } as never);
+    await mero.admin.setMemberCapabilities(groupId, memberPk, { capabilities: 1 } as never);
+    await mero.admin.setMemberAutoFollow(groupId, memberPk, {
+      autoFollowContexts: true,
+      autoFollowSubgroups: true,
+    } as never);
+
+    await mero.admin.setMemberMetadata(groupId, memberPk, { data: { tag: `rt-${RUN}` } } as never);
+    const meta = await mero.admin.getMemberMetadata(groupId, memberPk);
+    expect(meta).toMatchObject({ tag: `rt-${RUN}` });
+
+    await mero.admin.removeGroupMembers(groupId, { members: [memberPk] } as never);
+    const post = (await mero.admin.listGroupMembers(groupId)) as {
+      members?: Array<{ identity?: string }>;
+    };
+    const left = post.members ?? (post as unknown as Array<{ identity?: string }>);
+    expect(left.some((m) => m.identity === memberPk)).toBe(false);
+  });
+});
+
+describe('Round-trip E2E — Group settings [Tier 2]', () => {
+  it('updateGroupSettings(upgradePolicy) succeeds', async () => {
+    await mero.admin.updateGroupSettings(groupId, { upgradePolicy: 'Automatic' } as never);
+    expect(true).toBe(true);
+  });
+  // ponytail: uninstall stays in the tolerant sweep — only one app asset exists and
+  // install-dev is idempotent (returns the shared appId), so a real uninstall here
+  // would nuke shared test state. add a throwaway-app round-trip when one exists.
+});
+
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
     const policy = {
