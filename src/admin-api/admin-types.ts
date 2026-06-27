@@ -273,9 +273,7 @@ export interface ListBlobsResponseData {
 
 export type GetBlobResponseData = BlobInfo;
 
-export interface GetBlobInfoResponseData {
-  blobId: string;
-  size: number;
+export interface GetBlobInfoResponseData extends BlobInfo {
   hash?: string;
   mimeType?: string;
 }
