@@ -1,3 +1,17 @@
+## 7.0.0 (2026-06-28)
+
+* fix!: metadata getters return the full MetadataRecord (#65) ([6daa627](https://github.com/calimero-network/mero-js/commit/6daa627)), closes [#65](https://github.com/calimero-network/mero-js/issues/65)
+* test(e2e): true round-trip + multi-node assertions (Tiers 1–3) (#63) ([2a351e1](https://github.com/calimero-network/mero-js/commit/2a351e1)), closes [#63](https://github.com/calimero-network/mero-js/issues/63)
+
+
+### BREAKING CHANGE
+
+* getGroupMetadata/getMemberMetadata/getContextMetadata now
+resolve to the full MetadataRecord ({ name, data, updatedAt, updatedBy })
+instead of the bare data map. Read the values under `.data`.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 ## 6.1.0 (2026-06-27)
 
 * feat(sdk): add getBlobInfo (HEAD /blobs/:id) (#62) ([7d440ee](https://github.com/calimero-network/mero-js/commit/7d440ee)), closes [#62](https://github.com/calimero-network/mero-js/issues/62)
