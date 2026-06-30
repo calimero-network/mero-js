@@ -1,5 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MeroJs, createMeroJs } from './mero-js';
+import { MeroJs, createMeroJs, TokenReuseError } from './mero-js';
+import { HTTPError } from './http-client';
+import { MemoryTokenStore } from './token-store';
+
+/** Build an unsigned JWT carrying the given claims (for decode-only assertions). */
+function makeJwt(claims: Record<string, unknown>): string {
+  const b64url = (o: unknown): string =>
+    Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(claims)}.fakesig`;
+}
+
+/** An HTTPError mimicking core's refresh-reuse response. */
+function reuseHttpError(): HTTPError {
+  return new HTTPError(401, 'Unauthorized', 'https://node/auth/refresh',
+    new Headers([['x-auth-error', 'token_reuse']]), '');
+}
 
 // Mock the HTTP client and API clients
 const mockHttpClient = {
@@ -58,9 +73,13 @@ const mockAdminClient = {
   getApplication: vi.fn(),
 };
 
-vi.mock('./http-client', () => ({
-  createBrowserHttpClient: vi.fn(() => mockHttpClient),
-}));
+vi.mock('./http-client', async (importActual) => {
+  const actual = await importActual<typeof import('./http-client')>();
+  return {
+    ...actual,
+    createBrowserHttpClient: vi.fn(() => mockHttpClient),
+  };
+});
 
 vi.mock('./auth-api', () => ({
   createAuthApiClientFromHttpClient: vi.fn(() => mockAuthClient),
@@ -443,6 +462,151 @@ describe('MeroJs SDK', () => {
         onTokenRefresh: expect.any(Function),
         timeoutMs: 30000,
       });
+    });
+  });
+
+  describe('Refresh-reuse handling (v8)', () => {
+    beforeEach(async () => {
+      meroJs = new MeroJs({
+        baseUrl: 'http://localhost:3000',
+        credentials: { username: 'admin', password: 'admin123' },
+      });
+      mockAuthClient.generateTokens.mockResolvedValue({
+        data: { access_token: 'access-1', refresh_token: 'refresh-1' },
+      });
+      await meroJs.authenticate();
+    });
+
+    it('clears tokens and throws TokenReuseError on a reuse (401 token_reuse) error', async () => {
+      mockAuthClient.refreshToken.mockRejectedValue(reuseHttpError());
+
+      await expect((meroJs as any).performTokenRefresh()).rejects.toBeInstanceOf(
+        TokenReuseError,
+      );
+      // Terminal: tokens cleared, forcing re-auth.
+      expect(meroJs.isAuthenticated()).toBe(false);
+      expect(meroJs.getTokenData()).toBeNull();
+    });
+
+    it('clears tokens on a 403 from the refresh endpoint', async () => {
+      mockAuthClient.refreshToken.mockRejectedValue(
+        new HTTPError(403, 'Forbidden', 'https://node/auth/refresh', new Headers(), ''),
+      );
+
+      await expect((meroJs as any).performTokenRefresh()).rejects.toBeInstanceOf(
+        TokenReuseError,
+      );
+      expect(meroJs.isAuthenticated()).toBe(false);
+    });
+
+    it('keeps tokens on a transient/network error and never marks it terminal', async () => {
+      mockAuthClient.refreshToken.mockRejectedValue(new Error('network down'));
+
+      await expect((meroJs as any).performTokenRefresh()).rejects.toThrow(
+        'Token refresh failed: network down',
+      );
+      // Transient: access token may still be valid — tokens retained.
+      expect(meroJs.isAuthenticated()).toBe(true);
+      expect(meroJs.getTokenData()?.refresh_token).toBe('refresh-1');
+    });
+
+    it('persists the rotated pair to the store before returning', async () => {
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      const result = await (meroJs as any).performTokenRefresh();
+      expect(result.refresh_token).toBe('refresh-2');
+      expect(meroJs.getTokenData()).toEqual(
+        expect.objectContaining({ access_token: 'access-2', refresh_token: 'refresh-2' }),
+      );
+    });
+
+    it('single-flights concurrent refreshes (one network call)', async () => {
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      const [a, b] = await Promise.all([
+        (meroJs as any).refreshToken(),
+        (meroJs as any).refreshToken(),
+      ]);
+
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledTimes(1);
+      expect(a.refresh_token).toBe('refresh-2');
+      expect(b.refresh_token).toBe('refresh-2');
+    });
+  });
+
+  describe('Cross-tab adoption (v8)', () => {
+    it('adopts a peer-rotated pair from the store instead of replaying a consumed token', async () => {
+      const store = new MemoryTokenStore();
+      meroJs = new MeroJs({
+        baseUrl: 'http://localhost:3000',
+        credentials: { username: 'admin', password: 'admin123' },
+        tokenStore: store,
+      });
+      mockAuthClient.generateTokens.mockResolvedValue({
+        data: { access_token: 'access-1', refresh_token: 'refresh-1' },
+      });
+      await meroJs.authenticate();
+
+      // Simulate another tab having already rotated the shared pair.
+      store.setTokens({
+        access_token: 'peer-access',
+        refresh_token: 'peer-refresh',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const result = await (meroJs as any).refreshUnderCoordination();
+
+      expect(mockAuthClient.refreshToken).not.toHaveBeenCalled();
+      expect(result.refresh_token).toBe('peer-refresh');
+      expect(meroJs.getTokenData()?.access_token).toBe('peer-access');
+    });
+  });
+
+  describe('Permission-shrink awareness (v8, #10)', () => {
+    it('surfaces the EFFECTIVE granted permissions from the issued access token', () => {
+      meroJs = new MeroJs({ baseUrl: 'http://localhost:3000' });
+      meroJs.setTokenData({
+        access_token: makeJwt({ token_type: 'access', permissions: ['context:read'] }),
+        refresh_token: 'r',
+        expires_at: Date.now() + 3600_000,
+      });
+      // Requested admin earlier, but the node granted only read.
+      expect(meroJs.getGrantedPermissions()).toEqual(['context:read']);
+    });
+
+    it('returns [] when unauthenticated', () => {
+      meroJs = new MeroJs({ baseUrl: 'http://localhost:3000' });
+      expect(meroJs.getGrantedPermissions()).toEqual([]);
+    });
+  });
+
+  describe('token_type assertion (v8, #1)', () => {
+    it('treats a refresh token in the access slot as unauthenticated', async () => {
+      meroJs = new MeroJs({ baseUrl: 'http://localhost:3000' });
+      meroJs.setTokenData({
+        access_token: makeJwt({ token_type: 'refresh' }),
+        refresh_token: 'r',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const valid = await (meroJs as any).getValidToken();
+      expect(valid).toBeNull();
+    });
+
+    it('allows a proper access token through', async () => {
+      meroJs = new MeroJs({ baseUrl: 'http://localhost:3000' });
+      meroJs.setTokenData({
+        access_token: makeJwt({ token_type: 'access' }),
+        refresh_token: 'r',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const valid = await (meroJs as any).getValidToken();
+      expect(valid?.access_token).toBeDefined();
     });
   });
 });
