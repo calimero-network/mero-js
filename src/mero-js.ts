@@ -1,4 +1,4 @@
-import { createBrowserHttpClient } from './http-client';
+import { createBrowserHttpClient, isRefreshReuseError } from './http-client';
 import { createAuthApiClientFromHttpClient } from './auth-api';
 import { createAdminApiClientFromHttpClient } from './admin-api';
 import type { AuthApiClient } from './auth-api';
@@ -10,6 +10,12 @@ import type { AuthCallbackResult, AuthLoginOptions } from './auth';
 import { RpcClient } from './rpc';
 import { SseClient } from './events/sse';
 import { WsClient } from './events/ws';
+import {
+  expiresAtFromJwt,
+  permissionsFromJwt,
+  isRefreshTokenInAccessSlot,
+} from './jwt';
+import { withRefreshLock } from './refresh-lock';
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */
@@ -33,23 +39,19 @@ export interface TokenData {
   expires_at: number;
 }
 
-/** Try to extract `exp` (seconds) from a JWT, return ms timestamp or fallback. */
-function expiresAtFromJwt(token: string, fallbackMs: number): number {
-  try {
-    const parts = token.split('.');
-    if (parts.length === 3) {
-      // JWT uses base64url encoding: replace -/_ with +// and add padding
-      let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      while (b64.length % 4) b64 += '=';
-      const payload = JSON.parse(atob(b64));
-      if (typeof payload.exp === 'number') {
-        return payload.exp * 1000;
-      }
-    }
-  } catch {
-    // not a JWT or can't parse
+/**
+ * Terminal error thrown when the node reports refresh-token REUSE (a consumed /
+ * rotated refresh token was replayed). On this error the SDK has already cleared
+ * its tokens and the token family is revoked server-side — the caller must force
+ * a fresh interactive authentication. Distinguishable via `instanceof` (and by
+ * `name === 'TokenReuseError'` across module/bundle boundaries).
+ */
+export class TokenReuseError extends Error {
+  name = 'TokenReuseError' as const;
+
+  constructor(message = 'Refresh token reuse detected; re-authentication required') {
+    super(message);
   }
-  return fallbackMs;
 }
 
 /**
@@ -63,6 +65,8 @@ export class MeroJs {
   private tokenData: TokenData | null = null;
   private refreshPromise: Promise<TokenData> | null = null;
   private tokenStore: TokenStore | null;
+  /** Cross-tab Web Locks name; same node URL => same lock across tabs. */
+  private readonly refreshLockName: string;
   private rpcClient: RpcClient | null = null;
   private sseClient: SseClient | null = null;
   private wsClient: WsClient | null = null;
@@ -75,6 +79,7 @@ export class MeroJs {
     };
 
     this.tokenStore = config.tokenStore ?? null;
+    this.refreshLockName = `mero-js:token-refresh:${this.config.baseUrl}`;
 
     // Restore tokens from store if available
     if (this.tokenStore) {
@@ -91,7 +96,7 @@ export class MeroJs {
         return token?.access_token || '';
       },
       refreshToken: async () => {
-        const refreshed = await this.performTokenRefresh();
+        const refreshed = await this.refreshToken();
         return refreshed.access_token;
       },
       onTokenRefresh: async (newToken: string) => {
@@ -237,34 +242,67 @@ export class MeroJs {
    * responses reactively via the refreshToken transport hook.
    */
   private async getValidToken(): Promise<TokenData | null> {
+    // Defense-in-depth (#1): never present a refresh token as a bearer. If a
+    // refresh token somehow landed in the access slot, treat as unauthenticated.
+    if (this.tokenData && isRefreshTokenInAccessSlot(this.tokenData.access_token)) {
+      return null;
+    }
     return this.tokenData;
   }
 
   /**
-   * Refresh the access token using the refresh token
+   * Refresh the access token. Dedups concurrent refreshes within this instance
+   * (single-flight) and, across tabs/instances, serializes through the Web Locks
+   * API when available so a server-rotation 401 wave does not stampede the
+   * refresh endpoint and replay consumed tokens.
    */
   private async refreshToken(): Promise<TokenData> {
     if (!this.tokenData?.refresh_token) {
       throw new Error('No refresh token available');
     }
 
-    // Prevent multiple simultaneous refresh attempts
+    // Per-instance single-flight: collapse concurrent refreshes in this tab.
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = this.performTokenRefresh();
+    this.refreshPromise = withRefreshLock(this.refreshLockName, () =>
+      this.refreshUnderCoordination(),
+    );
 
     try {
-      const newToken = await this.refreshPromise;
-      return newToken;
+      return await this.refreshPromise;
     } finally {
       this.refreshPromise = null;
     }
   }
 
   /**
-   * Perform the actual token refresh
+   * Runs inside the cross-tab lock (or jitter fallback). Re-reads the shared
+   * store first: if a peer already rotated the pair we ADOPT it instead of
+   * replaying our now-consumed refresh token (which would trip reuse detection).
+   */
+  private async refreshUnderCoordination(): Promise<TokenData> {
+    const startedWith = this.tokenData?.refresh_token;
+    const stored = this.tokenStore?.getTokens() ?? null;
+    if (stored?.refresh_token && stored.refresh_token !== startedWith) {
+      // A concurrent tab/instance already rotated; take its fresh tokens.
+      this.tokenData = stored;
+      return stored;
+    }
+    return this.performTokenRefresh();
+  }
+
+  /**
+   * Perform the actual token refresh against the node.
+   *
+   * On success the rotated pair is persisted to the store BEFORE it is returned,
+   * so no subsequent request can fire with the now-consumed refresh token.
+   *
+   * On failure the error is classified (see {@link isRefreshReuseError}):
+   *  - reuse / invalid-refresh (terminal): clear tokens + force re-auth, no retry.
+   *  - transient / network: keep tokens (the access token may still be valid),
+   *    surface to caller, never auto-retry the same refresh token.
    */
   private async performTokenRefresh(): Promise<TokenData> {
     if (!this.tokenData?.refresh_token) {
@@ -278,19 +316,27 @@ export class MeroJs {
       });
 
       const accessToken = response.data.access_token;
-      this.tokenData = {
+      const next: TokenData = {
         access_token: accessToken,
         refresh_token: response.data.refresh_token,
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
 
+      // Persist the rotated pair BEFORE handing the token back / releasing the
+      // lock, so a peer that wakes up next reads the new refresh token.
+      this.tokenData = next;
       this.tokenStore?.setTokens(this.tokenData);
 
       return this.tokenData;
     } catch (error) {
-      // Don't clear tokens on refresh failure — the access token may still be
-      // valid (server rejects refresh while access token hasn't expired yet).
-      // Let the caller handle the error.
+      if (isRefreshReuseError(error)) {
+        // Terminal: the node denylisted this refresh token and revoked the
+        // family. Retrying replays a consumed token — clear and force re-auth.
+        this.clearToken();
+        throw new TokenReuseError();
+      }
+      // Transient/network error — the access token may still be valid. Keep
+      // tokens and surface to the caller; never auto-retry the same refresh token.
       throw new Error(
         `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -328,6 +374,22 @@ export class MeroJs {
    */
   public getTokenData(): TokenData | null {
     return this.tokenData;
+  }
+
+  /**
+   * The EFFECTIVE permissions granted by the current access token (#10).
+   *
+   * Callers must NOT assume requested permissions == granted: core re-derives
+   * permissions from the live key at issue time and may grant FEWER than were
+   * requested. This decodes the issued access token's `permissions` claim so
+   * callers can read what they actually got. Returns `[]` when unauthenticated
+   * or the token carries no decodable permissions.
+   */
+  public getGrantedPermissions(): string[] {
+    if (!this.tokenData?.access_token) {
+      return [];
+    }
+    return permissionsFromJwt(this.tokenData.access_token);
   }
 
   /**

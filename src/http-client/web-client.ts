@@ -6,6 +6,7 @@ import {
   ResponseParser,
 } from './http-types';
 import { combineSignals, createTimeoutSignal } from './signal-utils';
+import { AUTH_ERROR_HEADER, AUTH_ERROR_TOKEN_EXPIRED } from './auth-errors';
 
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
@@ -239,12 +240,15 @@ export class WebHttpClient implements HttpClient {
           bodyText,
         );
 
-        // Handle 401 with token_expired - attempt automatic token refresh
+        // Handle 401 with token_expired - attempt automatic token refresh.
+        // Only `token_expired` is refreshable; other auth errors (notably
+        // `token_reuse`) are terminal and fall through to `throw httpError`
+        // below — never retried.
         const userAborted = init?.signal?.aborted === true;
         if (
           response.status === 401 &&
           this.transport.refreshToken &&
-          response.headers.get('x-auth-error') === 'token_expired' &&
+          response.headers.get(AUTH_ERROR_HEADER) === AUTH_ERROR_TOKEN_EXPIRED &&
           retryCount < MAX_RETRY_ATTEMPTS &&
           !isStreamBody &&
           !userAborted
@@ -318,6 +322,12 @@ export class WebHttpClient implements HttpClient {
             // Clear caches on error
             this.refreshTokenPromise = null;
             this.onTokenRefreshPromise = null;
+            // Terminal refresh-reuse error: the refresh hook already cleared the
+            // tokens and the family is revoked server-side. Surface it as-is so
+            // the caller can force re-auth — do NOT retry, do NOT mask as a 401.
+            if (refreshError instanceof Error && refreshError.name === 'TokenReuseError') {
+              throw refreshError;
+            }
             // Configuration errors (missing onTokenRefresh) should be thrown as-is
             if (refreshError instanceof Error && refreshError.message.includes('onTokenRefresh')) {
               throw refreshError;
@@ -335,6 +345,12 @@ export class WebHttpClient implements HttpClient {
       return this.parseResponse<T>(response, init?.parse);
     } catch (error) {
       if (error instanceof HTTPError) {
+        throw error;
+      }
+      // Terminal refresh-reuse error: surface as-is so the caller can force
+      // re-auth. Mirrors the inner refresh catch — must NOT be masked as a
+      // generic HTTP 0 network error.
+      if (error instanceof Error && error.name === 'TokenReuseError') {
         throw error;
       }
       // Preserve configuration errors (like missing onTokenRefresh)

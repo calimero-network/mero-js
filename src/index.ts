@@ -2,8 +2,22 @@
 // This will contain the pure JavaScript SDK without React dependencies
 
 // Main SDK class
-export { MeroJs, createMeroJs } from './mero-js';
+export { MeroJs, createMeroJs, TokenReuseError } from './mero-js';
 export type { MeroJsConfig, TokenData } from './mero-js';
+
+// JWT claim helpers + token_type constants (read-only, signature NOT verified)
+export {
+  decodeJwtPayload,
+  expiresAtFromJwt,
+  tokenTypeFromJwt,
+  permissionsFromJwt,
+  isRefreshTokenInAccessSlot,
+  ACCESS_TOKEN_TYPE,
+  REFRESH_TOKEN_TYPE,
+} from './jwt';
+
+// Cross-tab refresh coordination (Web Locks with Node-safe fallback)
+export { withRefreshLock, getLockManager } from './refresh-lock';
 
 // HTTP client module (Web Standards based)
 export * from './http-client';

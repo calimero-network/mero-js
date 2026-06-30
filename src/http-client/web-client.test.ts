@@ -190,6 +190,44 @@ describe('WebHttpClient - Token Refresh', () => {
       expect(refreshToken).not.toHaveBeenCalled();
     });
 
+    it('should NOT attempt refresh on a terminal 401 token_reuse (no retry)', async () => {
+      const refreshToken = vi.fn();
+      transport.refreshToken = refreshToken;
+
+      const errorResponse = new Response(null, {
+        status: 401,
+        headers: { 'x-auth-error': 'token_reuse' },
+      });
+      mockFetch.mockResolvedValueOnce(errorResponse);
+
+      await expect(client.get('/protected-endpoint')).rejects.toThrow(HTTPError);
+      // token_reuse is terminal: never refreshed, never retried.
+      expect(refreshToken).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should surface a TokenReuseError thrown by the refresh hook as-is (terminal)', async () => {
+      class TokenReuseError extends Error {
+        name = 'TokenReuseError' as const;
+      }
+      const refreshToken = vi.fn().mockRejectedValue(new TokenReuseError('reuse'));
+      const onTokenRefresh = vi.fn();
+      transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = onTokenRefresh;
+
+      // A normal token_expired 401 triggers the refresh hook, which then reports
+      // reuse (the rotated/consumed token was replayed) — surfaced, not retried.
+      const errorResponse = new Response(null, {
+        status: 401,
+        headers: { 'x-auth-error': 'token_expired' },
+      });
+      mockFetch.mockResolvedValueOnce(errorResponse);
+
+      await expect(client.get('/protected-endpoint')).rejects.toThrow('reuse');
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(1); // no retry
+    });
+
     it('should not call refreshToken for bare 401 without x-auth-error header', async () => {
       const refreshToken = vi.fn();
       transport.refreshToken = refreshToken;
