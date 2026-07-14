@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MeroJs, createMeroJs } from './mero-js';
+import { MemoryTokenStore } from './token-store';
 
 // Mock the HTTP client and API clients
 const mockHttpClient = {
@@ -350,6 +351,7 @@ describe('MeroJs SDK', () => {
         getAuthToken: expect.any(Function),
         refreshToken: expect.any(Function),
         onTokenRefresh: expect.any(Function),
+        onAuthRevoked: expect.any(Function),
         timeoutMs: 10000,
       });
 
@@ -424,6 +426,7 @@ describe('MeroJs SDK', () => {
         getAuthToken: expect.any(Function),
         refreshToken: expect.any(Function),
         onTokenRefresh: expect.any(Function),
+        onAuthRevoked: expect.any(Function),
         timeoutMs: 10000,
       });
     });
@@ -441,8 +444,140 @@ describe('MeroJs SDK', () => {
         getAuthToken: expect.any(Function),
         refreshToken: expect.any(Function),
         onTokenRefresh: expect.any(Function),
+        onAuthRevoked: expect.any(Function),
         timeoutMs: 30000,
       });
+    });
+  });
+  describe('Single-use refresh token rotation (core#3083)', () => {
+    let store: MemoryTokenStore;
+
+    const getTransportHooks = async (): Promise<any> => {
+      const { createBrowserHttpClient } = await import('./http-client');
+      return (createBrowserHttpClient as any).mock.calls[0][0];
+    };
+
+    beforeEach(async () => {
+      store = new MemoryTokenStore();
+      meroJs = new MeroJs({
+        baseUrl: 'http://localhost:3000',
+        credentials: {
+          username: 'admin',
+          password: 'admin123',
+        },
+        tokenStore: store,
+      });
+
+      mockAuthClient.generateTokens.mockResolvedValue({
+        data: { access_token: 'access-1', refresh_token: 'refresh-1' },
+      });
+      await meroJs.authenticate();
+    });
+
+    it('should issue exactly one /auth/refresh call for concurrent 401 refreshes', async () => {
+      let resolveRefresh: (value: unknown) => void = () => {};
+      mockAuthClient.refreshToken.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+      const { refreshToken } = await getTransportHooks();
+
+      // Two in-flight requests both 401 and both ask the transport to refresh
+      const first = refreshToken();
+      const second = refreshToken();
+
+      resolveRefresh({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+      const [firstToken, secondToken] = await Promise.all([first, second]);
+
+      // Replaying the consumed refresh token would revoke the whole family
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledTimes(1);
+      expect(firstToken).toBe('access-2');
+      expect(secondToken).toBe('access-2');
+    });
+
+    it('should persist the rotated refresh token to the token store', async () => {
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      await (meroJs as any).performTokenRefresh();
+
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledWith({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+      });
+      expect(meroJs.getTokenData()?.refresh_token).toBe('refresh-2');
+      expect(store.getTokens()?.refresh_token).toBe('refresh-2');
+    });
+
+    it('should prefer the stored refresh token over a stale in-memory one', async () => {
+      // Another instance sharing this store rotated the refresh token
+      store.setTokens({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1b',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      await (meroJs as any).performTokenRefresh();
+
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledWith({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1b',
+      });
+    });
+
+    it('should adopt a bundle another tab already rotated without calling /auth/refresh', async () => {
+      store.setTokens({
+        access_token: 'access-2',
+        refresh_token: 'refresh-2',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const tokens = await (meroJs as any).performTokenRefresh();
+
+      expect(mockAuthClient.refreshToken).not.toHaveBeenCalled();
+      expect(tokens.access_token).toBe('access-2');
+      expect(meroJs.getTokenData()?.refresh_token).toBe('refresh-2');
+    });
+
+    it('should serialize the refresh through navigator.locks when available', async () => {
+      const request = vi.fn((_name: string, cb: () => Promise<unknown>) => cb());
+      vi.stubGlobal('navigator', { locks: { request } });
+
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      try {
+        await (meroJs as any).performTokenRefresh();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+
+      expect(request).toHaveBeenCalledWith(
+        'mero-js:token-refresh',
+        expect.any(Function),
+      );
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('should clear tokens when the transport reports a revoked token family', async () => {
+      const { onAuthRevoked } = await getTransportHooks();
+
+      await onAuthRevoked();
+
+      expect(meroJs.isAuthenticated()).toBe(false);
+      expect(meroJs.getTokenData()).toBeNull();
+      expect(store.getTokens()).toBeNull();
     });
   });
 });
