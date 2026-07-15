@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebHttpClient, HTTPError } from './web-client';
+import { WebHttpClient, HTTPError, AuthRevokedError } from './web-client';
 import { Transport } from './http-types';
 
 describe('WebHttpClient - Token Refresh', () => {
@@ -473,6 +473,96 @@ describe('WebHttpClient - Token Refresh', () => {
 
       expect(refreshToken).toHaveBeenCalledTimes(1);
       expect(result).toEqual({ patched: true });
+    });
+  });
+  describe('Revoked Token Family (single-use refresh tokens)', () => {
+    it('should not refresh or retry on 401 with x-auth-error: token_reuse', async () => {
+      const refreshToken = vi.fn().mockResolvedValue('new-token');
+      const onTokenRefresh = vi.fn();
+      const onAuthRevoked = vi.fn();
+
+      transport.refreshToken = refreshToken;
+      transport.onTokenRefresh = onTokenRefresh;
+      transport.onAuthRevoked = onAuthRevoked;
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(null, {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: { 'x-auth-error': 'token_reuse' },
+        }),
+      );
+
+      await expect(client.get('/protected-endpoint')).rejects.toBeInstanceOf(
+        AuthRevokedError,
+      );
+
+      // The refresh token was consumed and the family revoked - refreshing again
+      // would only burn another token, and the retry would 401 anyway
+      expect(refreshToken).not.toHaveBeenCalled();
+      expect(onTokenRefresh).not.toHaveBeenCalled();
+      expect(onAuthRevoked).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should expose the auth error reason and stay an HTTPError', async () => {
+      transport.onAuthRevoked = vi.fn();
+
+      mockFetch.mockResolvedValueOnce(
+        new Response('reuse detected', {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: { 'x-auth-error': 'token_reuse' },
+        }),
+      );
+
+      try {
+        await client.get('/protected-endpoint');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(HTTPError);
+        expect(error.name).toBe('AuthRevokedError');
+        expect(error.reason).toBe('token_reuse');
+        expect(error.status).toBe(401);
+      }
+    });
+
+    it('should treat 403 token_revoked as terminal', async () => {
+      const refreshToken = vi.fn();
+      const onAuthRevoked = vi.fn();
+      transport.refreshToken = refreshToken;
+      transport.onAuthRevoked = onAuthRevoked;
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(null, {
+          status: 403,
+          headers: { 'x-auth-error': 'token_revoked' },
+        }),
+      );
+
+      await expect(client.get('/protected-endpoint')).rejects.toBeInstanceOf(
+        AuthRevokedError,
+      );
+
+      expect(refreshToken).not.toHaveBeenCalled();
+      expect(onAuthRevoked).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should surface the terminal error even without an onAuthRevoked hook', async () => {
+      transport.refreshToken = vi.fn();
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(null, {
+          status: 401,
+          headers: { 'x-auth-error': 'token_reuse' },
+        }),
+      );
+
+      await expect(client.get('/protected-endpoint')).rejects.toBeInstanceOf(
+        AuthRevokedError,
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 });

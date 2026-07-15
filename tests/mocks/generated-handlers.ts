@@ -608,17 +608,7 @@ export const generatedHandlers = [
     });
   }),
 
-  // Get Signing Challenge
-  http.get('*/auth/challenge', () => {
-    return HttpResponse.json({
-      "data": {
-        "challenge": "challenge_string_to_sign",
-        "nonce": "random_nonce_xyz"
-      }
-    });
-  }),
-
-  // Exchange Challenge for Token
+  // Generate Token
   http.post('*/auth/token', () => {
     return HttpResponse.json({
       "data": {

@@ -16,6 +16,13 @@ export interface Transport {
    * If provided, the client will automatically retry the request after a successful refresh.
    */
   refreshToken?: () => Promise<string>;
+  /**
+   * Callback invoked when the server reports that the token family is gone
+   * (`x-auth-error: token_reuse` on 401, or `token_revoked`). Refresh tokens are
+   * single-use, so this is terminal: the stored tokens must be dropped and the
+   * user re-authenticated. The client never retries such a request.
+   */
+  onAuthRevoked?: () => Promise<void> | void;
   timeoutMs?: number;
   credentials?: RequestCredentials;
   defaultAbortSignal?: AbortSignal;

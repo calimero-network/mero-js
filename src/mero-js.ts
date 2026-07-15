@@ -33,6 +33,21 @@ export interface TokenData {
   expires_at: number;
 }
 
+/** Name of the Web Lock that serializes token refresh across tabs / webviews. */
+const REFRESH_LOCK_NAME = 'mero-js:token-refresh';
+
+/** Minimal structural view of the Web Locks API (not available in every runtime). */
+interface LockManagerLike {
+  request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+}
+
+/** Returns `navigator.locks` when the runtime supports the Web Locks API. */
+function getLockManager(): LockManagerLike | null {
+  const nav = (globalThis as unknown as { navigator?: { locks?: LockManagerLike } }).navigator;
+  const locks = nav?.locks;
+  return locks && typeof locks.request === 'function' ? locks : null;
+}
+
 /** Try to extract `exp` (seconds) from a JWT, return ms timestamp or fallback. */
 function expiresAtFromJwt(token: string, fallbackMs: number): number {
   try {
@@ -99,6 +114,12 @@ export class MeroJs {
           this.tokenData.access_token = newToken;
           this.tokenStore?.setTokens(this.tokenData);
         }
+      },
+      onAuthRevoked: () => {
+        // The refresh-token family is gone (a single-use refresh token was
+        // replayed, or the token was revoked). Nothing left to refresh with —
+        // drop the bundle so the app can force a re-login.
+        this.clearToken();
       },
       timeoutMs: this.config.timeoutMs,
       credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
@@ -241,32 +262,67 @@ export class MeroJs {
   }
 
   /**
-   * Refresh the access token using the refresh token
+   * Refresh the access token. Single-flight: every caller (including the HTTP
+   * transport's 401 hook) goes through here.
+   *
+   * Refresh tokens are single-use (calimero-network/core#3083): each refresh
+   * consumes the presented token and returns a new one, and replaying a consumed
+   * token makes the server revoke the whole family. A refresh must therefore
+   * happen exactly once per rotation, which needs three layers:
+   *  - an in-process promise, so concurrent 401s in this instance share one call;
+   *  - a Web Lock (when available), so other tabs/webviews don't refresh at the
+   *    same time on the same stored token;
+   *  - a re-read of the token store inside the lock, so a bundle that another
+   *    instance already rotated is adopted instead of replaying a stale token.
    */
-  private async refreshToken(): Promise<TokenData> {
-    if (!this.tokenData?.refresh_token) {
-      throw new Error('No refresh token available');
-    }
-
-    // Prevent multiple simultaneous refresh attempts
+  private async performTokenRefresh(): Promise<TokenData> {
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = this.performTokenRefresh();
+    // The access token that triggered this refresh. If the store holds a different
+    // one by the time we get the lock, someone else already rotated for us.
+    const triggeringAccessToken = this.tokenData?.access_token;
+
+    const promise = this.withRefreshLock(() =>
+      this.performTokenRefreshLocked(triggeringAccessToken),
+    );
+    this.refreshPromise = promise;
 
     try {
-      const newToken = await this.refreshPromise;
-      return newToken;
+      return await promise;
     } finally {
-      this.refreshPromise = null;
+      if (this.refreshPromise === promise) {
+        this.refreshPromise = null;
+      }
     }
   }
 
+  /** Run `fn` under the cross-tab refresh lock, or directly if Web Locks are unavailable. */
+  private withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+    const locks = getLockManager();
+    return locks ? locks.request(REFRESH_LOCK_NAME, fn) : fn();
+  }
+
   /**
-   * Perform the actual token refresh
+   * Perform the actual token refresh. Runs with the refresh lock held.
    */
-  private async performTokenRefresh(): Promise<TokenData> {
+  private async performTokenRefreshLocked(
+    triggeringAccessToken?: string,
+  ): Promise<TokenData> {
+    // Another instance/tab may have rotated the bundle while we were queued behind
+    // the lock — the store, not our in-memory copy, is the source of truth.
+    const stored = this.tokenStore?.getTokens() ?? null;
+    if (stored?.refresh_token) {
+      this.tokenData = stored;
+
+      if (triggeringAccessToken && stored.access_token !== triggeringAccessToken) {
+        // Someone else already refreshed. Reuse their bundle rather than replaying
+        // our (now consumed) refresh token, which would revoke the family.
+        return stored;
+      }
+    }
+
     if (!this.tokenData?.refresh_token) {
       throw new Error('No refresh token available');
     }
@@ -280,6 +336,8 @@ export class MeroJs {
       const accessToken = response.data.access_token;
       this.tokenData = {
         access_token: accessToken,
+        // The refresh token is rotated on every refresh — persist the new one or
+        // the next refresh replays a consumed token.
         refresh_token: response.data.refresh_token,
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
@@ -290,7 +348,8 @@ export class MeroJs {
     } catch (error) {
       // Don't clear tokens on refresh failure — the access token may still be
       // valid (server rejects refresh while access token hasn't expired yet).
-      // Let the caller handle the error.
+      // A genuinely dead family arrives as `x-auth-error: token_reuse` and is
+      // handled by the onAuthRevoked transport hook. Let the caller handle this.
       throw new Error(
         `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -301,6 +360,7 @@ export class MeroJs {
    * Clear the current token
    */
   public clearToken(): void {
+    this.refreshPromise = null;
     this.tokenData = null;
     this.tokenStore?.clear();
   }

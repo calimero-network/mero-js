@@ -17,6 +17,12 @@ export function createBrowserHttpClient(options: {
    * If provided, the client will automatically retry the request after a successful refresh.
    */
   refreshToken?: () => Promise<string>;
+  /**
+   * Callback invoked when the server reports a revoked token family
+   * (`x-auth-error: token_reuse` / `token_revoked`). Terminal — the request is
+   * never retried; clear stored tokens and force a re-login.
+   */
+  onAuthRevoked?: () => Promise<void> | void;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
@@ -30,6 +36,7 @@ export function createBrowserHttpClient(options: {
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
     refreshToken: options.refreshToken,
+    onAuthRevoked: options.onAuthRevoked,
     defaultHeaders: options.defaultHeaders,
     timeoutMs: options.timeoutMs,
     credentials: options.credentials, // No default credentials
@@ -51,6 +58,12 @@ export function createNodeHttpClient(options: {
    * If provided, the client will automatically retry the request after a successful refresh.
    */
   refreshToken?: () => Promise<string>;
+  /**
+   * Callback invoked when the server reports a revoked token family
+   * (`x-auth-error: token_reuse` / `token_revoked`). Terminal — the request is
+   * never retried; clear stored tokens and force a re-login.
+   */
+  onAuthRevoked?: () => Promise<void> | void;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
@@ -82,6 +95,7 @@ export function createNodeHttpClient(options: {
     getAuthToken: options.getAuthToken,
     onTokenRefresh: options.onTokenRefresh,
     refreshToken: options.refreshToken,
+    onAuthRevoked: options.onAuthRevoked,
     defaultHeaders: options.defaultHeaders,
     timeoutMs: options.timeoutMs,
     credentials: options.credentials, // Node.js doesn't have default credentials
@@ -103,6 +117,12 @@ export function createUniversalHttpClient(options: {
    * If provided, the client will automatically retry the request after a successful refresh.
    */
   refreshToken?: () => Promise<string>;
+  /**
+   * Callback invoked when the server reports a revoked token family
+   * (`x-auth-error: token_reuse` / `token_revoked`). Terminal — the request is
+   * never retried; clear stored tokens and force a re-login.
+   */
+  onAuthRevoked?: () => Promise<void> | void;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
   credentials?: RequestCredentials;
