@@ -1,3 +1,7 @@
+## <small>7.0.1 (2026-07-15)</small>
+
+* fix(auth): make token refresh single-use safe (rotation, single-flight, token_reuse) (#67) ([bdf4609](https://github.com/calimero-network/mero-js/commit/bdf4609)), closes [#67](https://github.com/calimero-network/mero-js/issues/67) [calimero-network/core#3083](https://github.com/calimero-network/core/issues/3083) [calimero-network/core#3229](https://github.com/calimero-network/core/issues/3229)
+
 ## 7.0.0 (2026-06-28)
 
 * fix!: metadata getters return the full MetadataRecord (#65) ([6daa627](https://github.com/calimero-network/mero-js/commit/6daa627)), closes [#65](https://github.com/calimero-network/mero-js/issues/65)
