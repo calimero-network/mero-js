@@ -49,12 +49,30 @@ export function resolveBaseUrl(): string {
   );
 }
 
-/** Credentials for the e2e suite, overridable via env (default dev/dev). */
+/**
+ * Credentials for the e2e suite, overridable via env. The default password is
+ * 8+ chars because core >= 0.11.0-rc.14 enforces a minimum password length
+ * when the account is created (core#3081).
+ */
 export function resolveCreds(): { username: string; password: string } {
   return {
     username: process.env.MERO_E2E_USER || 'dev',
-    password: process.env.MERO_E2E_PASS || 'dev',
+    password: process.env.MERO_E2E_PASS || 'dev-password',
   };
+}
+
+/**
+ * First-login setup code for fresh nodes (core#3221, >= 0.11.0-rc.14). When
+ * the harness spawns the node itself, default a CI-grade throwaway value and
+ * export it so BOTH sides agree: the spawned merod/merobox child inherits
+ * process.env, and the SDK's authenticate() reads the same variable. When
+ * attaching to an injected node (NODE_BASE_URL), the caller controls the env
+ * and no default is forced — the operator's own value (or none) wins.
+ */
+export function ensureBootstrapSecretEnv(): void {
+  if (!usingInjectedNode() && !process.env.MERO_AUTH_BOOTSTRAP_SECRET) {
+    process.env.MERO_AUTH_BOOTSTRAP_SECRET = 'mero-js-e2e-local-bootstrap';
+  }
 }
 
 /** True when an external node is already running and the suite must not spawn one. */
@@ -78,6 +96,10 @@ export async function startNode(opts?: { waitMs?: number }): Promise<StartedNode
   if (usingInjectedNode()) {
     return { baseUrl, stop: async () => {} };
   }
+
+  // Spawned nodes inherit this env, and authenticate() reads the same
+  // variable — first login on the fresh node then bootstraps transparently.
+  ensureBootstrapSecretEnv();
 
   const { spawn } = await import('child_process');
   const merodBinary = process.env.MEROD_BINARY;

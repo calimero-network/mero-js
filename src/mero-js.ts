@@ -18,6 +18,15 @@ export interface MeroJsConfig {
   credentials?: {
     username: string;
     password: string;
+    /**
+     * First-login setup code (bootstrap secret, core#3221). Since core
+     * 0.11.0-rc.14 a fresh node only mints its first root key when the login
+     * presents this out-of-band secret — merod prints it at startup and
+     * stores it in the node's config.toml (core#3270). Only consulted on the
+     * very first login of a fresh node; once an account exists the node
+     * ignores it, so it is always safe to include.
+     */
+    bootstrap_secret?: string;
   };
   /** Custom HTTP client timeout in milliseconds */
   timeoutMs?: number;
@@ -213,11 +222,24 @@ export class MeroJs {
   async authenticate(credentials?: {
     username: string;
     password: string;
+    bootstrap_secret?: string;
   }): Promise<TokenData> {
     const creds = credentials || this.config.credentials;
     if (!creds) {
       throw new Error('No credentials provided for authentication');
     }
+
+    // First-login setup code (core#3221): explicit credential wins, then the
+    // MERO_AUTH_BOOTSTRAP_SECRET env var when running under Node (test
+    // harnesses launch merod with the same env, so the pair stays in sync).
+    // Omitted entirely when absent — the request is then byte-identical to
+    // the pre-rc.14 shape.
+    const bootstrapSecret =
+      creds.bootstrap_secret ||
+      (typeof process !== 'undefined'
+        ? process.env?.MERO_AUTH_BOOTSTRAP_SECRET
+        : undefined) ||
+      undefined;
 
     try {
       const requestBody = {
@@ -229,6 +251,7 @@ export class MeroJs {
         provider_data: {
           username: creds.username,
           password: creds.password,
+          ...(bootstrapSecret ? { bootstrap_secret: bootstrapSecret } : {}),
         },
       };
 
