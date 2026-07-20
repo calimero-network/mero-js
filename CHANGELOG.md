@@ -1,3 +1,7 @@
+## <small>7.0.2 (2026-07-20)</small>
+
+* fix(auth): adapt e2e/CI to core rc.17 admin-creds-at-init (#68) ([4c9f619](https://github.com/calimero-network/mero-js/commit/4c9f619)), closes [#68](https://github.com/calimero-network/mero-js/issues/68) [core#3221](https://github.com/core/issues/3221) [core#3081](https://github.com/core/issues/3081) [calimero-network/core#3276](https://github.com/calimero-network/core/issues/3276)
+
 ## <small>7.0.1 (2026-07-15)</small>
 
 * fix(auth): make token refresh single-use safe (rotation, single-flight, token_reuse) (#67) ([bdf4609](https://github.com/calimero-network/mero-js/commit/bdf4609)), closes [#67](https://github.com/calimero-network/mero-js/issues/67) [calimero-network/core#3083](https://github.com/calimero-network/core/issues/3083) [calimero-network/core#3229](https://github.com/calimero-network/core/issues/3229)
