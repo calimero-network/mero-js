@@ -62,17 +62,19 @@ export function resolveCreds(): { username: string; password: string } {
 }
 
 /**
- * First-login setup code for fresh nodes (core#3221, >= 0.11.0-rc.14). When
- * the harness spawns the node itself, default a CI-grade throwaway value and
- * export it so BOTH sides agree: the spawned merod/merobox child inherits
- * process.env, and the SDK's authenticate() reads the same variable. When
- * attaching to an injected node (NODE_BASE_URL), the caller controls the env
- * and no default is forced — the operator's own value (or none) wins.
+ * Admin account provisioning for fresh nodes (core >= 0.11.0-rc.17). The
+ * bootstrap secret is gone: a node now mints its admin root key at startup from
+ * MERO_AUTH_ADMIN_USER/MERO_AUTH_ADMIN_PASSWORD when it has no account yet
+ * (provision-if-unbootstrapped). When the harness spawns the node itself,
+ * default these to the e2e credentials so the fresh node provisions exactly the
+ * account authenticate() will log in with. When attaching to an injected node
+ * (NODE_BASE_URL), the caller controls provisioning and no default is forced.
  */
-export function ensureBootstrapSecretEnv(): void {
-  if (!usingInjectedNode() && !process.env.MERO_AUTH_BOOTSTRAP_SECRET) {
-    process.env.MERO_AUTH_BOOTSTRAP_SECRET = 'mero-js-e2e-local-bootstrap';
-  }
+export function ensureAdminCredsEnv(): void {
+  if (usingInjectedNode()) return;
+  const { username, password } = resolveCreds();
+  process.env.MERO_AUTH_ADMIN_USER ??= username;
+  process.env.MERO_AUTH_ADMIN_PASSWORD ??= password;
 }
 
 /** True when an external node is already running and the suite must not spawn one. */
@@ -97,9 +99,9 @@ export async function startNode(opts?: { waitMs?: number }): Promise<StartedNode
     return { baseUrl, stop: async () => {} };
   }
 
-  // Spawned nodes inherit this env, and authenticate() reads the same
-  // variable — first login on the fresh node then bootstraps transparently.
-  ensureBootstrapSecretEnv();
+  // Spawned nodes inherit this env; a fresh rc.17 node mints its admin from it
+  // at startup, so the first authenticate() with the same creds succeeds.
+  ensureAdminCredsEnv();
 
   const { spawn } = await import('child_process');
   const merodBinary = process.env.MEROD_BINARY;
