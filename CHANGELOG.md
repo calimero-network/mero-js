@@ -1,3 +1,7 @@
+## <small>7.0.3 (2026-07-22)</small>
+
+* docs: migrate to Astro Starlight docs site with animated diagrams (#69) ([8d2bf86](https://github.com/calimero-network/mero-js/commit/8d2bf86)), closes [#69](https://github.com/calimero-network/mero-js/issues/69) [#a5ff11](https://github.com/calimero-network/mero-js/issues/a5ff11)
+
 ## <small>7.0.2 (2026-07-20)</small>
 
 * fix(auth): adapt e2e/CI to core rc.17 admin-creds-at-init (#68) ([4c9f619](https://github.com/calimero-network/mero-js/commit/4c9f619)), closes [#68](https://github.com/calimero-network/mero-js/issues/68) [core#3221](https://github.com/core/issues/3221) [core#3081](https://github.com/core/issues/3081) [calimero-network/core#3276](https://github.com/calimero-network/core/issues/3276)
