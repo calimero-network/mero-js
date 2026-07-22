@@ -1,4 +1,4 @@
-import { HttpClient } from '../http-client';
+import { HttpClient, withRetry } from '../http-client';
 import type {
   HealthStatus,
   AdminAuthStatus,
@@ -181,6 +181,33 @@ function compareSemverId(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * Fetch a URL from the (foreign-origin) registry with a per-attempt timeout and
+ * retry on transient failures. Deliberately NOT routed through the node
+ * `HttpClient`: that client attaches the node's bearer token to every request,
+ * which must never leak to the registry's origin. Each attempt times out after
+ * ~10s; network errors and 5xx are retried (2 retries, short backoff via the
+ * shared `withRetry`), while a 4xx is a definitive answer and is not retried.
+ * `kind`/`context` shape the error message so failures stay debuggable in logs.
+ */
+async function fetchRegistry(url: string, kind: string, context: string): Promise<Response> {
+  return withRetry(
+    async () => {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) {
+        // Carry `status` so withRetry retries 5xx but leaves 4xx to throw.
+        const err = new Error(
+          `registry ${kind} fetch failed (${resp.status}) for ${context}`,
+        ) as Error & { status: number };
+        err.status = resp.status;
+        throw err;
+      }
+      return resp;
+    },
+    { attempts: 3 },
+  );
+}
+
 export class AdminApiClient {
   constructor(private httpClient: HttpClient) {}
 
@@ -218,12 +245,7 @@ export class AdminApiClient {
       `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
       base,
     ).toString();
-    const resp = await fetch(manifestUrl);
-    if (!resp.ok) {
-      throw new Error(
-        `registry manifest fetch failed (${resp.status}) for ${packageName}@${version}`,
-      );
-    }
+    const resp = await fetchRegistry(manifestUrl, 'manifest', `${packageName}@${version}`);
     const bundle = (await resp.json()) as RegistryBundleManifest;
     // Encode the path segments — the package/version come from a (best-effort
     // trusted) registry response, so guard against odd characters breaking or
@@ -250,12 +272,7 @@ export class AdminApiClient {
   async getRegistryVersions(registryUrl: string, packageName: string): Promise<string[]> {
     const url = new URL('/api/v2/bundles', new URL(registryUrl).origin);
     url.searchParams.set('package', packageName);
-    const resp = await fetch(url.toString());
-    if (!resp.ok) {
-      throw new Error(
-        `registry versions fetch failed (${resp.status}) for ${packageName}`,
-      );
-    }
+    const resp = await fetchRegistry(url.toString(), 'versions', packageName);
     const bundles = (await resp.json()) as RegistryBundleManifest[];
     return (Array.isArray(bundles) ? bundles : [])
       .map((b) => b.appVersion)

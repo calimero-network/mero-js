@@ -125,14 +125,67 @@ describe('AdminApiClient', () => {
       }
     });
 
-    it('installFromRegistry throws on a registry error', async () => {
+    it('installFromRegistry throws on a registry error and does not retry a 4xx', async () => {
       const origFetch = globalThis.fetch;
-      globalThis.fetch = (async () =>
-        ({ ok: false, status: 404, json: async () => ({}) }) as Response) as typeof fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      }) as typeof fetch;
       try {
         await expect(
           client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
         ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+        // A 4xx is a definitive answer — no retry.
+        expect(calls).toBe(1);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions retries a 5xx then succeeds', async () => {
+      const origFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        if (calls === 1) {
+          return { ok: false, status: 503, json: async () => ({}) } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [{ package: 'com.acme.app', appVersion: '1.0.0' }],
+        } as Response;
+      }) as typeof fetch;
+      try {
+        const versions = await client.getRegistryVersions(
+          'https://registry.example.com',
+          'com.acme.app',
+        );
+        expect(versions).toEqual(['1.0.0']);
+        expect(calls).toBe(2);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions passes an abort signal and surfaces a timeout', async () => {
+      const origFetch = globalThis.fetch;
+      let calls = 0;
+      let sawSignal = false;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls++;
+        sawSignal = init?.signal instanceof AbortSignal;
+        // A per-attempt timeout aborts the fetch with a TimeoutError; simulate it.
+        throw new DOMException('The operation timed out', 'TimeoutError');
+      }) as typeof fetch;
+      try {
+        await expect(
+          client.getRegistryVersions('https://registry.example.com', 'com.acme.app'),
+        ).rejects.toThrow(/timed out/i);
+        expect(sawSignal).toBe(true);
+        // A timeout is transient — retried up to the 3-attempt ceiling.
+        expect(calls).toBe(3);
       } finally {
         globalThis.fetch = origFetch;
       }
