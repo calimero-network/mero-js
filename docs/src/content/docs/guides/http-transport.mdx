@@ -1,0 +1,214 @@
+---
+title: HTTP Transport
+description: Use the low-level fetch-based HttpClient directly — factories, response parsing, retry with backoff, signal composition, FormData, custom fetch, and credentials.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`MeroJs` builds on a small, Web-Standards `HttpClient` that you can also use on
+its own — for talking to a node's endpoints the typed clients don't cover, or in
+a non-Calimero project. It's built on `fetch` with zero dependencies.
+
+## Create a client
+
+Pick the factory for your runtime:
+
+```typescript
+import {
+  createBrowserHttpClient,
+  createNodeHttpClient,
+  createUniversalHttpClient,
+} from '@calimero-network/mero-js';
+
+const http = createBrowserHttpClient({
+  baseUrl: 'https://api.calimero.network',
+  getAuthToken: async () => localStorage.getItem('access_token') ?? undefined,
+  onTokenRefresh: async (t) => localStorage.setItem('access_token', t),
+});
+
+const data = await http.get<{ message: string }>('/api/hello');
+```
+
+All three take the same options:
+
+```typescript
+interface HttpClientOptions {
+  baseUrl: string;
+  fetch?: typeof fetch;                               // node & universal
+  getAuthToken?: () => Promise<string | undefined>;   // attach a bearer token
+  onTokenRefresh?: (newToken: string) => Promise<void>;
+  refreshToken?: () => Promise<string>;               // called on 401 token_expired
+  onAuthRevoked?: () => Promise<void> | void;          // token_reuse / token_revoked
+  defaultHeaders?: Record<string, string>;
+  timeoutMs?: number;                                  // default 30000
+  credentials?: RequestCredentials;
+  defaultAbortSignal?: AbortSignal;
+}
+```
+
+## Methods
+
+```typescript
+http.get<T>(path, init?);
+http.post<T>(path, body?, init?);
+http.put<T>(path, body?, init?);
+http.delete<T>(path, init?);
+http.patch<T>(path, body?, init?);
+http.head(path, init?);          // → { headers, status }
+http.request<T>(path, init?);    // generic
+```
+
+`init` is a standard `RequestInit` plus two extras:
+
+```typescript
+interface RequestOptions extends RequestInit {
+  parse?: 'json' | 'text' | 'blob' | 'arrayBuffer' | 'response';
+  timeoutMs?: number;
+}
+```
+
+## Response parsing
+
+By default the client picks a parser from `Content-Type`:
+
+- `application/json` → `json`
+- `text/*` → `text`
+- anything else → `arrayBuffer`
+
+Override per call, or ask for the raw `Response`:
+
+```typescript
+const json = await http.get('/api/data', { parse: 'json' });
+const text = await http.get('/api/readme', { parse: 'text' });
+const blob = await http.get('/api/file', { parse: 'blob' });
+const raw  = await http.get('/api/data', { parse: 'response' }); // Response
+```
+
+An empty `2xx` body parses to `null` rather than throwing.
+
+## Errors
+
+The client **throws `HTTPError`** on any non-2xx response, and represents network
+failures as an `HTTPError` with `status: 0`. See the
+[error model](/reference/error-model/).
+
+```typescript
+import { HTTPError } from '@calimero-network/mero-js';
+
+try {
+  await http.get('/api/data');
+} catch (err) {
+  if (err instanceof HTTPError) {
+    console.error(err.status, err.statusText, err.url, err.bodyText);
+  }
+}
+```
+
+## Retry with backoff
+
+`withRetry` re-runs a request on transient failures — HTTP `429`/`5xx`,
+`TimeoutError`, and network `TypeError` — with exponential backoff (base 250ms,
+±20% jitter) that honours `Retry-After`. It **never** retries an `AbortError`
+(a deliberate cancellation).
+
+```typescript
+import { withRetry } from '@calimero-network/mero-js';
+
+const data = await withRetry(
+  (attempt) => http.get('/api/flaky'),
+  { attempts: 3 }, // default 3
+);
+```
+
+`createRetryableMethod(fn, opts)` wraps a function so every call retries.
+
+## Cancellation & timeouts
+
+Every request already races an internal timeout (`timeoutMs`). Combine it with
+your own signal, or compose several:
+
+```typescript
+import { combineSignals, createTimeoutSignal } from '@calimero-network/mero-js';
+
+const user = new AbortController();
+const combined = combineSignals([user.signal, createTimeoutSignal(5000)]);
+
+const data = await http.get('/api/endpoint', { signal: combined });
+// user.abort() cancels; a 5s timeout also cancels — whichever fires first
+```
+
+Both helpers prefer the native `AbortSignal.any` / `AbortSignal.timeout` when
+available and fall back gracefully.
+
+## Headers & authorization
+
+- **Caller headers win** — request-level headers override the client defaults.
+- The client only sets `Authorization: Bearer <token>` if the caller didn't
+  already provide an `authorization` header (case-insensitive).
+
+```typescript
+await http.post('/api/data', body, {
+  headers: { 'X-Custom-Header': 'value' },
+});
+```
+
+## FormData
+
+For a `FormData` body the client does **not** set `Content-Type` — it lets the
+browser/undici add the correct multipart boundary:
+
+```typescript
+const form = new FormData();
+form.append('file', fileInput.files[0]);
+await http.post('/api/upload', form); // no content-type set by the client
+```
+
+## Node.js and custom `fetch`
+
+On Node 18+ the global `fetch` is used automatically. On older Node, inject one:
+
+```typescript
+import { createNodeHttpClient } from '@calimero-network/mero-js';
+import { fetch as undiciFetch } from 'undici';
+
+const http = createNodeHttpClient({
+  baseUrl: 'https://api.calimero.network',
+  fetch: undiciFetch,
+  getAuthToken: async () => process.env.ACCESS_TOKEN,
+});
+```
+
+For a fully custom transport, hand `createHttpClient` a `Transport`:
+
+```typescript
+import { createHttpClient, type Transport } from '@calimero-network/mero-js';
+
+const transport: Transport = {
+  fetch: customFetch,
+  baseUrl: 'https://api.example.com',
+  getAuthToken: async () => 'your-token',
+  timeoutMs: 5000,
+};
+const http = createHttpClient(transport);
+```
+
+## Credentials
+
+There's no implicit `same-origin` default — credentials are sent only when you
+ask:
+
+```typescript
+const http = createBrowserHttpClient({
+  baseUrl: 'https://api.example.com',
+  credentials: 'include', // send cookies on cross-origin requests
+});
+```
+
+<Aside type="note">
+  Inside `MeroJs`, this transport is already wired to the token lifecycle —
+  `getAuthToken`, `refreshToken`, `onTokenRefresh`, and `onAuthRevoked` all point
+  back at the SDK's token state. You only need these options when using the
+  transport standalone.
+</Aside>

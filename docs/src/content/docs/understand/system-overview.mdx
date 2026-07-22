@@ -1,0 +1,145 @@
+---
+title: System Overview
+description: How Mero.js is structured — the MeroJs facade, the transport layer, the API and event clients, lazy initialisation, and the zero-dependency Web-Standards foundation.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mero.js is a thin composition of focused clients over a single `fetch`-based
+transport. `MeroJs` is the entry point: it owns the HTTP transport, manages the
+JWT token lifecycle, and exposes the specialised clients behind property
+accessors. This page names the parts and says what each one does.
+
+## The shape of a client
+
+```typescript
+import { MeroJs } from '@calimero-network/mero-js';
+
+const sdk = new MeroJs({ baseUrl: 'http://localhost:2428' });
+await sdk.authenticate({ username: 'admin', password: 'pass' });
+
+sdk.auth     // AuthApiClient   — login, tokens, key management
+sdk.admin    // AdminApiClient  — contexts, apps, namespaces, groups, blobs, TEE
+sdk.rpc      // RpcClient       — execute WASM methods (lazy)
+sdk.events   // SseClient       — real-time events over SSE (lazy)
+sdk.ws       // WsClient        — WebSocket alternative (lazy, experimental)
+```
+
+For the visual layer map, see [Architecture at a glance](/) on the home page.
+
+## The layers
+
+### Layer 1 — Transport (`HttpClient`)
+
+A Web-Standards `fetch` wrapper (`WebHttpClient`). It attaches
+`Authorization: Bearer <token>` to every request, combines caller abort signals
+with an internal timeout, parses responses (JSON / text / blob / arrayBuffer),
+and — crucially — handles token refresh: on a `401` with
+`x-auth-error: token_expired` it refreshes once (single-flight) and retries the
+original request. `MeroJs` builds this via `createBrowserHttpClient`, detecting
+Tauri to default `credentials: 'omit'`.
+
+You can also use the transport on its own — see the
+[HTTP transport guide](/guides/http-transport/).
+
+### Layer 2 — API clients
+
+Both wrap the shared `HttpClient` (constructor injection); neither manages
+tokens itself — the transport's hooks do.
+
+- **`AuthApiClient`** (`sdk.auth`) — direct HTTP to the node's `/auth` and
+  identity endpoints: login (`generateTokens`), `refreshToken`, and root/client
+  **key management**. See the [auth API reference](/reference/auth-api/).
+- **`AdminApiClient`** (`sdk.admin`) — the node's `/admin-api` surface: contexts,
+  applications, packages, namespaces, groups, blobs, aliases, capabilities,
+  metadata, upgrades/migration, and TEE. ~90 methods. See the
+  [admin API reference](/reference/admin-api/).
+- **`RpcClient`** (`sdk.rpc`) — JSON-RPC over HTTP to `/jsonrpc`; executes WASM
+  contract methods. See [executing methods](/guides/executing-methods/).
+
+### Layer 3 — Event streams
+
+- **`SseClient`** (`sdk.events`) — Server-Sent Events from the node's `/sse`
+  endpoint. Reconnects automatically and re-subscribes on reconnect. **Prefer
+  this in production.**
+- **`WsClient`** (`sdk.ws`) — a WebSocket alternative with the same shape.
+  Experimental; it logs a one-time console warning on first use.
+
+Both are covered in the [subscriptions guide](/guides/subscriptions/).
+
+### Layer 4 — Token store
+
+Where tokens are persisted between sessions. `MemoryTokenStore` (the default) is
+ephemeral; `LocalStorageTokenStore` persists to `localStorage`. Implement the
+`TokenStore` interface to back tokens with anything else.
+
+## Composition and token flow
+
+`MeroJs` creates **one** `WebHttpClient` and hands it to both `AuthApiClient` and
+`AdminApiClient`. The transport is wired with hooks back into `MeroJs`'s token
+state:
+
+- `getAuthToken` → the current access token, attached as a bearer header.
+- `refreshToken` → `MeroJs.performTokenRefresh()`, which is single-flight
+  (in-process promise + a `mero-js:token-refresh` Web Lock + a re-read of the
+  token store) because refresh tokens are single-use.
+- `onTokenRefresh` → persists the rotated token to the store.
+- `onAuthRevoked` → `MeroJs.clearToken()` when the node reports
+  `token_reuse` / `token_revoked`.
+
+The full sequence is drawn in [Authentication → token lifecycle](/get-started/authentication/#the-token-lifecycle--refresh-is-automatic).
+
+## Lazy initialisation
+
+`rpc`, `events`, and `ws` are constructed on first access — there's no cost if
+you never touch them:
+
+```typescript
+// Instantiated only when first accessed:
+sdk.rpc     // RpcClient (lazy)
+sdk.events  // SseClient (lazy)
+sdk.ws      // WsClient (lazy, experimental — warns once)
+
+// Always available:
+sdk.auth    // AuthApiClient
+sdk.admin   // AdminApiClient
+```
+
+Call `sdk.close()` to shut down any open SSE/WS connections when you're done.
+
+## Zero dependencies
+
+The SDK ships with no runtime dependencies. It's built entirely on Web Platform
+APIs, so it runs unchanged in the browser, Node 18+, Deno, Bun, and edge
+workers:
+
+| API | Used for |
+| --- | --- |
+| `fetch` | all HTTP requests |
+| `EventSource` | the SSE client |
+| `WebSocket` | the (experimental) WS client |
+| `AbortController` | request cancellation & timeouts |
+| `atob` | decoding the JWT payload to read `exp` |
+| `localStorage` | optional token persistence (browser only) |
+
+<Aside type="note">
+  On Node < 18, provide a `fetch` implementation (e.g. `undici`) via the
+  transport factories — see the [HTTP transport guide](/guides/http-transport/#nodejs-and-custom-fetch).
+</Aside>
+
+## How it maps to the node
+
+Everything the SDK does is an HTTP call to a single `merod` node:
+
+| Client | Node surface |
+| --- | --- |
+| `sdk.auth` | `GET/POST /auth/*`, `/admin/keys*` |
+| `sdk.admin` | `/admin-api/*` (REST) |
+| `sdk.rpc` | `POST /jsonrpc` (JSON-RPC) |
+| `sdk.events` | `GET /sse` + `POST /sse/subscription` |
+| `sdk.ws` | `ws(s)://…/ws` |
+
+For what those endpoints mean at the protocol level, see the
+[Calimero Core docs](https://calimero-network.github.io/core/).

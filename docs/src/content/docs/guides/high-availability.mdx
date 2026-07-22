@@ -1,0 +1,49 @@
+---
+title: High Availability
+description: Enable or disable cloud-managed TEE high availability for a context using the redirect-based CloudClient.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`CloudClient` toggles **cloud-managed high availability** for a context's Trusted
+Execution Environment — redundancy managed by Calimero Cloud. Unlike the rest of
+the SDK, it's a **redirect** helper: its methods open a browser window to the
+cloud flow rather than making a `fetch` call, and it is standalone (not part of
+`MeroJs`).
+
+## Enable / disable
+
+```typescript
+import { CloudClient } from '@calimero-network/mero-js';
+
+const cloud = new CloudClient(); // defaults to https://cloud.calimero.network
+
+cloud.enableHA({
+  groupId: 'group-id',
+  contextId: 'ctx-id',
+  redirectUrl: window.location.href, // where the cloud sends the user back
+});
+
+cloud.disableHA({ groupId: 'group-id', contextId: 'ctx-id' });
+```
+
+Each call opens the cloud endpoint
+(`/enable-ha` or `/disable-ha`) with the `group_id`, `context_id`, and
+`redirect_url` as query parameters, then returns `void`.
+
+Point it at a different cloud deployment:
+
+```typescript
+const cloud = new CloudClient({ cloudBaseUrl: 'https://cloud.example.com' });
+```
+
+<Aside type="caution">
+  `enableHA`/`disableHA` rely on `window.open`, so they only work in a browser
+  environment. They complete out-of-band via the redirect — there's no promise to
+  await and no return payload.
+</Aside>
+
+For what the TEE admission policy governs and how nodes attest, see
+[groups & governance → TEE admission policy](/guides/groups-and-governance/#tee-admission-policy).

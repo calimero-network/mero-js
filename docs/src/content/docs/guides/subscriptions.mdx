@@ -1,0 +1,135 @@
+---
+title: Subscriptions
+description: Stream real-time context events from the node over Server-Sent Events (recommended) or WebSocket — connect, subscribe, and handle events.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import SeqDiagram from '../../../components/SeqDiagram.astro';
+
+The node pushes events as your application's state changes. Mero.js exposes two
+transports for them: **SSE** (`sdk.events`, recommended) and **WebSocket**
+(`sdk.ws`, experimental). Both share the same shape — register handlers with
+`on(...)`, open the stream with `connect()`, then `subscribe([...])` to the
+contexts you care about.
+
+## SSE — recommended
+
+```typescript
+import { MeroJs } from '@calimero-network/mero-js';
+
+const sdk = new MeroJs({ baseUrl: 'http://localhost:2428' });
+await sdk.authenticate({ username: 'admin', password: 'pass' });
+
+const sse = sdk.events;
+
+sse.on('event', (e) => {
+  console.log(e.contextId, e.type, e.data);
+});
+sse.on('connect', (sessionId) => console.log('connected', sessionId));
+sse.on('error', (err) => console.error('sse error', err));
+
+await sse.connect();                 // open the stream
+await sse.subscribe(['ctx-id-1']);   // start receiving that context's events
+
+// later…
+await sse.unsubscribe(['ctx-id-1']);
+sdk.close();                         // closes SSE (and WS) connections
+```
+
+<SeqDiagram
+  id="d-sse"
+  title="SSE: connect, subscribe, receive"
+  lanes={[
+    { label: 'Your app', color: '#3fb950' },
+    { label: 'sdk.events', color: '#a5ff11' },
+    { label: 'Node /sse', color: '#58a6ff' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: "on('event', handler)" },
+    { from: 0, to: 1, label: 'connect()' },
+    { from: 1, to: 2, label: 'GET /sse (text/event-stream)' },
+    { from: 2, to: 1, label: 'connect → sessionId', dashed: true },
+    { from: 0, to: 1, label: 'subscribe([contextId])' },
+    { from: 1, to: 2, label: 'POST /sse/subscription' },
+    { type: 'divider', label: 'stream open' },
+    { from: 2, to: 1, label: 'event (context state changed)', dashed: true },
+    { from: 1, to: 0, label: 'handler({ contextId, type, data })', color: '#a5ff11' },
+    { from: 2, to: 1, label: 'event …', dashed: true },
+    { from: 1, to: 0, label: 'handler(…)', color: '#a5ff11' },
+  ]}
+/>
+
+The SSE client **auto-reconnects** (fixed delay, default 3s) and **re-subscribes**
+your contexts after a reconnect, so a dropped connection heals itself. Event
+payloads that arrive as byte arrays are decoded to JSON for you.
+
+### `SseEventData`
+
+```typescript
+interface SseEventData {
+  contextId: string;  // which context the event came from
+  type?: string;      // event type, when present
+  data: unknown;      // the payload emitted by the WASM app
+}
+```
+
+### App-version changes
+
+A dedicated helper fires when a context's application version changes (e.g. after
+an upgrade). It returns an unsubscribe function:
+
+```typescript
+const off = sse.onAppVersionChanged((e) => {
+  console.log(`${e.contextId}: ${e.fromVersion} → ${e.toVersion}`);
+});
+// off();  // stop listening
+```
+
+## Multiple contexts
+
+Pass several context IDs to one `subscribe` call — a single connection carries
+them all, and `event.contextId` tells you which one fired:
+
+```typescript
+await sse.subscribe(['ctx-1', 'ctx-2', 'ctx-3']);
+
+sse.on('event', (e) => {
+  console.log(`event from ${e.contextId}`);
+});
+```
+
+## WebSocket — experimental
+
+`sdk.ws` mirrors the SSE surface over a WebSocket. It logs a one-time console
+warning on first access — prefer SSE in production.
+
+```typescript
+const ws = sdk.ws; // ⚠ logs an experimental warning
+
+ws.on('event', (e) => console.log(e.contextId, e.data));
+await ws.connect();
+ws.subscribe(['ctx-id']);   // note: synchronous on WS (unlike SSE)
+```
+
+<Aside type="caution">
+  `WsClient` is experimental and its API may change. Two behavioural
+  differences from SSE: `subscribe`/`unsubscribe` are **synchronous**, and the
+  auth token is passed as a query parameter (browser WebSockets can't set
+  headers). It reconnects with exponential backoff (capped at 30s).
+</Aside>
+
+## Using React?
+
+Don't wire this by hand in a component. `@calimero-network/mero-react` provides a
+`useSubscription` hook that manages the lifecycle — subscribing on mount,
+unsubscribing on unmount, and re-subscribing when the context IDs change:
+
+```typescript
+import { useSubscription } from '@calimero-network/mero-react';
+
+useSubscription([contextId], (event) => {
+  handleEvent(event); // auto-unsubscribes on unmount
+});
+```
