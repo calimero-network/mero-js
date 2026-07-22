@@ -1,0 +1,149 @@
+---
+title: Quickstart
+description: Install Mero.js, connect to a node, authenticate, and make your first admin and RPC calls — in a few minutes.
+sidebar:
+  order: 1
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Mero.js is the JavaScript SDK for a [Calimero](https://calimero-network.github.io/core/)
+node. This page gets you from an empty project to a live call: install, create a
+client, authenticate, list contexts, and execute a WASM method.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+    ```bash
+    npm install @calimero-network/mero-js
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @calimero-network/mero-js
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add @calimero-network/mero-js
+    ```
+  </TabItem>
+</Tabs>
+
+Requires **Node.js 18+** or any modern browser. Zero runtime dependencies — the
+SDK is built on the Fetch API, `EventSource`, `WebSocket`, and `AbortController`.
+
+## Your first calls
+
+<Steps>
+
+1. **Create an SDK instance.** Point it at your node's URL.
+
+   ```typescript
+   import { MeroJs } from '@calimero-network/mero-js';
+
+   const sdk = new MeroJs({
+     baseUrl: 'http://localhost:2428',
+     timeoutMs: 10_000, // optional, default 10s
+   });
+   ```
+
+2. **Authenticate.** Exchange a username and password for a JWT access +
+   refresh token pair. The tokens are held in memory and attached to every
+   subsequent request.
+
+   ```typescript
+   await sdk.authenticate({
+     username: 'admin',
+     password: 'your-password',
+   });
+
+   console.log(sdk.isAuthenticated()); // true
+   ```
+
+3. **List contexts** through the admin API.
+
+   ```typescript
+   const res = await sdk.admin.getContexts();
+   console.log(res.contexts); // ContextWithGroup[]
+   ```
+
+4. **Execute a WASM method** over JSON-RPC. `execute<T>` returns the decoded
+   return value directly.
+
+   ```typescript
+   const value = await sdk.rpc.execute<{ value: string }>({
+     contextId: 'ctx-id-here',
+     method: 'get_value',
+     argsJson: { key: 'hello' },
+   });
+   console.log(value);
+   ```
+
+5. **Clean up.** Close any open SSE/WebSocket connections when you're done (e.g.
+   on unmount or process exit).
+
+   ```typescript
+   sdk.close();
+   ```
+
+</Steps>
+
+<Aside type="tip">
+  `sdk.rpc`, `sdk.events`, and `sdk.ws` are created lazily on first access — you
+  pay nothing for the ones you don't use. `sdk.auth` and `sdk.admin` are always
+  available.
+</Aside>
+
+## Persist tokens across reloads
+
+By default tokens live in memory and are lost on page reload. Pass a
+`tokenStore` to persist and restore them automatically:
+
+```typescript
+import { MeroJs, LocalStorageTokenStore } from '@calimero-network/mero-js';
+
+const sdk = new MeroJs({
+  baseUrl: 'http://localhost:2428',
+  tokenStore: new LocalStorageTokenStore('my-app-tokens'),
+});
+
+// On the next page load, tokens are restored from localStorage.
+// sdk.isAuthenticated() is true if a valid token pair exists.
+```
+
+## Handle errors
+
+Every failure mode maps to a typed error. The three you'll see most:
+
+```typescript
+import { HTTPError, RpcError } from '@calimero-network/mero-js';
+
+try {
+  const result = await sdk.rpc.execute({
+    contextId: 'ctx-id',
+    method: 'get_value',
+    argsJson: { key: 'hello' },
+  });
+} catch (err) {
+  if (err instanceof RpcError) {
+    console.error(`RPC error ${err.code}: ${err.message}`);
+  } else if (err instanceof HTTPError) {
+    console.error(`HTTP ${err.status}: ${err.statusText}`);
+  } else if (err instanceof Error && err.name === 'AbortError') {
+    console.log('Request timed out or was cancelled');
+  }
+}
+```
+
+See the [error model](/reference/error-model/) for the full hierarchy, and the
+[401-handled-internally](/reference/error-model/#note-on-401s) note.
+
+## Next steps
+
+- **[Authentication](/get-started/authentication/)** — password login, Desktop
+  SSO, the login-redirect flow, and the token lifecycle.
+- **[System overview](/understand/system-overview/)** — how the SDK is layered.
+- **[Executing methods](/guides/executing-methods/)** — the RPC client in depth.
+- **[Subscriptions](/guides/subscriptions/)** — real-time events over SSE.

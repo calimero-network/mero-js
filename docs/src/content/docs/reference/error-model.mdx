@@ -1,0 +1,128 @@
+---
+title: Error Model
+description: The typed errors the SDK throws — HTTPError, AuthRevokedError, RpcError, and the native AbortError — and how to handle each.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every failure surfaces as a typed error. There are three the SDK defines, plus
+one native browser error, and they partition cleanly by *layer*: transport,
+contract, and cancellation.
+
+## `HTTPError`
+
+Thrown when the server returns a non-2xx response. Network failures (offline,
+DNS, CORS) also surface as `HTTPError`, with `status: 0`.
+
+```typescript
+class HTTPError extends Error {
+  name = 'HTTPError';
+  status: number;      // HTTP status (0 for network errors)
+  statusText: string;  // status text ('Network Error' when status is 0)
+  url: string;         // the request URL that failed
+  headers: Headers;    // response headers
+  bodyText?: string;   // raw response body if available (capped ~64KB)
+  toJSON(): { status; statusText; url; headers; bodyText? };
+}
+```
+
+Common statuses: `401` (not authenticated — the SDK retries via refresh first),
+`403` (insufficient permissions), `404` (not found), `422` (validation).
+
+## `AuthRevokedError`
+
+A subclass of `HTTPError` — terminal auth failure. Thrown when the node reports
+that the refresh token was **reused** or **revoked**, meaning refresh can't
+recover. Because it extends `HTTPError`, `instanceof HTTPError` still matches;
+check it *first* if you want to distinguish it.
+
+```typescript
+class AuthRevokedError extends HTTPError {
+  name = 'AuthRevokedError';
+  reason: string; // 'token_reuse' | 'token_revoked'
+}
+```
+
+When this is thrown the SDK has already cleared its tokens (`onAuthRevoked` →
+`clearToken`). Prompt the user to sign in again.
+
+## `RpcError`
+
+Thrown by `sdk.rpc.execute()` when the WASM contract returns a JSON-RPC error.
+
+```typescript
+class RpcError extends Error {
+  name = 'RpcError';
+  code: number;    // JSON-RPC error code
+  type?: string;   // optional error type from the contract
+  data?: unknown;  // optional structured error data
+}
+```
+
+The inherited `message` holds the human-readable description from the contract.
+
+## `AbortError`
+
+Thrown when a request is cancelled or times out. This is a native
+`DOMException` with `name === 'AbortError'` — not an SDK class — so match it by
+name.
+
+```typescript
+try {
+  await sdk.admin.getContexts();
+} catch (err) {
+  if (err instanceof Error && err.name === 'AbortError') {
+    // timed out (after config.timeoutMs) or manually cancelled
+  }
+}
+```
+
+## Full handling pattern
+
+```typescript
+import { HTTPError, AuthRevokedError, RpcError } from '@calimero-network/mero-js';
+
+try {
+  const result = await sdk.rpc.execute({
+    contextId: 'ctx-id',
+    method: 'get_value',
+    argsJson: { key: 'foo' },
+  });
+  return result;
+} catch (err) {
+  if (err instanceof RpcError) {
+    // Contract-level error — the WASM returned an error object
+    console.error(`Contract error ${err.code}: ${err.message}`, err.data);
+  } else if (err instanceof AuthRevokedError) {
+    // Refresh token reused/revoked — session is over
+    promptSignIn();
+  } else if (err instanceof HTTPError) {
+    // Transport-level error — HTTP 4xx/5xx (or status 0 = network)
+    if (err.status === 403) console.error('Permission denied');
+    else console.error(`HTTP ${err.status}: ${err.statusText}`);
+  } else if (err instanceof Error && err.name === 'AbortError') {
+    // Timeout or manual cancellation
+    console.warn('Request timed out');
+  } else {
+    throw err; // something unexpected
+  }
+}
+```
+
+## Note on 401s
+
+The SDK handles `401 Unauthorized` **internally**: it triggers a token refresh
+and transparently retries the original request (see
+[the token lifecycle](/get-started/authentication/#the-token-lifecycle--refresh-is-automatic)).
+Your code only sees a `401` `HTTPError` if the refresh *itself* fails (e.g. the
+refresh token is also expired). In that case, call `sdk.clearToken()` and prompt
+the user to re-authenticate. If the token was reused or revoked, you get an
+`AuthRevokedError` instead.
+
+<Aside type="note">
+  The low-level [`withRetry`](/guides/http-transport/#retry-with-backoff) helper
+  retries on `HTTPError` `429`/`5xx`, `TimeoutError`, and network `TypeError` —
+  but never on `AbortError`, since that's a deliberate cancellation.
+</Aside>

@@ -1,0 +1,108 @@
+---
+title: Executing Methods
+description: Run WASM contract methods in a context with the RPC client — arguments, typed return values, RpcError handling, and the migration helpers.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import SeqDiagram from '../../../components/SeqDiagram.astro';
+
+`sdk.rpc` executes methods on the WASM application running inside a context. It
+speaks JSON-RPC to the node's `/jsonrpc` endpoint and hands you back the method's
+decoded return value.
+
+## Execute a method
+
+```typescript
+const value = await sdk.rpc.execute<{ value: string }>({
+  contextId: 'ctx-id',
+  method: 'get_value',
+  argsJson: { key: 'hello' },
+});
+```
+
+- `contextId` — the context to run in.
+- `method` — the contract method name.
+- `argsJson` — an object of named arguments (optional; omit for none).
+- The type parameter `T` types the decoded return value; `execute` unwraps the
+  JSON-RPC envelope and returns `result.output`.
+
+<SeqDiagram
+  id="d-rpc-execute"
+  title="execute() → JSON-RPC → WASM"
+  lanes={[
+    { label: 'Your app', color: '#3fb950' },
+    { label: 'sdk.rpc', color: '#a5ff11' },
+    { label: 'Node', color: '#58a6ff' },
+    { label: 'WASM app', color: '#a371f7' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'execute({ contextId, method, argsJson })' },
+    { from: 1, to: 2, label: 'POST /jsonrpc { method: "execute", … }' },
+    { from: 2, to: 3, label: 'run method in context' },
+    { from: 3, to: 2, label: 'return value / error', dashed: true },
+    { from: 2, to: 1, label: 'JSON-RPC { result | error }', dashed: true },
+    { from: 1, to: 0, label: 'decoded output  (or throw RpcError)', dashed: true, color: '#a5ff11' },
+  ]}
+/>
+
+<Aside type="note">
+  There is a single entry point — `execute`. Reads and writes both go through it;
+  whether a call mutates state is up to the contract method, not the SDK. The
+  deprecated `executorPublicKey` param is ignored.
+</Aside>
+
+## Handling contract errors
+
+When the WASM method returns a JSON-RPC error, `execute` throws an `RpcError`:
+
+```typescript
+import { RpcError } from '@calimero-network/mero-js';
+
+try {
+  await sdk.rpc.execute({ contextId, method: 'transfer', argsJson: { to, amount } });
+} catch (err) {
+  if (err instanceof RpcError) {
+    console.error(`Contract error ${err.code}: ${err.message}`);
+    console.error('type:', err.type);   // optional error type from the contract
+    console.error('data:', err.data);   // optional structured payload
+  }
+  throw err;
+}
+```
+
+`RpcError` carries the numeric `code`, the human-readable `message`, and optional
+`type`/`data` from the contract. Transport failures (HTTP 4xx/5xx, timeouts) are
+*not* `RpcError` — see the [error model](/reference/error-model/) for the full
+picture.
+
+## Migration helpers
+
+Two convenience wrappers over `execute` support the entry-migration flow (used
+when an application upgrades its state schema):
+
+```typescript
+// Convert this identity's entries to the current schema.
+const { converted, remaining } = await sdk.rpc.migrateMyEntries(contextId);
+
+// How many of my entries are still pending migration?
+const pending = await sdk.rpc.countMyPending(contextId);
+```
+
+## Typing tips
+
+Give `execute` the shape you expect back so call sites are type-checked:
+
+```typescript
+interface Message { id: string; author: string; text: string }
+
+const messages = await sdk.rpc.execute<Message[]>({
+  contextId,
+  method: 'list_messages',
+  argsJson: { limit: 50 },
+});
+// messages: Message[]
+```
+
+If you don't pass a type, the return is `unknown` — narrow it before use.

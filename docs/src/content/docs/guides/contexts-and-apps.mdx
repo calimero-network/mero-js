@@ -1,0 +1,139 @@
+---
+title: Contexts & Applications
+description: Install an application, create a context, generate an identity, and join — the core admin-API lifecycle, driven from Mero.js.
+sidebar:
+  order: 1
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+import SeqDiagram from '../../../components/SeqDiagram.astro';
+
+An **application** is a WASM bundle installed on a node; a **context** is a
+running instance of that application's shared state. This guide walks the
+lifecycle: install → create a context → join it. Everything here is on
+`sdk.admin` — see the [admin API reference](/reference/admin-api/) for the full
+surface.
+
+## The lifecycle
+
+<SeqDiagram
+  id="d-context-lifecycle"
+  title="Install an app, create a context, join it"
+  lanes={[
+    { label: 'Your app', color: '#3fb950' },
+    { label: 'sdk.admin', color: '#a5ff11' },
+    { label: 'Node /admin-api', color: '#58a6ff' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'installApplication({ url, hash })' },
+    { from: 1, to: 2, label: 'POST /install-application' },
+    { from: 2, to: 1, label: 'applicationId', dashed: true },
+    { from: 0, to: 1, label: 'createContext({ applicationId })' },
+    { from: 1, to: 2, label: 'POST /contexts' },
+    { from: 2, to: 1, label: 'contextId + memberPublicKey', dashed: true },
+    { type: 'divider', label: 'context is live on the creating node' },
+    { from: 0, to: 1, label: 'generateContextIdentity()', color: '#a371f7' },
+    { from: 1, to: 2, label: 'POST /identity/context' },
+    { from: 0, to: 1, label: 'joinContext(contextId)' },
+    { from: 1, to: 2, label: 'POST /contexts/:id/join' },
+    { type: 'divider', label: 'now a member — execute & subscribe' },
+  ]}
+/>
+
+## Install an application
+
+From a URL (a hosted `.wasm`/`.mpk` bundle):
+
+```typescript
+const { applicationId } = await sdk.admin.installApplication({
+  url: 'https://example.com/app.wasm',
+  hash: '…',          // optional integrity hash
+  metadata: [],       // bytes; [] for none
+});
+```
+
+From a **registry** package — the SDK resolves the manifest, derives the bundle
+artifact URL, and installs it:
+
+```typescript
+// newest first
+const versions = await sdk.admin.getRegistryVersions(registryUrl, 'my-package');
+
+const app = await sdk.admin.installFromRegistry(
+  registryUrl,
+  'my-package',
+  versions[0],
+);
+```
+
+During local development, install straight from a path with
+`installDevApplication({ path, metadata: [] })`.
+
+Inspect and manage installed apps:
+
+```typescript
+const { apps } = await sdk.admin.listApplications();
+const app = await sdk.admin.getApplication(applicationId);
+await sdk.admin.uninstallApplication(applicationId);
+```
+
+## Create a context
+
+```typescript
+const { contextId, memberPublicKey } = await sdk.admin.createContext({
+  applicationId,
+});
+```
+
+For a **multi-service** application, name the service to run:
+
+```typescript
+const ctx = await sdk.admin.createContext({
+  applicationId,
+  serviceName: 'chat',
+});
+```
+
+List and inspect contexts:
+
+```typescript
+const { contexts } = await sdk.admin.getContexts();           // ContextWithGroup[]
+const one = await sdk.admin.getContext(contextId);            // Context
+const forApp = await sdk.admin.getContextsForApplication(applicationId);
+const storage = await sdk.admin.getContextStorage(contextId); // { sizeInBytes }
+```
+
+## Identities & joining
+
+A **context identity** is your keypair within a context. Generate one, then join:
+
+```typescript
+const identity = await sdk.admin.generateContextIdentity();
+await sdk.admin.joinContext(contextId);
+
+// Who's in the context?
+const ids = await sdk.admin.getContextIdentities(contextId);
+const mine = await sdk.admin.getContextIdentitiesOwned(contextId);
+```
+
+## Keeping state in sync
+
+A node syncs context state peer-to-peer. You can nudge or force it:
+
+```typescript
+await sdk.admin.syncContext(contextId);                    // request a sync
+await sdk.admin.resyncContext(contextId, { force: true }); // { contextId, resyncStarted }
+```
+
+<Aside type="tip">
+  Aliases let you refer to a context by a friendly name:
+  `await sdk.admin.createContextAlias({ alias: 'main', contextId })`, then
+  `sdk.admin.lookupContextAlias('main')`. The same exists for applications and
+  context identities — see the [admin API reference](/reference/admin-api/#aliases).
+</Aside>
+
+## Next
+
+- **[Executing methods](/guides/executing-methods/)** — run WASM methods in a context.
+- **[Subscriptions](/guides/subscriptions/)** — stream a context's events.
+- **[Groups & governance](/guides/groups-and-governance/)** — namespaces, members, capabilities.

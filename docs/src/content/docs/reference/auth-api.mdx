@@ -1,0 +1,102 @@
+---
+title: Auth API
+description: The full AuthApiClient surface — health, identity, providers, token generation and refresh, revocation, and root/client key management.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`sdk.auth` (`AuthApiClient`) is the node's authentication surface — token
+issuance and the management of **root keys** and **client keys**. It wraps the
+shared [`HttpClient`](/guides/http-transport/) and unwraps the `{ data }`
+envelope on reads.
+
+<Aside type="tip">
+  For the common case — logging in and staying logged in — you don't call this
+  client directly. `sdk.authenticate()` uses `generateTokens` under the hood, and
+  the transport calls `refreshToken` for you. Reach for `sdk.auth` when you need
+  key management or provider details.
+</Aside>
+
+## Tokens & session
+
+| Method | Endpoint |
+| --- | --- |
+| `getHealth(): Promise<HealthResponse>` | `GET /auth/health` |
+| `getIdentity(): Promise<IdentityResponse>` | `GET /admin/identity` |
+| `getProviders(): Promise<ProvidersResponse>` | `GET /auth/providers` |
+| `getLoginPage(): Promise<string>` | `GET /auth/login` (HTML) |
+| `generateTokens(request): Promise<TokenResponse>` | `POST /auth/token` |
+| `refreshToken(request): Promise<TokenResponse>` | `POST /auth/refresh` |
+| `generateMockTokens(request): Promise<TokenResponse>` | `POST /auth/mock-token` (dev) |
+| `validateToken(token): Promise<{ valid; headers; status }>` | via `validateTokenGet` |
+| `validateTokenGet(token): Promise<{ status; headers }>` | `HEAD /auth/validate` |
+| `revokeTokens(request): Promise<RevokeTokenResponse>` | `POST /admin/revoke` |
+
+## Root keys
+
+Top-level authentication keys registered on the node.
+
+| Method | Endpoint |
+| --- | --- |
+| `listRootKeys(): Promise<RootKey[]>` | `GET /admin/keys` |
+| `createRootKey(request): Promise<CreateKeyResponse>` | `POST /admin/keys` |
+| `deleteRootKey(keyId): Promise<DeleteKeyResponse>` | `DELETE /admin/keys/{keyId}` |
+| `getKeyPermissions(keyId): Promise<PermissionResponse>` | `GET /admin/keys/{keyId}/permissions` |
+| `updateKeyPermissions(keyId, changes): Promise<PermissionResponse>` | `PUT /admin/keys/{keyId}/permissions` |
+
+`updateKeyPermissions` sends an `{ add?, remove? }` delta of permission strings.
+
+## Client keys
+
+Scoped credentials issued under a root key — often bound to a context identity.
+
+| Method | Endpoint |
+| --- | --- |
+| `listClientKeys(): Promise<ClientKey[]>` | `GET /admin/keys/clients` |
+| `generateClientKey(request): Promise<TokenResponse>` | `POST /admin/client-key` |
+| `deleteClientKey(keyId, clientId): Promise<DeleteClientResponse>` | `DELETE /admin/keys/{keyId}/clients/{clientId}` |
+
+## Key types
+
+```typescript
+interface TokenResponse {
+  data: { access_token: string; refresh_token: string; error?: string | null };
+  error?: string | null;
+}
+
+interface RootKey {
+  key_id: string;
+  public_key: string;
+  auth_method: string;
+  created_at: string;
+  revoked_at?: string;
+  permissions: string[];
+}
+
+interface ClientKey {
+  client_id: string;
+  root_key_id: string;
+  name: string;
+  permissions: string[];
+  created_at: string;
+  revoked_at?: string;
+  is_valid: boolean;
+}
+
+interface IdentityResponse {
+  service: string;
+  version: string;
+  authentication_mode: string;
+  providers: string[];
+}
+```
+
+<Aside type="note">
+  Request/response fields on the auth API are **snake_case** — they mirror the
+  node's wire format exactly. (The admin API, by contrast, is camelCase.)
+</Aside>
+
+See [`auth-types.ts`](https://github.com/calimero-network/mero-js/blob/master/src/auth-api/auth-types.ts)
+for the complete set.

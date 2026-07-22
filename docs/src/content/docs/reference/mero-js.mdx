@@ -1,0 +1,157 @@
+---
+title: MeroJs
+description: The MeroJs facade — configuration, property accessors, instance and static methods, and the token types.
+sidebar:
+  order: 1
+---
+
+The entry point to the SDK. Construct one per node, authenticate, then reach the
+specialised clients through its accessors.
+
+```typescript
+import { MeroJs, createMeroJs } from '@calimero-network/mero-js';
+
+const sdk = new MeroJs({ baseUrl: 'http://localhost:2428' });
+// or: const sdk = createMeroJs({ baseUrl: 'http://localhost:2428' });
+```
+
+## Constructor
+
+```typescript
+new MeroJs(config: MeroJsConfig)
+```
+
+### `MeroJsConfig`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `baseUrl` | `string` | **Required.** The node URL, e.g. `http://localhost:2428`. |
+| `credentials` | `{ username: string; password: string }` | Optional. Used by `authenticate()` when called with no argument. |
+| `timeoutMs` | `number` | Request timeout. Default `10000`. |
+| `requestCredentials` | `RequestCredentials` | `fetch` credentials mode. Defaults to `'omit'` in Tauri. |
+| `tokenStore` | `TokenStore` | Persist tokens across sessions. Defaults to in-memory. |
+
+## Property accessors
+
+Read-only getters. `rpc`, `events`, and `ws` are created lazily on first access.
+
+| Accessor | Type | Description |
+| --- | --- | --- |
+| `sdk.auth` | `AuthApiClient` | Login, token, and key management. See the [auth API](/reference/auth-api/). |
+| `sdk.admin` | `AdminApiClient` | Contexts, apps, namespaces, groups, blobs, TEE. See the [admin API](/reference/admin-api/). |
+| `sdk.rpc` | `RpcClient` | Execute WASM methods. **Lazy.** |
+| `sdk.events` | `SseClient` | Real-time events over SSE. **Lazy.** |
+| `sdk.ws` | `WsClient` | WebSocket client. **Lazy, experimental** — warns once. |
+
+## Instance methods
+
+```typescript
+authenticate(credentials?: { username: string; password: string }): Promise<TokenData>
+```
+Exchange a username + password for tokens. Falls back to `config.credentials`
+when called with no argument. Stores the tokens (memory + `tokenStore`).
+
+```typescript
+setTokenData(data: TokenData): void
+```
+Set tokens directly — used for SSO flows where tokens arrive via the URL hash. If
+`expires_at` is `0`, the `exp` claim is parsed from the JWT automatically.
+
+```typescript
+getTokenData(): TokenData | null
+```
+The current tokens, or `null`. Useful for debugging.
+
+```typescript
+isAuthenticated(): boolean
+```
+`true` when token data is present.
+
+```typescript
+clearToken(): void
+```
+Drop the current tokens from memory and the store (sign out).
+
+```typescript
+close(): void
+```
+Close any open SSE/WebSocket connections and release resources.
+
+## Static methods
+
+```typescript
+MeroJs.parseAuthCallback(url: string): AuthCallbackResult | null
+MeroJs.buildAuthLoginUrl(nodeUrl: string, opts: AuthLoginOptions): string
+```
+
+Both are also exported as standalone functions, `parseAuthCallback` and
+`buildAuthLoginUrl`. See [authentication](/get-started/authentication/#desktop-sso--tokens-from-the-url-hash).
+
+## Types
+
+### `TokenData`
+
+```typescript
+interface TokenData {
+  access_token: string;   // JWT access token
+  refresh_token: string;  // refresh token
+  expires_at: number;     // ms epoch; 0 → parse from the JWT exp claim
+}
+```
+
+### `AuthCallbackResult`
+
+```typescript
+interface AuthCallbackResult {
+  accessToken: string;
+  refreshToken: string;
+  nodeUrl: string;
+  applicationId: string;
+  contextId: string;
+  contextIdentity: string;
+}
+```
+
+### `AuthLoginOptions`
+
+```typescript
+interface AuthLoginOptions {
+  callbackUrl: string;
+  mode: string;               // e.g. 'login'
+  permissions?: string[];
+  packageName?: string;
+  packageVersion?: string;
+  registryUrl?: string;
+}
+```
+
+### `TokenStore`
+
+```typescript
+interface TokenStore {
+  getTokens(): TokenData | null;
+  setTokens(data: TokenData): void;
+  clear(): void;
+}
+```
+
+Built-in implementations:
+
+```typescript
+class MemoryTokenStore implements TokenStore {}          // ephemeral (default)
+
+class LocalStorageTokenStore implements TokenStore {
+  constructor(key?: string);  // default key: 'mero-tokens'
+}
+```
+
+`LocalStorageTokenStore` is SSR-safe (it guards `typeof localStorage`) and
+validates that both tokens are present on read.
+
+## Sub-client references
+
+- [`RpcClient`](/guides/executing-methods/) — `execute<T>`, `migrateMyEntries`, `countMyPending`.
+- [`SseClient` / `WsClient`](/guides/subscriptions/) — `on`/`connect`/`subscribe`.
+- [`AdminApiClient`](/reference/admin-api/) — the full admin surface.
+- [`AuthApiClient`](/reference/auth-api/) — the full auth surface.
+- [`CloudClient`](/guides/high-availability/) — HA toggle (standalone).

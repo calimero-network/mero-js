@@ -1,0 +1,256 @@
+---
+title: Admin API
+description: The full AdminApiClient surface — every method, its signature, and the node endpoint it calls, grouped by area.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`sdk.admin` (`AdminApiClient`) is the node's `/admin-api` REST surface — ~90
+methods across applications, contexts, namespaces, groups, blobs, aliases,
+capabilities, metadata, upgrades, and TEE. Each wraps the shared
+[`HttpClient`](/guides/http-transport/); most reads unwrap the node's `{ data }`
+envelope for you.
+
+<Aside type="note">
+  Every path below is relative to the node's `/admin-api` base. Types named
+  `…ResponseData` / `…Request` come from `admin-types.ts`; the shapes you'll use
+  most appear in the guides. Signatures are given verbatim — `T` is a generic,
+  `?` marks optional params.
+</Aside>
+
+## Health & status
+
+| Method | Endpoint |
+| --- | --- |
+| `healthCheck(): Promise<HealthStatus>` | `GET /health` |
+| `isAuthed(): Promise<AdminAuthStatus>` | `GET /is-authed` |
+
+## Applications
+
+| Method | Endpoint |
+| --- | --- |
+| `installApplication(request): Promise<InstallApplicationResponseData>` | `POST /install-application` |
+| `installDevApplication(request): Promise<InstallApplicationResponseData>` | `POST /install-dev-application` |
+| `installFromRegistry(registryUrl, packageName, version): Promise<InstallApplicationResponseData>` | resolves the registry manifest, then installs |
+| `getRegistryVersions(registryUrl, packageName): Promise<string[]>` | registry bundles (newest first) |
+| `uninstallApplication(appId): Promise<UninstallApplicationResponseData>` | `DELETE /applications/{appId}` |
+| `listApplications(): Promise<ListApplicationsResponseData>` | `GET /applications` |
+| `getApplication(appId): Promise<GetApplicationResponseData>` | `GET /applications/{appId}` |
+| `listApplicationVersions(applicationId): Promise<ApplicationVersionEntry[]>` | `GET /applications/{applicationId}/versions` |
+
+A standalone helper `compareSemver(a, b): number` sorts version strings ascending.
+
+## Packages
+
+| Method | Endpoint |
+| --- | --- |
+| `listPackages(): Promise<ListPackagesResponseData>` | `GET /packages` |
+| `listPackageVersions(packageName): Promise<ListVersionsResponseData>` | `GET /packages/{package}/versions` |
+| `getLatestPackageVersion(packageName): Promise<GetLatestVersionResponseData>` | `GET /packages/{package}/latest` |
+
+## Contexts
+
+| Method | Endpoint |
+| --- | --- |
+| `createContext(request): Promise<CreateContextResponseData>` | `POST /contexts` |
+| `deleteContext(contextId, request?): Promise<DeleteContextResponseData>` | `DELETE /contexts/{contextId}` |
+| `getContexts(): Promise<GetContextsResponseData>` | `GET /contexts` |
+| `getContext(contextId): Promise<Context>` | `GET /contexts/{contextId}` |
+| `getContextsForApplication(applicationId): Promise<GetContextsResponseData>` | `GET /contexts/for-application/{applicationId}` |
+| `getContextGroup(contextId): Promise<ContextGroupResponseData>` | `GET /contexts/{contextId}/group` |
+| `getContextStorage(contextId): Promise<ContextStorageResponseData>` | `GET /contexts/{contextId}/storage` |
+| `getContextsWithExecutorsForApplication(applicationId): Promise<ContextsWithExecutorsResponseData>` | `GET /contexts/with-executors/for-application/{applicationId}` |
+| `joinContext(contextId): Promise<JoinContextResponseData>` | `POST /contexts/{contextId}/join` |
+| `leaveContext(contextId, request?): Promise<void>` | `POST /contexts/{contextId}/leave` |
+| `updateContextApplication(contextId, request): Promise<void>` | `POST /contexts/{contextId}/application` |
+| `syncContext(contextId?): Promise<void>` | `POST /contexts/sync/{contextId?}` |
+| `resyncContext(contextId, request?): Promise<ResyncContextResponseData>` | `POST /contexts/{contextId}/resync` |
+| `inviteSpecializedNode(request): Promise<InviteSpecializedNodeResponseData>` | `POST /contexts/invite-specialized-node` |
+
+### Context identity
+
+| Method | Endpoint |
+| --- | --- |
+| `generateContextIdentity(): Promise<GenerateContextIdentityResponseData>` | `POST /identity/context` |
+| `getContextIdentities(contextId): Promise<GetContextIdentitiesResponseData>` | `GET /contexts/{contextId}/identities` |
+| `getContextIdentitiesOwned(contextId): Promise<GetContextIdentitiesResponseData>` | `GET /contexts/{contextId}/identities-owned` |
+
+## Blobs
+
+| Method | Endpoint |
+| --- | --- |
+| `uploadBlob(request): Promise<UploadBlobResponseData>` | `PUT /blobs?hash=&context_id=` (octet-stream) |
+| `listBlobs(): Promise<ListBlobsResponseData>` | `GET /blobs` |
+| `getBlob(blobId): Promise<ArrayBuffer>` | `GET /blobs/{blobId}` (raw bytes) |
+| `getBlobInfo(blobId): Promise<GetBlobInfoResponseData>` | `HEAD /blobs/{blobId}` |
+| `deleteBlob(blobId): Promise<DeleteBlobResponseData>` | `DELETE /blobs/{blobId}` |
+
+## Aliases
+
+| Method | Endpoint |
+| --- | --- |
+| `createContextAlias(request): Promise<CreateAliasResponseData>` | `POST /alias/create/context` |
+| `createApplicationAlias(request): Promise<CreateAliasResponseData>` | `POST /alias/create/application` |
+| `lookupContextAlias(name): Promise<LookupAliasResponseData>` | `POST /alias/lookup/context/{name}` |
+| `lookupApplicationAlias(name): Promise<LookupAliasResponseData>` | `POST /alias/lookup/application/{name}` |
+| `deleteContextAlias(name): Promise<DeleteAliasResponseData>` | `POST /alias/delete/context/{name}` |
+| `deleteApplicationAlias(name): Promise<DeleteAliasResponseData>` | `POST /alias/delete/application/{name}` |
+| `listContextAliases(): Promise<ListAliasesResponseData>` | `GET /alias/list/context` |
+| `listApplicationAliases(): Promise<ListAliasesResponseData>` | `GET /alias/list/application` |
+| `listContextIdentityAliases(contextId): Promise<ListContextIdentityAliasesResponseData>` | `GET /alias/list/identity/{contextId}` |
+| `createContextIdentityAlias(contextId, request): Promise<CreateContextIdentityAliasResponseData>` | `POST /alias/create/identity/{contextId}` |
+| `lookupContextIdentityAlias(contextId, name): Promise<LookupContextIdentityAliasResponseData>` | `POST /alias/lookup/identity/{contextId}/{name}` |
+| `deleteContextIdentityAlias(contextId, name): Promise<DeleteContextIdentityAliasResponseData>` | `POST /alias/delete/identity/{contextId}/{name}` |
+
+## Namespaces
+
+| Method | Endpoint |
+| --- | --- |
+| `listNamespaces(): Promise<ListNamespacesResponseData>` | `GET /namespaces` |
+| `getNamespace(namespaceId): Promise<Namespace>` | `GET /namespaces/{namespaceId}` |
+| `getNamespaceIdentity(namespaceId): Promise<NamespaceIdentity>` | `GET /namespaces/{namespaceId}/identity` |
+| `listNamespacesForApplication(applicationId): Promise<ListNamespacesResponseData>` | `GET /namespaces/for-application/{applicationId}` |
+| `createNamespace(request): Promise<CreateNamespaceResponseData>` | `POST /namespaces` |
+| `deleteNamespace(namespaceId, request?): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
+| `createNamespaceInvitation(namespaceId, request?): Promise<…InvitationResponseData>` | `POST /namespaces/{namespaceId}/invite` |
+| `joinNamespace(namespaceId, request): Promise<JoinNamespaceResponseData>` | `POST /namespaces/{namespaceId}/join` |
+| `leaveNamespace(namespaceId, request?): Promise<void>` | `POST /namespaces/{namespaceId}/leave` |
+| `createGroupInNamespace(namespaceId, request?): Promise<CreateGroupInNamespaceResponseData>` | `POST /namespaces/{namespaceId}/groups` |
+| `listNamespaceGroups(namespaceId): Promise<SubgroupEntry[]>` | `GET /namespaces/{namespaceId}/groups` |
+
+## Groups
+
+### Info, membership & contexts
+
+| Method | Endpoint |
+| --- | --- |
+| `createGroup(request): Promise<{ groupId: string }>` | `POST /groups` |
+| `getGroupInfo(groupId): Promise<GroupInfoResponseData>` | `GET /groups/{groupId}` |
+| `deleteGroup(groupId, request?): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
+| `updateGroupSettings(groupId, request): Promise<void>` | `PATCH /groups/{groupId}` |
+| `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
+| `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
+| `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
+| `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |
+| `updateMemberRole(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/role` |
+| `setMemberAutoFollow(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/auto-follow` |
+| `leaveGroup(groupId, request?): Promise<void>` | `POST /groups/{groupId}/leave` |
+
+### Capabilities & settings
+
+| Method | Endpoint |
+| --- | --- |
+| `getMemberCapabilities(groupId, identity): Promise<MemberCapabilities>` | `GET /groups/{groupId}/members/{identity}/capabilities` |
+| `setMemberCapabilities(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/capabilities` |
+| `getDefaultCapabilities(groupId): Promise<number>` | via `getGroupInfo` |
+| `setDefaultCapabilities(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/default-capabilities` |
+| `getSubgroupVisibility(groupId): Promise<string>` | via `getGroupInfo` |
+| `setSubgroupVisibility(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/subgroup-visibility` |
+| `getTeeAdmissionPolicy(groupId): Promise<GetTeeAdmissionPolicyResponseData>` | `GET /groups/{groupId}/settings/tee-admission-policy` |
+| `setTeeAdmissionPolicy(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/tee-admission-policy` |
+
+### Metadata
+
+| Method | Endpoint |
+| --- | --- |
+| `setGroupMetadata(groupId, request): Promise<void>` | `PUT /groups/{groupId}/metadata` |
+| `getGroupMetadata(groupId): Promise<MetadataRecord \| null>` | `GET /groups/{groupId}/metadata` |
+| `setMemberMetadata(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/metadata` |
+| `getMemberMetadata(groupId, identity): Promise<MetadataRecord \| null>` | `GET /groups/{groupId}/members/{identity}/metadata` |
+| `setContextMetadata(groupId, contextId, request): Promise<void>` | `PUT /groups/{groupId}/contexts/{contextId}/metadata` |
+| `getContextMetadata(groupId, contextId): Promise<MetadataRecord \| null>` | `GET /groups/{groupId}/contexts/{contextId}/metadata` |
+
+### Invitations, join & subgroups
+
+| Method | Endpoint |
+| --- | --- |
+| `createGroupInvitation(groupId, request?): Promise<…InvitationResponseData>` | `POST /groups/{groupId}/invite` |
+| `joinGroup(request): Promise<JoinGroupResponseData>` | `POST /groups/join` |
+| `joinSubgroupInheritance(groupId): Promise<JoinSubgroupInheritanceResponseData>` | `POST /groups/{groupId}/join-via-inheritance` |
+| `listSubgroups(groupId): Promise<SubgroupEntry[]>` | `GET /groups/{groupId}/subgroups` |
+| `reparentGroup(childGroupId, request): Promise<ReparentGroupResponseData>` | `POST /groups/{childGroupId}/reparent` |
+| `detachContextFromGroup(groupId, contextId, request?): Promise<void>` | `POST /groups/{groupId}/contexts/{contextId}/remove` |
+| `issueOwnershipProof(groupId, request?): Promise<unknown>` | `POST /groups/{groupId}/issue-ownership-proof` |
+| `issueNamespaceOwnershipProof(groupId, request?): Promise<unknown>` | `POST /groups/{groupId}/issue-namespace-ownership-proof` |
+
+### Sync, signing, upgrades & migration
+
+| Method | Endpoint |
+| --- | --- |
+| `syncGroup(groupId, request?): Promise<SyncGroupResponseData>` | `POST /groups/{groupId}/sync` |
+| `registerGroupSigningKey(groupId, request): Promise<RegisterGroupSigningKeyResponseData>` | `POST /groups/{groupId}/signing-key` |
+| `upgradeGroup(groupId, request): Promise<UpgradeGroupResponseData>` | `POST /groups/{groupId}/upgrade` |
+| `getGroupUpgradeStatus(groupId): Promise<GroupUpgradeStatusResponseData>` | `GET /groups/{groupId}/upgrade/status` |
+| `retryGroupUpgrade(groupId, request?): Promise<RetryGroupUpgradeResponseData>` | `POST /groups/{groupId}/upgrade/retry` |
+| `getMigrationStatus(namespaceId): Promise<MigrationStatus>` | `GET /groups/{namespaceId}/migration-status` |
+| `getCascadeStatus(namespaceId): Promise<CascadeStatusEntry[]>` | `GET /groups/{namespaceId}/cascade-status` |
+| `abortMigration(namespaceId, request?): Promise<unknown>` | `POST /groups/{namespaceId}/migration/abort` |
+
+## TEE
+
+| Method | Endpoint |
+| --- | --- |
+| `getTeeInfo(): Promise<TeeInfoResponseData>` | `GET /tee/info` |
+| `teeAttest(request): Promise<TeeAttestResponseData>` | `POST /tee/attest` |
+| `teeVerifyQuote(request): Promise<TeeVerifyQuoteResponseData>` | `POST /tee/verify-quote` |
+
+## Network & node
+
+| Method | Endpoint |
+| --- | --- |
+| `getPeersCount(): Promise<{ count: number }>` | `GET /peers` |
+| `getNetworkStatus(): Promise<unknown>` | `GET /network/status` |
+| `getUsage(): Promise<unknown>` | `GET /usage` |
+| `getCertificate(): Promise<string>` | `GET /certificate` |
+
+## Key domain types
+
+```typescript
+interface Context {
+  id: string;
+  applicationId: string;
+  serviceName?: string;
+  contextStateHash: string;
+  dagHeads: number[][];
+  applicationVersion?: string;
+}
+
+interface Namespace {
+  namespaceId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: 'Automatic' | 'LazyOnAccess';
+  createdAt: number;
+  name?: string;
+  memberCount: number;
+  contextCount: number;
+  subgroupCount: number;
+}
+
+interface GroupInfo {              // = GroupInfoResponseData
+  groupId: string;
+  appKey: string;
+  targetApplicationId: string;
+  upgradePolicy: 'Automatic' | 'LazyOnAccess';
+  memberCount: number;
+  contextCount: number;
+  defaultCapabilities: number;    // capability bitmask
+  subgroupVisibility: string;
+  metadata?: MetadataRecord | null;
+  activeUpgrade?: GroupUpgradeStatus;
+}
+
+interface MetadataRecord {
+  name: string | null;
+  data: Record<string, string>;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+interface BlobInfo { blobId: string; size: number }
+```
+
+See [`admin-types.ts`](https://github.com/calimero-network/mero-js/blob/master/src/admin-api/admin-types.ts)
+for the complete set (~90 types).
