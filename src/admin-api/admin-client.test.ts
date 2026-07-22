@@ -998,6 +998,21 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('upgradeGroup forwards forceCodeOnly for an ABI-less code-only upgrade', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+      });
+      await client.upgradeGroup('g-1', {
+        targetApplicationId: 'app-2',
+        forceCodeOnly: true,
+      });
+      // camelCase passthrough — the field reaches the wire body verbatim.
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        forceCodeOnly: true,
+      });
+    });
+
     it('getGroupUpgradeStatus returns status', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', {
         data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', total: 3, completed: 3, failed: 0, completedAt: 456 },
