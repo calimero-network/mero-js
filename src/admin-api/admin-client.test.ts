@@ -1206,4 +1206,40 @@ describe('compareSemver', () => {
     expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
     expect(compareSemver('1.2', '1.2.0')).toBe(0);
   });
+
+  it('ranks a pre-release below its release', () => {
+    expect(compareSemver('1.0.0-rc.1', '1.0.0')).toBeLessThan(0);
+    expect(compareSemver('1.0.0', '1.0.0-rc.1')).toBeGreaterThan(0);
+    // Core ships versions like 0.11.0-rc.17 — these must sort below 0.11.0.
+    expect(compareSemver('0.11.0-rc.17', '0.11.0')).toBeLessThan(0);
+  });
+
+  it('orders the SemVer 2.0 pre-release precedence chain', () => {
+    const chain = [
+      '1.0.0-alpha',
+      '1.0.0-alpha.1',
+      '1.0.0-alpha.beta',
+      '1.0.0-beta',
+      '1.0.0-beta.2',
+      '1.0.0-beta.11',
+      '1.0.0-rc.1',
+      '1.0.0',
+    ];
+    for (let i = 0; i < chain.length - 1; i++) {
+      expect(compareSemver(chain[i], chain[i + 1])).toBeLessThan(0);
+      expect(compareSemver(chain[i + 1], chain[i])).toBeGreaterThan(0);
+    }
+  });
+
+  it('ignores build metadata for precedence', () => {
+    expect(compareSemver('1.0.0+build', '1.0.0')).toBe(0);
+    expect(compareSemver('1.0.0+build.1', '1.0.0+build.2')).toBe(0);
+    expect(compareSemver('1.0.0-rc.1+build', '1.0.0-rc.1')).toBe(0);
+  });
+
+  it('does not throw on loose/malformed input', () => {
+    expect(() => compareSemver('latest', '1.0.0')).not.toThrow();
+    expect(() => compareSemver('', '')).not.toThrow();
+    expect(compareSemver('', '')).toBe(0);
+  });
 });
