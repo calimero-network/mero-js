@@ -112,14 +112,15 @@ Call `sdk.close()` to shut down any open SSE/WS connections when you're done.
 ## Zero dependencies
 
 The SDK ships with no runtime dependencies. It's built entirely on Web Platform
-APIs, so it runs unchanged in the browser, Node 18+, Deno, Bun, and edge
-workers:
+APIs. The HTTP and SSE surfaces run unchanged in the browser, Node 18+, Deno,
+Bun, and edge workers; `sdk.ws` additionally needs a global `WebSocket`, which
+is not present on Node before v22 (see the
+[runtime matrix](/guides/bundling-and-runtimes/#runtime-support)):
 
 | API | Used for |
 | --- | --- |
-| `fetch` | all HTTP requests |
-| `EventSource` | the SSE client |
-| `WebSocket` | the (experimental) WS client |
+| `fetch` (incl. streaming response bodies) | all HTTP requests, and the SSE client |
+| `WebSocket` | the (experimental) WS client — global required (Node 22+) |
 | `AbortController` | request cancellation & timeouts |
 | `atob` | decoding the JWT payload to read `exp` |
 | `localStorage` | optional token persistence (browser only) |

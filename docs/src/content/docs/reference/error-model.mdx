@@ -1,6 +1,6 @@
 ---
 title: Error Model
-description: The typed errors the SDK throws — HTTPError, AuthRevokedError, RpcError, and the native AbortError — and how to handle each.
+description: The typed errors the SDK throws — HTTPError, AuthRevokedError, RpcError — and how cancellation and timeouts surface.
 sidebar:
   order: 4
 ---
@@ -63,21 +63,31 @@ class RpcError extends Error {
 
 The inherited `message` holds the human-readable description from the contract.
 
-## `AbortError`
+## Cancellation and timeouts
 
-Thrown when a request is cancelled or times out. This is a native
-`DOMException` with `name === 'AbortError'` — not an SDK class — so match it by
-name.
+A request that exceeds `timeoutMs`, or one cancelled via an `AbortSignal`, does
+**not** surface as a native `AbortError`. Every high-level client routes through
+the HTTP client, which catches the underlying `DOMException`
+(`AbortError`/`TimeoutError`) and re-throws it as an `HTTPError` with
+`status: 0` — the same shape as any other network failure. Match it as an
+`HTTPError` whose `status` is `0`:
 
 ```typescript
 try {
-  await sdk.admin.getContexts();
+  await sdk.admin.getContexts(); // subject to the client's global timeoutMs
 } catch (err) {
-  if (err instanceof Error && err.name === 'AbortError') {
-    // timed out (after config.timeoutMs) or manually cancelled
+  if (err instanceof HTTPError && err.status === 0) {
+    // network failure, timeout, or cancellation
   }
 }
 ```
+
+`status: 0` alone doesn't distinguish a deliberate cancellation from a genuine
+network failure — track the `AbortController` you called `.abort()` on if you
+need to tell them apart. Per-call `signal`/`timeoutMs` overrides are a feature of
+the low-level [`HttpClient`](/guides/http-transport/#cancellation--timeouts);
+the `sdk.admin` / `sdk.auth` / `sdk.rpc` facades use the single global
+`timeoutMs` you pass to the constructor.
 
 ## Full handling pattern
 
@@ -99,12 +109,11 @@ try {
     // Refresh token reused/revoked — session is over
     promptSignIn();
   } else if (err instanceof HTTPError) {
-    // Transport-level error — HTTP 4xx/5xx (or status 0 = network)
-    if (err.status === 403) console.error('Permission denied');
+    // Transport-level error — HTTP 4xx/5xx, or status 0 for a network
+    // failure, timeout, or cancellation
+    if (err.status === 0) console.warn('Network failure, timeout, or cancelled');
+    else if (err.status === 403) console.error('Permission denied');
     else console.error(`HTTP ${err.status}: ${err.statusText}`);
-  } else if (err instanceof Error && err.name === 'AbortError') {
-    // Timeout or manual cancellation
-    console.warn('Request timed out');
   } else {
     throw err; // something unexpected
   }
@@ -123,6 +132,9 @@ the user to re-authenticate. If the token was reused or revoked, you get an
 
 <Aside type="note">
   The low-level [`withRetry`](/guides/http-transport/#retry-with-backoff) helper
-  retries on `HTTPError` `429`/`5xx`, `TimeoutError`, and network `TypeError` —
-  but never on `AbortError`, since that's a deliberate cancellation.
+  retries on `HTTPError` `429`/`5xx` (and, around raw `fetch`, on `TimeoutError`
+  and network `TypeError`) — never on a user `AbortError`. Because the SDK's
+  clients wrap network failures and timeouts as `HTTPError` with `status: 0`,
+  wrapping an `sdk.*` call in `withRetry` retries only on `429`/`5xx`; a
+  `status: 0` failure is not retried.
 </Aside>

@@ -32,7 +32,9 @@ client, authenticate, list contexts, and execute a WASM method.
 </Tabs>
 
 Requires **Node.js 18+** or any modern browser. Zero runtime dependencies — the
-SDK is built on the Fetch API, `EventSource`, `WebSocket`, and `AbortController`.
+SDK is built on the Fetch API (including streaming responses for SSE),
+`WebSocket`, and `AbortController`. (`sdk.ws` needs a global `WebSocket`, which
+on Node requires v22+.)
 
 ## Your first calls
 

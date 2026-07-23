@@ -1,0 +1,75 @@
+---
+title: RPC client
+description: sdk.rpc (RpcClient) — execute a context's WASM methods over JSON-RPC, plus the owner-driven migration helpers.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`sdk.rpc` (`RpcClient`) calls the methods a context's WASM application exposes,
+over the node's `/jsonrpc` endpoint. It shares the SDK's
+[`HttpClient`](/guides/http-transport/), so authentication, refresh, and the
+[error model](/reference/error-model/) apply. Contract-level failures surface as
+[`RpcError`](/reference/error-model/#rpcerror).
+
+See the [executing methods guide](/guides/executing-methods/) for task-oriented
+examples.
+
+## `execute<T>(params): Promise<T>`
+
+Calls `params.method` on the application running in `params.contextId` and
+returns the decoded result. The generic `T` is the shape your contract returns;
+it is not validated at runtime.
+
+```typescript
+interface ExecuteParams {
+  contextId: string;
+  method: string;
+  argsJson?: Record<string, unknown>;   // defaults to {}
+  /** @deprecated Ignored by the server. */
+  executorPublicKey?: string;
+}
+
+const value = await sdk.rpc.execute<string>({
+  contextId,
+  method: 'get_value',
+  argsJson: { key: 'greeting' },
+});
+```
+
+The client unwraps the JSON-RPC envelope: on success it returns
+`result.output` when present, otherwise `result`. On a JSON-RPC `error` it throws
+`RpcError` (`code`, `message`, optional `type` and `data`).
+
+<Aside type="caution">
+  `executorPublicKey` is accepted for backward compatibility but ignored — the
+  node resolves the context's owned identity itself. Omit it.
+</Aside>
+
+## `migrateMyEntries(contextId): Promise<MigrateMyEntriesSummary>`
+
+One-tap, owner-driven migration: re-signs the caller's identity-gated entries to
+the current schema in a single sweep (it does not loop). Returns the resulting
+counts.
+
+```typescript
+interface MigrateMyEntriesSummary {
+  converted: number;   // entries re-signed this call
+  remaining: number;   // still below the target schema
+}
+
+const { converted, remaining } = await sdk.rpc.migrateMyEntries(contextId);
+```
+
+It is a convenience wrapper over `execute({ contextId, method: 'migrate_my_entries' })`.
+
+## `countMyPending(contextId): Promise<number>`
+
+Read-only count of the caller's entries still below the target schema — useful
+to decide whether a migration is needed, or to show progress.
+
+```typescript
+const pending = await sdk.rpc.countMyPending(contextId);
+if (pending > 0) await sdk.rpc.migrateMyEntries(contextId);
+```

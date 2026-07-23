@@ -1,0 +1,59 @@
+---
+title: Cloud client
+description: CloudClient — toggle TEE High Availability for a context by opening the Calimero cloud enable-HA / disable-HA flow.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`CloudClient` starts the Calimero cloud's TEE **High Availability** flow for a
+context. Unlike the other clients it is standalone — construct it directly, it
+makes no authenticated node calls, and each method opens the cloud UI in a new
+browser tab. See the [high-availability guide](/guides/high-availability/) for
+context.
+
+```typescript
+import { CloudClient } from '@calimero-network/mero-js';
+
+const cloud = new CloudClient();                 // default host
+// or: new CloudClient({ cloudBaseUrl: 'https://cloud.example.com' })
+```
+
+## Constructor
+
+```typescript
+class CloudClient {
+  constructor(config?: { cloudBaseUrl?: string });  // default 'https://cloud.calimero.network'
+}
+```
+
+## `enableHA(options): void`
+
+Opens `${cloudBaseUrl}/enable-ha` with the group and context as query
+parameters, and an optional `redirect_url` the cloud returns to when done.
+
+```typescript
+interface EnableHAOptions {
+  groupId: string;
+  contextId: string;
+  redirectUrl?: string;
+}
+
+cloud.enableHA({ groupId, contextId, redirectUrl: window.location.href });
+```
+
+## `disableHA(options): void`
+
+The mirror of `enableHA`, opening `${cloudBaseUrl}/disable-ha`. Same options
+(`DisableHAOptions` is structurally identical to `EnableHAOptions`).
+
+```typescript
+cloud.disableHA({ groupId, contextId });
+```
+
+<Aside type="caution">
+  Both methods call `window.open(...)`, so they are **browser-only** — there is
+  no `window` in Node or edge runtimes. Guard with `typeof window !== 'undefined'`
+  if your code also runs on the server.
+</Aside>
