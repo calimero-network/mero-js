@@ -1,3 +1,7 @@
+## <small>7.0.4 (2026-07-23)</small>
+
+* docs: fix factual bugs, add missing reference pages, close depth gaps (#70) ([fd5d5a3](https://github.com/calimero-network/mero-js/commit/fd5d5a3)), closes [#70](https://github.com/calimero-network/mero-js/issues/70)
+
 ## <small>7.0.3 (2026-07-22)</small>
 
 * docs: migrate to Astro Starlight docs site with animated diagrams (#69) ([8d2bf86](https://github.com/calimero-network/mero-js/commit/8d2bf86)), closes [#69](https://github.com/calimero-network/mero-js/issues/69) [#a5ff11](https://github.com/calimero-network/mero-js/issues/a5ff11)
