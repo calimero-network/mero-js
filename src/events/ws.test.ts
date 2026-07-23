@@ -76,5 +76,51 @@ describe('WsClient', () => {
         data: { name: 'test' },
       });
     });
+
+    it('emits group event with groupId intact (no double-unwrap)', () => {
+      const handler = vi.fn();
+      client.on('event', handler);
+
+      (client as any).handleMessage(JSON.stringify({
+        result: {
+          groupId: 'grp-1',
+          type: 'MemberJoined',
+          data: { member: 'mem-1', role: 'Member' },
+        },
+      }));
+
+      expect(handler).toHaveBeenCalledWith({
+        groupId: 'grp-1',
+        type: 'MemberJoined',
+        data: { member: 'mem-1', role: 'Member' },
+      });
+    });
+  });
+
+  describe('subscribe with groupIds', () => {
+    it('tracks group ids and sends groupIds on the wire', () => {
+      const sendSpy = vi.fn();
+      (client as any).ws = { readyState: 1 /* WebSocket.OPEN */, send: sendSpy, close: vi.fn() };
+
+      client.subscribe({ groupIds: ['grp-1'] });
+
+      expect((client as any).subscribedGroupIds.has('grp-1')).toBe(true);
+      expect(sendSpy).toHaveBeenCalledWith(
+        JSON.stringify({ id: null, method: 'subscribe', params: { groupIds: ['grp-1'] } }),
+      );
+    });
+
+    it('re-subscribes both context and group ids on reconnect', () => {
+      (client as any).subscribedContextIds.add('ctx-1');
+      (client as any).subscribedGroupIds.add('grp-1');
+      const sendSpy = vi.fn();
+      (client as any).ws = { readyState: 1 /* WebSocket.OPEN */, send: sendSpy, close: vi.fn() };
+
+      (client as any).resubscribeAfterReconnect();
+
+      expect(sendSpy).toHaveBeenCalledWith(
+        JSON.stringify({ id: null, method: 'subscribe', params: { contextIds: ['ctx-1'], groupIds: ['grp-1'] } }),
+      );
+    });
   });
 });

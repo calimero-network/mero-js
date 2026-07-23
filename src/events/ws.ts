@@ -1,3 +1,7 @@
+import type { GroupMembershipEventData } from './group';
+
+export type { GroupMembershipEventData };
+
 export interface WsEventData {
   contextId: string;
   /** The context-event discriminator (core serializes it as a sibling of
@@ -6,7 +10,7 @@ export interface WsEventData {
   data: unknown;
 }
 
-type WsEventHandler = (event: WsEventData) => void;
+type WsEventHandler = (event: WsEventData | GroupMembershipEventData) => void;
 type WsConnectHandler = () => void;
 type WsErrorHandler = (error: Error) => void;
 
@@ -28,6 +32,7 @@ export class WsClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribedContextIds: Set<string> = new Set();
+  private subscribedGroupIds: Set<string> = new Set();
   private listeners: WsListeners = { connect: [], event: [], error: [] };
 
   private static readonly MAX_BACKOFF_MS = 30000;
@@ -66,9 +71,9 @@ export class WsClient {
   }
 
   private emit(event: 'connect'): void;
-  private emit(event: 'event', data: WsEventData): void;
+  private emit(event: 'event', data: WsEventData | GroupMembershipEventData): void;
   private emit(event: 'error', error: Error): void;
-  private emit(event: string, arg?: WsEventData | Error): void {
+  private emit(event: string, arg?: WsEventData | GroupMembershipEventData | Error): void {
     const key = event as keyof WsListeners;
     if (key in this.listeners) {
       for (const handler of this.listeners[key]) {
@@ -83,7 +88,7 @@ export class WsClient {
   }
 
   async connect(): Promise<void> {
-    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+    if (this.ws && (this.ws.readyState === 0 /* CONNECTING */ || this.ws.readyState === 1 /* OPEN */)) {
       return;
     }
     this.closed = false;
@@ -100,14 +105,7 @@ export class WsClient {
       this.ws.onopen = () => {
         this.reconnectAttempt = 0;
         this.emit('connect');
-        // Re-subscribe on reconnect
-        if (this.subscribedContextIds.size > 0) {
-          this.sendMessage({
-            id: null,
-            method: 'subscribe',
-            params: { contextIds: [...this.subscribedContextIds] },
-          });
-        }
+        this.resubscribeAfterReconnect();
       };
 
       this.ws.onmessage = (event) => {
@@ -137,22 +135,34 @@ export class WsClient {
     try {
       const msg = JSON.parse(raw);
 
-      if (msg.result && msg.result.contextId) {
-        let eventData = msg.result.data;
-        if (Array.isArray(eventData)) {
-          try {
-            const bytes = new Uint8Array(eventData);
-            const text = new TextDecoder().decode(bytes);
-            eventData = JSON.parse(text);
-          } catch {
-            // Keep raw data
-          }
-        }
+      if (!msg.result) return;
 
+      let eventData = msg.result.data;
+      if (Array.isArray(eventData)) {
+        try {
+          const bytes = new Uint8Array(eventData);
+          const text = new TextDecoder().decode(bytes);
+          eventData = JSON.parse(text);
+        } catch {
+          // Keep raw data
+        }
+      }
+
+      if (msg.result.contextId) {
         this.emit('event', {
           contextId: msg.result.contextId,
           // Forward the event tag (sibling of `data` in core's flattened
           // payload) so consumers can discriminate, matching `SseClient`.
+          type: msg.result.type,
+          data: eventData,
+        });
+        return;
+      }
+
+      // Group-membership event message (untagged NodeEvent's group variant)
+      if (msg.result.groupId) {
+        this.emit('event', {
+          groupId: msg.result.groupId,
           type: msg.result.type,
           data: eventData,
         });
@@ -162,36 +172,63 @@ export class WsClient {
     }
   }
 
-  subscribe(contextIds: string[]): void {
-    for (const id of contextIds) {
+  subscribe(idsOrOpts: string[] | { contextIds?: string[]; groupIds?: string[] }): void {
+    const opts = Array.isArray(idsOrOpts) ? { contextIds: idsOrOpts } : idsOrOpts;
+    for (const id of opts.contextIds ?? []) {
       this.subscribedContextIds.add(id);
     }
+    for (const id of opts.groupIds ?? []) {
+      this.subscribedGroupIds.add(id);
+    }
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       this.sendMessage({
         id: null,
         method: 'subscribe',
-        params: { contextIds },
+        params: this.buildSubscriptionParams(opts.contextIds ?? [], opts.groupIds ?? []),
       });
     }
   }
 
-  unsubscribe(contextIds: string[]): void {
-    for (const id of contextIds) {
+  unsubscribe(idsOrOpts: string[] | { contextIds?: string[]; groupIds?: string[] }): void {
+    const opts = Array.isArray(idsOrOpts) ? { contextIds: idsOrOpts } : idsOrOpts;
+    for (const id of opts.contextIds ?? []) {
       this.subscribedContextIds.delete(id);
     }
+    for (const id of opts.groupIds ?? []) {
+      this.subscribedGroupIds.delete(id);
+    }
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       this.sendMessage({
         id: null,
         method: 'unsubscribe',
-        params: { contextIds },
+        params: this.buildSubscriptionParams(opts.contextIds ?? [], opts.groupIds ?? []),
       });
     }
   }
 
+  private resubscribeAfterReconnect(): void {
+    if (this.subscribedContextIds.size === 0 && this.subscribedGroupIds.size === 0) return;
+    this.sendMessage({
+      id: null,
+      method: 'subscribe',
+      params: this.buildSubscriptionParams([...this.subscribedContextIds], [...this.subscribedGroupIds]),
+    });
+  }
+
+  private buildSubscriptionParams(
+    contextIds: string[],
+    groupIds: string[],
+  ): { contextIds?: string[]; groupIds?: string[] } {
+    const params: { contextIds?: string[]; groupIds?: string[] } = {};
+    if (contextIds.length > 0) params.contextIds = contextIds;
+    if (groupIds.length > 0) params.groupIds = groupIds;
+    return params;
+  }
+
   private sendMessage(msg: unknown): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === 1 /* OPEN */) {
       this.ws.send(JSON.stringify(msg));
     }
   }
@@ -224,5 +261,6 @@ export class WsClient {
       this.ws = null;
     }
     this.subscribedContextIds.clear();
+    this.subscribedGroupIds.clear();
   }
 }

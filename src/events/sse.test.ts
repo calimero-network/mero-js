@@ -192,6 +192,7 @@ describe('SseClient', () => {
 
       // Pre-populate subscriptions
       (client as any).subscribedContextIds.add('ctx-1');
+      (client as any).subscribedGroupIds.add('grp-1');
 
       // Simulate connect message
       (client as any).handleMessage(JSON.stringify({
@@ -199,7 +200,74 @@ describe('SseClient', () => {
         session_id: 'new-session',
       }));
 
-      expect(sendSpy).toHaveBeenCalledWith('subscribe', ['ctx-1']);
+      expect(sendSpy).toHaveBeenCalledWith('subscribe', { contextIds: ['ctx-1'], groupIds: ['grp-1'] });
+    });
+  });
+
+  describe('group-membership events', () => {
+    it('emits group event with groupId intact (no double-unwrap)', () => {
+      const handler = vi.fn();
+      client.on('event', handler);
+
+      (client as any).handleMessage(JSON.stringify({
+        result: {
+          groupId: 'grp-1',
+          type: 'MemberJoined',
+          data: { member: 'mem-1', role: 'Member' },
+        },
+      }));
+
+      expect(handler).toHaveBeenCalledWith({
+        groupId: 'grp-1',
+        type: 'MemberJoined',
+        data: { member: 'mem-1', role: 'Member' },
+      });
+    });
+
+    it('still parses existing context events unchanged (regression guard)', () => {
+      const handler = vi.fn();
+      client.on('event', handler);
+
+      (client as any).handleMessage(JSON.stringify({
+        result: {
+          contextId: 'ctx-1',
+          type: 'AppVersionChanged',
+          data: { toVersion: '2.0.0' },
+        },
+      }));
+
+      expect(handler).toHaveBeenCalledWith({
+        contextId: 'ctx-1',
+        type: 'AppVersionChanged',
+        data: { toVersion: '2.0.0' },
+      });
+    });
+  });
+
+  describe('subscribe with groupIds', () => {
+    it('sends groupIds on the wire', async () => {
+      (client as any).sessionId = 'sess-1';
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await client.subscribe({ groupIds: ['grp-1'] });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/sse/subscription'),
+        expect.objectContaining({
+          body: JSON.stringify({ id: 'sess-1', method: 'subscribe', params: { groupIds: ['grp-1'] } }),
+        }),
+      );
+      expect((client as any).subscribedGroupIds.has('grp-1')).toBe(true);
+    });
+
+    it('still accepts a plain contextIds array (backward compatible)', async () => {
+      (client as any).sessionId = 'sess-1';
+      global.fetch = vi.fn().mockResolvedValue({ ok: true }) as unknown as typeof fetch;
+
+      await client.subscribe(['ctx-1']);
+
+      expect((client as any).subscribedContextIds.has('ctx-1')).toBe(true);
     });
   });
 
