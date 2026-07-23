@@ -148,10 +148,24 @@ class LocalStorageTokenStore implements TokenStore {
 `LocalStorageTokenStore` is SSR-safe (it guards `typeof localStorage`) and
 validates that both tokens are present on read.
 
+The `TokenStore` interface is **synchronous** — `getTokens` returns a value, not
+a promise. Backends that are only available asynchronously (React Native
+`AsyncStorage`, `IndexedDB`, Expo `SecureStore`) can't implement it directly;
+load their contents into a synchronous in-memory cache at startup and have the
+store read/write that cache. `sessionStorage` and cookie-based stores are
+synchronous and can be implemented directly.
+
 ## Sub-client references
 
-- [`RpcClient`](/guides/executing-methods/) — `execute<T>`, `migrateMyEntries`, `countMyPending`.
-- [`SseClient` / `WsClient`](/guides/subscriptions/) — `on`/`connect`/`subscribe`.
+- [`RpcClient`](/reference/rpc/) — `execute<T>`, `migrateMyEntries`, `countMyPending`.
+- [`SseClient` / `WsClient`](/reference/events/) — `on`/`off`/`connect`/`subscribe`/`close`.
 - [`AdminApiClient`](/reference/admin-api/) — the full admin surface.
 - [`AuthApiClient`](/reference/auth-api/) — the full auth surface.
-- [`CloudClient`](/guides/high-availability/) — HA toggle (standalone).
+- [`CloudClient`](/reference/cloud/) — HA toggle (standalone).
+- [capabilities helpers](/reference/capabilities/) — the member-capability bitmask.
+
+:::note[Types are bundled]
+The SDK is written in TypeScript and ships its own declarations
+(`dist/index.d.ts`). Import domain types directly — e.g.
+`import type { Context, TokenData, MetadataRecord } from '@calimero-network/mero-js'`.
+:::

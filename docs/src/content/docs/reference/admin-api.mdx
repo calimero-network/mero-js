@@ -7,11 +7,15 @@ sidebar:
 
 import { Aside } from '@astrojs/starlight/components';
 
-`sdk.admin` (`AdminApiClient`) is the node's `/admin-api` REST surface — ~90
+`sdk.admin` (`AdminApiClient`) is the node's `/admin-api` REST surface — 106
 methods across applications, contexts, namespaces, groups, blobs, aliases,
 capabilities, metadata, upgrades, and TEE. Each wraps the shared
 [`HttpClient`](/guides/http-transport/); most reads unwrap the node's `{ data }`
 envelope for you.
+
+List methods (`getContexts`, `listApplications`, `listBlobs`,
+`listGroupMembers`, …) return the node's full result set — the admin API does
+not paginate, so there are no limit/offset/cursor parameters.
 
 <Aside type="note">
   Every path below is relative to the node's `/admin-api` base. Types named
@@ -217,6 +221,11 @@ interface Context {
   applicationVersion?: string;
 }
 
+// The element type of getContexts() / getContextsForApplication() results.
+interface ContextWithGroup extends Context {
+  groupId?: string;   // owning group, when the context belongs to one
+}
+
 interface Namespace {
   namespaceId: string;
   appKey: string;
@@ -253,4 +262,4 @@ interface BlobInfo { blobId: string; size: number }
 ```
 
 See [`admin-types.ts`](https://github.com/calimero-network/mero-js/blob/master/src/admin-api/admin-types.ts)
-for the complete set (~90 types).
+for the complete set of request and response types.
