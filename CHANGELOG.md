@@ -1,3 +1,8 @@
+## <small>7.0.5 (2026-07-24)</small>
+
+* fix(admin): SemVer 2.0 compareSemver, hardened registry fetches, forceCodeOnly passthrough (#72) ([0924ea6](https://github.com/calimero-network/mero-js/commit/0924ea6)), closes [#72](https://github.com/calimero-network/mero-js/issues/72)
+* ci: bump actions to Node 24 runtimes (#71) ([6b695fc](https://github.com/calimero-network/mero-js/commit/6b695fc)), closes [#71](https://github.com/calimero-network/mero-js/issues/71)
+
 ## <small>7.0.4 (2026-07-23)</small>
 
 * docs: fix factual bugs, add missing reference pages, close depth gaps (#70) ([fd5d5a3](https://github.com/calimero-network/mero-js/commit/fd5d5a3)), closes [#70](https://github.com/calimero-network/mero-js/issues/70)
