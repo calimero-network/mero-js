@@ -739,9 +739,15 @@ export interface UpgradeGroupRequest {
   requester?: string;
   /** Fan the upgrade out to every descendant subgroup running the same app
    *  (one atomic cascade op). Without it the upgrade applies to the target
-   *  group only — members' subgroups never learn the migration. Server
+   *  group only - members' subgroups never learn the migration. Server
    *  default: false. */
   cascade?: boolean;
+  /** Proceed code-only when the target build embeds no ABI. Core refuses such an
+   *  upgrade by default; setting this asserts the new code is layout-compatible
+   *  with the running state so the upgrade goes ahead. It never bypasses a
+   *  declared-migration or downgrade refusal. Wire name is camelCase passthrough;
+   *  older nodes ignore the unknown field. Server default: false. */
+  forceCodeOnly?: boolean;
 }
 
 export interface UpgradeGroupResponseData {
