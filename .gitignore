@@ -38,3 +38,6 @@ coverage/
 # OS files
 Thumbs.db
 data/
+
+# local agent scratch
+.superpowers/
