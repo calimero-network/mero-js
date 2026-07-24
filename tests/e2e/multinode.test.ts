@@ -6,7 +6,10 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js';
+import type { GroupMembershipEventData } from '../../src/events/group';
 import { resolveCreds, ensureApplication, runId } from './harness';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const N1 = process.env.MERO_NODE1_URL ?? 'http://localhost:4501';
 const N2 = process.env.MERO_NODE2_URL ?? 'http://localhost:4502';
@@ -59,4 +62,64 @@ suite('Multi-node E2E — namespace invite/join', () => {
     expect(joined.memberIdentity).toBeTruthy();
     expect(joined.groupId).toBeTruthy();
   });
+
+  // The real "inviter sees the member appear live" UX: the join op propagates by
+  // gossip and node-1 emits a GroupMembership event when it applies node-2's join,
+  // so we subscribe on node-1 (the inviter) and prove the event is delivered live.
+  it('node-1 receives a live GroupMembership event when node-2 joins', async () => {
+    // Fresh namespace so the subscription is active BEFORE any join happens.
+    const ns = await n1.admin.createNamespace({
+      applicationId,
+      upgradePolicy: 'Automatic',
+      alias: `mn-evt-${RUN}`,
+    });
+    const evtNamespaceId = ns.namespaceId;
+
+    const events: Array<GroupMembershipEventData> = [];
+    const collect = (ev: unknown) => {
+      if (ev && typeof ev === 'object' && 'groupId' in ev) {
+        events.push(ev as GroupMembershipEventData);
+      }
+    };
+
+    try {
+      n1.events.on('event', collect);
+      await n1.events.connect();
+      await n1.events.subscribe({ groupIds: [evtNamespaceId] });
+      // Let the SSE session + group subscription settle on the node before the join.
+      await sleep(2000);
+
+      const inv = (await n1.admin.createNamespaceInvitation(evtNamespaceId, {})) as {
+        invitation?: unknown;
+      };
+      expect(inv.invitation).toBeTruthy();
+
+      const joined = await n2.admin.joinNamespace(evtNamespaceId, {
+        invitation: inv.invitation as never,
+      });
+      expect(joined.memberIdentity).toBeTruthy();
+
+      // Poll for the delivered event; gossip propagation + apply is not instant.
+      const deadline = Date.now() + 20000;
+      let hit: GroupMembershipEventData | undefined;
+      while (Date.now() < deadline) {
+        hit = events.find((e) => e.type === 'MemberJoined');
+        if (hit) break;
+        await sleep(500);
+      }
+
+      expect(
+        hit,
+        `no MemberJoined GroupMembership event delivered on node-1; saw: ${JSON.stringify(events)}`,
+      ).toBeTruthy();
+      expect(hit!.groupId).toBeTruthy();
+      // When the payload carries the member, it must be the identity node-2 joined as.
+      if (hit!.data?.member) {
+        expect(hit!.data.member).toBe(joined.memberIdentity);
+      }
+    } finally {
+      n1.events.off('event', collect);
+      await n1.admin.deleteNamespace(evtNamespaceId).catch(() => {});
+    }
+  }, 60000);
 });
