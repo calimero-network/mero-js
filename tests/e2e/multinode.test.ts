@@ -63,10 +63,11 @@ suite('Multi-node E2E — namespace invite/join', () => {
     expect(joined.groupId).toBeTruthy();
   });
 
-  // The real "inviter sees the member appear live" UX: the join op propagates by
-  // gossip and node-1 emits a GroupMembership event when it applies node-2's join,
-  // so we subscribe on node-1 (the inviter) and prove the event is delivered live.
-  it('node-1 receives a live GroupMembership event when node-2 joins', async () => {
+  // Subscribe on the JOINER (node-2): it applies its own join locally and emits
+  // the GroupMembership event, so this proves SDK<->node event delivery without
+  // depending on the two nodes being peered (the CI nodes are not dialed together,
+  // so a cross-node gossip assertion on node-1 would never see it).
+  it('the joiner receives a live GroupMembership event for its own join', async () => {
     // Fresh namespace so the subscription is active BEFORE any join happens.
     const ns = await n1.admin.createNamespace({
       applicationId,
@@ -83,10 +84,10 @@ suite('Multi-node E2E — namespace invite/join', () => {
     };
 
     try {
-      n1.events.on('event', collect);
-      await n1.events.connect();
-      await n1.events.subscribe({ groupIds: [evtNamespaceId] });
-      // Let the SSE session + group subscription settle on the node before the join.
+      n2.events.on('event', collect);
+      await n2.events.connect();
+      await n2.events.subscribe({ groupIds: [evtNamespaceId] });
+      // Let the SSE session + group subscription settle on node-2 before it joins.
       await sleep(2000);
 
       const inv = (await n1.admin.createNamespaceInvitation(evtNamespaceId, {})) as {
@@ -110,7 +111,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
 
       expect(
         hit,
-        `no MemberJoined GroupMembership event delivered on node-1; saw: ${JSON.stringify(events)}`,
+        `no MemberJoined GroupMembership event delivered on the joiner; saw: ${JSON.stringify(events)}`,
       ).toBeTruthy();
       expect(hit!.groupId).toBeTruthy();
       // When the payload carries the member, it must be the identity node-2 joined as.
@@ -118,7 +119,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
         expect(hit!.data.member).toBe(joined.memberIdentity);
       }
     } finally {
-      n1.events.off('event', collect);
+      n2.events.off('event', collect);
       await n1.admin.deleteNamespace(evtNamespaceId).catch(() => {});
     }
   }, 60000);
