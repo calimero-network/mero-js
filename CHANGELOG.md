@@ -1,3 +1,7 @@
+## 7.1.0 (2026-07-24)
+
+* feat(events): add group-membership event support (#73) ([606dfbf](https://github.com/calimero-network/mero-js/commit/606dfbf)), closes [#73](https://github.com/calimero-network/mero-js/issues/73)
+
 ## <small>7.0.5 (2026-07-24)</small>
 
 * fix(admin): SemVer 2.0 compareSemver, hardened registry fetches, forceCodeOnly passthrough (#72) ([0924ea6](https://github.com/calimero-network/mero-js/commit/0924ea6)), closes [#72](https://github.com/calimero-network/mero-js/issues/72)
