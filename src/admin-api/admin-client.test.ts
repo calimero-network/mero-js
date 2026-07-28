@@ -125,14 +125,67 @@ describe('AdminApiClient', () => {
       }
     });
 
-    it('installFromRegistry throws on a registry error', async () => {
+    it('installFromRegistry throws on a registry error and does not retry a 4xx', async () => {
       const origFetch = globalThis.fetch;
-      globalThis.fetch = (async () =>
-        ({ ok: false, status: 404, json: async () => ({}) }) as Response) as typeof fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      }) as typeof fetch;
       try {
         await expect(
           client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
         ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+        // A 4xx is a definitive answer — no retry.
+        expect(calls).toBe(1);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions retries a 5xx then succeeds', async () => {
+      const origFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        if (calls === 1) {
+          return { ok: false, status: 503, json: async () => ({}) } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [{ package: 'com.acme.app', appVersion: '1.0.0' }],
+        } as Response;
+      }) as typeof fetch;
+      try {
+        const versions = await client.getRegistryVersions(
+          'https://registry.example.com',
+          'com.acme.app',
+        );
+        expect(versions).toEqual(['1.0.0']);
+        expect(calls).toBe(2);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    it('getRegistryVersions passes an abort signal and surfaces a timeout', async () => {
+      const origFetch = globalThis.fetch;
+      let calls = 0;
+      let sawSignal = false;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls++;
+        sawSignal = init?.signal instanceof AbortSignal;
+        // A per-attempt timeout aborts the fetch with a TimeoutError; simulate it.
+        throw new DOMException('The operation timed out', 'TimeoutError');
+      }) as typeof fetch;
+      try {
+        await expect(
+          client.getRegistryVersions('https://registry.example.com', 'com.acme.app'),
+        ).rejects.toThrow(/timed out/i);
+        expect(sawSignal).toBe(true);
+        // A timeout is transient — retried up to the 3-attempt ceiling.
+        expect(calls).toBe(3);
       } finally {
         globalThis.fetch = origFetch;
       }
@@ -837,19 +890,12 @@ describe('AdminApiClient', () => {
     });
 
     it('getGroupMetadata returns the inner MetadataRecord', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: { data: record } });
+      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: record });
       expect(await client.getGroupMetadata('g1')).toEqual(record);
     });
 
+    // No metadata row: core returns a single-enveloped null (`{ data: null }`).
     it('getGroupMetadata returns null when no metadata has been set', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: { data: null } });
-      expect(await client.getGroupMetadata('g1')).toBeNull();
-    });
-
-    // Server omits the inner envelope entirely (`{ data: null }`) when no
-    // metadata row exists — the unwrapped payload is then null, so reading
-    // `.data` off it used to throw "Cannot read properties of null".
-    it('getGroupMetadata returns null (not throws) when the payload itself is null', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g1/metadata', { data: null });
       expect(await client.getGroupMetadata('g1')).toBeNull();
     });
@@ -867,7 +913,7 @@ describe('AdminApiClient', () => {
     });
 
     it('getMemberMetadata returns the inner MetadataRecord', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: { data: record } });
+      mock.setMockResponse('GET', '/admin-api/groups/g1/members/pk-1/metadata', { data: record });
       expect(await client.getMemberMetadata('g1', 'pk-1')).toEqual(record);
     });
 
@@ -892,7 +938,7 @@ describe('AdminApiClient', () => {
     });
 
     it('getContextMetadata returns the inner MetadataRecord', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: { data: record } });
+      mock.setMockResponse('GET', '/admin-api/groups/g1/contexts/ctx-1/metadata', { data: record });
       expect(await client.getContextMetadata('g1', 'ctx-1')).toEqual(record);
     });
 
@@ -949,6 +995,21 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
         targetApplicationId: 'app-2',
         cascade: true,
+      });
+    });
+
+    it('upgradeGroup forwards forceCodeOnly for an ABI-less code-only upgrade', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+      });
+      await client.upgradeGroup('g-1', {
+        targetApplicationId: 'app-2',
+        forceCodeOnly: true,
+      });
+      // camelCase passthrough — the field reaches the wire body verbatim.
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        forceCodeOnly: true,
       });
     });
 
@@ -1212,5 +1273,41 @@ describe('compareSemver', () => {
   it('treats equal and zero-padded versions as equal', () => {
     expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
     expect(compareSemver('1.2', '1.2.0')).toBe(0);
+  });
+
+  it('ranks a pre-release below its release', () => {
+    expect(compareSemver('1.0.0-rc.1', '1.0.0')).toBeLessThan(0);
+    expect(compareSemver('1.0.0', '1.0.0-rc.1')).toBeGreaterThan(0);
+    // Core ships versions like 0.11.0-rc.17 — these must sort below 0.11.0.
+    expect(compareSemver('0.11.0-rc.17', '0.11.0')).toBeLessThan(0);
+  });
+
+  it('orders the SemVer 2.0 pre-release precedence chain', () => {
+    const chain = [
+      '1.0.0-alpha',
+      '1.0.0-alpha.1',
+      '1.0.0-alpha.beta',
+      '1.0.0-beta',
+      '1.0.0-beta.2',
+      '1.0.0-beta.11',
+      '1.0.0-rc.1',
+      '1.0.0',
+    ];
+    for (let i = 0; i < chain.length - 1; i++) {
+      expect(compareSemver(chain[i], chain[i + 1])).toBeLessThan(0);
+      expect(compareSemver(chain[i + 1], chain[i])).toBeGreaterThan(0);
+    }
+  });
+
+  it('ignores build metadata for precedence', () => {
+    expect(compareSemver('1.0.0+build', '1.0.0')).toBe(0);
+    expect(compareSemver('1.0.0+build.1', '1.0.0+build.2')).toBe(0);
+    expect(compareSemver('1.0.0-rc.1+build', '1.0.0-rc.1')).toBe(0);
+  });
+
+  it('does not throw on loose/malformed input', () => {
+    expect(() => compareSemver('latest', '1.0.0')).not.toThrow();
+    expect(() => compareSemver('', '')).not.toThrow();
+    expect(compareSemver('', '')).toBe(0);
   });
 });

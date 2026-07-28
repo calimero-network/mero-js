@@ -49,12 +49,32 @@ export function resolveBaseUrl(): string {
   );
 }
 
-/** Credentials for the e2e suite, overridable via env (default dev/dev). */
+/**
+ * Credentials for the e2e suite, overridable via env. The default password is
+ * 8+ chars because core >= 0.11.0-rc.14 enforces a minimum password length
+ * when the account is created (core#3081).
+ */
 export function resolveCreds(): { username: string; password: string } {
   return {
     username: process.env.MERO_E2E_USER || 'dev',
-    password: process.env.MERO_E2E_PASS || 'dev',
+    password: process.env.MERO_E2E_PASS || 'dev-password',
   };
+}
+
+/**
+ * Admin account provisioning for fresh nodes (core >= 0.11.0-rc.17). The
+ * bootstrap secret is gone: a node now mints its admin root key at startup from
+ * MERO_AUTH_ADMIN_USER/MERO_AUTH_ADMIN_PASSWORD when it has no account yet
+ * (provision-if-unbootstrapped). When the harness spawns the node itself,
+ * default these to the e2e credentials so the fresh node provisions exactly the
+ * account authenticate() will log in with. When attaching to an injected node
+ * (NODE_BASE_URL), the caller controls provisioning and no default is forced.
+ */
+export function ensureAdminCredsEnv(): void {
+  if (usingInjectedNode()) return;
+  const { username, password } = resolveCreds();
+  process.env.MERO_AUTH_ADMIN_USER ??= username;
+  process.env.MERO_AUTH_ADMIN_PASSWORD ??= password;
 }
 
 /** True when an external node is already running and the suite must not spawn one. */
@@ -78,6 +98,10 @@ export async function startNode(opts?: { waitMs?: number }): Promise<StartedNode
   if (usingInjectedNode()) {
     return { baseUrl, stop: async () => {} };
   }
+
+  // Spawned nodes inherit this env; a fresh rc.17 node mints its admin from it
+  // at startup, so the first authenticate() with the same creds succeeds.
+  ensureAdminCredsEnv();
 
   const { spawn } = await import('child_process');
   const merodBinary = process.env.MEROD_BINARY;

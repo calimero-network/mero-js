@@ -1,3 +1,7 @@
+import type { GroupMembershipEventData } from './group';
+
+export type { GroupMembershipEventData };
+
 export interface SseEventData {
   contextId: string;
   /** The context-event discriminator (core serializes it as a sibling of
@@ -13,7 +17,7 @@ export interface AppVersionChangedEvent {
   toVersion?: string;
 }
 
-type SseEventHandler = (event: SseEventData) => void;
+type SseEventHandler = (event: SseEventData | GroupMembershipEventData) => void;
 type SseConnectHandler = (sessionId: string) => void;
 type SseErrorHandler = (error: Error) => void;
 
@@ -33,6 +37,7 @@ export class SseClient {
   private abortController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribedContextIds: Set<string> = new Set();
+  private subscribedGroupIds: Set<string> = new Set();
   private closed = false;
   private listeners: SseListeners = { connect: [], event: [], error: [] };
 
@@ -89,9 +94,9 @@ export class SseClient {
   }
 
   private emit(event: 'connect', sessionId: string): void;
-  private emit(event: 'event', data: SseEventData): void;
+  private emit(event: 'event', data: SseEventData | GroupMembershipEventData): void;
   private emit(event: 'error', error: Error): void;
-  private emit(event: string, arg?: string | SseEventData | Error): void {
+  private emit(event: string, arg?: string | SseEventData | GroupMembershipEventData | Error): void {
     const key = event as keyof SseListeners;
     if (key in this.listeners) {
       for (const handler of this.listeners[key]) {
@@ -124,7 +129,7 @@ export class SseClient {
       });
 
       if (!response.ok) {
-        // Auth failures won't fix themselves on retry — stop reconnecting.
+        // Auth failures won't fix themselves on retry - stop reconnecting.
         if (response.status === 401 || response.status === 403) {
           this.closed = true;
           this.emit('error', new Error(`SSE auth failed: ${response.status}`));
@@ -137,7 +142,7 @@ export class SseClient {
         throw new Error('SSE response has no body');
       }
 
-      // Healthy connection — reset backoff.
+      // Healthy connection - reset backoff.
       this.reconnectAttempt = 0;
 
       this.readStream(response.body).catch((err) => {
@@ -208,30 +213,45 @@ export class SseClient {
         this.sessionId = msg.session_id;
         this.emit('connect', msg.session_id);
         // Re-subscribe after reconnect
-        if (this.subscribedContextIds.size > 0) {
-          this.sendSubscription('subscribe', [...this.subscribedContextIds]);
+        if (this.subscribedContextIds.size > 0 || this.subscribedGroupIds.size > 0) {
+          this.sendSubscription('subscribe', {
+            contextIds: [...this.subscribedContextIds],
+            groupIds: [...this.subscribedGroupIds],
+          });
         }
         return;
       }
 
-      // Context event message
-      if (msg.result && msg.result.contextId) {
-        let eventData = msg.result.data;
-        // Decode byte-array data if needed
-        if (Array.isArray(eventData)) {
-          try {
-            const bytes = new Uint8Array(eventData);
-            const text = new TextDecoder().decode(bytes);
-            eventData = JSON.parse(text);
-          } catch {
-            // Keep raw data
-          }
-        }
+      if (!msg.result) return;
 
+      let eventData = msg.result.data;
+      // Decode byte-array data if needed
+      if (Array.isArray(eventData)) {
+        try {
+          const bytes = new Uint8Array(eventData);
+          const text = new TextDecoder().decode(bytes);
+          eventData = JSON.parse(text);
+        } catch {
+          // Keep raw data
+        }
+      }
+
+      // Context event message
+      if (msg.result.contextId) {
         this.emit('event', {
           contextId: msg.result.contextId,
           // Forward the event tag (sibling of `data` in core's flattened
           // payload) so typed helpers like `onAppVersionChanged` can discriminate.
+          type: msg.result.type,
+          data: eventData,
+        });
+        return;
+      }
+
+      // Group-membership event message (untagged NodeEvent's group variant)
+      if (msg.result.groupId) {
+        this.emit('event', {
+          groupId: msg.result.groupId,
           type: msg.result.type,
           data: eventData,
         });
@@ -241,29 +261,45 @@ export class SseClient {
     }
   }
 
-  async subscribe(contextIds: string[]): Promise<void> {
-    const newIds = contextIds.filter(id => !this.subscribedContextIds.has(id));
-    for (const id of contextIds) {
+  async subscribe(idsOrOpts: string[] | { contextIds?: string[]; groupIds?: string[] }): Promise<void> {
+    const opts = Array.isArray(idsOrOpts) ? { contextIds: idsOrOpts } : idsOrOpts;
+    const newContextIds = (opts.contextIds ?? []).filter(id => !this.subscribedContextIds.has(id));
+    const newGroupIds = (opts.groupIds ?? []).filter(id => !this.subscribedGroupIds.has(id));
+    for (const id of opts.contextIds ?? []) {
       this.subscribedContextIds.add(id);
     }
-    if (newIds.length > 0 && this.sessionId) {
-      await this.sendSubscription('subscribe', newIds);
+    for (const id of opts.groupIds ?? []) {
+      this.subscribedGroupIds.add(id);
+    }
+    if ((newContextIds.length > 0 || newGroupIds.length > 0) && this.sessionId) {
+      await this.sendSubscription('subscribe', { contextIds: newContextIds, groupIds: newGroupIds });
     }
   }
 
-  async unsubscribe(contextIds: string[]): Promise<void> {
-    const hadIds = contextIds.filter(id => this.subscribedContextIds.has(id));
-    for (const id of contextIds) {
+  async unsubscribe(idsOrOpts: string[] | { contextIds?: string[]; groupIds?: string[] }): Promise<void> {
+    const opts = Array.isArray(idsOrOpts) ? { contextIds: idsOrOpts } : idsOrOpts;
+    const hadContextIds = (opts.contextIds ?? []).filter(id => this.subscribedContextIds.has(id));
+    const hadGroupIds = (opts.groupIds ?? []).filter(id => this.subscribedGroupIds.has(id));
+    for (const id of opts.contextIds ?? []) {
       this.subscribedContextIds.delete(id);
     }
-    if (hadIds.length > 0 && this.sessionId) {
-      await this.sendSubscription('unsubscribe', hadIds);
+    for (const id of opts.groupIds ?? []) {
+      this.subscribedGroupIds.delete(id);
+    }
+    if ((hadContextIds.length > 0 || hadGroupIds.length > 0) && this.sessionId) {
+      await this.sendSubscription('unsubscribe', { contextIds: hadContextIds, groupIds: hadGroupIds });
     }
   }
 
-  private async sendSubscription(method: 'subscribe' | 'unsubscribe', contextIds: string[]): Promise<void> {
+  private async sendSubscription(
+    method: 'subscribe' | 'unsubscribe',
+    ids: { contextIds?: string[]; groupIds?: string[] },
+  ): Promise<void> {
     try {
       const token = await this.getAuthToken();
+      const params: { contextIds?: string[]; groupIds?: string[] } = {};
+      if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
+      if (ids.groupIds && ids.groupIds.length > 0) params.groupIds = ids.groupIds;
       const response = await fetch(`${this.baseUrl}/sse/subscription`, {
         method: 'POST',
         headers: {
@@ -273,7 +309,7 @@ export class SseClient {
         body: JSON.stringify({
           id: this.sessionId,
           method,
-          params: { contextIds },
+          params,
         }),
       });
       if (!response.ok) {
@@ -299,9 +335,9 @@ export class SseClient {
       clearTimeout(this.reconnectTimer);
     }
     // Exponential backoff capped at MAX_BACKOFF_MS, with half-jitter so a fleet
-    // of clients doesn't reconnect in lockstep. ponytail: no hard attempt cap —
-    // backoff already throttles, and a permanent stop on a transient outage is
-    // worse for a long-lived stream than retrying slowly.
+    // of clients doesn't reconnect in lockstep. No hard attempt cap: backoff
+    // already throttles, and a permanent stop on a transient outage is worse
+    // for a long-lived stream than retrying slowly.
     const capped = Math.min(
       this.reconnectDelayMs * 2 ** this.reconnectAttempt,
       SseClient.MAX_BACKOFF_MS,
@@ -326,5 +362,6 @@ export class SseClient {
     }
     this.sessionId = null;
     this.subscribedContextIds.clear();
+    this.subscribedGroupIds.clear();
   }
 }

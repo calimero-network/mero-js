@@ -17,15 +17,23 @@ permissions:
 
 env:
   NODE_VERSION: '20'
+  # core >= 0.11.0-rc.17 removed the first-login bootstrap secret: a node mints
+  # its admin root key at `merod init` (or at startup when unbootstrapped) from
+  # these env vars, and enforces an 8-char minimum password at creation
+  # (core#3081). The `merod init` steps below inherit this env, so the admin
+  # account exists before the node listens, and the e2e login (same creds, via
+  # MERO_E2E_USER/PASS) signs straight in. CI-only values for ephemeral nodes.
+  MERO_AUTH_ADMIN_USER: dev
+  MERO_AUTH_ADMIN_PASSWORD: dev-password
 
 jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -41,9 +49,9 @@ jobs:
     needs: build-and-test
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -80,7 +88,7 @@ jobs:
         env:
           NODE_URL: http://localhost:4001
           MERO_E2E_USER: dev
-          MERO_E2E_PASS: dev
+          MERO_E2E_PASS: dev-password
           NO_COLOR: '1'
         run: |
           set -o pipefail
@@ -109,9 +117,9 @@ jobs:
     needs: build-and-test
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -149,7 +157,7 @@ jobs:
           MERO_NODE1_URL: http://localhost:4501
           MERO_NODE2_URL: http://localhost:4502
           MERO_E2E_USER: dev
-          MERO_E2E_PASS: dev
+          MERO_E2E_PASS: dev-password
           NO_COLOR: '1'
         run: |
           set -o pipefail

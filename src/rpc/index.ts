@@ -95,7 +95,7 @@ export class RpcClient {
         contextId: params.contextId,
         method: params.method,
         argsJson: params.argsJson ?? {},
-        // Omit when unused — core defaults `substitute` to an empty list.
+        // Omit when unused - core defaults `substitute` to an empty list.
         ...(params.substitute ? { substitute: params.substitute } : {}),
       },
     };
@@ -136,7 +136,7 @@ export class RpcClient {
 
   /**
    * Query a context's state-sync status. Lets a client that hit `Uninitialized`
-   * on `execute` tell whether sync is running, waiting for a peer, or wedged —
+   * on `execute` tell whether sync is running, waiting for a peer, or wedged -
    * instead of guessing from one opaque error.
    */
   async syncStatus(contextId: string): Promise<SyncStatus> {

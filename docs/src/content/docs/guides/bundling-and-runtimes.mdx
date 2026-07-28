@@ -1,0 +1,100 @@
+---
+title: Bundling & runtimes
+description: How the package ships (ESM, CJS, and a browser build), how it tree-shakes, which runtimes support which features, and the browser-only gotchas (CORS, SSR).
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Mero.js is a zero-dependency package built on Web Platform APIs. This guide
+covers how it's packaged, which runtimes support which features, and the
+browser-specific concerns (CORS, SSR).
+
+## Module formats
+
+The package is `"type": "module"` and ships three builds, selected automatically
+through its `exports` map:
+
+| Condition | File | Format |
+| --- | --- | --- |
+| `import` (bundlers, Node ESM) | `dist/index.mjs` | ESM |
+| `require` (Node CommonJS) | `dist/index.cjs` | CommonJS |
+| `browser` (bundler browser target) | `dist/index.browser.mjs` | ESM, minified |
+| `types` | `dist/index.d.ts` | TypeScript declarations |
+
+```typescript
+// ESM / TypeScript
+import { createMeroJs } from '@calimero-network/mero-js';
+```
+
+```javascript
+// CommonJS
+const { createMeroJs } = require('@calimero-network/mero-js');
+```
+
+The package sets `"sideEffects": false`, so a modern bundler (esbuild, Rollup,
+Vite, webpack) tree-shakes away everything you don't import — pull in just
+`createMeroJs`, or only a helper like `withRetry`, and the rest is dropped.
+
+## Runtime support
+
+The HTTP and SSE surfaces run on every modern runtime. The WebSocket client and
+the browser-only helpers have narrower support:
+
+| Feature | Browser | Node 18–21 | Node 22+ | Deno / Bun | Edge workers |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| `sdk.admin` / `sdk.auth` / `sdk.rpc` (fetch) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `sdk.events` (SSE, fetch streaming) | ✅ | ✅ | ✅ | ✅ | ⚠️¹ |
+| `sdk.ws` (needs global `WebSocket`) | ✅ | ❌² | ✅ | ✅ | ⚠️¹ |
+| `LocalStorageTokenStore` | ✅ | ❌³ | ❌³ | ❌³ | ❌³ |
+| `CloudClient` (`window.open`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+1. Edge runtimes restrict long-lived `fetch` streams and outbound `WebSocket`;
+   check your platform's limits before relying on live event streams there.
+2. Node gained a global `WebSocket` in v22. On 18–21, `sdk.ws` throws unless you
+   install a `WebSocket` polyfill onto `globalThis`. Prefer `sdk.events` (SSE)
+   server-side.
+3. Falls back to a no-op / `null` off the browser (it guards `typeof
+   localStorage`). Use `MemoryTokenStore`, or a custom
+   [`TokenStore`](/reference/mero-js/#tokenstore), on the server.
+
+<Aside type="note">
+  For Node before v18 (no native `fetch`), pass a `fetch` implementation such as
+  `undici` to the low-level client — see
+  [Node.js and custom fetch](/guides/http-transport/#nodejs-and-custom-fetch).
+</Aside>
+
+## CORS (browser → node)
+
+A browser app calling a `merod` node on a different origin is a cross-origin
+request, so the **node** must return the appropriate CORS headers
+(`Access-Control-Allow-Origin`, and for preflight `Access-Control-Allow-Methods`
+/ `-Headers`). Because the SDK authenticates with an `Authorization: Bearer`
+header, requests are non-simple and the browser sends a preflight `OPTIONS` the
+node must answer. A CORS rejection surfaces as an
+[`HTTPError` with `status: 0`](/reference/error-model/#httperror) (the browser
+hides the details from JavaScript). Only set `requestCredentials: 'include'` if
+the node authenticates with **cookies** — with bearer tokens you don't need it.
+
+## SSR / server rendering
+
+A few APIs touch browser globals and must be guarded (or only called client-side)
+in Next.js / Remix / SvelteKit:
+
+- `LocalStorageTokenStore` — safe to construct anywhere (returns `null` on the
+  server), but it only persists in the browser.
+- `MeroJs.parseAuthCallback()` / `parseAuthCallback()` — read `window.location`
+  and call `history.replaceState`; browser-only.
+- `CloudClient.enableHA` / `disableHA` — call `window.open`; browser-only.
+
+Everything else (`sdk.admin`, `sdk.auth`, `sdk.rpc`, `sdk.events`) works on the
+server. For a server-only `MeroJs`, pass a `MemoryTokenStore` (or your own store)
+and drive `baseUrl`/credentials from environment variables.
+
+<Aside type="note">
+  Not using React? React bindings live in the separate
+  [`@calimero-network/mero-react`](https://github.com/calimero-network/mero-react)
+  package; this SDK is framework-agnostic and works from vanilla JS, Vue, Svelte,
+  or a plain Node service.
+</Aside>

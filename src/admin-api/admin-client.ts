@@ -1,4 +1,4 @@
-import { HttpClient } from '../http-client';
+import { HttpClient, withRetry } from '../http-client';
 import type {
   HealthStatus,
   AdminAuthStatus,
@@ -118,28 +118,94 @@ function unwrap<T>(response: { data: T }): T {
 }
 
 /**
- * Compare two dotted version strings, ascending: negative if `a < b`, positive
- * if `a > b`, `0` if equal. Components are compared numerically when both parse
- * as integers (so `1.10.0 > 1.9.0`), else lexically; a missing component is `0`.
- * Minimal by design — sufficient for the `major.minor.patch` registry versions.
+ * Compare two version strings by SemVer 2.0 precedence, ascending: negative if
+ * `a < b`, positive if `a > b`, `0` if equal. Build metadata (`+...`) is stripped
+ * and ignored. The numeric `major.minor.patch` core is compared field-by-field
+ * (numerically when both parse, so `1.10.0 > 1.9.0`; a missing field is `0`). A
+ * version WITH a pre-release ranks below the same core without one, and
+ * pre-release identifiers compare per spec: dot-separated, numeric identifiers
+ * numerically, alphanumeric lexically by ASCII, numeric below alphanumeric, and a
+ * shorter set of identifiers loses when all preceding fields are equal.
  */
 export function compareSemver(a: string, b: string): number {
-  const pa = a.split('.');
-  const pb = b.split('.');
-  const n = Math.max(pa.length, pb.length);
+  const [coreA, preA] = splitVersion(a);
+  const [coreB, preB] = splitVersion(b);
+
+  const na = coreA.split('.');
+  const nb = coreB.split('.');
+  const n = Math.max(na.length, nb.length);
   for (let i = 0; i < n; i++) {
-    const sa = pa[i] ?? '0';
-    const sb = pb[i] ?? '0';
-    const na = Number.parseInt(sa, 10);
-    const nb = Number.parseInt(sb, 10);
-    if (Number.isNaN(na) || Number.isNaN(nb)) {
-      const c = sa.localeCompare(sb);
-      if (c !== 0) return c;
-    } else if (na !== nb) {
-      return na - nb;
-    }
+    const c = compareSemverId(na[i] ?? '0', nb[i] ?? '0');
+    if (c !== 0) return c;
+  }
+
+  // A pre-release ranks below the same core version with no pre-release.
+  if (preA === undefined && preB === undefined) return 0;
+  if (preA === undefined) return 1;
+  if (preB === undefined) return -1;
+
+  const pa = preA.split('.');
+  const pb = preB.split('.');
+  const m = Math.max(pa.length, pb.length);
+  for (let i = 0; i < m; i++) {
+    if (i >= pa.length) return -1; // shorter set loses when all preceding equal
+    if (i >= pb.length) return 1;
+    const c = compareSemverId(pa[i], pb[i]);
+    if (c !== 0) return c;
   }
   return 0;
+}
+
+/** Drop build metadata and split the pre-release tail: `1.2.3-rc.1+b` -> `['1.2.3', 'rc.1']`. */
+function splitVersion(v: string): [string, string | undefined] {
+  const core = v.split('+', 1)[0];
+  const dash = core.indexOf('-');
+  return dash === -1 ? [core, undefined] : [core.slice(0, dash), core.slice(dash + 1)];
+}
+
+/**
+ * Compare one identifier: numerically when both are all-digits, else lexically by
+ * ASCII with a numeric identifier ranking below an alphanumeric one. Fallback: a
+ * non-numeric core component (loose/malformed input) is treated as a string, so
+ * comparison never throws.
+ */
+function compareSemverId(a: string, b: string): number {
+  const na = /^\d+$/.test(a);
+  const nb = /^\d+$/.test(b);
+  if (na && nb) {
+    const d = Number(a) - Number(b);
+    return d < 0 ? -1 : d > 0 ? 1 : 0;
+  }
+  if (na) return -1;
+  if (nb) return 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Fetch a URL from the (foreign-origin) registry with a per-attempt timeout and
+ * retry on transient failures. Deliberately NOT routed through the node
+ * `HttpClient`: that client attaches the node's bearer token to every request,
+ * which must never leak to the registry's origin. Each attempt times out after
+ * ~10s; network errors and 5xx are retried (2 retries, short backoff via the
+ * shared `withRetry`), while a 4xx is a definitive answer and is not retried.
+ * `kind`/`context` shape the error message so failures stay debuggable in logs.
+ */
+async function fetchRegistry(url: string, kind: string, context: string): Promise<Response> {
+  return withRetry(
+    async () => {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) {
+        // Carry `status` so withRetry retries 5xx but leaves 4xx to throw.
+        const err = new Error(
+          `registry ${kind} fetch failed (${resp.status}) for ${context}`,
+        ) as Error & { status: number };
+        err.status = resp.status;
+        throw err;
+      }
+      return resp;
+    },
+    { attempts: 3 },
+  );
 }
 
 export class AdminApiClient {
@@ -179,12 +245,7 @@ export class AdminApiClient {
       `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
       base,
     ).toString();
-    const resp = await fetch(manifestUrl);
-    if (!resp.ok) {
-      throw new Error(
-        `registry manifest fetch failed (${resp.status}) for ${packageName}@${version}`,
-      );
-    }
+    const resp = await fetchRegistry(manifestUrl, 'manifest', `${packageName}@${version}`);
     const bundle = (await resp.json()) as RegistryBundleManifest;
     // Encode the path segments — the package/version come from a (best-effort
     // trusted) registry response, so guard against odd characters breaking or
@@ -211,12 +272,7 @@ export class AdminApiClient {
   async getRegistryVersions(registryUrl: string, packageName: string): Promise<string[]> {
     const url = new URL('/api/v2/bundles', new URL(registryUrl).origin);
     url.searchParams.set('package', packageName);
-    const resp = await fetch(url.toString());
-    if (!resp.ok) {
-      throw new Error(
-        `registry versions fetch failed (${resp.status}) for ${packageName}`,
-      );
-    }
+    const resp = await fetchRegistry(url.toString(), 'versions', packageName);
     const bundles = (await resp.json()) as RegistryBundleManifest[];
     return (Array.isArray(bundles) ? bundles : [])
       .map((b) => b.appVersion)
@@ -797,14 +853,14 @@ export class AdminApiClient {
   }
 
   async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
-    // The "no record yet" wire shape varies across server versions:
-    // `{data:{data:null}}`, `{data:null}`, and a bare `null` body have all
-    // been observed. Optional-chain the whole path so every flavour collapses
-    // to a clean `null`.
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Core single-envelopes the record: `{ data: MetadataRecord | null }`.
+    // "No record yet" is `{ data: null }` (or a bare null body on older nodes),
+    // so optional-chain to a clean null. Returns the full record (name + data +
+    // updatedAt/updatedBy), not just the data map.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async setMemberMetadata(
@@ -816,11 +872,11 @@ export class AdminApiClient {
   }
 
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
-    // Tolerates every observed "no record yet" shape (see getGroupMetadata).
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Single-enveloped record; see getGroupMetadata.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/members/${identity}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async setContextMetadata(
@@ -832,11 +888,11 @@ export class AdminApiClient {
   }
 
   async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
-    // Tolerates every observed "no record yet" shape (see getGroupMetadata).
-    const response = await this.httpClient.get<{ data: GetMetadataResponseData | null } | null>(
+    // Single-enveloped record; see getGroupMetadata.
+    const response = await this.httpClient.get<GetMetadataResponseData | null>(
       `/admin-api/groups/${groupId}/contexts/${contextId}/metadata`,
     );
-    return response?.data?.data ?? null;
+    return response?.data ?? null;
   }
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {

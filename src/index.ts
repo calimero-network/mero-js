@@ -29,7 +29,7 @@ export type { ExecuteParams, SyncState, SyncStatus } from './rpc';
 
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from './events';
-export type { SseEventData, WsEventData, AppVersionChangedEvent } from './events';
+export type { SseEventData, WsEventData, AppVersionChangedEvent, GroupMembershipEventData } from './events';
 
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud';

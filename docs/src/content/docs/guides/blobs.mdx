@@ -1,0 +1,66 @@
+---
+title: Blobs
+description: Upload, list, download, inspect, and delete binary blobs on a node through the admin API.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A **blob** is an opaque binary object stored on the node — an application bundle,
+or arbitrary app data. `sdk.admin` covers the full lifecycle.
+
+## Upload
+
+Pass raw bytes (`Uint8Array`, `ArrayBuffer`, or `Blob`). Optionally scope the
+blob to a context and supply an integrity hash:
+
+```typescript
+const bytes = new Uint8Array(await file.arrayBuffer());
+
+const { blobId } = await sdk.admin.uploadBlob({
+  data: bytes,
+  hash: '…',          // optional
+  contextId: 'ctx-id', // optional — scope to a context
+});
+```
+
+The body is sent as `application/octet-stream` to `PUT /admin-api/blobs`.
+
+## List
+
+```typescript
+const { blobs } = await sdk.admin.listBlobs();
+// blobs: { blobId, size }[]
+```
+
+## Inspect without downloading
+
+`getBlobInfo` issues a `HEAD` request — it reads size, hash, and MIME type from
+the response headers without transferring the body:
+
+```typescript
+const info = await sdk.admin.getBlobInfo(blobId);
+// { blobId, size, hash?, mimeType? }
+```
+
+## Download
+
+`getBlob` returns the **raw bytes** as an `ArrayBuffer` — the endpoint streams
+the blob content (e.g. `application/gzip`), not JSON.
+
+```typescript
+const buffer = await sdk.admin.getBlob(blobId); // ArrayBuffer
+const view = new Uint8Array(buffer);
+```
+
+<Aside type="tip">
+  Use `listBlobs()` / `getBlobInfo()` when you only need the `{ blobId, size }`
+  metadata — reserve `getBlob()` for when you actually need the bytes.
+</Aside>
+
+## Delete
+
+```typescript
+const { blobId: deletedId, deleted } = await sdk.admin.deleteBlob(blobId);
+```

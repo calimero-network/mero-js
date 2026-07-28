@@ -1,0 +1,100 @@
+---
+title: Events (SSE / WebSocket)
+description: sdk.events (SseClient) and sdk.ws (WsClient) — stream real-time context events, subscribe to contexts, and handle reconnection.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The SDK streams a node's real-time context events two ways. `sdk.events`
+(`SseClient`) is the default, built on `fetch` streaming; `sdk.ws` (`WsClient`)
+is an experimental WebSocket alternative with the same event shape. Both are
+lazily created on first access and torn down by `sdk.close()`.
+
+See the [subscriptions guide](/guides/subscriptions/) for task-oriented usage.
+
+## Event shape
+
+Both clients emit the same event object:
+
+```typescript
+interface SseEventData {   // WsEventData is identical
+  contextId: string;
+  type?: string;   // event discriminator, e.g. 'AppVersionChanged' (may be absent)
+  data: unknown;   // the event payload
+}
+```
+
+## `SseClient` (`sdk.events`)
+
+```typescript
+class SseClient {
+  constructor(opts: {
+    baseUrl: string;
+    getAuthToken: () => Promise<string>;
+    reconnectDelayMs?: number;   // default 3000
+  });
+
+  on(event: 'connect', handler: (sessionId: string) => void): void;
+  on(event: 'event', handler: (e: SseEventData) => void): void;
+  on(event: 'error', handler: (err: Error) => void): void;
+  off(event, handler): void;
+
+  connect(): Promise<void>;
+  subscribe(contextIds: string[]): Promise<void>;
+  unsubscribe(contextIds: string[]): Promise<void>;
+  close(): void;
+
+  // Typed convenience: fires only on 'AppVersionChanged'. Returns an
+  // unsubscribe function.
+  onAppVersionChanged(handler: (e: AppVersionChangedEvent) => void): () => void;
+}
+
+interface AppVersionChangedEvent {
+  contextId: string;
+  fromVersion?: string;
+  toVersion?: string;
+}
+```
+
+`connect()` and `subscribe()` are async. On a dropped connection the client
+reconnects automatically after `reconnectDelayMs` (default 3s) and re-subscribes.
+
+```typescript
+sdk.events.on('event', (e) => console.log(e.contextId, e.type, e.data));
+await sdk.events.connect();
+await sdk.events.subscribe([contextId]);
+// later
+sdk.close();
+```
+
+## `WsClient` (`sdk.ws`)
+
+Same surface as `SseClient` with two differences: `subscribe`/`unsubscribe` are
+**synchronous** (they queue over the socket), and reconnection uses exponential
+backoff capped at 30s. `WsClient` does **not** provide `onAppVersionChanged` —
+filter on `type === 'AppVersionChanged'` in an `on('event', …)` handler instead.
+
+```typescript
+class WsClient {
+  constructor(opts: { baseUrl: string; getAuthToken: () => Promise<string> });
+
+  on(event: 'connect', handler: () => void): void;
+  on(event: 'event', handler: (e: WsEventData) => void): void;
+  on(event: 'error', handler: (err: Error) => void): void;
+  off(event, handler): void;
+
+  connect(): Promise<void>;
+  subscribe(contextIds: string[]): void;
+  unsubscribe(contextIds: string[]): void;
+  close(): void;
+}
+```
+
+<Aside type="caution">
+  `sdk.ws` requires a global `WebSocket`. Browsers and Node 22+ have one; on
+  Node 18–21 it is absent unless you supply a polyfill. Prefer `sdk.events`
+  (SSE) for server-side use — see the
+  [runtime matrix](/guides/bundling-and-runtimes/#runtime-support).
+</Aside>

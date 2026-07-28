@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "6.1.0",
+  "version": "7.1.1",
   "description": "Pure JavaScript SDK for Calimero",
   "type": "module",
   "exports": {
@@ -16,7 +16,6 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
-  "dependencies": {},
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.0",
@@ -25,10 +24,10 @@
     "@semantic-release/github": "^9.2.6",
     "@semantic-release/npm": "^12.0.1",
     "@semantic-release/release-notes-generator": "^12.1.0",
-    "conventional-changelog-conventionalcommits": "^7.0.0",
     "@types/node": "^18.19.34",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
+    "conventional-changelog-conventionalcommits": "^7.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^8.57.0",
     "rimraf": "^3.0.0",

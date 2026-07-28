@@ -1,3 +1,46 @@
+## <small>7.1.1 (2026-07-28)</small>
+
+* fix(e2e): give the kv-store fixture real artifact hashes (#75) ([cd460a4](https://github.com/calimero-network/mero-js/commit/cd460a4)), closes [#75](https://github.com/calimero-network/mero-js/issues/75)
+
+## 7.1.0 (2026-07-24)
+
+* feat(events): add group-membership event support (#73) ([606dfbf](https://github.com/calimero-network/mero-js/commit/606dfbf)), closes [#73](https://github.com/calimero-network/mero-js/issues/73)
+
+## <small>7.0.5 (2026-07-24)</small>
+
+* fix(admin): SemVer 2.0 compareSemver, hardened registry fetches, forceCodeOnly passthrough (#72) ([0924ea6](https://github.com/calimero-network/mero-js/commit/0924ea6)), closes [#72](https://github.com/calimero-network/mero-js/issues/72)
+* ci: bump actions to Node 24 runtimes (#71) ([6b695fc](https://github.com/calimero-network/mero-js/commit/6b695fc)), closes [#71](https://github.com/calimero-network/mero-js/issues/71)
+
+## <small>7.0.4 (2026-07-23)</small>
+
+* docs: fix factual bugs, add missing reference pages, close depth gaps (#70) ([fd5d5a3](https://github.com/calimero-network/mero-js/commit/fd5d5a3)), closes [#70](https://github.com/calimero-network/mero-js/issues/70)
+
+## <small>7.0.3 (2026-07-22)</small>
+
+* docs: migrate to Astro Starlight docs site with animated diagrams (#69) ([8d2bf86](https://github.com/calimero-network/mero-js/commit/8d2bf86)), closes [#69](https://github.com/calimero-network/mero-js/issues/69) [#a5ff11](https://github.com/calimero-network/mero-js/issues/a5ff11)
+
+## <small>7.0.2 (2026-07-20)</small>
+
+* fix(auth): adapt e2e/CI to core rc.17 admin-creds-at-init (#68) ([4c9f619](https://github.com/calimero-network/mero-js/commit/4c9f619)), closes [#68](https://github.com/calimero-network/mero-js/issues/68) [core#3221](https://github.com/core/issues/3221) [core#3081](https://github.com/core/issues/3081) [calimero-network/core#3276](https://github.com/calimero-network/core/issues/3276)
+
+## <small>7.0.1 (2026-07-15)</small>
+
+* fix(auth): make token refresh single-use safe (rotation, single-flight, token_reuse) (#67) ([bdf4609](https://github.com/calimero-network/mero-js/commit/bdf4609)), closes [#67](https://github.com/calimero-network/mero-js/issues/67) [calimero-network/core#3083](https://github.com/calimero-network/core/issues/3083) [calimero-network/core#3229](https://github.com/calimero-network/core/issues/3229)
+
+## 7.0.0 (2026-06-28)
+
+* fix!: metadata getters return the full MetadataRecord (#65) ([6daa627](https://github.com/calimero-network/mero-js/commit/6daa627)), closes [#65](https://github.com/calimero-network/mero-js/issues/65)
+* test(e2e): true round-trip + multi-node assertions (Tiers 1–3) (#63) ([2a351e1](https://github.com/calimero-network/mero-js/commit/2a351e1)), closes [#63](https://github.com/calimero-network/mero-js/issues/63)
+
+
+### BREAKING CHANGE
+
+* getGroupMetadata/getMemberMetadata/getContextMetadata now
+resolve to the full MetadataRecord ({ name, data, updatedAt, updatedBy })
+instead of the bare data map. Read the values under `.data`.
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 ## 6.1.0 (2026-06-27)
 
 * feat(sdk): add getBlobInfo (HEAD /blobs/:id) (#62) ([7d440ee](https://github.com/calimero-network/mero-js/commit/7d440ee)), closes [#62](https://github.com/calimero-network/mero-js/issues/62)

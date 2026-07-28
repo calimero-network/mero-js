@@ -1,0 +1,123 @@
+---
+title: Mero.js
+description: The pure-JavaScript SDK for Calimero — authenticate to a node, drive the admin API, execute WASM methods, and stream real-time events. Zero dependencies.
+template: splash
+hero:
+  tagline: The pure-JavaScript SDK for Calimero. Authenticate to a node, drive the admin API, execute WASM contract methods over JSON-RPC, and stream real-time events over SSE — from the browser, Node, or the edge. Zero dependencies, built on Web Standards.
+  actions:
+    - text: Quickstart
+      link: /get-started/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/calimero-network/mero-js
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import Figure from '../../components/Figure.astro';
+
+{/* Audience-routed landing — pick your track. */}
+
+<CardGrid>
+  <Card title="Get Started" icon="rocket">
+    Install the SDK, authenticate to a node, and make your first call in
+    minutes. [Quickstart →](/get-started/quickstart/)
+  </Card>
+  <Card title="Understand" icon="open-book">
+    How the SDK is layered — the `MeroJs` facade, the API clients, the token
+    lifecycle, and the event streams. [Read the overview →](/understand/system-overview/)
+  </Card>
+  <Card title="Guides" icon="setting">
+    Task guides: contexts & apps, executing WASM methods, real-time
+    subscriptions, groups & governance, blobs, and transport.
+    [Browse the guides →](/guides/contexts-and-apps/)
+  </Card>
+  <Card title="Reference" icon="list-format">
+    Every `MeroJs` method, the full admin & auth API surface, and the three
+    error types. [Open the reference →](/reference/mero-js/)
+  </Card>
+</CardGrid>
+
+## Architecture at a glance
+
+`MeroJs` is a thin composition of focused clients over one shared `fetch`-based
+transport. It manages the JWT token lifecycle so your code never has to.
+
+<Figure id="d-architecture">
+  <svg viewBox="0 0 760 470" role="img" aria-label="Mero.js layered architecture" font-family="var(--sl-font-mono)">
+    <rect x="0" y="0" width="760" height="470" rx="12" fill="#0f0f16" />
+
+    {/* Layer: your app */}
+    <g class="seq-step" style="--step-i:0">
+      <rect x="60" y="24" width="640" height="52" rx="8" fill="#3fb95018" stroke="#3fb95050" />
+      <text x="380" y="48" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="600">Your app</text>
+      <text x="380" y="66" text-anchor="middle" fill="#9aa4b2" font-size="10.5">browser · Node 18+ · Deno · Bun · edge workers</text>
+    </g>
+    <g class="seq-step" style="--step-i:1">
+      <line x1="380" y1="76" x2="380" y2="100" stroke="#3f3f46" stroke-width="1.4" />
+      <polygon points="380,100 376,92 384,92" fill="#3f3f46" />
+    </g>
+
+    {/* Layer: MeroJs facade */}
+    <g class="seq-step" style="--step-i:2">
+      <rect x="60" y="100" width="640" height="58" rx="8" fill="#a5ff1114" stroke="#a5ff1155" />
+      <text x="380" y="124" text-anchor="middle" fill="#a5ff11" font-size="13" font-weight="600">MeroJs</text>
+      <text x="380" y="143" text-anchor="middle" fill="#c4c4cc" font-size="10.5">authenticate() · setTokenData() · JWT token lifecycle (401 → refresh → retry)</text>
+    </g>
+
+    {/* Layer: API + event clients */}
+    <g class="seq-step" style="--step-i:3">
+      <rect x="60" y="184" width="150" height="56" rx="8" fill="#58a6ff14" stroke="#58a6ff50" />
+      <text x="135" y="206" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">.auth</text>
+      <text x="135" y="224" text-anchor="middle" fill="#9aa4b2" font-size="9">AuthApiClient</text>
+
+      <rect x="222" y="184" width="150" height="56" rx="8" fill="#58a6ff14" stroke="#58a6ff50" />
+      <text x="297" y="206" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">.admin</text>
+      <text x="297" y="224" text-anchor="middle" fill="#9aa4b2" font-size="9">AdminApiClient</text>
+
+      <rect x="384" y="184" width="150" height="56" rx="8" fill="#a371f714" stroke="#a371f750" />
+      <text x="459" y="206" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">.rpc</text>
+      <text x="459" y="224" text-anchor="middle" fill="#9aa4b2" font-size="9">RpcClient</text>
+
+      <rect x="546" y="184" width="154" height="56" rx="8" fill="#a371f714" stroke="#a371f750" />
+      <text x="623" y="206" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">.events · .ws</text>
+      <text x="623" y="224" text-anchor="middle" fill="#9aa4b2" font-size="9">SseClient · WsClient</text>
+    </g>
+
+    {/* Layer: transport */}
+    <g class="seq-step" style="--step-i:4">
+      <line x1="380" y1="240" x2="380" y2="266" stroke="#3f3f46" stroke-width="1.4" />
+      <polygon points="380,266 376,258 384,258" fill="#3f3f46" />
+      <rect x="60" y="266" width="640" height="56" rx="8" fill="#27272a" stroke="#3f3f46" />
+      <text x="380" y="289" text-anchor="middle" fill="#e4e4e7" font-size="12" font-weight="600">HttpClient — fetch transport</text>
+      <text x="380" y="307" text-anchor="middle" fill="#9aa4b2" font-size="10">injects Authorization: Bearer · single-flight refresh · retry · timeout/abort</text>
+    </g>
+    <g class="seq-step" style="--step-i:5">
+      <line x1="380" y1="322" x2="380" y2="348" stroke="#3f3f46" stroke-width="1.4" />
+      <polygon points="380,348 376,340 384,340" fill="#3f3f46" />
+    </g>
+
+    {/* Layer: node */}
+    <g class="seq-step" style="--step-i:6">
+      <rect x="60" y="348" width="640" height="98" rx="8" fill="#0f0f16" stroke="#a5ff1140" stroke-width="1.3" />
+      <text x="380" y="372" text-anchor="middle" fill="#a5ff11" font-size="12" font-weight="600">merod node</text>
+      <rect x="92" y="388" width="176" height="42" rx="6" fill="#18181b" stroke="#27272a" />
+      <text x="180" y="405" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">REST</text>
+      <text x="180" y="420" text-anchor="middle" fill="#9aa4b2" font-size="8.5">/admin-api · /auth</text>
+      <rect x="292" y="388" width="176" height="42" rx="6" fill="#18181b" stroke="#27272a" />
+      <text x="380" y="405" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">JSON-RPC</text>
+      <text x="380" y="420" text-anchor="middle" fill="#9aa4b2" font-size="8.5">/jsonrpc</text>
+      <rect x="492" y="388" width="176" height="42" rx="6" fill="#18181b" stroke="#27272a" />
+      <text x="580" y="405" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">SSE / WS</text>
+      <text x="580" y="420" text-anchor="middle" fill="#9aa4b2" font-size="8.5">/sse · /ws</text>
+    </g>
+  </svg>
+</Figure>
+
+The SDK talks to a [Calimero Core](https://calimero-network.github.io/core/) node
+(`merod`). For the protocol those nodes implement, see the
+[Calimero Core docs](https://calimero-network.github.io/core/). Using React?
+Reach for [`@calimero-network/mero-react`](https://github.com/calimero-network/mero-react),
+which wraps this SDK with hooks.

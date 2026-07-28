@@ -7,9 +7,19 @@ import {
 } from './http-types';
 import { combineSignals, createTimeoutSignal } from './signal-utils';
 
+/**
+ * `x-auth-error` reasons that mean the whole token family is gone.
+ *
+ * Refresh tokens are single-use (calimero-network/core#3083): presenting a
+ * consumed refresh token is treated as token theft and the server revokes the
+ * family. Refreshing or retrying afterwards is pointless — the only way out is
+ * a fresh login.
+ */
+const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
+
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
-  name = 'HTTPError' as const;
+  name = 'HTTPError';
 
   constructor(
     public status: number,
@@ -36,6 +46,30 @@ export class HTTPError extends Error {
       headers: redactSensitiveHeaders(headersToRecord(this.headers)),
       bodyText: this.bodyText,
     };
+  }
+}
+
+/**
+ * Terminal authentication error: the refresh-token family was revoked (single-use
+ * refresh token replayed, or the token was explicitly revoked). Never retried and
+ * never refreshed — apps should catch this and force a re-login.
+ *
+ * Extends {@link HTTPError} so existing `instanceof HTTPError` handling keeps working.
+ */
+export class AuthRevokedError extends HTTPError {
+  name = 'AuthRevokedError';
+
+  constructor(
+    /** Value of the `x-auth-error` header, e.g. `token_reuse` or `token_revoked`. */
+    public reason: string,
+    status: number,
+    statusText: string,
+    url: string,
+    headers: Headers,
+    bodyText?: string,
+  ) {
+    super(status, statusText, url, headers, bodyText);
+    this.message = `Authentication revoked (${reason}): HTTP ${status} ${statusText}`;
   }
 }
 
@@ -67,7 +101,7 @@ function redactSensitiveHeaders(
 }
 
 /**
- * Reject a cleartext `http://`/`ws://` baseUrl pointing at a non-loopback host —
+ * Reject a cleartext `http://`/`ws://` baseUrl pointing at a non-loopback host -
  * bearer tokens would travel in the clear. Loopback (localhost/127.0.0.1/::1)
  * is always allowed; pass `allowInsecureHttp` to opt into an insecure remote node.
  */
@@ -80,7 +114,7 @@ export function assertSecureBaseUrl(
   try {
     url = new URL(baseUrl);
   } catch {
-    return; // not an absolute URL — nothing to assert
+    return; // not an absolute URL - nothing to assert
   }
   const insecure = url.protocol === 'http:' || url.protocol === 'ws:';
   if (insecure && !isLoopbackHost(url.hostname)) {
@@ -292,12 +326,44 @@ export class WebHttpClient implements HttpClient {
           bodyText,
         );
 
+        // Handle a revoked token family (single-use refresh token replayed, or an
+        // explicitly revoked token). This is terminal: refreshing would only burn
+        // another token and retrying would 401 again, so clear the tokens via the
+        // onAuthRevoked hook and surface a distinguishable error.
+        const authError = response.headers.get('x-auth-error');
+        if (
+          (response.status === 401 || response.status === 403) &&
+          authError &&
+          TERMINAL_AUTH_ERRORS.has(authError)
+        ) {
+          // Any in-flight refresh is based on a now-dead family — drop the caches.
+          this.refreshTokenPromise = null;
+          this.onTokenRefreshPromise = null;
+
+          if (this.transport.onAuthRevoked) {
+            try {
+              await this.transport.onAuthRevoked();
+            } catch {
+              // Never mask the auth error with a cleanup failure.
+            }
+          }
+
+          throw new AuthRevokedError(
+            authError,
+            response.status,
+            response.statusText,
+            url,
+            response.headers,
+            bodyText,
+          );
+        }
+
         // Handle 401 with token_expired - attempt automatic token refresh
         const userAborted = init?.signal?.aborted === true;
         if (
           response.status === 401 &&
           this.transport.refreshToken &&
-          response.headers.get('x-auth-error') === 'token_expired' &&
+          authError === 'token_expired' &&
           retryCount < MAX_RETRY_ATTEMPTS &&
           !isStreamBody &&
           !userAborted
