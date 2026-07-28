@@ -9,6 +9,7 @@ import type {
   ListApplicationsResponseData,
   GetApplicationResponseData,
   ApplicationVersionEntry,
+  GetApplicationAbiResponseData,
   GetLatestVersionResponseData,
   ListPackagesResponseData,
   ListVersionsResponseData,
@@ -304,6 +305,19 @@ export class AdminApiClient {
   async listApplicationVersions(applicationId: string): Promise<ApplicationVersionEntry[]> {
     return unwrap(
       await this.httpClient.get<{ data: ApplicationVersionEntry[] }>(`/admin-api/applications/${applicationId}/versions`),
+    );
+  }
+
+  /**
+   * The application's embedded `wasm-abi/1` manifest. Omit `serviceName` for
+   * single-service apps; core 400s if the ABI is absent or the name is ambiguous.
+   */
+  async getApplicationAbi(applicationId: string, serviceName?: string): Promise<GetApplicationAbiResponseData> {
+    const query = serviceName ? `?service_name=${encodeURIComponent(serviceName)}` : '';
+    return unwrap(
+      await this.httpClient.get<{ data: GetApplicationAbiResponseData }>(
+        `/admin-api/applications/${applicationId}/abi${query}`,
+      ),
     );
   }
 
