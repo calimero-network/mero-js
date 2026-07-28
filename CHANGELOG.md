@@ -1,3 +1,7 @@
+## <small>7.1.1 (2026-07-28)</small>
+
+* fix(e2e): give the kv-store fixture real artifact hashes (#75) ([cd460a4](https://github.com/calimero-network/mero-js/commit/cd460a4)), closes [#75](https://github.com/calimero-network/mero-js/issues/75)
+
 ## 7.1.0 (2026-07-24)
 
 * feat(events): add group-membership event support (#73) ([606dfbf](https://github.com/calimero-network/mero-js/commit/606dfbf)), closes [#73](https://github.com/calimero-network/mero-js/issues/73)
