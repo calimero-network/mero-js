@@ -30,6 +30,7 @@ new MeroJs(config: MeroJsConfig)
 | `timeoutMs` | `number` | Request timeout. Default `10000`. |
 | `requestCredentials` | `RequestCredentials` | `fetch` credentials mode. Defaults to `'omit'` in Tauri. |
 | `tokenStore` | `TokenStore` | Persist tokens across sessions. Defaults to in-memory. |
+| `allowInsecureHttp` | `boolean` | Allow a cleartext `http://`/`ws://` `baseUrl` on a non-loopback host. Default `false`, and the constructor throws for such a URL because bearer tokens would travel in the clear. Set it for a node reached over a LAN or a Docker network. |
 
 ## Property accessors
 

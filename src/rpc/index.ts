@@ -160,6 +160,9 @@ export class RpcClient {
     }
 
     // sync_status returns the response object directly (no `output` wrapper).
+    if (!response.result) {
+      throw new RpcError(-1, 'sync_status returned an empty result');
+    }
     return response.result as unknown as SyncStatus;
   }
 }

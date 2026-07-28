@@ -124,12 +124,13 @@ export function assertSecureBaseUrl(
   }
 }
 
+// `URL.hostname` keeps the brackets on an IPv6 literal, so `[::1]` is the only
+// form that ever reaches here.
 function isLoopbackHost(hostname: string): boolean {
   return (
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
     hostname === '127.0.0.1' ||
-    hostname === '::1' ||
     hostname === '[::1]'
   );
 }
