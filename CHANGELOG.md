@@ -1,3 +1,7 @@
+## 7.2.0 (2026-07-29)
+
+* feat(admin): add getApplicationAbi (#76) ([c05ee81](https://github.com/calimero-network/mero-js/commit/c05ee81)), closes [#76](https://github.com/calimero-network/mero-js/issues/76)
+
 ## <small>7.1.1 (2026-07-28)</small>
 
 * fix(e2e): give the kv-store fixture real artifact hashes (#75) ([cd460a4](https://github.com/calimero-network/mero-js/commit/cd460a4)), closes [#75](https://github.com/calimero-network/mero-js/issues/75)
