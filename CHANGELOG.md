@@ -1,3 +1,7 @@
+## <small>7.3.1 (2026-07-29)</small>
+
+* fix(types): emit NodeNext-resolvable specifiers in published declarations (#78) ([dc4e735](https://github.com/calimero-network/mero-js/commit/dc4e735)), closes [#78](https://github.com/calimero-network/mero-js/issues/78)
+
 ## 7.3.0 (2026-07-29)
 
 * feat(utils): add local node discovery helpers (#77) ([4ca6a95](https://github.com/calimero-network/mero-js/commit/4ca6a95)), closes [#77](https://github.com/calimero-network/mero-js/issues/77)
