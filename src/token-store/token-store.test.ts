@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MemoryTokenStore, LocalStorageTokenStore } from './index';
-import type { TokenData } from '../mero-js';
+import { MemoryTokenStore, LocalStorageTokenStore } from './index.js';
+import type { TokenData } from '../mero-js.js';
 
 const sampleToken: TokenData = {
   access_token: 'abc123',

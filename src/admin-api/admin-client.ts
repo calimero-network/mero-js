@@ -1,4 +1,4 @@
-import { HttpClient, withRetry } from '../http-client';
+import { HttpClient, withRetry } from '../http-client/index.js';
 import type {
   HealthStatus,
   AdminAuthStatus,
@@ -107,7 +107,7 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
-} from './admin-types';
+} from './admin-types.js';
 
 /**
  * Helper: server wraps most responses in `{ data: T }`.

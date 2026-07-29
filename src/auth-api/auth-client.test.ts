@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AuthApiClient } from './auth-client';
-import { HttpClient } from '../http-client';
+import { AuthApiClient } from './auth-client.js';
+import { HttpClient } from '../http-client/index.js';
 
 // Mock HttpClient that records request bodies (mirrors admin-client.test.ts).
 class MockHttpClient implements HttpClient {

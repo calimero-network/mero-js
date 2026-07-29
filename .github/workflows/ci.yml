@@ -41,6 +41,7 @@ jobs:
       - run: pnpm build
       - run: pnpm test:unit
       - run: pnpm typecheck
+      - run: pnpm typecheck:consumer
       - run: pnpm lint
 
   e2e:

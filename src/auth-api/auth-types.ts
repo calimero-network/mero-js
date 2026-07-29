@@ -1,7 +1,7 @@
 // Auth API Types - Generated from OpenAPI 3.0.3 specification
 
 // Re-export shared types
-export { ApiResponse } from '../http-client';
+export { ApiResponse } from '../http-client/index.js';
 
 // Health and Status Types
 export interface HealthResponse {

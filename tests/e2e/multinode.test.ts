@@ -5,8 +5,8 @@
  * job boots two embedded-auth merod nodes and sets MERO_NODE1_URL/MERO_NODE2_URL.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '../../src/mero-js';
-import { resolveCreds, ensureApplication, runId } from './harness';
+import { MeroJs } from '../../src/mero-js.js';
+import { resolveCreds, ensureApplication, runId } from './harness.js';
 
 const N1 = process.env.MERO_NODE1_URL ?? 'http://localhost:4501';
 const N2 = process.env.MERO_NODE2_URL ?? 'http://localhost:4502';

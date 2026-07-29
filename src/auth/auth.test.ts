@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAuthCallback, buildAuthLoginUrl } from './index';
+import { parseAuthCallback, buildAuthLoginUrl } from './index.js';
 
 describe('parseAuthCallback', () => {
   it('parses a valid callback URL', () => {

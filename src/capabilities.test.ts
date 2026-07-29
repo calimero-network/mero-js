@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CAPABILITIES, hasCap, withCap, withoutCap } from './capabilities';
+import { CAPABILITIES, hasCap, withCap, withoutCap } from './capabilities.js';
 
 describe('capabilities', () => {
   it('exposes the expected capability bits as powers of two', () => {

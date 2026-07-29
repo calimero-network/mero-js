@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { RpcClient, RpcError } from './index';
-import type { HttpClient } from '../http-client';
+import { RpcClient, RpcError } from './index.js';
+import type { HttpClient } from '../http-client/index.js';
 
 function createMockHttpClient(postResponse: unknown): HttpClient {
   return {

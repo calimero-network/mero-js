@@ -1,2 +1,2 @@
-export { CloudClient } from './cloud-client';
-export type { CloudClientConfig, EnableHAOptions, DisableHAOptions } from './cloud-client';
+export { CloudClient } from './cloud-client.js';
+export type { CloudClientConfig, EnableHAOptions, DisableHAOptions } from './cloud-client.js';

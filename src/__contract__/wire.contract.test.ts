@@ -21,8 +21,8 @@ import type {
   CreateContextResponseData,
   ReparentGroupRequest,
   ReparentGroupResponseData,
-} from '../admin-api/admin-types';
-import type { ExecuteParams } from '../rpc';
+} from '../admin-api/admin-types.js';
+import type { ExecuteParams } from '../rpc/index.js';
 
 const CORE_DIR = process.env.CALIMERO_CORE_DIR;
 const WIRE_DIR = CORE_DIR

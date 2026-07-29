@@ -1,4 +1,4 @@
-import type { HttpClient } from '../http-client';
+import type { HttpClient } from '../http-client/index.js';
 
 /** Result of the owner-driven `migrate_my_entries` convert (counts are u32). */
 export interface MigrateMyEntriesSummary {

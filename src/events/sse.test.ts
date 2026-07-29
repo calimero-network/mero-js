@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SseClient } from './sse';
+import { SseClient } from './sse.js';
 
 describe('SseClient', () => {
   let client: SseClient;

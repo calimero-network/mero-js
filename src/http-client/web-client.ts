@@ -4,8 +4,8 @@ import {
   Transport,
   RequestOptions,
   ResponseParser,
-} from './http-types';
-import { combineSignals, createTimeoutSignal } from './signal-utils';
+} from './http-types.js';
+import { combineSignals, createTimeoutSignal } from './signal-utils.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone.

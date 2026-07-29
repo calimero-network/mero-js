@@ -1,15 +1,15 @@
-import { createBrowserHttpClient } from './http-client';
-import { createAuthApiClientFromHttpClient } from './auth-api';
-import { createAdminApiClientFromHttpClient } from './admin-api';
-import type { AuthApiClient } from './auth-api';
-import type { AdminApiClient } from './admin-api';
-import type { HttpClient } from './http-client';
-import type { TokenStore } from './token-store';
-import { parseAuthCallback, buildAuthLoginUrl } from './auth';
-import type { AuthCallbackResult, AuthLoginOptions } from './auth';
-import { RpcClient } from './rpc';
-import { SseClient } from './events/sse';
-import { WsClient } from './events/ws';
+import { createBrowserHttpClient } from './http-client/index.js';
+import { createAuthApiClientFromHttpClient } from './auth-api/index.js';
+import { createAdminApiClientFromHttpClient } from './admin-api/index.js';
+import type { AuthApiClient } from './auth-api/index.js';
+import type { AdminApiClient } from './admin-api/index.js';
+import type { HttpClient } from './http-client/index.js';
+import type { TokenStore } from './token-store/index.js';
+import { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
+import type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
+import { RpcClient } from './rpc/index.js';
+import { SseClient } from './events/sse.js';
+import { WsClient } from './events/ws.js';
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */

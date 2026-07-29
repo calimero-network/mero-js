@@ -5,7 +5,7 @@ import {
   localNodeUrl,
   nodeEndpoint,
   DEFAULT_LOCAL_NODE_PORTS,
-} from './nodeDiscovery';
+} from './nodeDiscovery.js';
 
 /**
  * Build a `fetch` stand-in where only the given base URLs answer their health
