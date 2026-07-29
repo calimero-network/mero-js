@@ -55,6 +55,24 @@ describe('Admin API E2E — Coverage filler', () => {
     expect(Array.isArray(versions)).toBe(true);
   });
 
+  it('returns the embedded ABI manifest, or tolerates a node that predates /abi', async () => {
+    try {
+      const abi = await mero.admin.getApplicationAbi(applicationId);
+      expect(abi.schema_version).toBe('wasm-abi/1');
+      expect((abi.methods as unknown[])?.length).toBeGreaterThan(0);
+
+      await expect(mero.admin.getApplicationAbi(applicationId, 'bogus')).rejects.toMatchObject({
+        status: 400,
+        bodyText: expect.stringContaining('service_name'),
+      });
+    } catch (e) {
+      // applicationId was installed earlier in this suite, so a 404 here can only
+      // mean the node predates the /abi route — tolerate it like the sweep's cover().
+      if ((e as { status?: number }).status !== 404) throw e;
+      console.log(`(cover) getApplicationAbi: ${(e as Error).message}`);
+    }
+  });
+
   it('lists contexts with executors for the application', async () => {
     const res = await mero.admin.getContextsWithExecutorsForApplication(applicationId);
     expect(Array.isArray(res)).toBe(true);
