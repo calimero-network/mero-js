@@ -64,12 +64,12 @@ export async function probeNodeHealth(
   if (signal?.aborted) return false;
 
   // Per-probe timeout, also linked to the caller's abort signal so closing the
-  // modal cancels every in-flight probe. Track whether the listener was added
-  // so cleanup stays symmetric with registration.
+  // modal cancels every in-flight probe. Bind the signal to a local so the
+  // cleanup below stays symmetric with registration without re-narrowing.
   const controller = new AbortController();
   const onAbort = () => controller.abort();
-  const listenerAdded = !!signal;
-  if (listenerAdded) signal!.addEventListener('abort', onAbort, { once: true });
+  const abortSignal = signal;
+  if (abortSignal) abortSignal.addEventListener('abort', onAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -100,7 +100,7 @@ export async function probeNodeHealth(
     return false;
   } finally {
     clearTimeout(timer);
-    if (listenerAdded) signal!.removeEventListener('abort', onAbort);
+    if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
   }
 }
 
