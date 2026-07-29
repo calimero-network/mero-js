@@ -70,6 +70,9 @@ export interface ListApplicationVersionsResponseData {
   data: ApplicationVersionEntry[];
 }
 
+/** The application's `wasm-abi/1` manifest, returned verbatim by the node. */
+export type GetApplicationAbiResponseData = Record<string, unknown>;
+
 // ---- Packages ----
 
 export interface GetLatestVersionResponseData {

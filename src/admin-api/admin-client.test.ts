@@ -252,6 +252,20 @@ describe('AdminApiClient', () => {
       const result = await client.listApplicationVersions('app-1');
       expect(result).toEqual(entries);
     });
+
+    it('getApplicationAbi unwraps the manifest', async () => {
+      const manifest = { schemaVersion: 1, methods: [] };
+      mock.setMockResponse('GET', '/admin-api/applications/app-1/abi', { data: manifest });
+      const result = await client.getApplicationAbi('app-1');
+      expect(result).toEqual(manifest);
+    });
+
+    it('getApplicationAbi appends an urlencoded service_name when given', async () => {
+      const manifest = { schemaVersion: 1, methods: [] };
+      mock.setMockResponse('GET', '/admin-api/applications/app-1/abi?service_name=my%20service', { data: manifest });
+      const result = await client.getApplicationAbi('app-1', 'my service');
+      expect(result).toEqual(manifest);
+    });
   });
 
   describe('Package Management', () => {
