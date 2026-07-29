@@ -169,4 +169,12 @@ describe('RpcClient', () => {
       params: expect.objectContaining({ contextId: 'ctx-1', method: 'count_my_pending' }),
     }));
   });
+
+  it('syncStatus throws RpcError on a response with neither result nor error', async () => {
+    const httpClient = createMockHttpClient({ jsonrpc: '2.0', id: 1 });
+
+    const rpc = new RpcClient({ httpClient });
+
+    await expect(rpc.syncStatus('ctx-1')).rejects.toThrow(RpcError);
+  });
 });

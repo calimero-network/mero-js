@@ -141,9 +141,9 @@ describe('Round-trip E2E — Group settings [Tier 2]', () => {
     await mero.admin.updateGroupSettings(groupId, { upgradePolicy: 'Automatic' } as never);
     expect(true).toBe(true);
   });
-  // ponytail: uninstall stays in the tolerant sweep — only one app asset exists and
+  // Uninstall stays in the tolerant sweep: only one app asset exists and
   // install-dev is idempotent (returns the shared appId), so a real uninstall here
-  // would nuke shared test state. add a throwaway-app round-trip when one exists.
+  // would nuke shared test state. Add a throwaway-app round-trip when one exists.
 });
 
 describe('Round-trip E2E — Groups', () => {
@@ -170,7 +170,21 @@ describe('Round-trip E2E — Groups', () => {
       name: `rt-grp-${RUN}`,
     });
     expect(created.groupId).toBeTruthy();
-    const info = (await mero.admin.getGroupInfo(created.groupId)) as Record<string, unknown>;
+    const info = await mero.admin.getGroupInfo(created.groupId);
     expect(info).toBeTruthy();
+    // groupStateHash mirrors contextStateHash - core always populates it.
+    expect(typeof info.groupStateHash).toBe('string');
+    expect(info.groupStateHash.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Round-trip E2E - RPC', () => {
+  it('syncStatus returns a typed status for the context', async () => {
+    const status = await mero.rpc.syncStatus(contextId);
+    expect(status.contextId).toBe(contextId);
+    expect(typeof status.isInitialized).toBe('boolean');
+    expect(typeof status.failureCount).toBe('number');
+    // Internally-tagged on `state` - must be one of the known phases.
+    expect(status.syncState.state).toBeTruthy();
   });
 });
