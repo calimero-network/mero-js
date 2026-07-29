@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '../../src/mero-js';
-import { startNode, resolveBaseUrl, resolveCreds, type StartedNode } from './harness';
+import { MeroJs } from '../../src/mero-js.js';
+import { startNode, resolveBaseUrl, resolveCreds, type StartedNode } from './harness.js';
 
 // Test configuration
 const AUTH_CONFIG = {

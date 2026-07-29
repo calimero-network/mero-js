@@ -1,9 +1,9 @@
 // HTTP client types and interfaces
-export * from './http-types';
-export * from './api-response';
+export * from './http-types.js';
+export * from './api-response.js';
 
 // Web Standards HTTP client implementation
-export { WebHttpClient, HTTPError, AuthRevokedError } from './web-client';
+export { WebHttpClient, HTTPError, AuthRevokedError } from './web-client.js';
 
 // Factory functions for easy client creation
 export {
@@ -11,11 +11,11 @@ export {
   createBrowserHttpClient,
   createNodeHttpClient,
   createUniversalHttpClient,
-} from './http-factory';
+} from './http-factory.js';
 
 // Retry functionality
-export { withRetry, createRetryableMethod } from './retry';
-export type { RetryOptions } from './retry';
+export { withRetry, createRetryableMethod } from './retry.js';
+export type { RetryOptions } from './retry.js';
 
 // Signal utilities
-export { combineSignals, createTimeoutSignal } from './signal-utils';
+export { combineSignals, createTimeoutSignal } from './signal-utils.js';

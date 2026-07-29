@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AdminApiClient, compareSemver } from './admin-client';
-import { HttpClient } from '../http-client';
+import { AdminApiClient, compareSemver } from './admin-client.js';
+import { HttpClient } from '../http-client/index.js';
 
 // Mock HttpClient that stores expected responses and records request bodies
 class MockHttpClient implements HttpClient {

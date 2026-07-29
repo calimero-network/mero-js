@@ -4,9 +4,9 @@ import {
   createNodeAdminApiClient,
   createAdminApiClient,
   createAdminApiClientFromHttpClient,
-} from './admin-factory';
-import { AdminApiClient } from './admin-client';
-import { HttpClient } from '../http-client';
+} from './admin-factory.js';
+import { AdminApiClient } from './admin-client.js';
+import { HttpClient } from '../http-client/index.js';
 
 // Mock HttpClient
 class MockHttpClient implements HttpClient {

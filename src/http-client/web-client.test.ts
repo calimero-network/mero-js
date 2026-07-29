@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebHttpClient, HTTPError, AuthRevokedError } from './web-client';
-import { Transport } from './http-types';
+import { WebHttpClient, HTTPError, AuthRevokedError } from './web-client.js';
+import { Transport } from './http-types.js';
 
 describe('WebHttpClient - Token Refresh', () => {
   let mockFetch: ReturnType<typeof vi.fn>;

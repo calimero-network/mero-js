@@ -11,9 +11,9 @@
  *   NODE_URL=http://localhost:4001 pnpm test:e2e
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { MeroJs } from '../../src/mero-js';
-import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness';
-import { parseAuthCallback, buildAuthLoginUrl } from '../../src/auth';
+import { MeroJs } from '../../src/mero-js.js';
+import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
+import { parseAuthCallback, buildAuthLoginUrl } from '../../src/auth/index.js';
 
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();

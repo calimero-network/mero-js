@@ -1,4 +1,4 @@
-import type { TokenData } from '../mero-js';
+import type { TokenData } from '../mero-js.js';
 
 export interface TokenStore {
   getTokens(): TokenData | null;

@@ -14,7 +14,7 @@
  */
 import type { ChildProcess } from 'child_process';
 import { fileURLToPath } from 'node:url';
-import type { MeroJs } from '../../src/mero-js';
+import type { MeroJs } from '../../src/mero-js.js';
 
 /** The demo app the e2e suite exercises (bundled at ./assets/kv-store.mpk). */
 export const KV_STORE_PACKAGE = 'com.calimero.kv-store';

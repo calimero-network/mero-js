@@ -1,4 +1,4 @@
-import { HttpClient } from '../http-client';
+import { HttpClient } from '../http-client/index.js';
 import {
   // Common types
   ApiResponse,
@@ -27,7 +27,7 @@ import {
   // Permissions
   PermissionResponse,
   UpdateKeyPermissionsRequest,
-} from './auth-types';
+} from './auth-types.js';
 
 export class AuthApiClient {
   constructor(private httpClient: HttpClient) {}

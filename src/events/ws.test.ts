@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WsClient } from './ws';
+import { WsClient } from './ws.js';
 
 describe('WsClient', () => {
   let client: WsClient;

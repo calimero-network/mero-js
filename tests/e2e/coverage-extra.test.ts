@@ -4,8 +4,8 @@
  * SDK<->node contract), not deep behaviour. Self-provisioning + self-cleaning.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MeroJs } from '../../src/mero-js';
-import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness';
+import { MeroJs } from '../../src/mero-js.js';
+import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
 
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();

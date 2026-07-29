@@ -1,4 +1,4 @@
-import type { GroupMembershipEventData } from './group';
+import type { GroupMembershipEventData } from './group.js';
 
 export type { GroupMembershipEventData };
 

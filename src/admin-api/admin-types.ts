@@ -2,7 +2,7 @@
 // All types use camelCase to match core's #[serde(rename_all = "camelCase")]
 
 // Re-export shared types
-export { ApiResponse } from '../http-client';
+export { ApiResponse } from '../http-client/index.js';
 
 // ---- Health and Status ----
 

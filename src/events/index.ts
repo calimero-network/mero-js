@@ -1,5 +1,5 @@
-export { SseClient } from './sse';
-export type { SseEventData, AppVersionChangedEvent } from './sse';
-export { WsClient } from './ws';
-export type { WsEventData } from './ws';
-export type { GroupMembershipEventData } from './group';
+export { SseClient } from './sse.js';
+export type { SseEventData, AppVersionChangedEvent } from './sse.js';
+export { WsClient } from './ws.js';
+export type { WsEventData } from './ws.js';
+export type { GroupMembershipEventData } from './group.js';

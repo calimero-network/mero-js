@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MeroJs, createMeroJs } from './mero-js';
-import { MemoryTokenStore } from './token-store';
+import { MeroJs, createMeroJs } from './mero-js.js';
+import { MemoryTokenStore } from './token-store/index.js';
 
 // Mock the HTTP client and API clients
 const mockHttpClient = {
@@ -59,15 +59,15 @@ const mockAdminClient = {
   getApplication: vi.fn(),
 };
 
-vi.mock('./http-client', () => ({
+vi.mock('./http-client/index.js', () => ({
   createBrowserHttpClient: vi.fn(() => mockHttpClient),
 }));
 
-vi.mock('./auth-api', () => ({
+vi.mock('./auth-api/index.js', () => ({
   createAuthApiClientFromHttpClient: vi.fn(() => mockAuthClient),
 }));
 
-vi.mock('./admin-api', () => ({
+vi.mock('./admin-api/index.js', () => ({
   createAdminApiClientFromHttpClient: vi.fn(() => mockAdminClient),
 }));
 
@@ -324,7 +324,7 @@ describe('MeroJs SDK', () => {
 
   describe('HTTP Client Integration', () => {
     it('should pass auth token to HTTP client', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createBrowserHttpClient } = await import('./http-client/index.js');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
@@ -415,7 +415,7 @@ describe('MeroJs SDK', () => {
 
   describe('Configuration', () => {
     it('should use default timeout when not provided', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createBrowserHttpClient } = await import('./http-client/index.js');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
@@ -432,7 +432,7 @@ describe('MeroJs SDK', () => {
     });
 
     it('should use custom timeout when provided', async () => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createBrowserHttpClient } = await import('./http-client/index.js');
 
       meroJs = new MeroJs({
         baseUrl: 'http://localhost:3000',
@@ -453,7 +453,7 @@ describe('MeroJs SDK', () => {
     let store: MemoryTokenStore;
 
     const getTransportHooks = async (): Promise<any> => {
-      const { createBrowserHttpClient } = await import('./http-client');
+      const { createBrowserHttpClient } = await import('./http-client/index.js');
       return (createBrowserHttpClient as any).mock.calls[0][0];
     };
 

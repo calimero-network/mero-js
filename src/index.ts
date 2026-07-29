@@ -2,40 +2,40 @@
 // This will contain the pure JavaScript SDK without React dependencies
 
 // Main SDK class
-export { MeroJs, createMeroJs } from './mero-js';
-export type { MeroJsConfig, TokenData } from './mero-js';
+export { MeroJs, createMeroJs } from './mero-js.js';
+export type { MeroJsConfig, TokenData } from './mero-js.js';
 
 // HTTP client module (Web Standards based)
-export * from './http-client';
+export * from './http-client/index.js';
 
 // Auth API client
-export * from './auth-api';
+export * from './auth-api/index.js';
 
 // Admin API client
-export * from './admin-api';
+export * from './admin-api/index.js';
 
 // Auth utilities
-export { parseAuthCallback, buildAuthLoginUrl } from './auth';
-export type { AuthCallbackResult, AuthLoginOptions } from './auth';
+export { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
+export type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 
 // Token store
-export { MemoryTokenStore, LocalStorageTokenStore } from './token-store';
-export type { TokenStore } from './token-store';
+export { MemoryTokenStore, LocalStorageTokenStore } from './token-store/index.js';
+export type { TokenStore } from './token-store/index.js';
 
 // RPC client
-export { RpcClient, RpcError } from './rpc';
-export type { MigrateMyEntriesSummary } from './rpc';
-export type { ExecuteParams } from './rpc';
+export { RpcClient, RpcError } from './rpc/index.js';
+export type { MigrateMyEntriesSummary } from './rpc/index.js';
+export type { ExecuteParams } from './rpc/index.js';
 
 // Events (SSE / WebSocket)
-export { SseClient, WsClient } from './events';
-export type { SseEventData, WsEventData, AppVersionChangedEvent, GroupMembershipEventData } from './events';
+export { SseClient, WsClient } from './events/index.js';
+export type { SseEventData, WsEventData, AppVersionChangedEvent, GroupMembershipEventData } from './events/index.js';
 
 // Cloud client (enable-HA, disable-HA)
-export * from './cloud';
+export * from './cloud/index.js';
 
 // Member capability bitmask constants & helpers
-export * from './capabilities';
+export * from './capabilities.js';
 
 // Utilities
 export {
@@ -44,5 +44,5 @@ export {
   nodeEndpoint,
   probeNodeHealth,
   discoverLocalNodes,
-} from './nodeDiscovery';
-export type { DiscoverLocalNodesOptions } from './nodeDiscovery';
+} from './nodeDiscovery.js';
+export type { DiscoverLocalNodesOptions } from './nodeDiscovery.js';

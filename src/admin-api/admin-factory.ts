@@ -1,6 +1,6 @@
-import { AdminApiClient } from './admin-client';
-import { AdminApiClientConfig } from './admin-types';
-import { HttpClient } from '../http-client';
+import { AdminApiClient } from './admin-client.js';
+import { AdminApiClientConfig } from './admin-types.js';
+import { HttpClient } from '../http-client/index.js';
 
 // Mock HTTP client for testing
 class MockHttpClient implements HttpClient {

@@ -1,6 +1,6 @@
-import { AuthApiClient } from './auth-client';
-import { AuthApiClientConfig } from './auth-types';
-import { HttpClient } from '../http-client';
+import { AuthApiClient } from './auth-client.js';
+import { AuthApiClientConfig } from './auth-types.js';
+import { HttpClient } from '../http-client/index.js';
 
 // Mock HTTP client for testing
 class MockHttpClient implements HttpClient {
