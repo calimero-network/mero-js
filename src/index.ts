@@ -38,3 +38,11 @@ export * from './cloud';
 export * from './capabilities';
 
 // Utilities
+export {
+  DEFAULT_LOCAL_NODE_PORTS,
+  localNodeUrl,
+  nodeEndpoint,
+  probeNodeHealth,
+  discoverLocalNodes,
+} from './nodeDiscovery';
+export type { DiscoverLocalNodesOptions } from './nodeDiscovery';
