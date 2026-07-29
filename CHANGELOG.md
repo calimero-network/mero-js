@@ -1,3 +1,7 @@
+## 7.3.0 (2026-07-29)
+
+* feat(utils): add local node discovery helpers (#77) ([4ca6a95](https://github.com/calimero-network/mero-js/commit/4ca6a95)), closes [#77](https://github.com/calimero-network/mero-js/issues/77)
+
 ## 7.2.0 (2026-07-29)
 
 * feat(admin): add getApplicationAbi (#76) ([c05ee81](https://github.com/calimero-network/mero-js/commit/c05ee81)), closes [#76](https://github.com/calimero-network/mero-js/issues/76)
