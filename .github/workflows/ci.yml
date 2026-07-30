@@ -42,6 +42,9 @@ jobs:
       - run: pnpm test:unit
       - run: pnpm typecheck
       - run: pnpm typecheck:consumer
+      # Binds each contract spec's field names to the declared types; the live
+      # half of the same suites runs in the e2e job below.
+      - run: pnpm typecheck:contract
       - run: pnpm lint
 
   e2e:

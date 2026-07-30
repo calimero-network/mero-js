@@ -1,6 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
+import type { SignedGroupOpenInvitation } from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
+
+// A signed invitation exactly as merod emits it: the signed core primitive is
+// snake_case, with two unsigned bootstrap fields alongside the signature. Cast
+// because the type is opaque — only the node can mint one.
+const SIGNED_INVITATION = {
+  invitation: {
+    inviter_identity: [1],
+    group_id: [2],
+    expiration_timestamp: 999,
+    secret_salt: [3],
+    invited_role: 1,
+  },
+  inviter_signature: 'sig-1',
+  application_id: [4],
+  app_key: [5],
+} as unknown as SignedGroupOpenInvitation;
 
 // Mock HttpClient that stores expected responses and records request bodies
 class MockHttpClient implements HttpClient {
@@ -563,24 +580,24 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({});
     });
 
-    it('listContextAliases unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/alias/list/context', { data: { aliases: [{ name: 'a', value: 'ctx-1' }] } });
+    it('listContextAliases unwraps the alias -> id map', async () => {
+      mock.setMockResponse('GET', '/admin-api/alias/list/context', { data: { a: 'ctx-1' } });
       const result = await client.listContextAliases();
-      expect(result).toEqual({ aliases: [{ name: 'a', value: 'ctx-1' }] });
+      expect(result).toEqual({ a: 'ctx-1' });
     });
 
-    it('listApplicationAliases unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/alias/list/application', { data: { aliases: [] } });
+    it('listApplicationAliases unwraps the alias -> id map', async () => {
+      mock.setMockResponse('GET', '/admin-api/alias/list/application', { data: {} });
       const result = await client.listApplicationAliases();
-      expect(result).toEqual({ aliases: [] });
+      expect(result).toEqual({});
     });
   });
 
   describe('Context Identity Aliases', () => {
-    it('listContextIdentityAliases unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/alias/list/identity/ctx-1', { data: { aliases: [{ name: 'alice', value: 'pk-1' }] } });
+    it('listContextIdentityAliases unwraps the alias -> identity map', async () => {
+      mock.setMockResponse('GET', '/admin-api/alias/list/identity/ctx-1', { data: { alice: 'pk-1' } });
       const result = await client.listContextIdentityAliases('ctx-1');
-      expect(result).toEqual({ aliases: [{ name: 'alice', value: 'pk-1' }] });
+      expect(result).toEqual({ alice: 'pk-1' });
     });
 
     it('createContextIdentityAlias sends { alias, identity } with context in the path', async () => {
@@ -662,20 +679,14 @@ describe('AdminApiClient', () => {
     });
 
     it('createNamespaceInvitation sends structured request', async () => {
-      const invitation = {
-        invitation: { inviterIdentity: [1], groupId: [2], expirationTimestamp: 999, secretSalt: [3], invitedRole: 1 },
-        inviterSignature: 'sig-1',
-      };
+      const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/invite', { data: { invitation, groupName: 'NS' } });
       const result = await client.createNamespaceInvitation('ns-1', { expirationTimestamp: 999 });
       expect(result).toEqual({ invitation, groupName: 'NS' });
     });
 
     it('joinNamespace sends structured invitation', async () => {
-      const invitation = {
-        invitation: { inviterIdentity: [1], groupId: [2], expirationTimestamp: 999, secretSalt: [3] },
-        inviterSignature: 'sig-1',
-      };
+      const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
         data: { groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' },
       });
@@ -1171,10 +1182,7 @@ describe('AdminApiClient', () => {
   });
 
   describe('Group Invitation & Join', () => {
-    const mockInvitation = {
-      invitation: { inviterIdentity: [1], groupId: [2], expirationTimestamp: 999, secretSalt: [3] },
-      inviterSignature: 'sig-1',
-    };
+    const mockInvitation = SIGNED_INVITATION;
 
     it('createGroupInvitation returns structured invitation', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/invite', {

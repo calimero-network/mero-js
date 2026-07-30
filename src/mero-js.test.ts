@@ -579,5 +579,34 @@ describe('MeroJs SDK', () => {
       expect(meroJs.getTokenData()).toBeNull();
       expect(store.getTokens()).toBeNull();
     });
+
+    it('should notify the app hook after clearing, and survive it throwing', async () => {
+      // Assert on the recorded state, not inside the callback: the SDK swallows
+      // whatever the callback throws, including a failed expect().
+      let authenticatedWhenCalled: boolean | null = null;
+      const onAuthRevoked = vi.fn(() => {
+        authenticatedWhenCalled = app.isAuthenticated();
+        throw new Error('re-login screen exploded');
+      });
+      const app = new MeroJs({
+        baseUrl: 'http://localhost:3000',
+        tokenStore: new MemoryTokenStore(),
+        onAuthRevoked,
+      });
+      app.setTokenData({
+        access_token: 'a',
+        refresh_token: 'r',
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const { createBrowserHttpClient } = await import('./http-client/index.js');
+      const hooks = (createBrowserHttpClient as any).mock.calls.at(-1)[0];
+      await hooks.onAuthRevoked();
+
+      expect(onAuthRevoked).toHaveBeenCalledTimes(1);
+      // The tokens are gone before the app hears about it.
+      expect(authenticatedWhenCalled).toBe(false);
+      expect(app.isAuthenticated()).toBe(false);
+    });
   });
 });

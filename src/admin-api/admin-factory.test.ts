@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   createBrowserAdminApiClient,
   createNodeAdminApiClient,
@@ -128,5 +128,49 @@ describe('Admin API Factory Functions', () => {
       const client = createAdminApiClientFromHttpClient(mockHttpClient, config);
       expect(client).toBeInstanceOf(AdminApiClient);
     });
+  });
+
+  // These three used to hand the client a stub whose every method threw, so the
+  // obvious-looking entry points were unusable. Prove they now reach the wire.
+  describe('the config-only factories issue real requests', () => {
+    const realFetch = globalThis.fetch;
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    const factories = {
+      createAdminApiClient,
+      createBrowserAdminApiClient,
+      createNodeAdminApiClient,
+    };
+
+    for (const [name, factory] of Object.entries(factories)) {
+      it(`${name} calls the node`, async () => {
+        const fetchMock = vi.fn(
+          async () =>
+            new Response(JSON.stringify({ data: { status: 'alive' } }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+        );
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+        const client = factory({
+          baseUrl: 'http://localhost:2428',
+          getAuthToken: async () => 'test-token',
+        });
+
+        await expect(client.healthCheck()).resolves.toEqual({ status: 'alive' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchMock.mock.calls[0] as unknown as [
+          string,
+          RequestInit,
+        ];
+        expect(url).toBe('http://localhost:2428/admin-api/health');
+        expect((init.headers as Record<string, string>).Authorization).toBe(
+          'Bearer test-token',
+        );
+      });
+    }
   });
 });

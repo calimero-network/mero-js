@@ -39,15 +39,25 @@ export interface UninstallApplicationResponseData {
   applicationId: string;
 }
 
+export interface ApplicationBlob {
+  bytecode: string;
+  compiled: string;
+}
+
 export interface Application {
   id: string;
-  blob: { bytecode: string; compiled: string };
+  blob: ApplicationBlob;
   size: number;
   source: string;
   metadata: number[];
-  signer_id: string;
-  package: string;
-  version: string;
+  /** Absent for a raw-wasm install (no signed bundle) and for bootstrap stubs. */
+  signer_id?: string;
+  /** Absent on a bootstrap stub row, written before the app's blob arrives. */
+  package?: string;
+  /** Absent when the stored version is empty or not valid semver. */
+  version?: string;
+  /** Named services of a multi-service bundle; absent for single-service apps. */
+  services?: Record<string, ApplicationBlob>;
 }
 
 export interface ListApplicationsResponseData {
@@ -153,7 +163,8 @@ export interface Context {
    * namespaceStateHash). Renamed from `rootHash`, which never populated.
    */
   contextStateHash: string;
-  dagHeads: number[][];
+  /** Absent while the context has no deltas yet (core omits an empty list). */
+  dagHeads?: number[][];
   /** Bundle semver of the installed application (skew #2). Absent on older nodes. */
   applicationVersion?: string;
 }
@@ -300,14 +311,12 @@ export interface CreateContextIdentityAliasRequest {
   identity: string;
 }
 
-export interface AliasEntry {
-  name: string;
-  value: string;
-}
-
-export interface ListAliasesResponseData {
-  aliases: AliasEntry[];
-}
+/**
+ * Core's `ListAliasesResponse` is `{ data: BTreeMap<Alias<T>, T> }`, so once the
+ * `data` envelope is stripped the payload is a flat `{ alias: id }` map — not a
+ * list of entries. Applies to context, application and context-identity aliases.
+ */
+export type ListAliasesResponseData = Record<string, string>;
 
 // Create/delete alias returns empty
 export type CreateAliasResponseData = Record<string, never>;
@@ -330,17 +339,45 @@ export type DeleteContextIdentityAliasResponseData = Record<string, never>;
 
 // ---- Shared invitation types ----
 
+/**
+ * The signed half of an invitation. Wire keys are snake_case: this type mirrors
+ * a core primitive (`calimero_context_config::types`), which carries no
+ * camelCase rename — unlike the admin DTOs that wrap it.
+ */
 export interface GroupInvitationFromAdmin {
-  inviterIdentity: number[];
-  groupId: number[];
-  expirationTimestamp: number;
-  secretSalt: number[];
-  invitedRole?: number;
+  readonly inviter_identity: number[];
+  readonly group_id: number[];
+  readonly expiration_timestamp: number;
+  /** Per-invitation nonce; core keeps the legacy `secret_salt` wire name. */
+  readonly secret_salt: number[];
+  readonly invited_role: number;
 }
 
+/**
+ * An invitation blob the node signed. **Opaque: pass it through unchanged.**
+ *
+ * `inviter_signature` covers `invitation`, and the trailing bootstrap fields
+ * (`application_id`, `app_key`) are needed by the joiner even though they sit
+ * outside the signature — so a value that has been rebuilt field-by-field is
+ * not the value the node signed. Rebuilding is what a schema derived from these
+ * declarations does: an object schema drops the keys it wasn't told about, and
+ * core may add more (both trailing fields were added this way). Carry the value
+ * verbatim from the call that produced it to {@link JoinGroupRequest}, and treat
+ * the fields below as read-only detail for display.
+ *
+ * The `never`-typed brand makes that structural: an object literal or a schema
+ * result cannot satisfy this type, while a value the SDK returned — or one
+ * recovered with `JSON.parse` after transport — still does.
+ */
 export interface SignedGroupOpenInvitation {
-  invitation: GroupInvitationFromAdmin;
-  inviterSignature: string;
+  readonly invitation: GroupInvitationFromAdmin;
+  readonly inviter_signature: string;
+  /** Unsigned bootstrap field; absent on invitations from older nodes. */
+  readonly application_id?: number[];
+  /** Unsigned bootstrap field; absent on invitations from older nodes. */
+  readonly app_key?: number[];
+  /** @internal Brand — never present at runtime, never write it. */
+  readonly __nodeSigned: never;
 }
 
 export interface RecursiveInvitationEntry {
@@ -361,6 +398,12 @@ export interface Namespace {
   memberCount: number;
   contextCount: number;
   subgroupCount: number;
+  /**
+   * Bundle version of this namespace's `appKey` blob — the per-namespace truth,
+   * where the application row only says "latest fetched". Absent when core
+   * cannot resolve it (raw-wasm app, legacy key, blob not retained locally).
+   */
+  appVersion?: string;
 }
 
 export type ListNamespacesResponseData = Namespace[];

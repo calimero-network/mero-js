@@ -1,8 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    // The contract suites live outside src/, which the build's rootDir pins.
+    "rootDir": "."
   },
-  "include": ["src/**/*.contract.test.ts"],
+  "include": ["src/**/*.contract.test.ts", "tests/**/*.contract.test.ts"],
   "exclude": ["node_modules", "dist"]
 }

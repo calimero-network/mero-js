@@ -5,8 +5,9 @@
     "lib": ["ES2020", "DOM", "ES2019.Object"],
     "moduleResolution": "NodeNext",
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    // No declarationMap/sourceMap: the published package is `dist` only, so any
+    // map tsc emits points at a `../src` that never ships. The esbuild bundles
+    // carry their own maps with sourcesContent inlined.
     "outDir": "./dist",
     "rootDir": "./src",
     "noEmit": false,

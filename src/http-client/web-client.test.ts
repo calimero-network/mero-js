@@ -565,4 +565,77 @@ describe('WebHttpClient - Token Refresh', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("HTTPError.message carries the node's explanation", () => {
+    it("includes core's error envelope and keeps every field intact", async () => {
+      const body = JSON.stringify({
+        error: 'Invalid group id format: expected hex-encoded 32 bytes',
+      });
+      mockFetch.mockResolvedValueOnce(
+        new Response(body, { status: 400, statusText: 'Bad Request' }),
+      );
+
+      try {
+        await client.post('/admin-api/groups/nope/invite', {});
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toBe(
+          'HTTP 400 Bad Request: Invalid group id format: expected hex-encoded 32 bytes',
+        );
+        expect(error.status).toBe(400);
+        expect(error.statusText).toBe('Bad Request');
+        expect(error.url).toBe('https://api.example.com/admin-api/groups/nope/invite');
+        expect(error.bodyText).toBe(body);
+        expect(error.headers).toBeInstanceOf(Headers);
+      }
+    });
+
+    it('falls back to the status line for bodies without an envelope', () => {
+      const line = 'HTTP 500 Internal Server Error';
+      const cases = [
+        undefined,
+        '',
+        '<html>gateway exploded</html>',
+        JSON.stringify({ data: null }),
+        JSON.stringify({ error: '   ' }),
+        JSON.stringify({ error: null }),
+      ];
+      for (const bodyText of cases) {
+        const error = new HTTPError(
+          500,
+          'Internal Server Error',
+          'https://api.example.com/x',
+          new Headers(),
+          bodyText,
+        );
+        expect(error.message, `body: ${String(bodyText)}`).toBe(line);
+        expect(error.bodyText).toBe(bodyText);
+      }
+    });
+
+    it('reads a nested { error: { message } } envelope', () => {
+      const error = new HTTPError(
+        502,
+        'Bad Gateway',
+        'https://api.example.com/x',
+        new Headers(),
+        JSON.stringify({ error: { message: 'upstream refused' } }),
+      );
+      expect(error.message).toBe('HTTP 502 Bad Gateway: upstream refused');
+    });
+
+    it('leaves AuthRevokedError with its own message', () => {
+      const error = new AuthRevokedError(
+        'token_revoked',
+        401,
+        'Unauthorized',
+        'https://api.example.com/x',
+        new Headers(),
+        JSON.stringify({ error: 'token revoked' }),
+      );
+      expect(error.message).toBe(
+        'Authentication revoked (token_revoked): HTTP 401 Unauthorized',
+      );
+    });
+  });
 });
