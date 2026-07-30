@@ -17,6 +17,25 @@ import { combineSignals, createTimeoutSignal } from './signal-utils.js';
  */
 const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
 
+/**
+ * Pull the node's explanation out of an error body. Core answers every handled
+ * failure with `{"error": "<message>"}` (`ApiError::into_response`); the nested
+ * `{"error": {"message": ...}}` form is what proxies in front of a node emit.
+ * Returns undefined for a non-JSON, empty, or envelope-less body.
+ */
+function extractErrorMessage(bodyText?: string): string | undefined {
+  if (!bodyText) return undefined;
+  try {
+    const error = (JSON.parse(bodyText) as { error?: unknown })?.error;
+    if (typeof error === 'string' && error.trim() !== '') return error;
+    const nested = (error as { message?: unknown } | null)?.message;
+    if (typeof nested === 'string' && nested.trim() !== '') return nested;
+  } catch {
+    // Not JSON — the status line is all we can honestly report.
+  }
+  return undefined;
+}
+
 // Custom error class for HTTP errors
 export class HTTPError extends Error {
   name = 'HTTPError';
@@ -28,7 +47,12 @@ export class HTTPError extends Error {
     public headers: Headers,
     public bodyText?: string, // cap at ~64KB
   ) {
-    super(`HTTP ${status} ${statusText}`);
+    const explanation = extractErrorMessage(bodyText);
+    super(
+      explanation
+        ? `HTTP ${status} ${statusText}: ${explanation}`
+        : `HTTP ${status} ${statusText}`,
+    );
   }
 
   toJSON(): {
