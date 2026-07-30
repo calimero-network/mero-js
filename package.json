@@ -55,7 +55,7 @@
     "prettier": "prettier --check \"src/**/*.{ts,js,json,md}\"",
     "prettier:fix": "prettier --write \"src/**/*.{ts,js,json,md}\"",
     "clean": "pnpm rimraf dist",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer"
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract"
   },
   "files": [
     "dist"
