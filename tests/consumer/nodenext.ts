@@ -3,7 +3,10 @@
 import { MeroJs, RpcError } from '@calimero-network/mero-js';
 import type { MeroJsConfig } from '@calimero-network/mero-js';
 
-const config: MeroJsConfig = { baseUrl: 'http://localhost:2428' };
+const config: MeroJsConfig = {
+  baseUrl: 'http://localhost:2428',
+  onAuthRevoked: () => {},
+};
 
 export const client = new MeroJs(config);
 export const error = new RpcError(-32000, 'boom');

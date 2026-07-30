@@ -25,6 +25,14 @@ export interface MeroJsConfig {
   requestCredentials?: RequestCredentials;
   /** Optional token store for persistence */
   tokenStore?: TokenStore;
+  /**
+   * Called when the node reports that the credential family is gone
+   * (`x-auth-error: token_reuse` / `token_revoked`). Terminal: the tokens have
+   * already been cleared by the time this runs and nothing is retried, so use it
+   * to send the user back through login. Errors thrown here are swallowed —
+   * never let a UI failure mask the auth error.
+   */
+  onAuthRevoked?: () => Promise<void> | void;
 }
 
 export interface TokenData {
@@ -115,11 +123,16 @@ export class MeroJs {
           this.tokenStore?.setTokens(this.tokenData);
         }
       },
-      onAuthRevoked: () => {
+      onAuthRevoked: async () => {
         // The refresh-token family is gone (a single-use refresh token was
         // replayed, or the token was revoked). Nothing left to refresh with —
-        // drop the bundle so the app can force a re-login.
+        // drop the bundle so the app can force a re-login, then let the app react.
         this.clearToken();
+        try {
+          await this.config.onAuthRevoked?.();
+        } catch {
+          // A failing app callback must not mask the auth error.
+        }
       },
       timeoutMs: this.config.timeoutMs,
       credentials: this.config.requestCredentials ?? (isTauri ? 'omit' : undefined),
