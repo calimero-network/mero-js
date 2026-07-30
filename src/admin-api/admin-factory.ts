@@ -1,68 +1,39 @@
 import { AdminApiClient } from './admin-client.js';
 import { AdminApiClientConfig } from './admin-types.js';
-import { HttpClient } from '../http-client/index.js';
-
-// Mock HTTP client for testing
-class MockHttpClient implements HttpClient {
-  async get<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async post<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async put<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async delete<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async patch<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async head(): Promise<{ headers: Record<string, string>; status: number }> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-  async request<T>(): Promise<T> {
-    throw new Error(
-      'HTTP client not implemented - use createAdminApiClientFromHttpClient with a real HTTP client',
-    );
-  }
-}
+import {
+  HttpClient,
+  createBrowserHttpClient,
+  createNodeHttpClient,
+  createUniversalHttpClient,
+} from '../http-client/index.js';
 
 // Factory functions for creating Admin API clients
+
+/** Admin client over a browser HTTP transport (global `fetch`). */
 export function createBrowserAdminApiClient(
-  _config: AdminApiClientConfig,
+  config: AdminApiClientConfig,
 ): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
+  return new AdminApiClient(createBrowserHttpClient(config));
 }
 
+/** Admin client over a Node HTTP transport (Node 18+ `fetch`). */
 export function createNodeAdminApiClient(
-  _config: AdminApiClientConfig,
+  config: AdminApiClientConfig,
 ): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
+  return new AdminApiClient(createNodeHttpClient(config));
 }
 
+/** Admin client over whichever transport suits the current runtime. */
 export function createAdminApiClient(
-  _config: AdminApiClientConfig,
+  config: AdminApiClientConfig,
 ): AdminApiClient {
-  const httpClient = new MockHttpClient();
-  return new AdminApiClient(httpClient);
+  return new AdminApiClient(createUniversalHttpClient(config));
 }
 
+/**
+ * Admin client over a caller-supplied HTTP client — use this to share one
+ * transport (and its token handling) with the other API clients.
+ */
 export function createAdminApiClientFromHttpClient(
   httpClient: HttpClient,
   _config: AdminApiClientConfig,
