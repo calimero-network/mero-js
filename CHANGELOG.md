@@ -1,3 +1,69 @@
+## <small>7.3.2 (2026-07-30)</small>
+
+* fix(types): match core's wire format and surface node errors (#79) ([ab535b1](https://github.com/calimero-network/mero-js/commit/ab535b1)), closes [#79](https://github.com/calimero-network/mero-js/issues/79)
+
+
+### BREAKING CHANGE
+
+* `AliasEntry` is removed and `ListAliasesResponseData` is now
+`Record<string, string>`; `SignedGroupOpenInvitation` /
+`GroupInvitationFromAdmin` use core's snake_case keys and are opaque; the
+optional-on-the-wire fields of `Application`, `Context` and `Namespace` are
+declared optional. Code written against the old declarations did not work
+against a real node.
+
+* fix(admin): build a real HTTP client in the admin factories
+
+`createAdminApiClient`, `createNodeAdminApiClient` and
+`createBrowserAdminApiClient` wrapped a stub whose every method threw, so the
+three obvious entry points only worked for a caller who already knew to reach
+for `createAdminApiClientFromHttpClient`. The transports they needed already
+exist in `http-client`, so wire each to its counterpart rather than removing
+public API that consumers may already import.
+
+* feat(config): let apps react to a revoked credential via onAuthRevoked
+
+The transport has always had the hook and `MeroJs` used it to clear its tokens,
+but `MeroJsConfig` did not expose it — so an app could not tell the difference
+between "logged out" and "still logged in" after the node revokes a token
+family, and had no place to start a re-login. Clear first, then notify, and
+swallow whatever the callback throws so a UI failure cannot mask the auth error.
+
+`refreshToken` / `onTokenRefresh` are deliberately not exposed: MeroJs owns the
+single-flight, cross-tab-locked rotation that single-use refresh tokens require,
+and a `tokenStore` already observes every rotation.
+
+* test(contract): check a live node's responses against the declared types
+
+Items in this branch's first two commits shared one root cause: the
+hand-written types drift from core's wire and nothing notices until a consumer
+hits it. This closes that loop for the methods most exposed to it.
+
+The suite provisions real resources on a booted merod and, per covered method,
+asserts that every key the node sends is declared and every key the SDK
+requires is present. Covered: listApplications, getContexts, listNamespaces,
+createGroupInvitation (response, signed blob, and signed inner payload), and
+the three alias listings. Adding one is a single SPECS entry.
+
+Two gates, verified to fail independently: the runtime run catches a wire key
+the SDK does not model (confirmed by dropping `Namespace.appVersion`), while
+`typecheck:contract` — now in CI and prepublish, and extended to cover
+tests/ — catches a declaration that drifts from its spec (confirmed by
+reverting the alias map to a list of entries, and the invitation keys to
+camelCase). Neither alone is enough: the field names in a spec are typed
+`keyof T`, so a rename has to break one or the other.
+
+* chore: stop emitting dangling sourcemaps and drop the prettier scripts
+
+`declarationMap`/`sourceMap` made tsc write 8 maps whose `sources` point at
+`../src`, which the published package (`files: ["dist"]`) never contains — every
+one of them dead on arrival. The esbuild bundles that `exports` actually points
+at inline `sourcesContent`, so they keep working.
+
+`pnpm prettier` could never run: prettier is not a dependency and the repo has
+no prettier config. Removing the two scripts is honest; adding the tool would
+reformat a codebase that has never been prettier-formatted.
+
 ## <small>7.3.1 (2026-07-29)</small>
 
 * fix(types): emit NodeNext-resolvable specifiers in published declarations (#78) ([dc4e735](https://github.com/calimero-network/mero-js/commit/dc4e735)), closes [#78](https://github.com/calimero-network/mero-js/issues/78)
