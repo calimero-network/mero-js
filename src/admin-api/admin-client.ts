@@ -799,6 +799,10 @@ export class AdminApiClient {
     await this.httpClient.post(`/admin-api/groups/${groupId}/members/remove`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async updateMemberRole(
     groupId: string,
     identity: string,
@@ -807,6 +811,10 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/role`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
       await this.httpClient.get<{ data: MemberCapabilities }>(
@@ -815,6 +823,10 @@ export class AdminApiClient {
     );
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async setMemberCapabilities(
     groupId: string,
     identity: string,
@@ -885,6 +897,10 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/metadata`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
     const response = await this.httpClient.get<GetMetadataResponseData | null>(
@@ -1095,7 +1111,13 @@ export class AdminApiClient {
     );
   }
 
-  /** Set a member's auto-follow flag (PUT /admin-api/groups/:group_id/members/:identity/auto-follow). */
+  /**
+   * Set a member's auto-follow flag (PUT
+   * /admin-api/groups/:group_id/members/:identity/auto-follow).
+   *
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async setMemberAutoFollow(
     groupId: string,
     identity: string,

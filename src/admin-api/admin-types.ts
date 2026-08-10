@@ -587,6 +587,16 @@ export interface GroupInfo {
 export type GroupInfoResponseData = GroupInfo;
 
 export interface GroupMember {
+  /**
+   * The member's ACCOUNT: 64 hex characters.
+   *
+   * Not a signing key, which renders as bs58 — a person may hold several keys
+   * and governance rows name the person. Both are 32 bytes, so nothing here or
+   * on the server will object if you pass the wrong one; it will simply name a
+   * principal that exists nowhere. Feed this value to
+   * {@link RemoveGroupMembersRequest} and {@link UpdateMemberRoleRequest}, not
+   * to {@link GroupMemberInput}.
+   */
   identity: string;
   role: string;
   name?: string;
@@ -622,6 +632,13 @@ export interface DeleteGroupResponseData {
 // ---- Group Members ----
 
 export interface GroupMemberInput {
+  /**
+   * The invitee's signing KEY, in bs58 — NOT an account.
+   *
+   * Adding is the one member-facing call that names a key: the node binds the
+   * key to an account as it admits it, so before that there is no account to
+   * name. Every call that names an EXISTING member takes the account instead.
+   */
   identity: string;
   role: string;
 }
@@ -635,6 +652,11 @@ export interface AddGroupMembersRequest {
 export type AddGroupMembersResponseData = Record<string, never>;
 
 export interface RemoveGroupMembersRequest {
+  /**
+   * The members to remove, as ACCOUNTS (64 hex) — the same ids
+   * {@link GroupMember.identity} returns, and not the keys
+   * {@link GroupMemberInput.identity} took to add them.
+   */
   members: string[];
   requester?: string;
 }
