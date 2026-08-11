@@ -704,14 +704,6 @@ export interface GetTeeAdmissionPolicyResponseData {
   acceptMock: boolean;
 }
 
-export interface UpdateGroupSettingsRequest {
-  upgradePolicy: string;
-  requester?: string;
-}
-
-// Returns empty
-export type UpdateGroupSettingsResponseData = Record<string, never>;
-
 // ---- Group / member / context metadata ----
 
 /**

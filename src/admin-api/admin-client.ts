@@ -77,7 +77,6 @@ import type {
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
-  UpdateGroupSettingsRequest,
   SetGroupMetadataRequest,
   SetMemberMetadataRequest,
   SetContextMetadataRequest,
@@ -851,13 +850,6 @@ export class AdminApiClient {
       GetTeeAdmissionPolicyResponseData & { data?: GetTeeAdmissionPolicyResponseData }
     >(`/admin-api/groups/${groupId}/settings/tee-admission-policy`);
     return response.data ?? response;
-  }
-
-  async updateGroupSettings(
-    groupId: string,
-    request: UpdateGroupSettingsRequest,
-  ): Promise<void> {
-    await this.httpClient.patch(`/admin-api/groups/${groupId}`, request);
   }
 
   // ---- Group / member / context metadata ----
