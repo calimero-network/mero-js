@@ -520,7 +520,6 @@ export type MigrationFailureReason =
 export interface MemberMigrationReport {
   schemaVersion: number;
   residueAuto: number;
-  residueIdentity: number;
   syncedUpToHlc: number;
   reportedAt: number;
   /** Member's self-reported pending-authored count (best-effort; skew #1). */

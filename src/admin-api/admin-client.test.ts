@@ -1076,7 +1076,6 @@ describe('AdminApiClient', () => {
             report: {
               schemaVersion: 2,
               residueAuto: 0,
-              residueIdentity: 0,
               syncedUpToHlc: 0,
               reportedAt: 0,
               authoredRemaining: 0,
@@ -1088,7 +1087,6 @@ describe('AdminApiClient', () => {
             report: {
               schemaVersion: 1,
               residueAuto: 0,
-              residueIdentity: 0,
               syncedUpToHlc: 0,
               reportedAt: 0,
               authoredRemaining: 2,
