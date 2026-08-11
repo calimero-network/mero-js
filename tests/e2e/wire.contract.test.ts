@@ -159,7 +159,6 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
     namespaceId = (
       await mero.admin.createNamespace({
         applicationId,
-        upgradePolicy: 'Automatic',
         name: `wire-contract-${RUN}`,
       })
     ).namespaceId;

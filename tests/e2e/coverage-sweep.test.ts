@@ -42,7 +42,6 @@ describe('Admin API E2E — Route coverage sweep', () => {
     applicationId = await ensureApplication(mero);
     const ns = await mero.admin.createNamespace({
       applicationId,
-      upgradePolicy: 'Automatic',
       alias: `sweep-${RUN}`,
     });
     namespaceId = ns.namespaceId;

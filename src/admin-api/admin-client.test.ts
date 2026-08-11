@@ -652,21 +652,19 @@ describe('AdminApiClient', () => {
 
     it('createNamespace sends correct fields', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
-      const result = await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', name: 'My NS' });
+      const result = await client.createNamespace({ applicationId: 'app-1', name: 'My NS' });
       expect(result).toEqual({ namespaceId: 'ns-1' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
         applicationId: 'app-1',
-        upgradePolicy: 'manual',
         name: 'My NS',
       });
     });
 
     it('createNamespace forwards the appKey version pin', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
-      await client.createNamespace({ applicationId: 'app-1', upgradePolicy: 'manual', appKey: 'deadbeef' });
+      await client.createNamespace({ applicationId: 'app-1', appKey: 'deadbeef' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
         applicationId: 'app-1',
-        upgradePolicy: 'manual',
         appKey: 'deadbeef',
       });
     });

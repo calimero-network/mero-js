@@ -108,7 +108,6 @@ describe('MeroJs E2E — Full Flow', () => {
     it('should create a namespace for the application', async () => {
       const response = await mero.admin.createNamespace({
         applicationId,
-        upgradePolicy: 'Automatic',
         alias: `e2e-full-${runId()}`,
       });
       expect(response.namespaceId).toBeTruthy();

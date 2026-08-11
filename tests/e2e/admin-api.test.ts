@@ -105,7 +105,6 @@ describe('Admin API E2E — Namespace Model', () => {
     it('should create a namespace', async () => {
       const response = await mero.admin.createNamespace({
         applicationId,
-        upgradePolicy: 'Automatic',
         alias: `e2e-test-ns-${RUN}`,
       });
       expect(response.namespaceId).toBeTruthy();
@@ -123,7 +122,6 @@ describe('Admin API E2E — Namespace Model', () => {
       const ns = await mero.admin.getNamespace(namespaceId);
       expect(ns.namespaceId).toBe(namespaceId);
       expect(ns.targetApplicationId).toBe(applicationId);
-      expect(ns.upgradePolicy).toBe('Automatic');
     });
 
     it('should get namespace identity', async () => {
