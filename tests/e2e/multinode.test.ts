@@ -34,7 +34,6 @@ suite('Multi-node E2E — namespace invite/join', () => {
 
     const ns = await n1.admin.createNamespace({
       applicationId,
-      upgradePolicy: 'Automatic',
       alias: `mn-${RUN}`,
     });
     namespaceId = ns.namespaceId;

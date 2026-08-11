@@ -25,7 +25,6 @@ beforeAll(async () => {
   applicationId = await ensureApplication(mero);
   const ns = await mero.admin.createNamespace({
     applicationId,
-    upgradePolicy: 'Automatic',
     alias: `rt-${RUN}`,
   });
   namespaceId = ns.namespaceId;
@@ -152,11 +151,10 @@ describe('Round-trip E2E — Groups', () => {
     expect(got.acceptMock).toBe(true);
   });
 
-  // POST /admin-api/groups requires applicationId + upgradePolicy (not just a name).
+  // POST /admin-api/groups requires applicationId (not just a name).
   it('createGroup then getGroupInfo returns it', async () => {
     const created = await mero.admin.createGroup({
       applicationId,
-      upgradePolicy: 'Automatic',
       name: `rt-grp-${RUN}`,
     });
     expect(created.groupId).toBeTruthy();
