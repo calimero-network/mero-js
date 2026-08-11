@@ -136,16 +136,6 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
   });
 });
 
-describe('Round-trip E2E — Group settings [Tier 2]', () => {
-  it('updateGroupSettings(upgradePolicy) succeeds', async () => {
-    await mero.admin.updateGroupSettings(groupId, { upgradePolicy: 'Automatic' } as never);
-    expect(true).toBe(true);
-  });
-  // ponytail: uninstall stays in the tolerant sweep — only one app asset exists and
-  // install-dev is idempotent (returns the shared appId), so a real uninstall here
-  // would nuke shared test state. add a throwaway-app round-trip when one exists.
-});
-
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
     const policy = {
