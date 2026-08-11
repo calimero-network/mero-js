@@ -19,7 +19,6 @@ A namespace groups contexts and members under a shared upgrade policy.
 ```typescript
 const { namespaceId } = await sdk.admin.createNamespace({
   applicationId,
-  upgradePolicy: 'Automatic', // or 'LazyOnAccess'
   name: 'production',
 });
 

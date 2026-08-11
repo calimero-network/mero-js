@@ -108,7 +108,6 @@ const SPECS: Spec[] = [
       ns('namespaceId'),
       ns('appKey'),
       ns('targetApplicationId'),
-      ns('upgradePolicy'),
       ns('createdAt'),
       ns('memberCount'),
       ns('contextCount'),
@@ -159,7 +158,6 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
     namespaceId = (
       await mero.admin.createNamespace({
         applicationId,
-        upgradePolicy: 'Automatic',
         name: `wire-contract-${RUN}`,
       })
     ).namespaceId;
