@@ -895,11 +895,6 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
     });
 
-    it('updateGroupSettings sends PATCH with upgradePolicy', async () => {
-      mock.setMockResponse('PATCH', '/admin-api/groups/g-1', {});
-      await client.updateGroupSettings('g-1', { upgradePolicy: 'automatic' });
-      expect(mock.getRequestBody('PATCH', '/admin-api/groups/g-1')).toEqual({ upgradePolicy: 'automatic' });
-    });
   });
 
   describe('Group / member / context metadata', () => {
@@ -1081,7 +1076,6 @@ describe('AdminApiClient', () => {
             report: {
               schemaVersion: 2,
               residueAuto: 0,
-              residueIdentity: 0,
               syncedUpToHlc: 0,
               reportedAt: 0,
               authoredRemaining: 0,
@@ -1093,7 +1087,6 @@ describe('AdminApiClient', () => {
             report: {
               schemaVersion: 1,
               residueAuto: 0,
-              residueIdentity: 0,
               syncedUpToHlc: 0,
               reportedAt: 0,
               authoredRemaining: 2,

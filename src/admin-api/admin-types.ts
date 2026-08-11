@@ -103,9 +103,9 @@ export interface ListVersionsResponseData {
 /**
  * Per-service migration descriptor carried in a multi-service bundle manifest,
  * emitted from the app's `#[app::migrate]` declaration. `toSchemaVersion` is the
- * CRDT schema version the migrate targets (the engine's gate); `toVersion` is
- * the user-facing bundle semver an admin matches on; `method` is the migrate
- * entrypoint.
+ * ABI state version the migrate targets (from `#[app::state(version = N)]`,
+ * the engine's gate) — NOT the bundle semver, which is `toVersion`, the
+ * user-facing string an admin matches on; `method` is the migrate entrypoint.
  */
 export interface BundleMigration {
   method: string;
@@ -520,7 +520,6 @@ export type MigrationFailureReason =
 export interface MemberMigrationReport {
   schemaVersion: number;
   residueAuto: number;
-  residueIdentity: number;
   syncedUpToHlc: number;
   reportedAt: number;
   /** Member's self-reported pending-authored count (best-effort; skew #1). */
@@ -703,14 +702,6 @@ export interface GetTeeAdmissionPolicyResponseData {
   allowedTcbStatuses: string[];
   acceptMock: boolean;
 }
-
-export interface UpdateGroupSettingsRequest {
-  upgradePolicy: string;
-  requester?: string;
-}
-
-// Returns empty
-export type UpdateGroupSettingsResponseData = Record<string, never>;
 
 // ---- Group / member / context metadata ----
 
