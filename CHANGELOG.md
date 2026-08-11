@@ -1,3 +1,15 @@
+## [9.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v8.0.0...mero-js-v9.0.0) (2026-08-11)
+
+### ⚠ BREAKING CHANGES
+
+* **admin-api:** CreateNamespaceRequest.upgradePolicy,
+CreateGroupRequest.upgradePolicy and the UpgradePolicy type are removed.
+Namespace.upgradePolicy and GroupInfo.upgradePolicy are deprecated.
+
+### Features
+
+* **admin-api:** drop upgradePolicy from the create requests ([#83](https://github.com/calimero-network/mero-js/issues/83)) ([2c3c835](https://github.com/calimero-network/mero-js/commit/2c3c835d16e853c4fdf543d43f626b37be792831))
+
 ## [8.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v7.3.2...mero-js-v8.0.0) (2026-08-11)
 
 ### ⚠ BREAKING CHANGES
