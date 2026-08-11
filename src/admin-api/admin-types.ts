@@ -103,9 +103,9 @@ export interface ListVersionsResponseData {
 /**
  * Per-service migration descriptor carried in a multi-service bundle manifest,
  * emitted from the app's `#[app::migrate]` declaration. `toSchemaVersion` is the
- * CRDT schema version the migrate targets (the engine's gate); `toVersion` is
- * the user-facing bundle semver an admin matches on; `method` is the migrate
- * entrypoint.
+ * ABI state version the migrate targets (from `#[app::state(version = N)]`,
+ * the engine's gate) — NOT the bundle semver, which is `toVersion`, the
+ * user-facing string an admin matches on; `method` is the migrate entrypoint.
  */
 export interface BundleMigration {
   method: string;
