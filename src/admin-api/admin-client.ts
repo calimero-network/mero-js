@@ -1088,8 +1088,15 @@ export class AdminApiClient {
 
   /** Create a standalone group (POST /admin-api/groups). */
   async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
+    // `upgradePolicy` for the same reason as `createNamespace` above — these are
+    // the only two requests a released node still requires it on, and it ignores
+    // the extra key once the concept is gone. Spread after the caller's request
+    // so an explicit value wins.
     return unwrap(
-      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', request),
+      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', {
+        upgradePolicy: 'LazyOnAccess',
+        ...request,
+      }),
     );
   }
 
