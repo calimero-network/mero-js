@@ -678,7 +678,25 @@ export class AdminApiClient {
   }
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request));
+    // `upgradePolicy` is sent even though the request type no longer carries it.
+    //
+    // The concept was deleted server-side (calimero-network/core#3393), but only
+    // on master: every RELEASED node still declares the field required and
+    // rejects a body without it — `missing field 'upgradePolicy'`. A node that
+    // has dropped it ignores the extra key, so sending it is the one shape that
+    // works against both, and this SDK does not get to choose which node a
+    // caller points it at.
+    //
+    // `LazyOnAccess` because it was the default and is the only behaviour that
+    // survives the removal, so an old node given it does what a new one does.
+    //
+    // Remove once no supported release predates that change.
+    return unwrap(
+      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', {
+        upgradePolicy: 'LazyOnAccess',
+        ...request,
+      }),
+    );
   }
 
   async deleteNamespace(
