@@ -105,34 +105,50 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
     const memberPk = id.publicKey!;
     expect(memberPk).toBeTruthy();
 
+    const listMemberIds = async (): Promise<string[]> => {
+      const res = (await mero.admin.listGroupMembers(groupId)) as {
+        members?: Array<{ identity?: string }>;
+      };
+      const rows = res.members ?? (res as unknown as Array<{ identity?: string }>);
+      return rows.map((m) => m.identity).filter((id): id is string => Boolean(id));
+    };
+
+    const before = await listMemberIds();
+
     // GroupMemberRole serializes PascalCase: Admin | Member | ReadOnly | ReadOnlyTee.
     await mero.admin.addGroupMembers(groupId, {
       members: [{ identity: memberPk, role: 'Member' }],
     } as never);
 
-    const after = (await mero.admin.listGroupMembers(groupId)) as {
-      members?: Array<{ identity?: string }>;
-    };
-    const members = after.members ?? (after as unknown as Array<{ identity?: string }>);
-    expect(members.some((m) => m.identity === memberPk)).toBe(true);
+    // A member is ADDED by the key it signs with, and ADDRESSED by the account
+    // that key writes as — two id spaces, rendered differently (bs58 vs 64 hex)
+    // so neither can stand in for the other. The listing is where the account
+    // becomes knowable: it is a hash of a root this caller has never seen, so
+    // there is nothing to derive it from locally.
+    const added = (await listMemberIds()).filter((id) => !before.includes(id));
+    expect(added.length).toBe(1);
+    const memberAccount = added[0]!;
+    expect(memberAccount).not.toBe(memberPk);
 
-    await mero.admin.updateMemberRole(groupId, memberPk, { role: 'Admin' } as never);
-    await mero.admin.setMemberCapabilities(groupId, memberPk, { capabilities: 1 } as never);
-    await mero.admin.setMemberAutoFollow(groupId, memberPk, {
+    await mero.admin.updateMemberRole(groupId, memberAccount, { role: 'Admin' } as never);
+    await mero.admin.setMemberCapabilities(groupId, memberAccount, { capabilities: 1 } as never);
+    await mero.admin.setMemberAutoFollow(groupId, memberAccount, {
       autoFollowContexts: true,
       autoFollowSubgroups: true,
     } as never);
 
-    await mero.admin.setMemberMetadata(groupId, memberPk, { data: { tag: `rt-${RUN}` } } as never);
-    const meta = await mero.admin.getMemberMetadata(groupId, memberPk);
+    await mero.admin.setMemberMetadata(groupId, memberAccount, {
+      data: { tag: `rt-${RUN}` },
+    } as never);
+    const meta = await mero.admin.getMemberMetadata(groupId, memberAccount);
     expect(meta?.data).toMatchObject({ tag: `rt-${RUN}` });
 
-    await mero.admin.removeGroupMembers(groupId, { members: [memberPk] } as never);
+    await mero.admin.removeGroupMembers(groupId, { members: [memberAccount] } as never);
     const post = (await mero.admin.listGroupMembers(groupId)) as {
       members?: Array<{ identity?: string }>;
     };
     const left = post.members ?? (post as unknown as Array<{ identity?: string }>);
-    expect(left.some((m) => m.identity === memberPk)).toBe(false);
+    expect(left.some((m) => m.identity === memberAccount)).toBe(false);
   });
 });
 
