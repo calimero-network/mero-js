@@ -1,3 +1,9 @@
+## [9.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.0...mero-js-v9.0.1) (2026-08-12)
+
+### Bug Fixes
+
+* **admin-api:** declare inviter_account, and address members by account in e2e ([#81](https://github.com/calimero-network/mero-js/issues/81)) ([4503845](https://github.com/calimero-network/mero-js/commit/45038451ea05ce92624af99858326bed6e6cfc74)), closes [core#3391](https://github.com/calimero-network/core/issues/3391) [core#3393](https://github.com/calimero-network/core/issues/3393)
+
 ## [9.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v8.0.0...mero-js-v9.0.0) (2026-08-11)
 
 ### ⚠ BREAKING CHANGES
