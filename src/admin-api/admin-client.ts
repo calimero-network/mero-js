@@ -678,7 +678,25 @@ export class AdminApiClient {
   }
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
-    return unwrap(await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request));
+    // `upgradePolicy` is sent even though the request type no longer carries it.
+    //
+    // The concept was deleted server-side (calimero-network/core#3393), but only
+    // on master: every RELEASED node still declares the field required and
+    // rejects a body without it — `missing field 'upgradePolicy'`. A node that
+    // has dropped it ignores the extra key, so sending it is the one shape that
+    // works against both, and this SDK does not get to choose which node a
+    // caller points it at.
+    //
+    // `LazyOnAccess` because it was the default and is the only behaviour that
+    // survives the removal, so an old node given it does what a new one does.
+    //
+    // Remove once no supported release predates that change.
+    return unwrap(
+      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', {
+        upgradePolicy: 'LazyOnAccess',
+        ...request,
+      }),
+    );
   }
 
   async deleteNamespace(
@@ -798,6 +816,10 @@ export class AdminApiClient {
     await this.httpClient.post(`/admin-api/groups/${groupId}/members/remove`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async updateMemberRole(
     groupId: string,
     identity: string,
@@ -806,6 +828,10 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/role`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
       await this.httpClient.get<{ data: MemberCapabilities }>(
@@ -814,6 +840,10 @@ export class AdminApiClient {
     );
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async setMemberCapabilities(
     groupId: string,
     identity: string,
@@ -877,6 +907,10 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/metadata`, request);
   }
 
+  /**
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
     const response = await this.httpClient.get<GetMetadataResponseData | null>(
@@ -1054,8 +1088,15 @@ export class AdminApiClient {
 
   /** Create a standalone group (POST /admin-api/groups). */
   async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
+    // `upgradePolicy` for the same reason as `createNamespace` above — these are
+    // the only two requests a released node still requires it on, and it ignores
+    // the extra key once the concept is gone. Spread after the caller's request
+    // so an explicit value wins.
     return unwrap(
-      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', request),
+      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', {
+        upgradePolicy: 'LazyOnAccess',
+        ...request,
+      }),
     );
   }
 
@@ -1087,7 +1128,13 @@ export class AdminApiClient {
     );
   }
 
-  /** Set a member's auto-follow flag (PUT /admin-api/groups/:group_id/members/:identity/auto-follow). */
+  /**
+   * Set a member's auto-follow flag (PUT
+   * /admin-api/groups/:group_id/members/:identity/auto-follow).
+   *
+   * `identity` is the member's ACCOUNT (64 hex), as returned by
+   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   */
   async setMemberAutoFollow(
     groupId: string,
     identity: string,

@@ -654,7 +654,13 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       const result = await client.createNamespace({ applicationId: 'app-1', name: 'My NS' });
       expect(result).toEqual({ namespaceId: 'ns-1' });
+      // `upgradePolicy` rides along for released nodes that still require it;
+      // a node that dropped the concept ignores it. Asserted rather than
+      // tolerated, so removing it later is a deliberate change and not a
+      // silent one — the field is what keeps this SDK usable against a node
+      // the caller chose and we did not.
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         name: 'My NS',
       });
@@ -664,6 +670,7 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       await client.createNamespace({ applicationId: 'app-1', appKey: 'deadbeef' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         appKey: 'deadbeef',
       });

@@ -372,6 +372,18 @@ export interface GroupInvitationFromAdmin {
 export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
+  /**
+   * The account the inviter acts as, as 64 hex characters — not the bs58 the
+   * `inviter_identity` key inside the signed body is written in. Governance
+   * rows name accounts, and a joiner cannot derive this one: an account is a
+   * hash of a root it has never seen.
+   *
+   * Unsigned bootstrap field, and outside the signature deliberately — a
+   * client that round-trips an invitation through its own typed model would
+   * drop an unknown field and invalidate the signature with it. Absent on
+   * invitations from older nodes.
+   */
+  readonly inviter_account?: string;
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
@@ -585,6 +597,16 @@ export interface GroupInfo {
 export type GroupInfoResponseData = GroupInfo;
 
 export interface GroupMember {
+  /**
+   * The member's ACCOUNT: 64 hex characters.
+   *
+   * Not a signing key, which renders as bs58 — a person may hold several keys
+   * and governance rows name the person. Both are 32 bytes, so nothing here or
+   * on the server will object if you pass the wrong one; it will simply name a
+   * principal that exists nowhere. Feed this value to
+   * {@link RemoveGroupMembersRequest} and {@link UpdateMemberRoleRequest}, not
+   * to {@link GroupMemberInput}.
+   */
   identity: string;
   role: string;
   name?: string;
@@ -620,6 +642,13 @@ export interface DeleteGroupResponseData {
 // ---- Group Members ----
 
 export interface GroupMemberInput {
+  /**
+   * The invitee's signing KEY, in bs58 — NOT an account.
+   *
+   * Adding is the one member-facing call that names a key: the node binds the
+   * key to an account as it admits it, so before that there is no account to
+   * name. Every call that names an EXISTING member takes the account instead.
+   */
   identity: string;
   role: string;
 }
@@ -633,6 +662,11 @@ export interface AddGroupMembersRequest {
 export type AddGroupMembersResponseData = Record<string, never>;
 
 export interface RemoveGroupMembersRequest {
+  /**
+   * The members to remove, as ACCOUNTS (64 hex) — the same ids
+   * {@link GroupMember.identity} returns, and not the keys
+   * {@link GroupMemberInput.identity} took to add them.
+   */
   members: string[];
   requester?: string;
 }
