@@ -372,6 +372,18 @@ export interface GroupInvitationFromAdmin {
 export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
+  /**
+   * The account the inviter acts as, as 64 hex characters — not the bs58 the
+   * `inviter_identity` key inside the signed body is written in. Governance
+   * rows name accounts, and a joiner cannot derive this one: an account is a
+   * hash of a root it has never seen.
+   *
+   * Unsigned bootstrap field, and outside the signature deliberately — a
+   * client that round-trips an invitation through its own typed model would
+   * drop an unknown field and invalidate the signature with it. Absent on
+   * invitations from older nodes.
+   */
+  readonly inviter_account?: string;
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
