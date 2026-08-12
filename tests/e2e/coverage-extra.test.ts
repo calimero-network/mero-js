@@ -23,7 +23,6 @@ describe('Admin API E2E — Coverage filler', () => {
     applicationId = await ensureApplication(mero);
     const ns = await mero.admin.createNamespace({
       applicationId,
-      upgradePolicy: 'Automatic',
       alias: `cov-ns-${RUN}`,
     });
     namespaceId = ns.namespaceId;

@@ -14,12 +14,11 @@ The exhaustive method list is in the [admin API reference](/reference/admin-api/
 
 ## Namespaces
 
-A namespace groups contexts and members under a shared upgrade policy.
+A namespace groups contexts and members under a shared target application.
 
 ```typescript
 const { namespaceId } = await sdk.admin.createNamespace({
   applicationId,
-  upgradePolicy: 'Automatic', // or 'LazyOnAccess'
   name: 'production',
 });
 

@@ -25,7 +25,6 @@ beforeAll(async () => {
   applicationId = await ensureApplication(mero);
   const ns = await mero.admin.createNamespace({
     applicationId,
-    upgradePolicy: 'Automatic',
     alias: `rt-${RUN}`,
   });
   namespaceId = ns.namespaceId;
@@ -165,16 +164,6 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
   });
 });
 
-describe('Round-trip E2E — Group settings [Tier 2]', () => {
-  // Removed with the upgrade-policy concept (core#3393): the route no longer
-  // exists, so this asserted a 405. Nothing replaced it — lazy-on-access is the
-  // only behaviour now, and there is no setting left to round-trip.
-
-  // ponytail: uninstall stays in the tolerant sweep — only one app asset exists and
-  // install-dev is idempotent (returns the shared appId), so a real uninstall here
-  // would nuke shared test state. add a throwaway-app round-trip when one exists.
-});
-
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
     const policy = {
@@ -191,11 +180,10 @@ describe('Round-trip E2E — Groups', () => {
     expect(got.acceptMock).toBe(true);
   });
 
-  // POST /admin-api/groups requires applicationId + upgradePolicy (not just a name).
+  // POST /admin-api/groups requires applicationId (not just a name).
   it('createGroup then getGroupInfo returns it', async () => {
     const created = await mero.admin.createGroup({
       applicationId,
-      upgradePolicy: 'Automatic',
       name: `rt-grp-${RUN}`,
     });
     expect(created.groupId).toBeTruthy();

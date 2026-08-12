@@ -42,7 +42,6 @@ describe('Admin API E2E — Route coverage sweep', () => {
     applicationId = await ensureApplication(mero);
     const ns = await mero.admin.createNamespace({
       applicationId,
-      upgradePolicy: 'Automatic',
       alias: `sweep-${RUN}`,
     });
     namespaceId = ns.namespaceId;
@@ -93,7 +92,7 @@ describe('Admin API E2E — Route coverage sweep', () => {
   });
 
   // NOTE: the full member lifecycle (add/list/role/capabilities/metadata/auto-follow/
-  // remove) + updateGroupSettings are deeply asserted in round-trip.test.ts.
+  // remove) is deeply asserted in round-trip.test.ts.
   it('group proofs + signing key + updateApp + app uninstall', async () => {
     await cover('signingKey', () => mero.admin.registerGroupSigningKey(groupId, {} as never));
     await cover('updateApp', () =>

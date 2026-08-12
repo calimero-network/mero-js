@@ -1,3 +1,39 @@
+## [9.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v8.0.0...mero-js-v9.0.0) (2026-08-11)
+
+### ⚠ BREAKING CHANGES
+
+* **admin-api:** CreateNamespaceRequest.upgradePolicy,
+CreateGroupRequest.upgradePolicy and the UpgradePolicy type are removed.
+Namespace.upgradePolicy and GroupInfo.upgradePolicy are deprecated.
+
+### Features
+
+* **admin-api:** drop upgradePolicy from the create requests ([#83](https://github.com/calimero-network/mero-js/issues/83)) ([2c3c835](https://github.com/calimero-network/mero-js/commit/2c3c835d16e853c4fdf543d43f626b37be792831))
+
+## [8.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v7.3.2...mero-js-v8.0.0) (2026-08-11)
+
+### ⚠ BREAKING CHANGES
+
+* **admin-api:** UpdateGroupSettingsRequest, UpdateGroupSettingsResponseData,
+and AdminClient.updateGroupSettings() are removed. The only field this
+endpoint ever set was upgradePolicy, which no longer exists.
+
+* feat(admin-api)!: drop residueIdentity from MemberMigrationReport
+* **admin-api:** MemberMigrationReport.residueIdentity is removed. It was
+hardwired to 0 in production because the wasm host exposes no committed-state
+key iteration to compute it for real. authoredRemaining measures the same
+fact, is self-reported, and works.
+
+* docs(admin-api): correct toSchemaVersion doc comment
+
+It documents the ABI state version from #[app::state(version = N)], not a
+CRDT concept. The wrong wording is how the core rollup defect (comparing
+bundle-semver majors instead of state versions) went unnoticed.
+
+### Features
+
+* **admin-api:** drop UpgradePolicy, updateGroupSettings, and residueIdentity ([#82](https://github.com/calimero-network/mero-js/issues/82)) ([a9a74e8](https://github.com/calimero-network/mero-js/commit/a9a74e8bdbe8c5fa2ab43d471c14119a885679b1))
+
 ## <small>7.3.2 (2026-07-30)</small>
 
 * fix(types): match core's wire format and surface node errors (#79) ([ab535b1](https://github.com/calimero-network/mero-js/commit/ab535b1)), closes [#79](https://github.com/calimero-network/mero-js/issues/79)

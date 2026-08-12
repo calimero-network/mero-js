@@ -133,7 +133,6 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `createGroup(request): Promise<{ groupId: string }>` | `POST /groups` |
 | `getGroupInfo(groupId): Promise<GroupInfoResponseData>` | `GET /groups/{groupId}` |
 | `deleteGroup(groupId, request?): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
-| `updateGroupSettings(groupId, request): Promise<void>` | `PATCH /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
@@ -230,7 +229,7 @@ interface Namespace {
   namespaceId: string;
   appKey: string;
   targetApplicationId: string;
-  upgradePolicy: 'Automatic' | 'LazyOnAccess';
+  upgradePolicy: string;         // deprecated, always "LazyOnAccess"
   createdAt: number;
   name?: string;
   memberCount: number;
@@ -242,7 +241,7 @@ interface GroupInfo {              // = GroupInfoResponseData
   groupId: string;
   appKey: string;
   targetApplicationId: string;
-  upgradePolicy: 'Automatic' | 'LazyOnAccess';
+  upgradePolicy: string;         // deprecated, always "LazyOnAccess"
   memberCount: number;
   contextCount: number;
   defaultCapabilities: number;    // capability bitmask
