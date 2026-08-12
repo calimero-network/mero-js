@@ -100,7 +100,20 @@ describe('Round-trip E2E — Metadata set→get', () => {
 });
 
 describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
-  it('add → list (present) → role → capabilities → metadata set/get → remove → gone', async () => {
+  // Skipped against a single node while members are named by account.
+  //
+  // A direct add still takes the KEY an operator holds, but the apply resolves
+  // that key to the account membership is keyed by — which exists only for
+  // someone who joined the namespace already. This harness has one node, so the
+  // only key it can produce is a freshly generated identity that has joined
+  // nothing, and the add fails. It surfaces as a 500 rather than a 4xx naming
+  // the unresolvable member, which is worth fixing on the node side
+  // independently of this test.
+  //
+  // The body below is already converted to address the member by account, so
+  // un-skipping is a matter of giving it a real joiner — multinode.test.ts is
+  // where that belongs.
+  it.skip('add → list (present) → role → capabilities → metadata set/get → remove → gone', async () => {
     const id = (await mero.admin.generateContextIdentity()) as { publicKey?: string };
     const memberPk = id.publicKey!;
     expect(memberPk).toBeTruthy();
@@ -153,10 +166,10 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
 });
 
 describe('Round-trip E2E — Group settings [Tier 2]', () => {
-  it('updateGroupSettings(upgradePolicy) succeeds', async () => {
-    await mero.admin.updateGroupSettings(groupId, { upgradePolicy: 'Automatic' } as never);
-    expect(true).toBe(true);
-  });
+  // Removed with the upgrade-policy concept (core#3393): the route no longer
+  // exists, so this asserted a 405. Nothing replaced it — lazy-on-access is the
+  // only behaviour now, and there is no setting left to round-trip.
+
   // ponytail: uninstall stays in the tolerant sweep — only one app asset exists and
   // install-dev is idempotent (returns the shared appId), so a real uninstall here
   // would nuke shared test state. add a throwaway-app round-trip when one exists.

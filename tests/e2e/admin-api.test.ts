@@ -123,7 +123,11 @@ describe('Admin API E2E — Namespace Model', () => {
       const ns = await mero.admin.getNamespace(namespaceId);
       expect(ns.namespaceId).toBe(namespaceId);
       expect(ns.targetApplicationId).toBe(applicationId);
-      expect(ns.upgradePolicy).toBe('Automatic');
+      // The upgrade-policy concept was deleted (core#3393); the field survives
+      // only as a fixed compatibility value, so it no longer echoes what
+      // creation asked for. Asserted as "still present, no longer meaningful"
+      // rather than dropped, so its eventual removal from the wire is noticed.
+      expect(typeof ns.upgradePolicy).toBe('string');
     });
 
     it('should get namespace identity', async () => {

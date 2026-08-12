@@ -128,7 +128,13 @@ const SPECS: Spec[] = [
     via: 'createGroupInvitation',
     sample: () => [invitation.invitation as unknown as Record<string, unknown>],
     required: [signed('invitation'), signed('inviter_signature')],
-    optional: [signed('application_id'), signed('app_key')],
+    optional: [
+      // The account the inviter acts as. Unsigned bootstrap hint like the two
+      // below, and optional for the same reason: older nodes omit it.
+      signed('inviter_account'),
+      signed('application_id'),
+      signed('app_key'),
+    ],
   },
   {
     type: 'GroupInvitationFromAdmin',
