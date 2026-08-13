@@ -283,19 +283,19 @@ export class MeroJs {
       /**
        * Permissions to request. Sent only when supplied.
        *
-       * **The node currently ignores this on this endpoint.** `POST /auth/token`
-       * with `user_password` derives the token's scope from the authenticating
-       * ROOT KEY (`authenticate_core` returns `root_key.permissions`), so a
-       * request for a narrower set is discarded and an admin root key always
-       * yields an admin token. Verified against merod 0.11.0-rc.20: requesting
-       * `['context:list']` returned a token carrying `['admin']`.
+       * **The node ignores this on this endpoint, by design.** This is the
+       * ROOT-KEY login: `POST /auth/token` returns the authenticating key's own
+       * permissions (`authenticate_core` returns `root_key.permissions`), so an
+       * admin account always yields an admin token. Verified against merod
+       * 0.11.0-rc.20 — requesting `['context:list']` returned `['admin']`.
        *
-       * It is passed through anyway so a caller can state intent and so this
-       * keeps working if the node starts honouring it (see
-       * calimero-network/core#3403). Least privilege on a *browser* login is
-       * expressible today — `buildAuthLoginUrl({ permissions })` drives the
-       * consent screen and mints a scoped client key, each entry checked
-       * against the root key.
+       * For a least-privilege token, do what the auth frontend does: use this
+       * token once to mint a scoped client key with
+       * {@link AuthApiClient.generateClientKey}, which takes `permissions` and
+       * validates each against the root key. Work with that token, not this one.
+       *
+       * Passed through when supplied so intent is on the wire and so callers
+       * keep working if the endpoint ever honours it.
        */
       permissions?: string[];
       /** Identifies this client in the node's key list. Defaults to `mero-js-sdk`. */
@@ -308,10 +308,9 @@ export class MeroJs {
     }
 
     try {
-      // No hardcoded `['admin']`: it was inert (the node ignores it here) while
-      // reading as though every SDK login demanded full node administration,
-      // and it would have become a real privilege escalation the moment core
-      // started honouring the field. Omitted unless the caller asks.
+      // No hardcoded `['admin']`: inert (this endpoint scopes from the root key)
+      // while reading as though every SDK login demanded full node
+      // administration. Omitted unless the caller asks.
       const requestBody = {
         auth_method: 'user_password',
         public_key: creds.username,
