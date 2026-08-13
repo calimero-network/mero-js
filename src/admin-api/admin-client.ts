@@ -106,6 +106,7 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
+  ApplicationMetadata,
 } from './admin-types.js';
 
 /**
@@ -514,9 +515,19 @@ export class AdminApiClient {
    * Download a blob's raw bytes. `GET /admin-api/blobs/:id` streams the blob
    * content (e.g. `application/gzip`), NOT JSON — so fetch it as an ArrayBuffer.
    * Use {@link listBlobs} for `{ blobId, size }` metadata.
+   *
+   * @param contextId Optional context to resolve the blob through when it is not
+   * held locally. Omit for a local-only read.
    */
-  async getBlob(blobId: string): Promise<ArrayBuffer> {
-    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}`, {
+  async getBlob(blobId: string, contextId?: string): Promise<ArrayBuffer> {
+    // `context_id` switches core from a local-only read to network discovery:
+    // without it, a blob whose bytes are not already on this node 404s, and with
+    // it the node resolves the blob through the DHT and fetches it from a peer in
+    // that context. Any blob authored by another member is remote until fetched,
+    // so a caller rendering peer-authored content wants this set. Mirrors
+    // `uploadBlob`, which already announces to a context by the same param.
+    const query = contextId ? `?${new URLSearchParams({ context_id: contextId })}` : '';
+    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}${query}`, {
       parse: 'arrayBuffer',
     });
   }
@@ -1150,4 +1161,69 @@ export class AdminApiClient {
       request ?? {},
     );
   }
+}
+
+/**
+ * Decode an application's `metadata` into the bundle manifest's display
+ * metadata.
+ *
+ * Core stores `manifest.to_metadata_json()` as the application's metadata at
+ * install time, so this is the bundle manifest's display half — already on the
+ * node, no registry lookup needed. `icon` is a self-contained
+ * `data:image/png;base64,...` URI (`cargo mero bundle` inlines the PNG and
+ * requires an explicit icon decision), so it renders without a second fetch.
+ *
+ * Accepts every shape the field arrives in. `Application.metadata` is typed as
+ * a byte array, but consumers see a base64 string on some paths and an
+ * already-decoded object on others, and a client that handles only one of the
+ * three silently renders nothing for the rest. Both byte paths decode as UTF-8
+ * rather than through `atob`/`String.fromCharCode`, which mangles any
+ * multi-byte character — an em dash in a description is enough to garble it.
+ *
+ * Returns `null` rather than throwing when there is nothing to decode: a
+ * raw-wasm install and a bootstrap stub carry no manifest, and a caller
+ * rendering a list should fall back to the package id, not blow up on one bad
+ * row.
+ */
+export function parseApplicationMetadata(
+  application: { metadata?: unknown } | null | undefined,
+): ApplicationMetadata | null {
+  const metadata = application?.metadata;
+  if (!metadata) return null;
+
+  // Already decoded upstream — hand it back rather than re-parsing.
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    return metadata as ApplicationMetadata;
+  }
+
+  const asObject = (text: string): ApplicationMetadata | null => {
+    const parsed: unknown = JSON.parse(text);
+    // A string or array is not metadata — treat it like an absent manifest
+    // rather than handing the caller something it cannot read.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as ApplicationMetadata;
+  };
+
+  try {
+    if (Array.isArray(metadata)) {
+      return asObject(new TextDecoder().decode(Uint8Array.from(metadata as number[])));
+    }
+
+    if (typeof metadata === 'string') {
+      try {
+        // base64 → bytes → UTF-8, the common wire shape.
+        const binary = atob(metadata);
+        return asObject(
+          new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))),
+        );
+      } catch {
+        // Not base64 — some paths hand back the JSON text verbatim.
+        return asObject(metadata);
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
