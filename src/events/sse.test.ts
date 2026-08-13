@@ -176,7 +176,7 @@ describe('SseClient', () => {
 
       (client as any).handleMessage(
         JSON.stringify({
-          result: { groupId: 'ns-1', type: 'MemberJoined', data: { member: 'mem-1' } },
+          result: { groupId: 'ns-1', type: 'MemberJoined', data: { memberAccount: 'acct-1' } },
         }),
       );
       (client as any).handleMessage(
@@ -328,14 +328,14 @@ describe('SseClient', () => {
         result: {
           groupId: 'grp-1',
           type: 'MemberJoined',
-          data: { member: 'mem-1', role: 'Member' },
+          data: { memberAccount: 'acct-1', role: 'Member' },
         },
       }));
 
       expect(handler).toHaveBeenCalledWith({
         groupId: 'grp-1',
         type: 'MemberJoined',
-        data: { member: 'mem-1', role: 'Member' },
+        data: { memberAccount: 'acct-1', role: 'Member' },
       });
     });
 

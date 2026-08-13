@@ -1,7 +1,11 @@
 // Compiled by tsconfig.consumer.json as an external NodeNext consumer of the built
 // dist/. The @ts-expect-error lines fail if unresolvable specifiers widen the API to any.
 import { MeroJs, RpcError } from '@calimero-network/mero-js';
-import type { GroupMigrationEventData, MeroJsConfig } from '@calimero-network/mero-js';
+import type {
+  GroupMembershipEventData,
+  GroupMigrationEventData,
+  MeroJsConfig,
+} from '@calimero-network/mero-js';
 
 const config: MeroJsConfig = {
   baseUrl: 'http://localhost:2428',
@@ -20,6 +24,15 @@ new MeroJs({ totallyNotAnOption: true });
 // The migration union must narrow on `type` through dist/, not collapse to any.
 export function cohortTotal(e: GroupMigrationEventData): number | null {
   return e.type === 'MigrationProgress' ? e.data.total : null;
+}
+
+export const memberAccount = (e: GroupMembershipEventData): string => e.data.memberAccount;
+
+// Core dropped the `member` wire key so a stale consumer fails at a field it
+// cannot find. The SDK type must deny it too, or that loud failure goes silent.
+export function staleMemberRead(e: GroupMembershipEventData): string {
+  // @ts-expect-error the account is `memberAccount`; `member` carried a bs58 signing key
+  return e.data.member;
 }
 
 export function cascadeTotal(
