@@ -1,6 +1,6 @@
-import type { GroupMembershipEventData } from './group.js';
+import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 
-export type { GroupMembershipEventData };
+export type { GroupMembershipEventData, GroupMigrationEventData };
 
 export interface WsEventData {
   contextId: string;
@@ -10,7 +10,10 @@ export interface WsEventData {
   data: unknown;
 }
 
-type WsEventHandler = (event: WsEventData | GroupMembershipEventData) => void;
+/** Anything the `'event'` stream can deliver: context events plus the
+ * group-keyed membership and migration families. */
+type WsEvent = WsEventData | GroupMembershipEventData | GroupMigrationEventData;
+type WsEventHandler = (event: WsEvent) => void;
 type WsConnectHandler = () => void;
 type WsErrorHandler = (error: Error) => void;
 
@@ -71,9 +74,9 @@ export class WsClient {
   }
 
   private emit(event: 'connect'): void;
-  private emit(event: 'event', data: WsEventData | GroupMembershipEventData): void;
+  private emit(event: 'event', data: WsEvent): void;
   private emit(event: 'error', error: Error): void;
-  private emit(event: string, arg?: WsEventData | GroupMembershipEventData | Error): void {
+  private emit(event: string, arg?: WsEvent | Error): void {
     const key = event as keyof WsListeners;
     if (key in this.listeners) {
       for (const handler of this.listeners[key]) {
@@ -159,7 +162,8 @@ export class WsClient {
         return;
       }
 
-      // Group-membership event message (untagged NodeEvent's group variant)
+      // Group-keyed event message (untagged NodeEvent's membership and
+      // migration variants; the `type` tag tells them apart).
       if (msg.result.groupId) {
         this.emit('event', {
           groupId: msg.result.groupId,

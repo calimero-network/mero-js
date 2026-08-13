@@ -29,7 +29,17 @@ export type { ExecuteParams } from './rpc/index.js';
 
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from './events/index.js';
-export type { SseEventData, WsEventData, AppVersionChangedEvent, GroupMembershipEventData } from './events/index.js';
+export type {
+  SseEventData,
+  WsEventData,
+  AppVersionChangedEvent,
+  GroupMembershipEventData,
+  GroupMigrationEventData,
+  MigrationStartedData,
+  MigrationProgressData,
+  CascadeProgressData,
+  MigrationCompletedData,
+} from './events/index.js';
 
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud/index.js';

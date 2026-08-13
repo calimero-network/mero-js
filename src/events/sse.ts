@@ -1,6 +1,7 @@
-import type { GroupMembershipEventData } from './group.js';
+import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
+import { isGroupMigrationEvent } from './group.js';
 
-export type { GroupMembershipEventData };
+export type { GroupMembershipEventData, GroupMigrationEventData };
 
 export interface SseEventData {
   contextId: string;
@@ -17,7 +18,10 @@ export interface AppVersionChangedEvent {
   toVersion?: string;
 }
 
-type SseEventHandler = (event: SseEventData | GroupMembershipEventData) => void;
+/** Anything the `'event'` stream can deliver: context events plus the
+ * group-keyed membership and migration families. */
+type SseEvent = SseEventData | GroupMembershipEventData | GroupMigrationEventData;
+type SseEventHandler = (event: SseEvent) => void;
 type SseConnectHandler = (sessionId: string) => void;
 type SseErrorHandler = (error: Error) => void;
 
@@ -91,10 +95,27 @@ export class SseClient {
     return () => this.off('event', listener);
   }
 
+  /**
+   * Typed convenience over the generic `'event'` stream: invokes `handler` only
+   * for group-migration events, narrowed on `type` so `data` is the matching
+   * payload. Returns an unsubscribe closure.
+   *
+   * A non-admin subscriber sees `MigrationStarted`, `MigrationProgress` and
+   * `MigrationCompleted` but never `CascadeProgress`, which core delivers to
+   * namespace admins only.
+   */
+  onMigrationEvent(handler: (e: GroupMigrationEventData) => void): () => void {
+    const listener: SseEventHandler = (ev) => {
+      if (isGroupMigrationEvent(ev)) handler(ev);
+    };
+    this.on('event', listener);
+    return () => this.off('event', listener);
+  }
+
   private emit(event: 'connect', sessionId: string): void;
-  private emit(event: 'event', data: SseEventData | GroupMembershipEventData): void;
+  private emit(event: 'event', data: SseEvent): void;
   private emit(event: 'error', error: Error): void;
-  private emit(event: string, arg?: string | SseEventData | GroupMembershipEventData | Error): void {
+  private emit(event: string, arg?: string | SseEvent | Error): void {
     const key = event as keyof SseListeners;
     if (key in this.listeners) {
       for (const handler of this.listeners[key]) {
@@ -237,7 +258,8 @@ export class SseClient {
         return;
       }
 
-      // Group-membership event message (untagged NodeEvent's group variant)
+      // Group-keyed event message (untagged NodeEvent's membership and
+      // migration variants; the `type` tag tells them apart).
       if (msg.result.groupId) {
         this.emit('event', {
           groupId: msg.result.groupId,
