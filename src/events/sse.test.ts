@@ -271,6 +271,126 @@ describe('SseClient', () => {
     });
   });
 
+  describe('token refresh', () => {
+    // The stream and its subscription calls are plain `fetch`, so they do not
+    // inherit the HTTP client's 401 hook. Without these, an expired access
+    // token takes the stream down until something else rotates the bundle —
+    // for an idle tab whose only activity is SSE, that is never.
+    const unauthorized = (authError?: string) => ({
+      ok: false,
+      status: 401,
+      headers: { get: (name: string) => (name === 'x-auth-error' ? authError ?? null : null) },
+    });
+
+    const authHeader = (call: unknown[]) =>
+      ((call[1] as RequestInit).headers as Record<string, string>).Authorization;
+
+    it('refreshes once and retries the request with the new token', async () => {
+      const refreshToken = vi.fn().mockResolvedValue('fresh-token');
+      const c = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'stale-token',
+        refreshToken,
+      });
+      (c as any).sessionId = 'sess-1';
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce({ ok: true });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await c.subscribe({ contextIds: ['ctx-1'] });
+
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(authHeader(fetchMock.mock.calls[0])).toBe('Bearer stale-token');
+      expect(authHeader(fetchMock.mock.calls[1])).toBe('Bearer fresh-token');
+      c.close();
+    });
+
+    it('retries only once when the refreshed token is also rejected', async () => {
+      // Looping here would spend a single-use refresh token per attempt for a
+      // problem that is not staleness.
+      const refreshToken = vi.fn().mockResolvedValue('fresh-token');
+      const c = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'stale-token',
+        refreshToken,
+      });
+      (c as any).sessionId = 'sess-1';
+      const fetchMock = vi.fn().mockResolvedValue(unauthorized());
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await c.subscribe({ contextIds: ['ctx-1'] });
+
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      c.close();
+    });
+
+    it('does not refresh a revoked family — it reports and stops', async () => {
+      // A replayed single-use refresh token revokes the family; refreshing
+      // again would burn another token for nothing.
+      const refreshToken = vi.fn();
+      const onAuthRevoked = vi.fn();
+      const c = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'dead-token',
+        refreshToken,
+        onAuthRevoked,
+      });
+      (c as any).sessionId = 'sess-1';
+      const fetchMock = vi.fn().mockResolvedValue(unauthorized('token_reuse'));
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await c.subscribe({ contextIds: ['ctx-1'] });
+
+      expect(onAuthRevoked).toHaveBeenCalledTimes(1);
+      expect(refreshToken).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      c.close();
+    });
+
+    it('leaves the 401 alone when no refresh hook is configured', async () => {
+      const c = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'stale-token',
+      });
+      (c as any).sessionId = 'sess-1';
+      const onError = vi.fn();
+      c.on('error', onError);
+      const fetchMock = vi.fn().mockResolvedValue(unauthorized());
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await c.subscribe({ contextIds: ['ctx-1'] });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalled();
+      c.close();
+    });
+
+    it('refreshes on the stream connect too, not just subscriptions', async () => {
+      const refreshToken = vi.fn().mockResolvedValue('fresh-token');
+      const c = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'stale-token',
+        refreshToken,
+        reconnectDelayMs: 100,
+      });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce({ ok: true, status: 200, body: null, headers: { get: () => null } });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await c.connect();
+
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(authHeader(fetchMock.mock.calls[1])).toBe('Bearer fresh-token');
+      c.close();
+    });
+  });
+
   describe('close', () => {
     it('clears all state', () => {
       (client as any).sessionId = 'sess';

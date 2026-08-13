@@ -27,9 +27,18 @@ interface SseListeners {
   error: SseErrorHandler[];
 }
 
+/**
+ * `x-auth-error` reasons that mean the whole token family is gone. Mirrors the
+ * HTTP client: refreshing again would burn another single-use token and
+ * retrying would 401 again, so these are terminal.
+ */
+const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
+
 export class SseClient {
   private baseUrl: string;
   private getAuthToken: () => Promise<string>;
+  private refreshToken?: () => Promise<string>;
+  private onAuthRevoked?: () => Promise<void> | void;
   private reconnectDelayMs: number;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
@@ -42,10 +51,29 @@ export class SseClient {
   constructor(opts: {
     baseUrl: string;
     getAuthToken: () => Promise<string>;
+    /**
+     * Refresh the access token after a 401 and return the new one. Wire this to
+     * the same single-flight refresh the HTTP client uses — refresh tokens are
+     * single-use (calimero-network/core#3083), so a second, independent
+     * refresher would replay a consumed token and get the family revoked.
+     *
+     * Without it the stream cannot recover from an expired token: it 401s on
+     * connect and stays down until something else happens to rotate the bundle,
+     * which for an idle tab whose only activity is SSE is never.
+     */
+    refreshToken?: () => Promise<string>;
+    /**
+     * Called when the server reports a dead token family (`x-auth-error:
+     * token_reuse` / `token_revoked`). Terminal — the stream does not retry or
+     * reconnect, because only a fresh login can fix it.
+     */
+    onAuthRevoked?: () => Promise<void> | void;
     reconnectDelayMs?: number;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.getAuthToken = opts.getAuthToken;
+    this.refreshToken = opts.refreshToken;
+    this.onAuthRevoked = opts.onAuthRevoked;
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 3000;
   }
 
@@ -108,6 +136,45 @@ export class SseClient {
     }
   }
 
+  /**
+   * Fetch with a bearer token, refreshing once on a 401 and retrying.
+   *
+   * The stream and its subscription calls are plain `fetch`, not the HTTP
+   * client, so they do not inherit its 401 hook — without this an expired
+   * access token takes the stream down permanently. A revoked family is
+   * terminal and reported to `onAuthRevoked` instead of retried.
+   */
+  private async authedFetch(url: string, init: RequestInit): Promise<Response> {
+    const withToken = async (token: string): Promise<Response> =>
+      fetch(url, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` },
+      });
+
+    const response = await withToken(await this.getAuthToken());
+    if (response.status !== 401) return response;
+
+    const authError = response.headers.get('x-auth-error');
+    if (authError && TERMINAL_AUTH_ERRORS.has(authError)) {
+      try {
+        await this.onAuthRevoked?.();
+      } catch {
+        // A failing app callback must not mask the auth error.
+      }
+      return response;
+    }
+
+    if (!this.refreshToken) return response;
+
+    // One retry only: if the refreshed token is also rejected, the problem is
+    // not staleness and looping would spend refresh tokens for nothing.
+    try {
+      return await withToken(await this.refreshToken());
+    } catch {
+      return response;
+    }
+  }
+
   async connect(): Promise<void> {
     // Already connected — don't reconnect
     if (this.abortController && !this.closed) {
@@ -117,12 +184,8 @@ export class SseClient {
     this.abortController = new AbortController();
 
     try {
-      const token = await this.getAuthToken();
-      const response = await fetch(`${this.baseUrl}/sse`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'text/event-stream',
-        },
+      const response = await this.authedFetch(`${this.baseUrl}/sse`, {
+        headers: { 'Accept': 'text/event-stream' },
         signal: this.abortController.signal,
       });
 
@@ -285,16 +348,12 @@ export class SseClient {
     ids: { contextIds?: string[]; groupIds?: string[] },
   ): Promise<void> {
     try {
-      const token = await this.getAuthToken();
       const params: { contextIds?: string[]; groupIds?: string[] } = {};
       if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
       if (ids.groupIds && ids.groupIds.length > 0) params.groupIds = ids.groupIds;
-      const response = await fetch(`${this.baseUrl}/sse/subscription`, {
+      const response = await this.authedFetch(`${this.baseUrl}/sse/subscription`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: this.sessionId,
           method,
