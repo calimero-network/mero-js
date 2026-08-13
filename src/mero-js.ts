@@ -173,6 +173,41 @@ export class MeroJs {
   }
 
   /**
+   * The configured HTTP client — same transport `admin` and `rpc` use.
+   *
+   * Escape hatch for a request this SDK does not model yet: an endpoint without
+   * a method, or one whose method cannot express a needed parameter. Going
+   * through here rather than a hand-rolled `fetch`/axios keeps the request
+   * inside the auth lifecycle — bearer token, single-flight refresh on 401 with
+   * one retry, and the terminal `onAuthRevoked` path.
+   *
+   * Prefer a typed method where one exists; reach for this instead of building
+   * a second HTTP layer with its own copy of the token, which is how apps end
+   * up never refreshing.
+   */
+  get http(): HttpClient {
+    return this.httpClient;
+  }
+
+  /**
+   * Force a token refresh and return the new bundle.
+   *
+   * Rarely needed — the HTTP client and the event stream refresh themselves
+   * reactively on a 401. Use it when app-owned work must hold a token the SDK
+   * never sees.
+   *
+   * Safe to call concurrently: this is the single-flight path, guarded by an
+   * in-process promise and a cross-tab Web Lock, and it re-reads the token
+   * store inside the lock so a bundle another instance already rotated is
+   * adopted rather than replayed. Do NOT call `auth.refreshToken()` directly
+   * for this — it bypasses both guards, and a replayed single-use refresh token
+   * revokes the whole family (calimero-network/core#3083).
+   */
+  async refresh(): Promise<TokenData> {
+    return this.performTokenRefresh();
+  }
+
+  /**
    * Get the RPC client (lazy initialized)
    */
   get rpc(): RpcClient {
@@ -192,6 +227,22 @@ export class MeroJs {
         getAuthToken: async () => {
           const token = await this.getValidToken();
           return token?.access_token || '';
+        },
+        // The stream is plain `fetch`, so it does not inherit the HTTP client's
+        // 401 hook. Hand it the SAME single-flight refresh: refresh tokens are
+        // single-use (calimero-network/core#3083), so an independent refresher
+        // here would replay a consumed token and revoke the family.
+        refreshToken: async () => {
+          const refreshed = await this.performTokenRefresh();
+          return refreshed.access_token;
+        },
+        onAuthRevoked: async () => {
+          this.clearToken();
+          try {
+            await this.config.onAuthRevoked?.();
+          } catch {
+            // A failing app callback must not mask the auth error.
+          }
         },
       });
     }
