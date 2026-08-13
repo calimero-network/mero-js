@@ -106,7 +106,6 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
-  Application,
   ApplicationMetadata,
 } from './admin-types.js';
 
