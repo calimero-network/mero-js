@@ -274,21 +274,49 @@ export class MeroJs {
    * Authenticate with the provided credentials
    * This will create the root key on first use
    */
-  async authenticate(credentials?: {
-    username: string;
-    password: string;
-  }): Promise<TokenData> {
+  async authenticate(
+    credentials?: {
+      username: string;
+      password: string;
+    },
+    options?: {
+      /**
+       * Permissions to request. Sent only when supplied.
+       *
+       * **The node currently ignores this on this endpoint.** `POST /auth/token`
+       * with `user_password` derives the token's scope from the authenticating
+       * ROOT KEY (`authenticate_core` returns `root_key.permissions`), so a
+       * request for a narrower set is discarded and an admin root key always
+       * yields an admin token. Verified against merod 0.11.0-rc.20: requesting
+       * `['context:list']` returned a token carrying `['admin']`.
+       *
+       * It is passed through anyway so a caller can state intent and so this
+       * keeps working if the node starts honouring it (see
+       * calimero-network/core#3403). Least privilege on a *browser* login is
+       * expressible today — `buildAuthLoginUrl({ permissions })` drives the
+       * consent screen and mints a scoped client key, each entry checked
+       * against the root key.
+       */
+      permissions?: string[];
+      /** Identifies this client in the node's key list. Defaults to `mero-js-sdk`. */
+      clientName?: string;
+    },
+  ): Promise<TokenData> {
     const creds = credentials || this.config.credentials;
     if (!creds) {
       throw new Error('No credentials provided for authentication');
     }
 
     try {
+      // No hardcoded `['admin']`: it was inert (the node ignores it here) while
+      // reading as though every SDK login demanded full node administration,
+      // and it would have become a real privilege escalation the moment core
+      // started honouring the field. Omitted unless the caller asks.
       const requestBody = {
         auth_method: 'user_password',
         public_key: creds.username,
-        client_name: 'mero-js-sdk',
-        permissions: ['admin'],
+        client_name: options?.clientName ?? 'mero-js-sdk',
+        ...(options?.permissions ? { permissions: options.permissions } : {}),
         timestamp: Math.floor(Date.now() / 1000),
         provider_data: {
           username: creds.username,

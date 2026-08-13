@@ -150,7 +150,6 @@ describe('MeroJs SDK', () => {
         auth_method: 'user_password',
         public_key: 'admin',
         client_name: 'mero-js-sdk',
-        permissions: ['admin'],
         timestamp: expect.any(Number),
         provider_data: {
           username: 'admin',
@@ -186,7 +185,6 @@ describe('MeroJs SDK', () => {
         auth_method: 'user_password',
         public_key: 'custom-user',
         client_name: 'mero-js-sdk',
-        permissions: ['admin'],
         timestamp: expect.any(Number),
         provider_data: {
           username: 'custom-user',
@@ -195,6 +193,39 @@ describe('MeroJs SDK', () => {
       });
 
       expect(tokenData.access_token).toBe('mock-access-token');
+    });
+
+    it('omits permissions entirely when the caller does not ask for any', async () => {
+      // The node ignores this field on POST /auth/token (scope comes from the
+      // root key), so sending ['admin'] claimed a privilege the request never
+      // actually requested — and would have become a real escalation the moment
+      // core started honouring it.
+      mockAuthClient.generateTokens.mockResolvedValue({
+        data: { access_token: 'a', refresh_token: 'r' },
+      });
+
+      await meroJs.authenticate();
+
+      const body = mockAuthClient.generateTokens.mock.calls[0][0];
+      expect(body).not.toHaveProperty('permissions');
+    });
+
+    it('passes through the permissions and client name the caller supplies', async () => {
+      mockAuthClient.generateTokens.mockResolvedValue({
+        data: { access_token: 'a', refresh_token: 'r' },
+      });
+
+      await meroJs.authenticate(undefined, {
+        permissions: ['context:list'],
+        clientName: 'my-tool',
+      });
+
+      expect(mockAuthClient.generateTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_name: 'my-tool',
+          permissions: ['context:list'],
+        }),
+      );
     });
 
     it('should throw error when authentication fails', async () => {
