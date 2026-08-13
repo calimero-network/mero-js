@@ -1000,7 +1000,7 @@ describe('AdminApiClient', () => {
   describe('Group Upgrade', () => {
     it('upgradeGroup sends request and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
-        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+        data: { groupId: 'g-1', status: 'in_progress', localContextsTotal: 3, localContextsSwapped: 0, localContextsFailed: 0 },
       });
       const result = await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
@@ -1013,7 +1013,7 @@ describe('AdminApiClient', () => {
 
     it('upgradeGroup forwards cascade so the upgrade fans out to subgroups', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
-        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+        data: { groupId: 'g-1', status: 'in_progress', localContextsTotal: 3, localContextsSwapped: 0, localContextsFailed: 0 },
       });
       await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
@@ -1027,7 +1027,7 @@ describe('AdminApiClient', () => {
 
     it('upgradeGroup forwards forceCodeOnly for an ABI-less code-only upgrade', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
-        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 0, failed: 0 },
+        data: { groupId: 'g-1', status: 'in_progress', localContextsTotal: 3, localContextsSwapped: 0, localContextsFailed: 0 },
       });
       await client.upgradeGroup('g-1', {
         targetApplicationId: 'app-2',
@@ -1042,7 +1042,7 @@ describe('AdminApiClient', () => {
 
     it('getGroupUpgradeStatus returns status', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', {
-        data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', total: 3, completed: 3, failed: 0, completedAt: 456 },
+        data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', localContextsTotal: 3, localContextsSwapped: 3, localContextsFailed: 0, completedAt: 456 },
       });
       const result = await client.getGroupUpgradeStatus('g-1');
       expect(result?.status).toBe('completed');
@@ -1057,7 +1057,7 @@ describe('AdminApiClient', () => {
 
     it('retryGroupUpgrade unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade/retry', {
-        data: { groupId: 'g-1', status: 'in_progress', total: 3, completed: 1, failed: 0 },
+        data: { groupId: 'g-1', status: 'in_progress', localContextsTotal: 3, localContextsSwapped: 1, localContextsFailed: 0 },
       });
       const result = await client.retryGroupUpgrade('g-1');
       expect(result.status).toBe('in_progress');
