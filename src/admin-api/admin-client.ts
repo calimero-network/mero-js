@@ -1165,34 +1165,66 @@ export class AdminApiClient {
 }
 
 /**
- * Decode an application's `metadata` bytes into the bundle manifest's display
+ * Decode an application's `metadata` into the bundle manifest's display
  * metadata.
  *
- * `Application.metadata` is a raw byte array on the wire. For a bundled
- * (`.mpk`) install those bytes are the JSON that core wrote at install time
- * (`manifest.to_metadata_json()`), carrying name, description, author, icon,
- * tags, license and links — everything an application or namespace list needs
- * to render, with the icon inlined as a `data:` URI.
+ * Core stores `manifest.to_metadata_json()` as the application's metadata at
+ * install time, so this is the bundle manifest's display half — already on the
+ * node, no registry lookup needed. `icon` is a self-contained
+ * `data:image/png;base64,...` URI (`cargo mero bundle` inlines the PNG and
+ * requires an explicit icon decision), so it renders without a second fetch.
+ *
+ * Accepts every shape the field arrives in. `Application.metadata` is typed as
+ * a byte array, but consumers see a base64 string on some paths and an
+ * already-decoded object on others, and a client that handles only one of the
+ * three silently renders nothing for the rest. Both byte paths decode as UTF-8
+ * rather than through `atob`/`String.fromCharCode`, which mangles any
+ * multi-byte character — an em dash in a description is enough to garble it.
  *
  * Returns `null` rather than throwing when there is nothing to decode: a
- * raw-wasm install and a bootstrap stub row both carry no manifest, and a
- * caller rendering a list should fall back to the package id, not blow up on
- * one bad row.
+ * raw-wasm install and a bootstrap stub carry no manifest, and a caller
+ * rendering a list should fall back to the package id, not blow up on one bad
+ * row.
  */
 export function parseApplicationMetadata(
-  application: Pick<Application, 'metadata'>,
+  application: { metadata?: unknown } | null | undefined,
 ): ApplicationMetadata | null {
-  const bytes = application?.metadata;
-  if (!bytes?.length) return null;
+  const metadata = application?.metadata;
+  if (!metadata) return null;
 
-  try {
-    const json = new TextDecoder().decode(Uint8Array.from(bytes));
-    const parsed: unknown = JSON.parse(json);
-    // A non-object (or an array) is not metadata — treat it like an absent
-    // manifest rather than handing the caller something it cannot read.
+  // Already decoded upstream — hand it back rather than re-parsing.
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    return metadata as ApplicationMetadata;
+  }
+
+  const asObject = (text: string): ApplicationMetadata | null => {
+    const parsed: unknown = JSON.parse(text);
+    // A string or array is not metadata — treat it like an absent manifest
+    // rather than handing the caller something it cannot read.
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     return parsed as ApplicationMetadata;
+  };
+
+  try {
+    if (Array.isArray(metadata)) {
+      return asObject(new TextDecoder().decode(Uint8Array.from(metadata as number[])));
+    }
+
+    if (typeof metadata === 'string') {
+      try {
+        // base64 → bytes → UTF-8, the common wire shape.
+        const binary = atob(metadata);
+        return asObject(
+          new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))),
+        );
+      } catch {
+        // Not base64 — some paths hand back the JSON text verbatim.
+        return asObject(metadata);
+      }
+    }
   } catch {
     return null;
   }
+
+  return null;
 }

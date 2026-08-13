@@ -1399,9 +1399,42 @@ describe('parseApplicationMetadata', () => {
     expect(parseApplicationMetadata({ metadata: encode(manifest) })).toEqual(manifest);
   });
 
+  it('decodes the base64-string shape consumers also receive', () => {
+    // `Application.metadata` is typed number[], but some paths hand back base64.
+    const manifest = { name: 'Mero Chat', icon: 'data:image/png;base64,iVBOR' };
+    const bytes = new TextEncoder().encode(JSON.stringify(manifest));
+    const base64 = btoa(String.fromCharCode(...bytes));
+
+    expect(parseApplicationMetadata({ metadata: base64 })).toEqual(manifest);
+  });
+
+  it('decodes multi-byte characters correctly from both byte shapes', () => {
+    // Decoding through atob/fromCharCode instead of UTF-8 garbles these — an em
+    // dash in a description is enough.
+    const manifest = { name: 'Mero — Chat', description: 'ünïcode ✓' };
+    const bytes = new TextEncoder().encode(JSON.stringify(manifest));
+
+    expect(parseApplicationMetadata({ metadata: Array.from(bytes) })).toEqual(manifest);
+    expect(
+      parseApplicationMetadata({ metadata: btoa(String.fromCharCode(...bytes)) }),
+    ).toEqual(manifest);
+  });
+
+  it('passes through metadata that is already an object', () => {
+    const manifest = { name: 'Mero Chat' };
+    expect(parseApplicationMetadata({ metadata: manifest })).toEqual(manifest);
+  });
+
+  it('falls back to raw JSON text for a string that is not base64', () => {
+    expect(parseApplicationMetadata({ metadata: '{"name":"Mero Chat"}' })).toEqual({
+      name: 'Mero Chat',
+    });
+  });
+
   it('returns null for a raw-wasm install or bootstrap stub, which carry no manifest', () => {
     expect(parseApplicationMetadata({ metadata: [] })).toBeNull();
-    expect(parseApplicationMetadata({ metadata: undefined as unknown as number[] })).toBeNull();
+    expect(parseApplicationMetadata({ metadata: undefined })).toBeNull();
+    expect(parseApplicationMetadata(null)).toBeNull();
   });
 
   it('returns null rather than throwing on bytes that are not manifest JSON', () => {
