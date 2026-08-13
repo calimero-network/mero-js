@@ -106,6 +106,8 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
+  Application,
+  ApplicationMetadata,
 } from './admin-types.js';
 
 /**
@@ -514,9 +516,19 @@ export class AdminApiClient {
    * Download a blob's raw bytes. `GET /admin-api/blobs/:id` streams the blob
    * content (e.g. `application/gzip`), NOT JSON — so fetch it as an ArrayBuffer.
    * Use {@link listBlobs} for `{ blobId, size }` metadata.
+   *
+   * @param contextId Optional context to resolve the blob through when it is not
+   * held locally. Omit for a local-only read.
    */
-  async getBlob(blobId: string): Promise<ArrayBuffer> {
-    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}`, {
+  async getBlob(blobId: string, contextId?: string): Promise<ArrayBuffer> {
+    // `context_id` switches core from a local-only read to network discovery:
+    // without it, a blob whose bytes are not already on this node 404s, and with
+    // it the node resolves the blob through the DHT and fetches it from a peer in
+    // that context. Any blob authored by another member is remote until fetched,
+    // so a caller rendering peer-authored content wants this set. Mirrors
+    // `uploadBlob`, which already announces to a context by the same param.
+    const query = contextId ? `?${new URLSearchParams({ context_id: contextId })}` : '';
+    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}${query}`, {
       parse: 'arrayBuffer',
     });
   }
@@ -1149,5 +1161,38 @@ export class AdminApiClient {
       `/admin-api/groups/${namespaceId}/migration/abort`,
       request ?? {},
     );
+  }
+}
+
+/**
+ * Decode an application's `metadata` bytes into the bundle manifest's display
+ * metadata.
+ *
+ * `Application.metadata` is a raw byte array on the wire. For a bundled
+ * (`.mpk`) install those bytes are the JSON that core wrote at install time
+ * (`manifest.to_metadata_json()`), carrying name, description, author, icon,
+ * tags, license and links — everything an application or namespace list needs
+ * to render, with the icon inlined as a `data:` URI.
+ *
+ * Returns `null` rather than throwing when there is nothing to decode: a
+ * raw-wasm install and a bootstrap stub row both carry no manifest, and a
+ * caller rendering a list should fall back to the package id, not blow up on
+ * one bad row.
+ */
+export function parseApplicationMetadata(
+  application: Pick<Application, 'metadata'>,
+): ApplicationMetadata | null {
+  const bytes = application?.metadata;
+  if (!bytes?.length) return null;
+
+  try {
+    const json = new TextDecoder().decode(Uint8Array.from(bytes));
+    const parsed: unknown = JSON.parse(json);
+    // A non-object (or an array) is not metadata — treat it like an absent
+    // manifest rather than handing the caller something it cannot read.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as ApplicationMetadata;
+  } catch {
+    return null;
   }
 }

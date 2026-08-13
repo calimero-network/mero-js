@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AdminApiClient, compareSemver } from './admin-client.js';
+import { AdminApiClient, compareSemver, parseApplicationMetadata } from './admin-client.js';
 import type { SignedGroupOpenInvitation } from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
 
@@ -533,6 +533,22 @@ describe('AdminApiClient', () => {
       const result = await client.getBlob('blob-1');
       expect(result).toBe(bytes);
     });
+
+    it('getBlob appends context_id so core can resolve a blob it does not hold', async () => {
+      // Without the param core serves local blobs only and 404s anything else;
+      // with it, it resolves the blob through the DHT and fetches from a peer in
+      // that context. Peer-authored attachments are exactly that case.
+      const bytes = new Uint8Array([5, 6]).buffer;
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1?context_id=ctx-1', bytes);
+      const result = await client.getBlob('blob-1', 'ctx-1');
+      expect(result).toBe(bytes);
+    });
+
+    it('getBlob url-encodes the context id', async () => {
+      const bytes = new Uint8Array([7]).buffer;
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1?context_id=ctx%2F1', bytes);
+      expect(await client.getBlob('blob-1', 'ctx/1')).toBe(bytes);
+    });
   });
 
   describe('Alias Management', () => {
@@ -642,6 +658,38 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/identity', { data: { namespaceId: 'ns-1', publicKey: 'pk-1' } });
       const result = await client.getNamespaceIdentity('ns-1');
       expect(result).toEqual({ namespaceId: 'ns-1', publicKey: 'pk-1' });
+    });
+
+    it('getNamespaceIdentity carries the account alongside the signing key', async () => {
+      // Core answers this endpoint with both spaces: `publicKey` is the key this
+      // node signs with, `account` (64 hex) is what that key writes as and what
+      // member-addressing endpoints take. They are related by a one-way hash, so
+      // a caller holding only the key cannot derive the account itself.
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/identity', {
+        data: {
+          namespaceId: 'ns-1',
+          publicKey: '67dkUZXFveMm2nTCsE4JzKj2Fe5qenYtH7pchXLNSLZH',
+          account: '6deb0c0cd4fa57b8c501d8bf6aa32159a39c2c5c315f9b685b1d6d599bde61c8',
+        },
+      });
+      const result = await client.getNamespaceIdentity('ns-1');
+      expect(result.account).toBe(
+        '6deb0c0cd4fa57b8c501d8bf6aa32159a39c2c5c315f9b685b1d6d599bde61c8',
+      );
+      expect(result.publicKey).toBe('67dkUZXFveMm2nTCsE4JzKj2Fe5qenYtH7pchXLNSLZH');
+    });
+
+    it('getNamespaceIdentity carries the account through the un-enveloped shape too', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/identity', {
+        namespaceId: 'ns-1',
+        publicKey: 'pk-1',
+        account: 'acc-1',
+      });
+      expect(await client.getNamespaceIdentity('ns-1')).toEqual({
+        namespaceId: 'ns-1',
+        publicKey: 'pk-1',
+        account: 'acc-1',
+      });
     });
 
     it('listNamespacesForApplication unwraps data', async () => {
@@ -1329,5 +1377,37 @@ describe('compareSemver', () => {
     expect(() => compareSemver('latest', '1.0.0')).not.toThrow();
     expect(() => compareSemver('', '')).not.toThrow();
     expect(compareSemver('', '')).toBe(0);
+  });
+});
+
+describe('parseApplicationMetadata', () => {
+  const encode = (value: unknown) => Array.from(new TextEncoder().encode(JSON.stringify(value)));
+
+  it('decodes the bundle manifest metadata core stores at install', async () => {
+    const manifest = {
+      package: 'chat',
+      version: '2.0.0',
+      name: 'Mero Chat',
+      description: 'E2E encrypted chat',
+      author: 'Calimero',
+      icon: 'data:image/png;base64,iVBORw0KGgo=',
+      tags: ['messaging'],
+      license: 'MIT',
+      links: { frontend: 'https://example.test' },
+    };
+
+    expect(parseApplicationMetadata({ metadata: encode(manifest) })).toEqual(manifest);
+  });
+
+  it('returns null for a raw-wasm install or bootstrap stub, which carry no manifest', () => {
+    expect(parseApplicationMetadata({ metadata: [] })).toBeNull();
+    expect(parseApplicationMetadata({ metadata: undefined as unknown as number[] })).toBeNull();
+  });
+
+  it('returns null rather than throwing on bytes that are not manifest JSON', () => {
+    // One unreadable row must not take down a list render.
+    expect(parseApplicationMetadata({ metadata: [0xff, 0xfe, 0xfd] })).toBeNull();
+    expect(parseApplicationMetadata({ metadata: encode('a string') })).toBeNull();
+    expect(parseApplicationMetadata({ metadata: encode([1, 2]) })).toBeNull();
   });
 });

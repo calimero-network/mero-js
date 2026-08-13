@@ -44,6 +44,32 @@ export interface ApplicationBlob {
   compiled: string;
 }
 
+/**
+ * Display metadata carried by a bundled (`.mpk`) application.
+ *
+ * Core stores `manifest.to_metadata_json()` as the application's `metadata`
+ * bytes at install time, so this is the bundle manifest's display half —
+ * already on the node, no registry lookup needed. `icon` is a self-contained
+ * `data:image/png;base64,...` URI (`cargo mero bundle` inlines the PNG and
+ * requires an explicit icon decision), so it renders without a second fetch.
+ */
+export interface ApplicationMetadata {
+  package?: string;
+  version?: string;
+  name?: string;
+  description?: string;
+  author?: string;
+  /** `data:image/png;base64,...` — inlined by `cargo mero bundle`. */
+  icon?: string;
+  tags?: string[];
+  license?: string;
+  links?: {
+    frontend?: string;
+    github?: string;
+    docs?: string;
+  };
+}
+
 export interface Application {
   id: string;
   blob: ApplicationBlob;
@@ -424,7 +450,24 @@ export type ListNamespacesResponseData = Namespace[];
 
 export interface NamespaceIdentity {
   namespaceId: string;
+  /** The key this node signs with in the namespace, bs58. */
   publicKey: string;
+  /**
+   * The account that key writes as, 64 hex characters.
+   *
+   * Core splits identity in two: an account is one per person and shared by all
+   * their devices, a signing key is per device per namespace. This — not
+   * `publicKey` — is the space the contract stamps (`msg.sender`,
+   * `info.creator`, profile keys all come from `env::account_id()`) and the one
+   * member-addressing endpoints take (`PUT .../members/{account}/...`,
+   * `RemoveGroupMembersApiRequest.members`, `listGroupMembers[].identity`).
+   * Comparing an account against a key never matches; they are related by a
+   * one-way hash, so a caller holding only the key cannot derive it.
+   *
+   * Absent when the node predates core's account model — treat as unknown
+   * rather than falling back to `publicKey`.
+   */
+  account?: string;
 }
 
 export interface CreateNamespaceRequest {
