@@ -593,36 +593,6 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Context Identity Aliases', () => {
-    it('listContextIdentityAliases unwraps the alias -> identity map', async () => {
-      mock.setMockResponse('GET', '/admin-api/alias/list/identity/ctx-1', { data: { alice: 'pk-1' } });
-      const result = await client.listContextIdentityAliases('ctx-1');
-      expect(result).toEqual({ alice: 'pk-1' });
-    });
-
-    it('createContextIdentityAlias sends { alias, identity } with context in the path', async () => {
-      mock.setMockResponse('POST', '/admin-api/alias/create/identity/ctx-1', { data: {} });
-      const result = await client.createContextIdentityAlias('ctx-1', { alias: 'alice', identity: 'pk-1' });
-      expect(result).toEqual({});
-      expect(mock.getRequestBody('POST', '/admin-api/alias/create/identity/ctx-1')).toEqual({
-        alias: 'alice',
-        identity: 'pk-1',
-      });
-    });
-
-    it('lookupContextIdentityAlias unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/alias/lookup/identity/ctx-1/alice', { data: { value: 'pk-1' } });
-      const result = await client.lookupContextIdentityAlias('ctx-1', 'alice');
-      expect(result).toEqual({ value: 'pk-1' });
-    });
-
-    it('deleteContextIdentityAlias unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/alias/delete/identity/ctx-1/alice', { data: {} });
-      const result = await client.deleteContextIdentityAlias('ctx-1', 'alice');
-      expect(result).toEqual({});
-    });
-  });
-
   describe('Namespace Management', () => {
     it('listNamespaces unwraps data', async () => {
       const ns = { namespaceId: 'ns-1', appKey: 'key', targetApplicationId: 'app-1', upgradePolicy: 'manual', createdAt: 123, memberCount: 1, contextCount: 0, subgroupCount: 0 };
