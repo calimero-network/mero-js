@@ -170,7 +170,28 @@ describe('Admin API E2E — Namespace Model', () => {
       expect(response.members.length).toBeGreaterThan(0);
       expect(response.members[0].identity).toBeTruthy();
       expect(response.members[0].role).toBeTruthy();
-      expect(response.selfIdentity).toBeTruthy();
+    });
+
+    it('lets the caller find itself among the members', async (ctx) => {
+      // The listing carries no self-field. A caller locates itself by asking
+      // who it is and matching account against account — one id space. The
+      // node's signing key would never match: entries are accounts, and an
+      // account is a one-way hash of a genesis.
+      const me = await mero.admin.getNamespaceIdentity(namespaceGroupId);
+
+      // This suite runs against the RELEASED merod, which predates `account` on
+      // the identity endpoint. Skip rather than fail: the assertion below is
+      // about an id space the node has to report before it can be checked, and
+      // a node that cannot report it is not a node this test has anything to
+      // say about. It runs for real in the core repo's paired SDK E2E, which
+      // builds merod from the PR.
+      if (!me.account) {
+        ctx.skip();
+        return;
+      }
+
+      const response = await mero.admin.listGroupMembers(namespaceGroupId);
+      expect(response.members.some((m) => m.identity === me.account)).toBe(true);
     });
 
     it('should get member capabilities', async () => {
