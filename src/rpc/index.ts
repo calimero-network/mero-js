@@ -45,6 +45,33 @@ interface JsonRpcResponse {
   };
 }
 
+/**
+ * POST a JSON-RPC call and unwrap `result`, converting an `error` payload into
+ * an `RpcError`. The node returns `{ type, data }` (not always `{ code,
+ * message }`), so this is the one place that normalization lives — every
+ * JSON-RPC caller in this SDK shares it rather than re-deriving a bare
+ * `Error(message)` and dropping the typed detail.
+ */
+export async function jsonRpcCall<T>(
+  httpClient: HttpClient,
+  method: string,
+  params: unknown,
+): Promise<T> {
+  const response = await httpClient.post<JsonRpcResponse>('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 1,
+    method,
+    params,
+  });
+
+  if (response.error) {
+    const err = response.error;
+    throw new RpcError(err.code ?? -1, err.message ?? err.type ?? 'RPC error', err.data, err.type);
+  }
+
+  return response.result as T;
+}
+
 export class RpcClient {
   private httpClient: HttpClient;
 
@@ -53,34 +80,17 @@ export class RpcClient {
   }
 
   async execute<T = unknown>(params: ExecuteParams): Promise<T> {
-    const body = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'execute',
-      params: {
-        contextId: params.contextId,
-        method: params.method,
-        argsJson: params.argsJson ?? {},
-      },
-    };
+    const result = await jsonRpcCall<JsonRpcResponse['result']>(this.httpClient, 'execute', {
+      contextId: params.contextId,
+      method: params.method,
+      argsJson: params.argsJson ?? {},
+    });
 
-    const response = await this.httpClient.post<JsonRpcResponse>(
-      '/jsonrpc',
-      body,
-    );
-
-    if (response.error) {
-      const err = response.error;
-      const code = err.code ?? -1;
-      const message = err.message ?? err.type ?? 'RPC error';
-      throw new RpcError(code, message, err.data, err.type);
+    if (result && 'output' in result) {
+      return result.output as T;
     }
 
-    if (response.result && 'output' in response.result) {
-      return response.result.output as T;
-    }
-
-    return response.result as T;
+    return result as T;
   }
 
   /**

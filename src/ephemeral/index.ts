@@ -1,15 +1,11 @@
 import type { HttpClient } from '../http-client/index.js';
 import type { SseClient } from '../events/index.js';
+import { jsonRpcCall } from '../rpc/index.js';
 import { jsonCodec } from './codec.js';
 import type { Codec, EphemeralEntry, EphemeralSnapshotEntry } from './types.js';
 
 export { jsonCodec };
 export type { Codec, EphemeralEntry, EphemeralSnapshotEntry };
-
-interface JsonRpcResponse {
-  result?: unknown;
-  error?: { code?: number; message?: string; type?: string; data?: unknown };
-}
 
 /**
  * Ephemeral presence: transient, encrypted, never-persisted state (cursors,
@@ -32,43 +28,46 @@ export class EphemeralClient {
     this.sse = opts.sse;
   }
 
-  private async rpc<T>(method: string, params: unknown): Promise<T> {
-    const response = await this.httpClient.post<JsonRpcResponse>('/jsonrpc', {
-      jsonrpc: '2.0',
-      id: 1,
-      method,
-      params,
-    });
-    if (response.error) {
-      const err = response.error;
-      throw new Error(err.message ?? err.type ?? `${method} failed`);
-    }
-    return response.result as T;
-  }
-
-  /** Publish your own presence slice, replacing it wholesale. */
+  /**
+   * Publish your own presence slice, replacing it wholesale.
+   *
+   * Rejects with an `RpcError` (not a bare `Error`), so a typed failure such as
+   * an oversized slice keeps its `type` and `data` — e.g. `SliceTooLarge` with
+   * the offending size — and is `instanceof RpcError` like every other RPC in
+   * this SDK.
+   */
   async set<T>(contextId: string, state: T, codec: Codec<T> = jsonCodec<T>()): Promise<void> {
-    await this.rpc<Record<string, never>>('set_ephemeral', {
+    await jsonRpcCall<Record<string, never>>(this.httpClient, 'set_ephemeral', {
       contextId,
       state: codec.encode(state),
     });
   }
 
-  /** Snapshot every live entry for a context. */
+  /**
+   * Snapshot every live entry for a context.
+   *
+   * An entry that fails to decode is SKIPPED, not fatal: presence slices are
+   * per-author and independent, so one peer publishing a slice this codec
+   * cannot read must not blank the whole roster (which, with only a low-rate
+   * reconciliation to recover, could persist).
+   */
   async get<T>(
     contextId: string,
     codec: Codec<T> = jsonCodec<T>(),
   ): Promise<EphemeralSnapshotEntry<T>[]> {
-    const result = await this.rpc<{ entries?: Record<string, { state: number[]; ageMs: number }> }>(
-      'get_ephemeral',
-      { contextId },
-    );
+    const result = await jsonRpcCall<{
+      entries?: Record<string, { state: number[]; ageMs: number }>;
+    }>(this.httpClient, 'get_ephemeral', { contextId });
     const entries = result?.entries ?? {};
-    return Object.entries(entries).map(([author, value]) => ({
-      author,
-      state: codec.decode(value.state),
-      ageMs: value.ageMs,
-    }));
+    const decoded: EphemeralSnapshotEntry<T>[] = [];
+    for (const [author, value] of Object.entries(entries)) {
+      try {
+        decoded.push({ author, state: codec.decode(value.state), ageMs: value.ageMs });
+      } catch {
+        // Undecodable slice from one peer — drop that peer, keep the rest.
+      }
+    }
+    return decoded;
   }
 
   /**

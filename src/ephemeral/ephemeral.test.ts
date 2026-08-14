@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EphemeralClient, jsonCodec } from './index.js';
+import { RpcError } from '../rpc/index.js';
 import type { HttpClient } from '../http-client/index.js';
 
 function mockHttp(postResponse: unknown): HttpClient {
@@ -49,6 +50,28 @@ describe('EphemeralClient.set', () => {
     const client = new EphemeralClient({ httpClient: http, sse: noopSse });
     await expect(client.set('ctx-1', { cursor: 1 })).rejects.toThrow('nope');
   });
+
+  it('throws a typed RpcError carrying the server type and data', async () => {
+    // Core returns `{ type, data }` (no code/message) — an oversized slice must
+    // keep the size detail instead of collapsing to Error("SliceTooLarge").
+    const http = mockHttp({
+      jsonrpc: '2.0',
+      id: 1,
+      error: { type: 'SliceTooLarge', data: { maxBytes: 16384, gotBytes: 20000 } },
+    });
+    const client = new EphemeralClient({ httpClient: http, sse: noopSse });
+
+    await expect(client.set('ctx-1', { cursor: 1 })).rejects.toBeInstanceOf(RpcError);
+    try {
+      await client.set('ctx-1', { cursor: 1 });
+      expect.unreachable('set should reject');
+    } catch (e) {
+      expect(e).toBeInstanceOf(RpcError);
+      expect((e as RpcError).type).toBe('SliceTooLarge');
+      expect((e as RpcError).message).toBe('SliceTooLarge');
+      expect((e as RpcError).data).toEqual({ maxBytes: 16384, gotBytes: 20000 });
+    }
+  });
 });
 
 describe('EphemeralClient.get', () => {
@@ -65,6 +88,26 @@ describe('EphemeralClient.get', () => {
     const entries = await client.get<{ cursor: number }>('ctx-1');
 
     expect(entries).toEqual([{ author: 'AUTHOR_A', state: { cursor: 9 }, ageMs: 447 }]);
+  });
+
+  it('skips an undecodable entry instead of rejecting the whole snapshot', async () => {
+    const good = Array.from(new TextEncoder().encode(JSON.stringify({ cursor: 9 })));
+    const garbage = [0xff, 0xfe, 0xfd];
+    const http = mockHttp({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        entries: {
+          BAD: { state: garbage, ageMs: 10 },
+          GOOD: { state: good, ageMs: 20 },
+        },
+      },
+    });
+    const client = new EphemeralClient({ httpClient: http, sse: noopSse });
+
+    // One malformed peer must not blank the roster.
+    const entries = await client.get<{ cursor: number }>('ctx-1');
+    expect(entries).toEqual([{ author: 'GOOD', state: { cursor: 9 }, ageMs: 20 }]);
   });
 
   it('returns an empty array when the snapshot is empty', async () => {
