@@ -94,7 +94,6 @@ describe('Admin API E2E — Route coverage sweep', () => {
   // NOTE: the full member lifecycle (add/list/role/capabilities/metadata/auto-follow/
   // remove) is deeply asserted in round-trip.test.ts.
   it('group proofs + signing key + updateApp + app uninstall', async () => {
-    await cover('signingKey', () => mero.admin.registerGroupSigningKey(groupId, {} as never));
     await cover('updateApp', () =>
       mero.admin.updateContextApplication(contextId, { applicationId, executorPublicKey: executor }),
     );

@@ -803,14 +803,6 @@ export interface SyncGroupResponseData {
   contextCount: number;
 }
 
-export interface RegisterGroupSigningKeyRequest {
-  signingKey: string;
-}
-
-export interface RegisterGroupSigningKeyResponseData {
-  publicKey: string;
-}
-
 export interface UpgradeGroupRequest {
   targetApplicationId: string;
   requester?: string;
