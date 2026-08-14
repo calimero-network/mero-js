@@ -1,3 +1,9 @@
+## [9.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.1...mero-js-v9.0.2) (2026-08-14)
+
+### Bug Fixes
+
+* drop selfIdentity from the group member listing ([#98](https://github.com/calimero-network/mero-js/issues/98)) ([bf61155](https://github.com/calimero-network/mero-js/commit/bf611555544e1ead5461554aac054936ce6a83d0))
+
 ## [9.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.0...mero-js-v9.0.1) (2026-08-12)
 
 ### Bug Fixes
