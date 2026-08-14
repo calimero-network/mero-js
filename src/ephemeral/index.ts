@@ -70,4 +70,44 @@ export class EphemeralClient {
       ageMs: value.ageMs,
     }));
   }
+
+  /**
+   * Observe presence changes for a context.
+   *
+   * This adds NO transport — it is a typed filter over the existing SSE event
+   * stream, which already carries `{ contextId, type, data }`. Returns an
+   * unsubscribe function.
+   */
+  subscribe<T>(
+    contextId: string,
+    handler: (entry: EphemeralEntry<T>) => void,
+    codec: Codec<T> = jsonCodec<T>(),
+  ): () => void {
+    const listener = (event: unknown): void => {
+      const e = event as { contextId?: string; type?: string; data?: unknown };
+      if (e.type !== 'Ephemeral' || e.contextId !== contextId) return;
+
+      const data = e.data as { author?: string; state?: number[]; removed?: boolean } | undefined;
+      if (!data?.author) return;
+
+      // `removed` is omitted on an upsert, so normalize to a boolean here and
+      // spare every caller the truthiness rule.
+      const removed = Boolean(data.removed);
+      handler({
+        author: data.author,
+        state: removed || data.state === undefined ? undefined : codec.decode(data.state),
+        removed,
+      });
+    };
+
+    this.sse.on('event', listener);
+    // Errors surface via the SSE client's own 'error' event; nothing more to
+    // do with them here.
+    void this.sse.connect().catch(() => undefined);
+    void this.sse.subscribe([contextId]).catch(() => undefined);
+
+    return () => {
+      this.sse.off('event', listener);
+    };
+  }
 }

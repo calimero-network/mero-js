@@ -73,3 +73,90 @@ describe('EphemeralClient.get', () => {
     expect(await client.get('ctx-1')).toEqual([]);
   });
 });
+
+describe('EphemeralClient.subscribe', () => {
+  function fakeSse() {
+    const handlers: Array<(e: unknown) => void> = [];
+    return {
+      handlers,
+      on: vi.fn((_evt: string, h: (e: unknown) => void) => { handlers.push(h); }),
+      off: vi.fn((_evt: string, h: (e: unknown) => void) => {
+        const i = handlers.indexOf(h);
+        if (i >= 0) handlers.splice(i, 1);
+      }),
+      connect: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      emit: (e: unknown) => handlers.forEach(h => h(e)),
+    };
+  }
+
+  const encoded = (v: unknown) => Array.from(new TextEncoder().encode(JSON.stringify(v)));
+
+  it('delivers only Ephemeral events for the requested context', () => {
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    const seen: unknown[] = [];
+    client.subscribe('ctx-1', e => seen.push(e));
+
+    // Wrong type -> ignored.
+    sse.emit({ contextId: 'ctx-1', type: 'AppVersionChanged', data: {} });
+    // Wrong context -> ignored.
+    sse.emit({ contextId: 'ctx-2', type: 'Ephemeral', data: { author: 'A', state: encoded(1) } });
+    // Match.
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded({ x: 1 }) } });
+
+    expect(seen).toEqual([{ author: 'A', state: { x: 1 }, removed: false }]);
+  });
+
+  it('treats a MISSING removed as an upsert and a true removed as a removal', () => {
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    const seen: Array<{ author: string; removed?: boolean; state?: unknown }> = [];
+    client.subscribe('ctx-1', e => seen.push(e));
+
+    // Core omits `removed` entirely on an upsert (skip_serializing_if).
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded({ x: 1 }) } });
+    // On a removal, `state` is omitted and `removed` is true.
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', removed: true } });
+
+    expect(seen[0].removed).toBe(false);
+    expect(seen[0].state).toEqual({ x: 1 });
+    expect(seen[1].removed).toBe(true);
+    expect(seen[1].state).toBeUndefined();
+  });
+
+  it('does not throw when a removal arrives with no state to decode', () => {
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    client.subscribe('ctx-1', () => {});
+    expect(() =>
+      sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', removed: true } }),
+    ).not.toThrow();
+  });
+
+  it('stops delivering after the returned unsubscribe is called', () => {
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    const seen: unknown[] = [];
+    const unsubscribe = client.subscribe('ctx-1', e => seen.push(e));
+
+    unsubscribe();
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded(1) } });
+
+    expect(seen).toEqual([]);
+    expect(sse.off).toHaveBeenCalled();
+  });
+
+  it('leaves data.state as a raw byte array (mero-js auto-decode must not fire)', () => {
+    // SseClient auto-decodes a byte-array `data` (sse.ts:215-225). Presence
+    // `data` is an OBJECT so that decode does not fire, and the nested
+    // `data.state` must reach us raw for the codec to decode. If a future
+    // change recursed into nested arrays, this test fails loudly.
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    let received: { x: number } | undefined;
+    client.subscribe<{ x: number }>('ctx-1', e => { received = e.state; });
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded({ x: 42 }) } });
+    expect(received).toEqual({ x: 42 });
+  });
+});

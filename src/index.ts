@@ -41,6 +41,10 @@ export type {
   MigrationCompletedData,
 } from './events/index.js';
 
+// Ephemeral presence (cursors / typing / online)
+export { EphemeralClient, jsonCodec } from './ephemeral/index.js';
+export type { Codec, EphemeralEntry, EphemeralSnapshotEntry } from './ephemeral/index.js';
+
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud/index.js';
 
