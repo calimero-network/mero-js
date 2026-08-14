@@ -170,7 +170,17 @@ describe('Admin API E2E — Namespace Model', () => {
       expect(response.members.length).toBeGreaterThan(0);
       expect(response.members[0].identity).toBeTruthy();
       expect(response.members[0].role).toBeTruthy();
-      expect(response.selfIdentity).toBeTruthy();
+    });
+
+    it('lets the caller find itself among the members', async () => {
+      // The listing carries no self-field. A caller locates itself by asking
+      // who it is and matching account against account — one id space. The
+      // node's signing key would never match: entries are accounts, and an
+      // account is a one-way hash of a genesis.
+      const me = await mero.admin.getNamespaceIdentity(namespaceGroupId);
+      const response = await mero.admin.listGroupMembers(namespaceGroupId);
+      expect(me.account).toBeTruthy();
+      expect(response.members.some((m) => m.identity === me.account)).toBe(true);
     });
 
     it('should get member capabilities', async () => {

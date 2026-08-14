@@ -779,20 +779,16 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1')).toEqual({ requester: 'pk-admin' });
     });
 
-    it('listGroupMembers preserves selfIdentity', async () => {
+    it('listGroupMembers returns the members', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
         members: [{ identity: 'member-1', role: 'Member' }],
-        selfIdentity: 'self-1',
       });
       const result = await client.listGroupMembers('g-1');
       expect(result.members).toHaveLength(1);
-      expect(result.selfIdentity).toBe('self-1');
     });
 
     it('listGroupMembers rejects with an explicit error when the response omits members', async () => {
-      mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
-        selfIdentity: 'self-1',
-      });
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {});
       await expect(client.listGroupMembers('g-1')).rejects.toThrow(
         /missing or non-array `members` field/,
       );
@@ -801,11 +797,9 @@ describe('AdminApiClient', () => {
     it('listGroupMembers accepts an empty group', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/members', {
         members: [],
-        selfIdentity: 'self-1',
       });
       const result = await client.listGroupMembers('g-1');
       expect(result.members).toEqual([]);
-      expect(result.selfIdentity).toBe('self-1');
     });
 
     it('listGroupContexts unwraps data', async () => {

@@ -424,7 +424,15 @@ export type ListNamespacesResponseData = Namespace[];
 
 export interface NamespaceIdentity {
   namespaceId: string;
+  /** The key this node signs with, base58. */
   publicKey: string;
+  /**
+   * The account this node writes as, 64 hex characters. This — not
+   * `publicKey` — is what member-addressing endpoints take, and what
+   * `listGroupMembers` entries are keyed by, so it is how a caller locates
+   * itself in a member list.
+   */
+  account: string;
 }
 
 export interface CreateNamespaceRequest {
@@ -614,7 +622,6 @@ export interface GroupMember {
 
 export interface ListGroupMembersResponseData {
   members: GroupMember[];
-  selfIdentity?: string;
   /**
    * @deprecated The server response uses `members`, not `data`. This alias
    * is retained so existing callers compile during the upgrade window; it
