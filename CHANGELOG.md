@@ -1,3 +1,16 @@
+## [11.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v10.0.0...mero-js-v11.0.0) (2026-08-14)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** the four *ContextIdentityAlias methods on AdminApiClient are
+removed, along with CreateContextIdentityAliasRequest and the
+List/Create/Lookup/DeleteContextIdentityAliasResponseData types. Manage
+identities without per-context aliases.
+
+### Features
+
+* **admin:** drop context identity alias methods ([#100](https://github.com/calimero-network/mero-js/issues/100)) ([162259c](https://github.com/calimero-network/mero-js/commit/162259cd410301dec526abd37a4757d890d79644))
+
 ## [10.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.2...mero-js-v10.0.0) (2026-08-14)
 
 ### ⚠ BREAKING CHANGES
