@@ -84,8 +84,6 @@ import type {
   GetMetadataResponseData,
   SyncGroupRequest,
   SyncGroupResponseData,
-  RegisterGroupSigningKeyRequest,
-  RegisterGroupSigningKeyResponseData,
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
@@ -937,18 +935,6 @@ export class AdminApiClient {
 
   async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
     return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, request ?? {}));
-  }
-
-  async registerGroupSigningKey(
-    groupId: string,
-    request: RegisterGroupSigningKeyRequest,
-  ): Promise<RegisterGroupSigningKeyResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: RegisterGroupSigningKeyResponseData }>(
-        `/admin-api/groups/${groupId}/signing-key`,
-        request,
-      ),
-    );
   }
 
   async upgradeGroup(groupId: string, request: UpgradeGroupRequest): Promise<UpgradeGroupResponseData> {

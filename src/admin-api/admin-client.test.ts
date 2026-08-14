@@ -982,11 +982,6 @@ describe('AdminApiClient', () => {
       expect(result.memberCount).toBe(2);
     });
 
-    it('registerGroupSigningKey unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/g-1/signing-key', { data: { publicKey: 'pk-123' } });
-      const result = await client.registerGroupSigningKey('g-1', { signingKey: 'sk-123' });
-      expect(result).toEqual({ publicKey: 'pk-123' });
-    });
   });
 
   describe('Group Upgrade', () => {
