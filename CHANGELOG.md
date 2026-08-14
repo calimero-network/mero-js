@@ -1,3 +1,13 @@
+## [10.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.2...mero-js-v10.0.0) (2026-08-14)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** drop registerGroupSigningKey (#99)
+
+### Bug Fixes
+
+* **admin:** drop registerGroupSigningKey ([#99](https://github.com/calimero-network/mero-js/issues/99)) ([fa76803](https://github.com/calimero-network/mero-js/commit/fa76803a5e37aa71f9f8a55f9a9840b19fc59191)), closes [calimero-network/core#3439](https://github.com/calimero-network/core/issues/3439)
+
 ## [9.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v9.0.1...mero-js-v9.0.2) (2026-08-14)
 
 ### Bug Fixes
