@@ -39,15 +39,10 @@ import type {
   GetBlobInfoResponseData,
   CreateContextAliasRequest,
   CreateApplicationAliasRequest,
-  CreateContextIdentityAliasRequest,
   CreateAliasResponseData,
   LookupAliasResponseData,
   DeleteAliasResponseData,
   ListAliasesResponseData,
-  ListContextIdentityAliasesResponseData,
-  CreateContextIdentityAliasResponseData,
-  LookupContextIdentityAliasResponseData,
-  DeleteContextIdentityAliasResponseData,
   ListNamespacesResponseData,
   CreateNamespaceRequest,
   CreateNamespaceResponseData,
@@ -604,52 +599,6 @@ export class AdminApiClient {
 
   async listApplicationAliases(): Promise<ListAliasesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/application'));
-  }
-
-  // ---- Context Identity Aliases ----
-
-  async listContextIdentityAliases(contextId: string): Promise<ListContextIdentityAliasesResponseData> {
-    return unwrap(
-      await this.httpClient.get<{ data: ListContextIdentityAliasesResponseData }>(
-        `/admin-api/alias/list/identity/${contextId}`,
-      ),
-    );
-  }
-
-  async createContextIdentityAlias(
-    contextId: string,
-    request: CreateContextIdentityAliasRequest,
-  ): Promise<CreateContextIdentityAliasResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: CreateContextIdentityAliasResponseData }>(
-        `/admin-api/alias/create/identity/${contextId}`,
-        { alias: request.alias, identity: request.identity },
-      ),
-    );
-  }
-
-  async lookupContextIdentityAlias(
-    contextId: string,
-    name: string,
-  ): Promise<LookupContextIdentityAliasResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: LookupContextIdentityAliasResponseData }>(
-        `/admin-api/alias/lookup/identity/${contextId}/${encodeURIComponent(name)}`,
-        {},
-      ),
-    );
-  }
-
-  async deleteContextIdentityAlias(
-    contextId: string,
-    name: string,
-  ): Promise<DeleteContextIdentityAliasResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: DeleteContextIdentityAliasResponseData }>(
-        `/admin-api/alias/delete/identity/${contextId}/${encodeURIComponent(name)}`,
-        {},
-      ),
-    );
   }
 
   // ---- Namespace Management ----

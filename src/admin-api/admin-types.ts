@@ -306,15 +306,10 @@ export interface CreateApplicationAliasRequest {
   applicationId: string;
 }
 
-export interface CreateContextIdentityAliasRequest {
-  alias: string;
-  identity: string;
-}
-
 /**
  * Core's `ListAliasesResponse` is `{ data: BTreeMap<Alias<T>, T> }`, so once the
  * `data` envelope is stripped the payload is a flat `{ alias: id }` map — not a
- * list of entries. Applies to context, application and context-identity aliases.
+ * list of entries. Applies to context and application aliases.
  */
 export type ListAliasesResponseData = Record<string, string>;
 
@@ -325,17 +320,6 @@ export type DeleteAliasResponseData = Record<string, never>;
 export interface LookupAliasResponseData {
   value?: string;
 }
-
-// ---- Context identity aliases ----
-
-export type ListContextIdentityAliasesResponseData = ListAliasesResponseData;
-export type CreateContextIdentityAliasResponseData = Record<string, never>;
-
-export interface LookupContextIdentityAliasResponseData {
-  value?: string;
-}
-
-export type DeleteContextIdentityAliasResponseData = Record<string, never>;
 
 // ---- Shared invitation types ----
 

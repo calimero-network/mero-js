@@ -87,8 +87,6 @@ const SPECS: Spec[] = [
     file: 'jsonrpc/execute.req.json',
     required: [exec('contextId'), exec('method')],
     optional: [exec('argsJson'), exec('executorPublicKey')],
-    // core defaults these; the SDK does not send them.
-    ignoredCoreKeys: ['substitute'],
   },
 ];
 

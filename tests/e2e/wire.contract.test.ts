@@ -73,7 +73,6 @@ let contextId: string;
 let memberPublicKey: string;
 const contextAlias = `wc-ctx-${RUN}`;
 const applicationAlias = `wc-app-${RUN}`;
-const identityAlias = `wc-id-${RUN}`;
 
 let applications: Application[] = [];
 let contexts: ContextWithGroup[] = [];
@@ -178,10 +177,6 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
 
     await mero.admin.createContextAlias({ alias: contextAlias, contextId });
     await mero.admin.createApplicationAlias({ alias: applicationAlias, applicationId });
-    await mero.admin.createContextIdentityAlias(contextId, {
-      alias: identityAlias,
-      identity: memberPublicKey,
-    });
 
     applications = (await mero.admin.listApplications()).apps;
     contexts = (await mero.admin.getContexts()).contexts;
@@ -227,13 +222,12 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
 
   // The three alias listings share one declared type, and it is not a keyed
   // record but a flat map — so it gets a shape check rather than a key table.
-  it('ListAliasesResponseData is a flat { alias: id } map (via listContextAliases, listApplicationAliases, listContextIdentityAliases)', async () => {
+  it('ListAliasesResponseData is a flat { alias: id } map (via listContextAliases, listApplicationAliases)', async () => {
     // The annotation is the compile-time half: the declared type has to *be* the
     // map core sends. It stops compiling if it goes back to a list of entries.
     const listings: Record<string, Record<string, string>> = {
       listContextAliases: await mero.admin.listContextAliases(),
       listApplicationAliases: await mero.admin.listApplicationAliases(),
-      listContextIdentityAliases: await mero.admin.listContextIdentityAliases(contextId),
     };
 
     for (const [via, listing] of Object.entries(listings)) {
@@ -249,6 +243,5 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
     // is the map core actually sends.
     expect(listings.listContextAliases[contextAlias]).toBe(contextId);
     expect(listings.listApplicationAliases[applicationAlias]).toBe(applicationId);
-    expect(listings.listContextIdentityAliases[identityAlias]).toBe(memberPublicKey);
   });
 });
