@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EphemeralClient, jsonCodec } from './index.js';
+import type { EphemeralEntry } from './index.js';
 import { RpcError } from '../rpc/index.js';
 import type { HttpClient } from '../http-client/index.js';
 
@@ -71,49 +72,6 @@ describe('EphemeralClient.set', () => {
       expect((e as RpcError).message).toBe('SliceTooLarge');
       expect((e as RpcError).data).toEqual({ maxBytes: 16384, gotBytes: 20000 });
     }
-  });
-});
-
-describe('EphemeralClient.get', () => {
-  it('decodes the author-keyed map into entries carrying ageMs', async () => {
-    // EXACT shape captured from a live node (core 11418a3c).
-    const state = Array.from(new TextEncoder().encode(JSON.stringify({ cursor: 9 })));
-    const http = mockHttp({
-      jsonrpc: '2.0',
-      id: 1,
-      result: { entries: { 'AUTHOR_A': { state, ageMs: 447 } } },
-    });
-    const client = new EphemeralClient({ httpClient: http, sse: noopSse });
-
-    const entries = await client.get<{ cursor: number }>('ctx-1');
-
-    expect(entries).toEqual([{ author: 'AUTHOR_A', state: { cursor: 9 }, ageMs: 447 }]);
-  });
-
-  it('skips an undecodable entry instead of rejecting the whole snapshot', async () => {
-    const good = Array.from(new TextEncoder().encode(JSON.stringify({ cursor: 9 })));
-    const garbage = [0xff, 0xfe, 0xfd];
-    const http = mockHttp({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        entries: {
-          BAD: { state: garbage, ageMs: 10 },
-          GOOD: { state: good, ageMs: 20 },
-        },
-      },
-    });
-    const client = new EphemeralClient({ httpClient: http, sse: noopSse });
-
-    // One malformed peer must not blank the roster.
-    const entries = await client.get<{ cursor: number }>('ctx-1');
-    expect(entries).toEqual([{ author: 'GOOD', state: { cursor: 9 }, ageMs: 20 }]);
-  });
-
-  it('returns an empty array when the snapshot is empty', async () => {
-    const http = mockHttp({ jsonrpc: '2.0', id: 1, result: { entries: {} } });
-    const client = new EphemeralClient({ httpClient: http, sse: noopSse });
-    expect(await client.get('ctx-1')).toEqual([]);
   });
 });
 
@@ -201,5 +159,34 @@ describe('EphemeralClient.subscribe', () => {
     client.subscribe<{ x: number }>('ctx-1', e => { received = e.state; });
     sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded({ x: 42 }) } });
     expect(received).toEqual({ x: 42 });
+  });
+
+  it('passes ageMs through on a replayed seed entry', () => {
+    // EXACT shape: a replay-on-subscribe seed entry carries ageMs.
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    const seen: Array<EphemeralEntry<{ x: number }>> = [];
+    client.subscribe<{ x: number }>('ctx-1', e => seen.push(e));
+
+    sse.emit({
+      contextId: 'ctx-1',
+      type: 'Ephemeral',
+      data: { author: 'A', state: encoded({ x: 1 }), ageMs: 447 },
+    });
+
+    expect(seen).toEqual([{ author: 'A', state: { x: 1 }, removed: false, ageMs: 447 }]);
+  });
+
+  it('leaves ageMs undefined (not 0) on a live delta', () => {
+    // EXACT shape: a live delta carries no ageMs at all (skip_serializing_if).
+    const sse = fakeSse();
+    const client = new EphemeralClient({ httpClient: mockHttp({}), sse: sse as never });
+    const seen: Array<EphemeralEntry<{ x: number }>> = [];
+    client.subscribe<{ x: number }>('ctx-1', e => seen.push(e));
+
+    sse.emit({ contextId: 'ctx-1', type: 'Ephemeral', data: { author: 'A', state: encoded({ x: 1 }) } });
+
+    expect(seen[0].ageMs).toBeUndefined();
+    expect('ageMs' in seen[0]).toBe(false);
   });
 });

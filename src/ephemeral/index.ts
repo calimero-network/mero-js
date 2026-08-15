@@ -2,10 +2,10 @@ import type { HttpClient } from '../http-client/index.js';
 import type { SseClient } from '../events/index.js';
 import { jsonRpcCall } from '../rpc/index.js';
 import { jsonCodec } from './codec.js';
-import type { Codec, EphemeralEntry, EphemeralSnapshotEntry } from './types.js';
+import type { Codec, EphemeralEntry } from './types.js';
 
 export { jsonCodec };
-export type { Codec, EphemeralEntry, EphemeralSnapshotEntry };
+export type { Codec, EphemeralEntry };
 
 /**
  * Ephemeral presence: transient, encrypted, never-persisted state (cursors,
@@ -15,9 +15,14 @@ export type { Codec, EphemeralEntry, EphemeralSnapshotEntry };
  * The write/read asymmetry is the model, not an oversight. `set` takes no
  * author: you can only ever write your OWN slot, and the node resolves the
  * author server-side from its owned context identity — which is also why a
- * client cannot publish as somebody else. `get`/`subscribe` return everyone's
+ * client cannot publish as somebody else. `subscribe` returns everyone's
  * slots, so each carries its `author`. The store is N independent
  * single-writer registers keyed by author; there is no merge across authors.
+ *
+ * There is a single read path: `subscribe`. On subscribing to a context, the
+ * node replays that context's current presence to this connection as
+ * ordinary `Ephemeral` events (carrying `ageMs`), before any live deltas
+ * (which carry no `ageMs`). There is no separate snapshot RPC.
  */
 export class EphemeralClient {
   private httpClient: HttpClient;
@@ -44,38 +49,14 @@ export class EphemeralClient {
   }
 
   /**
-   * Snapshot every live entry for a context.
-   *
-   * An entry that fails to decode is SKIPPED, not fatal: presence slices are
-   * per-author and independent, so one peer publishing a slice this codec
-   * cannot read must not blank the whole roster (which, with only a low-rate
-   * reconciliation to recover, could persist).
-   */
-  async get<T>(
-    contextId: string,
-    codec: Codec<T> = jsonCodec<T>(),
-  ): Promise<EphemeralSnapshotEntry<T>[]> {
-    const result = await jsonRpcCall<{
-      entries?: Record<string, { state: number[]; ageMs: number }>;
-    }>(this.httpClient, 'get_ephemeral', { contextId });
-    const entries = result?.entries ?? {};
-    const decoded: EphemeralSnapshotEntry<T>[] = [];
-    for (const [author, value] of Object.entries(entries)) {
-      try {
-        decoded.push({ author, state: codec.decode(value.state), ageMs: value.ageMs });
-      } catch {
-        // Undecodable slice from one peer — drop that peer, keep the rest.
-      }
-    }
-    return decoded;
-  }
-
-  /**
    * Observe presence changes for a context.
    *
    * This adds NO transport — it is a typed filter over the existing SSE event
-   * stream, which already carries `{ contextId, type, data }`. Returns an
-   * unsubscribe function.
+   * stream, which already carries `{ contextId, type, data }`. On subscribing,
+   * the node replays that context's current presence to this connection as
+   * ordinary `Ephemeral` events before any live deltas; a replayed entry
+   * carries `ageMs`, a live delta does not (never synthesized as `0` — absent
+   * and zero mean different things). Returns an unsubscribe function.
    */
   subscribe<T>(
     contextId: string,
@@ -86,17 +67,23 @@ export class EphemeralClient {
       const e = event as { contextId?: string; type?: string; data?: unknown };
       if (e.type !== 'Ephemeral' || e.contextId !== contextId) return;
 
-      const data = e.data as { author?: string; state?: number[]; removed?: boolean } | undefined;
+      const data = e.data as
+        | { author?: string; state?: number[]; removed?: boolean; ageMs?: number }
+        | undefined;
       if (!data?.author) return;
 
       // `removed` is omitted on an upsert, so normalize to a boolean here and
       // spare every caller the truthiness rule.
       const removed = Boolean(data.removed);
-      handler({
+      const entry: EphemeralEntry<T> = {
         author: data.author,
         state: removed || data.state === undefined ? undefined : codec.decode(data.state),
         removed,
-      });
+      };
+      // `ageMs` is present only on a replayed seed entry; pass it through as-is
+      // rather than defaulting a live delta to 0.
+      if (data.ageMs !== undefined) entry.ageMs = data.ageMs;
+      handler(entry);
     };
 
     this.sse.on('event', listener);
