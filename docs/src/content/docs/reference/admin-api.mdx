@@ -114,7 +114,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | --- | --- |
 | `listNamespaces(): Promise<ListNamespacesResponseData>` | `GET /namespaces` |
 | `getNamespace(namespaceId): Promise<Namespace>` | `GET /namespaces/{namespaceId}` |
-| `getNamespaceIdentity(namespaceId): Promise<NamespaceIdentity>` | `GET /namespaces/{namespaceId}/identity` |
+| `getNamespaceIdentity(namespaceId): Promise<NamespaceIdentity>` — **deprecated**, use `getNodeIdentity()` | delegates to `GET /identity` |
 | `listNamespacesForApplication(applicationId): Promise<ListNamespacesResponseData>` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): Promise<CreateNamespaceResponseData>` | `POST /namespaces` |
 | `deleteNamespace(namespaceId, request?): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
@@ -203,6 +203,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 
 | Method | Endpoint |
 | --- | --- |
+| `getNodeIdentity(): Promise<NodeIdentity>` | `GET /identity` |
 | `getPeersCount(): Promise<{ count: number }>` | `GET /peers` |
 | `getNetworkStatus(): Promise<unknown>` | `GET /network/status` |
 | `getUsage(): Promise<unknown>` | `GET /usage` |

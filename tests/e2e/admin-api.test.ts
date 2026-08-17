@@ -124,7 +124,18 @@ describe('Admin API E2E — Namespace Model', () => {
       expect(ns.targetApplicationId).toBe(applicationId);
     });
 
+    it('should get the node identity', async () => {
+      const identity = await mero.admin.getNodeIdentity();
+      expect(identity.accountId).toBeTruthy();
+      expect(identity.publicKey).toBeTruthy();
+      // `accountRootPublicKey` is deliberately not asserted: it landed after
+      // `0.11.0-rc.22`, and this suite runs against the RELEASED merod. Asserting
+      // it would fail on the very nodes a caller is most likely to have.
+    });
+
     it('should get namespace identity', async () => {
+      // Deprecated, and covered because it still has callers: it must keep
+      // answering from the node-level route, with the argument echoed back.
       const identity = await mero.admin.getNamespaceIdentity(namespaceId);
       expect(identity.namespaceId).toBe(namespaceId);
       expect(identity.publicKey).toBeTruthy();
