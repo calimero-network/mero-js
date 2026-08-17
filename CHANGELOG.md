@@ -1,3 +1,9 @@
+## [11.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v11.0.0...mero-js-v11.1.0) (2026-08-17)
+
+### Features
+
+* **admin:** add getNodeIdentity, deprecate getNamespaceIdentity ([#101](https://github.com/calimero-network/mero-js/issues/101)) ([bc134df](https://github.com/calimero-network/mero-js/commit/bc134dfad66c9bdf52e60c74bad26d1fb0b90ad4))
+
 ## [11.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v10.0.0...mero-js-v11.0.0) (2026-08-14)
 
 ### ⚠ BREAKING CHANGES
