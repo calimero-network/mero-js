@@ -406,7 +406,59 @@ export interface Namespace {
 
 export type ListNamespacesResponseData = Namespace[];
 
+/**
+ * Who this node is: the account it writes as, the device it is, and the key it
+ * signs with.
+ *
+ * Every field is node-level. One root key means one account, everywhere, and a
+ * node signs with one key — so none of this varies by namespace, which is why
+ * the endpoint behind it takes none.
+ */
+export interface NodeIdentity {
+  /**
+   * The account this node writes as, 64 hex characters. This — not
+   * `publicKey` — is what member-addressing endpoints take, and what
+   * `listGroupMembers` entries are keyed by, so it is how a caller locates
+   * itself in a member list.
+   */
+  accountId: string;
+  /**
+   * The device this node is, 64 hex characters, or `null` before it has
+   * enrolled anywhere.
+   *
+   * `null` is a real answer rather than a missing one: the account id above
+   * exists as soon as the node has a root, and enrolment — which a join
+   * performs — is what adds the device that speaks for it.
+   */
+  deviceId: string | null;
+  /**
+   * The key this node signs ops with, base58.
+   *
+   * The device's signing key, not the account root: the root signs
+   * certificates and never an op, so a signature on the wire verifies against
+   * this one.
+   */
+  publicKey: string;
+  /**
+   * The epoch-0 root **public** key of this node's account, 64 hex characters.
+   *
+   * What a second device needs to pair into this account, and public by
+   * construction — it is hashed into `accountId` and travels in every genesis.
+   * The private root never leaves the node over HTTP.
+   *
+   * Optional because a node at or below `0.11.0-rc.22` does not send it: the
+   * field landed after that release. Required in the type would make this SDK
+   * claim something the node the caller chose may not report.
+   */
+  accountRootPublicKey?: string;
+}
+
+/**
+ * @deprecated Use {@link AdminApiClient.getNodeIdentity} instead. Nothing here
+ * varies by namespace, so the parameter could only ever be decoration.
+ */
 export interface NamespaceIdentity {
+  /** Echoed back from the argument; it does not describe the identity. */
   namespaceId: string;
   /** The key this node signs with, base58. */
   publicKey: string;

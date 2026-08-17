@@ -608,10 +608,53 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
-    it('getNamespaceIdentity unwraps data', async () => {
-      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/identity', { data: { namespaceId: 'ns-1', publicKey: 'pk-1' } });
-      const result = await client.getNamespaceIdentity('ns-1');
-      expect(result).toEqual({ namespaceId: 'ns-1', publicKey: 'pk-1' });
+    it('getNodeIdentity unwraps data', async () => {
+      const identity = {
+        accountId: 'ac-1',
+        deviceId: 'dv-1',
+        publicKey: 'pk-1',
+        accountRootPublicKey: 'rt-1',
+      };
+      mock.setMockResponse('GET', '/admin-api/identity', { data: identity });
+      const result = await client.getNodeIdentity();
+      expect(result).toEqual(identity);
+    });
+
+    it('getNodeIdentity reports a node that has enrolled nowhere', async () => {
+      // `deviceId: null` is a real answer, not a missing one: the account exists
+      // as soon as the node has a root, and a join is what adds the device that
+      // speaks for it. Tolerating it here is what keeps a pre-join read from
+      // looking like a failure.
+      mock.setMockResponse('GET', '/admin-api/identity', {
+        data: { accountId: 'ac-1', deviceId: null, publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
+      });
+      expect((await client.getNodeIdentity()).deviceId).toBeNull();
+    });
+
+    it('getNamespaceIdentity answers from the node-level route', async () => {
+      // The deprecated shape, kept working by delegation rather than by calling
+      // the superseded per-namespace endpoint. Nothing it returns varies by
+      // namespace, so `namespaceId` is the argument echoed back — asserted, so
+      // that stays a deliberate contract and not an accident of the reshape.
+      mock.setMockResponse('GET', '/admin-api/identity', {
+        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
+      });
+      expect(await client.getNamespaceIdentity('ns-1')).toEqual({
+        namespaceId: 'ns-1',
+        publicKey: 'pk-1',
+        account: 'ac-1',
+      });
+    });
+
+    it('getNamespaceIdentity gives the same answer for every namespace', async () => {
+      // The claim the deprecation rests on. If these ever differed, the
+      // parameter would be load-bearing and dropping it would lose information.
+      mock.setMockResponse('GET', '/admin-api/identity', {
+        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
+      });
+      const [a, b] = [await client.getNamespaceIdentity('ns-a'), await client.getNamespaceIdentity('ns-b')];
+      expect(a.account).toBe(b.account);
+      expect(a.publicKey).toBe(b.publicKey);
     });
 
     it('listNamespacesForApplication unwraps data', async () => {

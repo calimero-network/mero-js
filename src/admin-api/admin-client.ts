@@ -58,6 +58,7 @@ import type {
   SubgroupEntry,
   Namespace,
   NamespaceIdentity,
+  NodeIdentity,
   GroupInfoResponseData,
   DeleteGroupRequest,
   DeleteGroupResponseData,
@@ -611,13 +612,40 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: Namespace }>(`/admin-api/namespaces/${namespaceId}`));
   }
 
+  /**
+   * Who this node is — the account it writes as, the device it is, the key it
+   * signs with, and the account root a second device pairs against.
+   *
+   * Takes no namespace, and that is the point: one root key is one account
+   * everywhere, and a node signs with one key, so none of it varies by
+   * namespace.
+   */
+  async getNodeIdentity(): Promise<NodeIdentity> {
+    return unwrap(await this.httpClient.get<{ data: NodeIdentity }>('/admin-api/identity'));
+  }
+
+  /**
+   * @deprecated Use {@link getNodeIdentity} instead. Every field this returns is
+   * node-level, so the namespace was only ever decoration — it now delegates to
+   * the node-level route and reshapes the answer.
+   *
+   * Three consequences of that delegation, all visible to a caller who relied on
+   * the old route's behaviour:
+   *
+   * - **No participation gate.** The namespace route answered 404 when this node
+   *   had never joined the namespace; this answers whatever the node's identity
+   *   is, regardless. If you were using it to ask "am I in this namespace?", ask
+   *   {@link listNamespaces} instead — that is the question you were really
+   *   asking.
+   * - **`namespaceId` is echoed verbatim.** The old route resolved a subgroup id
+   *   to its root namespace and returned that; passing a subgroup id here gives
+   *   the subgroup id back.
+   * - **404 means something else.** Previously "not my namespace", now "this node
+   *   holds no account root yet".
+   */
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
-    // Core returns this endpoint flat ({ namespaceId, publicKey }), not under
-    // `data`. Tolerate both so it works whether or not the envelope is present.
-    const r = await this.httpClient.get<NamespaceIdentity & { data?: NamespaceIdentity }>(
-      `/admin-api/namespaces/${namespaceId}/identity`,
-    );
-    return (r?.data ?? r) as NamespaceIdentity;
+    const node = await this.getNodeIdentity();
+    return { namespaceId, publicKey: node.publicKey, account: node.accountId };
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {

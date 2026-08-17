@@ -24,7 +24,7 @@ const { namespaceId } = await sdk.admin.createNamespace({
 
 const { namespaces } = await sdk.admin.listNamespaces();
 const ns = await sdk.admin.getNamespace(namespaceId);
-const identity = await sdk.admin.getNamespaceIdentity(namespaceId);
+const identity = await sdk.admin.getNodeIdentity();
 ```
 
 Invite and join:
