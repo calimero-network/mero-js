@@ -595,14 +595,14 @@ describe('AdminApiClient', () => {
 
   describe('Namespace Management', () => {
     it('listNamespaces unwraps data', async () => {
-      const ns = { namespaceId: 'ns-1', appKey: 'key', targetApplicationId: 'app-1', upgradePolicy: 'manual', createdAt: 123, memberCount: 1, contextCount: 0, subgroupCount: 0 };
+      const ns = { namespaceId: 'ns-1', appKey: 'key', targetApplicationId: 'app-1', createdAt: 123, memberCount: 1, contextCount: 0, subgroupCount: 0 };
       mock.setMockResponse('GET', '/admin-api/namespaces', { data: [ns] });
       const result = await client.listNamespaces();
       expect(result).toEqual([ns]);
     });
 
     it('getNamespace unwraps data', async () => {
-      const ns = { namespaceId: 'ns-1', appKey: 'key', targetApplicationId: 'app-1', upgradePolicy: 'manual', createdAt: 123, memberCount: 1, contextCount: 0, subgroupCount: 0 };
+      const ns = { namespaceId: 'ns-1', appKey: 'key', targetApplicationId: 'app-1', createdAt: 123, memberCount: 1, contextCount: 0, subgroupCount: 0 };
       mock.setMockResponse('GET', '/admin-api/namespaces/ns-1', { data: ns });
       const result = await client.getNamespace('ns-1');
       expect(result.namespaceId).toBe('ns-1');

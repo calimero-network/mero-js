@@ -388,9 +388,6 @@ export interface Namespace {
   namespaceId: string;
   appKey: string;
   targetApplicationId: string;
-  /** @deprecated Always `"LazyOnAccess"`. Core keeps the key only for the
-   * released Python client and drops it once that floor moves. */
-  upgradePolicy: string;
   createdAt: number;
   name?: string;
   memberCount: number;
@@ -646,9 +643,6 @@ export interface GroupInfo {
   groupId: string;
   appKey: string;
   targetApplicationId: string;
-  /** @deprecated Always `"LazyOnAccess"`. Core keeps the key only for the
-   * released Python client and drops it once that floor moves. */
-  upgradePolicy: string;
   memberCount: number;
   contextCount: number;
   activeUpgrade?: GroupUpgradeStatus;

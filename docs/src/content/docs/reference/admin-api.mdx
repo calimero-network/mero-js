@@ -230,7 +230,6 @@ interface Namespace {
   namespaceId: string;
   appKey: string;
   targetApplicationId: string;
-  upgradePolicy: string;         // deprecated, always "LazyOnAccess"
   createdAt: number;
   name?: string;
   memberCount: number;
@@ -242,7 +241,6 @@ interface GroupInfo {              // = GroupInfoResponseData
   groupId: string;
   appKey: string;
   targetApplicationId: string;
-  upgradePolicy: string;         // deprecated, always "LazyOnAccess"
   memberCount: number;
   contextCount: number;
   defaultCapabilities: number;    // capability bitmask
