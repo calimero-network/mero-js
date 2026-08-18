@@ -3,8 +3,14 @@ export interface GroupMembershipEventData {
   groupId: string;
   type: 'MemberJoined' | 'MemberAdded' | 'MemberRemoved';
   data: {
-    member: string;
-    role?: string;
+    /** The member's ACCOUNT, hex-encoded 32 bytes (64 chars) - the principal the
+     * governance rows name. Not a bs58 signing key: the field this replaced
+     * carried one, and both are strings, so the rename is what makes a stale
+     * consumer fail loudly instead of comparing accounts against keys forever. */
+    memberAccount: string;
+    /** Absent on `MemberRemoved`, and on a `MemberJoined` inherited from an Open
+     * subgroup. Core's set is closed. */
+    role?: 'Admin' | 'Member' | 'ReadOnly' | 'ReadOnlyTee';
   };
 }
 
