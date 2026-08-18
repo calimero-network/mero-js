@@ -107,7 +107,6 @@ const SPECS: Spec[] = [
       ns('namespaceId'),
       ns('appKey'),
       ns('targetApplicationId'),
-      ns('upgradePolicy'),
       ns('createdAt'),
       ns('memberCount'),
       ns('contextCount'),
