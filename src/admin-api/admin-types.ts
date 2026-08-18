@@ -388,6 +388,12 @@ export interface Namespace {
   namespaceId: string;
   appKey: string;
   targetApplicationId: string;
+  /**
+   * Absent from nodes that have dropped the concept, always `"LazyOnAccess"` on
+   * every released one. Optional because this SDK talks to both; it carries no
+   * information either way. Delete once no supported release still sends it.
+   */
+  upgradePolicy?: string;
   createdAt: number;
   name?: string;
   memberCount: number;
@@ -643,6 +649,12 @@ export interface GroupInfo {
   groupId: string;
   appKey: string;
   targetApplicationId: string;
+  /**
+   * Absent from nodes that have dropped the concept, always `"LazyOnAccess"` on
+   * every released one. Optional because this SDK talks to both; it carries no
+   * information either way. Delete once no supported release still sends it.
+   */
+  upgradePolicy?: string;
   memberCount: number;
   contextCount: number;
   activeUpgrade?: GroupUpgradeStatus;
