@@ -1,3 +1,9 @@
+## [13.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.0.0...mero-js-v13.1.0) (2026-08-18)
+
+### Features
+
+* **ephemeral:** add mero.ephemeral presence client (set/get/subscribe) ([#97](https://github.com/calimero-network/mero-js/issues/97)) ([d77affd](https://github.com/calimero-network/mero-js/commit/d77affdb5a5ebfe314a18a3f81cfcb0acaae8198))
+
 ## [13.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v12.1.0...mero-js-v13.0.0) (2026-08-18)
 
 ### ⚠ BREAKING CHANGES
