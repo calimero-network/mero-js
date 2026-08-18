@@ -1,3 +1,17 @@
+## [12.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v11.1.0...mero-js-v12.0.0) (2026-08-18)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** `governanceOp` is gone from `JoinGroupResponseData` and
+`JoinNamespaceResponseData`. It only ever held `""`, so no working code can
+depend on its value; code that destructures it needs the name removed.
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Bug Fixes
+
+* **admin:** replace governanceOp with memberAccount on join responses ([#103](https://github.com/calimero-network/mero-js/issues/103)) ([5418ae6](https://github.com/calimero-network/mero-js/commit/5418ae648baaeb44dc72502bd63cf7b07d6f9fa3))
+
 ## [11.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v11.0.0...mero-js-v11.1.0) (2026-08-17)
 
 ### Features
