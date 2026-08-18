@@ -32,9 +32,12 @@ Invite and join:
 ```typescript
 const invitation = await sdk.admin.createNamespaceInvitation(namespaceId);
 // on the joining node:
-const { groupId, memberIdentity } = await sdk.admin.joinNamespace(namespaceId, {
-  invitation,
-});
+// `memberAccount` is what the member-addressing calls below take;
+// `memberIdentity` is the key it signs with.
+const { groupId, memberIdentity, memberAccount } = await sdk.admin.joinNamespace(
+  namespaceId,
+  { invitation },
+);
 ```
 
 ## Groups, members & roles
