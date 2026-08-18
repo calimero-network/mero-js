@@ -706,10 +706,10 @@ describe('AdminApiClient', () => {
     it('joinNamespace sends structured invitation', async () => {
       const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
-        data: { groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' },
+        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
       });
       const result = await client.joinNamespace('ns-1', { invitation, groupName: 'My NS' });
-      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' });
+      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({ invitation, groupName: 'My NS' });
     });
 
@@ -1202,10 +1202,10 @@ describe('AdminApiClient', () => {
 
     it('joinGroup sends invitation and unwraps response', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/join', {
-        data: { groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' },
+        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
       });
       const result = await client.joinGroup({ invitation: mockInvitation, groupName: 'Lobby' });
-      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', governanceOp: 'op-hex' });
+      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
       expect(mock.getRequestBody('POST', '/admin-api/groups/join')).toEqual({
         invitation: mockInvitation,
         groupName: 'Lobby',

@@ -512,8 +512,14 @@ export interface JoinNamespaceRequest {
 
 export interface JoinNamespaceResponseData {
   groupId: string;
+  /** The key the joiner signs with, base58. */
   memberIdentity: string;
-  governanceOp: string;
+  /**
+   * The account that key joined as, 64 hex characters. This — not
+   * `memberIdentity` — is what every member-addressing endpoint takes, so it
+   * is how the caller addresses the member it just became.
+   */
+  memberAccount: string;
 }
 
 export interface CreateGroupInNamespaceRequest {
@@ -915,8 +921,14 @@ export interface JoinGroupRequest {
 
 export interface JoinGroupResponseData {
   groupId: string;
+  /** The key the joiner signs with, base58. */
   memberIdentity: string;
-  governanceOp: string;
+  /**
+   * The account that key joined as, 64 hex characters. This — not
+   * `memberIdentity` — is what every member-addressing endpoint takes, so it
+   * is how the caller addresses the member it just became.
+   */
+  memberAccount: string;
 }
 
 // ---- TEE ----
