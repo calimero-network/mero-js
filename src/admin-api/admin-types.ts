@@ -556,9 +556,9 @@ export interface GroupUpgradeStatus {
   initiatedAt: number;
   initiatedBy: string;
   status: string;
-  total?: number;
-  completed?: number;
-  failed?: number;
+  localContextsTotal?: number;
+  localContextsSwapped?: number;
+  localContextsFailed?: number;
   completedAt?: number;
 }
 
@@ -864,9 +864,9 @@ export interface UpgradeGroupRequest {
 export interface UpgradeGroupResponseData {
   groupId: string;
   status: string;
-  total?: number;
-  completed?: number;
-  failed?: number;
+  localContextsTotal?: number;
+  localContextsSwapped?: number;
+  localContextsFailed?: number;
 }
 
 export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;
