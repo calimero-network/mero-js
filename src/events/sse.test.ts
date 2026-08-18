@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SseClient } from './sse.js';
+import type { GroupMigrationEventData } from './group.js';
 
 describe('SseClient', () => {
   let client: SseClient;
@@ -79,6 +80,120 @@ describe('SseClient', () => {
       off();
 
       (client as any).handleMessage(appVersionMsg('ctx1', { toVersion: '2.0.0' }));
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onMigrationEvent', () => {
+    // Group-migration events are keyed on `groupId` with `type` a sibling of
+    // `data`, same flattening as the membership family. Drive through
+    // handleMessage so the full parse path is exercised.
+    const migrationMsg = (type: string, data: Record<string, unknown>) =>
+      JSON.stringify({ result: { groupId: 'ns-1', type, data } });
+
+    it('delivers MigrationStarted with the node-local context total', () => {
+      const seen: GroupMigrationEventData[] = [];
+      client.onMigrationEvent((e) => seen.push(e));
+
+      (client as any).handleMessage(
+        migrationMsg('MigrationStarted', {
+          fromVersion: '10.1.3',
+          toVersion: '10.2.0',
+          toStateVersion: 2,
+          localContextsTotal: 7,
+        }),
+      );
+
+      expect(seen).toEqual([
+        {
+          groupId: 'ns-1',
+          type: 'MigrationStarted',
+          data: {
+            fromVersion: '10.1.3',
+            toVersion: '10.2.0',
+            toStateVersion: 2,
+            localContextsTotal: 7,
+          },
+        },
+      ]);
+    });
+
+    // The three totals are different numbers: MigrationProgress.total is the
+    // fleet cohort size, the other two are node-local. A helper that flattened
+    // them into one field would re-create the defect this surface exists to show.
+    it('keeps the cohort total and the node-local totals on separate fields', () => {
+      const seen: GroupMigrationEventData[] = [];
+      client.onMigrationEvent((e) => seen.push(e));
+
+      (client as any).handleMessage(
+        migrationMsg('MigrationProgress', {
+          migrated: 2,
+          inProgress: 1,
+          unknown: 0,
+          failed: 1,
+          total: 4,
+        }),
+      );
+      (client as any).handleMessage(
+        migrationMsg('CascadeProgress', {
+          subgroupId: 'sub-1',
+          localContextsSwapped: 3,
+          localContextsTotal: 5,
+        }),
+      );
+
+      const progress = seen[0];
+      const cascade = seen[1];
+      expect(progress.type).toBe('MigrationProgress');
+      expect(cascade.type).toBe('CascadeProgress');
+      if (progress.type !== 'MigrationProgress' || cascade.type !== 'CascadeProgress') return;
+      expect(progress.data.total).toBe(4);
+      expect(cascade.data.localContextsTotal).toBe(5);
+      expect((cascade.data as Record<string, unknown>).total).toBeUndefined();
+    });
+
+    it('delivers MigrationCompleted with the fleet-convergence stamp', () => {
+      const seen: GroupMigrationEventData[] = [];
+      client.onMigrationEvent((e) => seen.push(e));
+
+      (client as any).handleMessage(
+        migrationMsg('MigrationCompleted', { toVersion: '10.2.0', completedAt: 1_700_000_000 }),
+      );
+
+      expect(seen).toEqual([
+        {
+          groupId: 'ns-1',
+          type: 'MigrationCompleted',
+          data: { toVersion: '10.2.0', completedAt: 1_700_000_000 },
+        },
+      ]);
+    });
+
+    it('ignores membership and context events', () => {
+      const handler = vi.fn();
+      client.onMigrationEvent(handler);
+
+      (client as any).handleMessage(
+        JSON.stringify({
+          result: { groupId: 'ns-1', type: 'MemberJoined', data: { member: 'mem-1' } },
+        }),
+      );
+      (client as any).handleMessage(
+        JSON.stringify({ result: { contextId: 'ctx-1', type: 'AppVersionChanged', data: {} } }),
+      );
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('returns an unsubscribe handle that stops delivery', () => {
+      const handler = vi.fn();
+      const off = client.onMigrationEvent(handler);
+      off();
+
+      (client as any).handleMessage(
+        migrationMsg('MigrationCompleted', { toVersion: '10.2.0', completedAt: 1 }),
+      );
 
       expect(handler).not.toHaveBeenCalled();
     });

@@ -556,9 +556,15 @@ export interface GroupUpgradeStatus {
   initiatedAt: number;
   initiatedBy: string;
   status: string;
+  /** Contexts THIS NODE enumerated for the upgrade. Node-local; fleet progress
+   * is the `getMigrationStatus` rollup. */
   localContextsTotal?: number;
   localContextsSwapped?: number;
+  /** Contexts whose swap failed on this node; a non-zero value is what
+   * `retryGroupUpgrade` picks up. */
   localContextsFailed?: number;
+  /** Unix seconds at which THIS NODE finished its own context swaps. Not fleet
+   * convergence - that is `MigrationStatus.fleetCompletedAt`. */
   completedAt?: number;
 }
 
@@ -577,6 +583,10 @@ export type MigrationFailureReason =
   | 'no_migration_path';
 
 export interface MemberMigrationReport {
+  /** ABI state version the member has loaded, from `#[app::state(version = N)]` -
+   * the engine's migration gate, not the bundle semver and not a CRDT concept.
+   * The wrong reading here is how the core rollup defect (comparing bundle-semver
+   * majors instead of state versions) went unnoticed. */
   schemaVersion: number;
   residueAuto: number;
   syncedUpToHlc: number;
@@ -612,7 +622,14 @@ export interface MigrationStatusRollup {
 export interface MigrationStatus {
   targetVersion: number;
   expectedMembers: number;
+  /** Governance HLC the cohort was pinned at, as an opaque display string.
+   * Absent when there is no migration record. */
   cohortPinnedAtHlc?: string;
+  /** Unix seconds at which this node watched the FLEET converge, absent while it
+   * has not. Distinct from `GroupUpgradeStatus.completedAt`, which is this node's
+   * own local swap completion. Durable, unlike `rollup.allMigrated`, which is
+   * recomputed from in-TTL heartbeats and lapses when a member goes quiet. */
+  fleetCompletedAt?: number;
   rollup: MigrationStatusRollup;
   members: MemberMigrationStatusEntry[];
 }
