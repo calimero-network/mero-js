@@ -11,6 +11,9 @@
  * The `key<T>()` helper makes each declared key a *compile-time* reference to the
  * SDK type, so a renamed/removed field fails `typecheck:contract`. Skips when
  * CALIMERO_CORE_DIR is unset, so it is a no-op in the plain unit run.
+ *
+ * The fixtures are a committed snapshot core regenerates with `UPDATE_FIXTURES=1`,
+ * not a live node: a core-side rename lands here only once someone regenerates it.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -19,8 +22,10 @@ import { join } from 'path';
 import type {
   CreateContextRequest,
   CreateContextResponseData,
+  GroupUpgradeStatus,
   ReparentGroupRequest,
   ReparentGroupResponseData,
+  UpgradeGroupResponseData,
 } from '../admin-api/admin-types.js';
 import type { ExecuteParams } from '../rpc/index.js';
 
@@ -43,6 +48,9 @@ interface Spec {
   optional: string[];
   /** Core-optional fields the SDK intentionally does not model (no drift). */
   ignoredCoreKeys?: string[];
+  /** Envelope key to descend into first. Core wraps some admin responses in
+   * `data`; the SDK type models the inner object. */
+  envelope?: string;
 }
 
 const ctxReq = key<CreateContextRequest>();
@@ -50,7 +58,12 @@ const ctxRes = key<CreateContextResponseData>();
 const reReq = key<ReparentGroupRequest>();
 const reRes = key<ReparentGroupResponseData>();
 const exec = key<ExecuteParams>();
+const upRes = key<UpgradeGroupResponseData>();
+const upStatus = key<GroupUpgradeStatus>();
 
+// `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
+// unexported inline type whose index signature makes `key<T>()` accept any
+// string, so a spec for it would compile no matter how wrong the name was.
 const SPECS: Spec[] = [
   {
     type: 'CreateContextRequest',
@@ -88,6 +101,35 @@ const SPECS: Spec[] = [
     required: [exec('contextId'), exec('method')],
     optional: [exec('argsJson'), exec('executorPublicKey')],
   },
+  {
+    type: 'UpgradeGroupResponseData',
+    file: 'groups/upgrade.res.json',
+    envelope: 'data',
+    required: [upRes('groupId'), upRes('status')],
+    optional: [
+      upRes('localContextsTotal'),
+      upRes('localContextsSwapped'),
+      upRes('localContextsFailed'),
+    ],
+  },
+  {
+    type: 'GroupUpgradeStatus',
+    file: 'groups/upgrade_status.res.json',
+    envelope: 'data',
+    required: [
+      upStatus('fromVersion'),
+      upStatus('toVersion'),
+      upStatus('initiatedAt'),
+      upStatus('initiatedBy'),
+      upStatus('status'),
+    ],
+    optional: [
+      upStatus('localContextsTotal'),
+      upStatus('localContextsSwapped'),
+      upStatus('localContextsFailed'),
+      upStatus('completedAt'),
+    ],
+  },
 ];
 
 describe('wire contract (core fixtures ↔ SDK types)', () => {
@@ -98,9 +140,11 @@ describe('wire contract (core fixtures ↔ SDK types)', () => {
 
   for (const spec of SPECS) {
     it(`${spec.type} ↔ ${spec.file}`, () => {
-      const fixture = JSON.parse(
+      const raw = JSON.parse(
         readFileSync(join(WIRE_DIR, spec.file), 'utf8'),
       ) as Record<string, unknown>;
+      const fixture = (spec.envelope ? raw[spec.envelope] : raw) as Record<string, unknown>;
+      expect(fixture, `fixture ${spec.file} has no '${spec.envelope}' envelope`).toBeTruthy();
       const fixtureKeys = Object.keys(fixture);
       const known = new Set([
         ...spec.required,
