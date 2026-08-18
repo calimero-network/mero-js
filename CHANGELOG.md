@@ -1,3 +1,14 @@
+## [12.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v12.0.0...mero-js-v12.1.0) (2026-08-18)
+
+### Features
+
+* **events:** model the GroupMigration event family and add onMigrationEvent ([#94](https://github.com/calimero-network/mero-js/issues/94)) ([091957e](https://github.com/calimero-network/mero-js/commit/091957e239e4ee5825be16848b79c38d69c95e08))
+
+### Bug Fixes
+
+* **admin-api:** rename GroupUpgradeStatus/UpgradeGroupResponseData counters to localContexts* ([#93](https://github.com/calimero-network/mero-js/issues/93)) ([e76c316](https://github.com/calimero-network/mero-js/commit/e76c31612b7948b2144c0a87626d4b5657b51f2f))
+* **events:** rename GroupMembershipEventData.member to memberAccount ([#95](https://github.com/calimero-network/mero-js/issues/95)) ([03dfb55](https://github.com/calimero-network/mero-js/commit/03dfb55cf35fd1373260fe63dc88384b732763a9))
+
 ## [12.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v11.1.0...mero-js-v12.0.0) (2026-08-18)
 
 ### ⚠ BREAKING CHANGES
