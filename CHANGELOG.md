@@ -1,3 +1,15 @@
+## [13.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v12.1.0...mero-js-v13.0.0) (2026-08-18)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** `upgradePolicy` is gone from the `Namespace` and `GroupInfo`
+response types. It only ever held `"LazyOnAccess"`, so no working code can
+depend on its value; code that destructures it needs the name removed.
+
+### Features
+
+* **admin:** drop upgradePolicy from the Namespace and GroupInfo responses ([#104](https://github.com/calimero-network/mero-js/issues/104)) ([c742269](https://github.com/calimero-network/mero-js/commit/c74226950eff67f344b691ecd7dcd328acb29c1b)), closes [calimero-network/core#3485](https://github.com/calimero-network/core/issues/3485) [core#3393](https://github.com/calimero-network/core/issues/3393) [calimero-network/core#3485](https://github.com/calimero-network/core/issues/3485)
+
 ## [12.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v12.0.0...mero-js-v12.1.0) (2026-08-18)
 
 ### Features
