@@ -10,6 +10,7 @@ import type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 import { RpcClient } from './rpc/index.js';
 import { SseClient } from './events/sse.js';
 import { WsClient } from './events/ws.js';
+import { EphemeralClient } from './ephemeral/index.js';
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */
@@ -90,6 +91,7 @@ export class MeroJs {
   private sseClient: SseClient | null = null;
   private wsClient: WsClient | null = null;
   private wsWarned = false;
+  private ephemeralClient?: EphemeralClient;
 
   constructor(config: MeroJsConfig) {
     this.config = {
@@ -196,6 +198,22 @@ export class MeroJs {
       });
     }
     return this.sseClient;
+  }
+
+  /**
+   * Get the ephemeral-presence client (lazy initialized).
+   *
+   * Shares this instance's SSE client, so `subscribe` reuses the one event
+   * stream rather than opening a second connection.
+   */
+  get ephemeral(): EphemeralClient {
+    if (!this.ephemeralClient) {
+      this.ephemeralClient = new EphemeralClient({
+        httpClient: this.httpClient,
+        sse: this.events,
+      });
+    }
+    return this.ephemeralClient;
   }
 
   /**
