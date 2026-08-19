@@ -1073,13 +1073,17 @@ describe('AdminApiClient', () => {
           migrated: 2,
           inProgress: 0,
           unknown: 1,
+          failed: 0,
           total: 3,
           allMigrated: false,
           membersPendingSignature: 1,
         },
+        // Two rows for one account: the cohort is replicas, not people. The
+        // third has no report at all, which is how core renders `unknown`.
         members: [
           {
             peer: 'aa',
+            account: 'ac'.repeat(32),
             report: {
               schemaVersion: 2,
               residueAuto: 0,
@@ -1091,6 +1095,7 @@ describe('AdminApiClient', () => {
           },
           {
             peer: 'bb',
+            account: 'ac'.repeat(32),
             report: {
               schemaVersion: 1,
               residueAuto: 0,
@@ -1100,14 +1105,15 @@ describe('AdminApiClient', () => {
             },
             state: 'in_progress',
           },
-          { peer: 'cc', report: null, state: 'unknown' },
+          { peer: 'cc', account: 'bd'.repeat(32), state: 'unknown' },
         ],
       };
       mock.setMockResponse('GET', '/admin-api/groups/ns1/migration-status', body);
       const res = await client.getMigrationStatus('ns1');
       expect(res.rollup.membersPendingSignature).toBe(1);
       expect(res.members[1].report?.authoredRemaining).toBe(2);
-      expect(res.members[2].report).toBeNull();
+      expect(res.members[0].account).toBe(res.members[1].account);
+      expect(res.members[2].report).toBeUndefined();
     });
 
     it('getCascadeStatus unwraps the data array', async () => {
