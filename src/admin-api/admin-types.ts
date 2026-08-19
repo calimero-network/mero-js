@@ -604,9 +604,15 @@ export interface MemberMigrationReport {
 }
 
 export interface MemberMigrationStatusEntry {
+  /** The reporting device's signing KEY, bs58. One account with two devices
+   * appears as two rows: the cohort is replicas, not people. */
   peer: string;
-  /** Freshest reported facts, or `null` when the member's state is `unknown`. */
-  report: MemberMigrationReport | null;
+  /** The ACCOUNT `peer` speaks for, 64 hex - join it to `listGroupMembers` to
+   * name a person. Absent from nodes predating the field. */
+  account?: string;
+  /** Freshest reported facts. Omitted (not `null`) when the member's state is
+   * `unknown`, so test falsiness rather than `=== null`. */
+  report?: MemberMigrationReport | null;
   state: MemberMigrationState;
 }
 
