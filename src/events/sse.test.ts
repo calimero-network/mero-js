@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SseClient } from './sse.js';
+import { AuthRevokedError, HTTPError } from '../http-client/index.js';
 import type { GroupMigrationEventData } from './group.js';
 
 describe('SseClient', () => {
@@ -402,3 +403,81 @@ describe('SseClient', () => {
 
 // Need to import afterEach
 import { afterEach } from 'vitest';
+
+describe('SseClient connect failures carry the auth reason', () => {
+  // A bare `Error("SSE connection failed: 401")` forced callers to string-match
+  // the status. The only safe reading of a bare 401 is "fatal", so consumers
+  // logged the user out on a routine reconnect after the access token aged out
+  // — discarding a refresh token that was still valid.
+  const make = () =>
+    new SseClient({
+      baseUrl: 'http://localhost:4001',
+      getAuthToken: async () => 'test-token',
+      reconnectDelayMs: 100,
+    });
+
+  const respond = (status: number, statusText: string, authError?: string) => {
+    const headers = new Headers();
+    if (authError) headers.set('x-auth-error', authError);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status, statusText, headers })),
+    );
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('throws AuthRevokedError when the token family is gone', async () => {
+    respond(401, 'Unauthorized', 'token_reuse');
+    const client = make();
+    // `connect()` reports failures through the `error` event rather than
+    // rejecting, so the typed error has to survive that hop intact.
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.connect();
+    client.close();
+
+    expect(err).toBeInstanceOf(AuthRevokedError);
+    expect((err as AuthRevokedError).reason).toBe('token_reuse');
+  });
+
+  it('throws a plain HTTPError for an expired token, which is recoverable', async () => {
+    respond(401, 'Unauthorized', 'token_expired');
+    const client = make();
+    // `connect()` reports failures through the `error` event rather than
+    // rejecting, so the typed error has to survive that hop intact.
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.connect();
+    client.close();
+
+    // Recoverable: the caller should refresh and reconnect, NOT log out.
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).not.toBeInstanceOf(AuthRevokedError);
+    expect((err as HTTPError).headers.get('x-auth-error')).toBe('token_expired');
+  });
+
+  it('throws HTTPError for a non-auth failure', async () => {
+    respond(503, 'Service Unavailable');
+    const client = make();
+    // `connect()` reports failures through the `error` event rather than
+    // rejecting, so the typed error has to survive that hop intact.
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.connect();
+    client.close();
+
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).not.toBeInstanceOf(AuthRevokedError);
+    expect((err as HTTPError).status).toBe(503);
+  });
+});
+
