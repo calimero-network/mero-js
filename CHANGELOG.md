@@ -1,3 +1,9 @@
+## [13.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.1.0...mero-js-v13.2.0) (2026-08-21)
+
+### Features
+
+* **account:** canonicalise account ids, and give SSE failures their reason ([#106](https://github.com/calimero-network/mero-js/issues/106)) ([82e58a5](https://github.com/calimero-network/mero-js/commit/82e58a58cfacab9971aaf667d6a41d5d653b3123))
+
 ## [13.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.0.0...mero-js-v13.1.0) (2026-08-18)
 
 ### Features
