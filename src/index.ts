@@ -18,6 +18,13 @@ export * from './admin-api/index.js';
 export { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
 export type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 
+// Account id encoding (hex on the admin API, base58 in contract data)
+export {
+  toAccountHex,
+  toAccountBase58,
+  sameAccount,
+} from './account/index.js';
+
 // Token store
 export { MemoryTokenStore, LocalStorageTokenStore } from './token-store/index.js';
 export type { TokenStore } from './token-store/index.js';

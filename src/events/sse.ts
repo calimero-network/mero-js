@@ -1,5 +1,13 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
+import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+
+/**
+ * `x-auth-error` reasons that mean the whole token family is gone, mirroring
+ * the request path in `web-client.ts`. Anything else — `token_expired` above
+ * all — is recoverable by refreshing and reconnecting.
+ */
+const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
 
 export type { GroupMembershipEventData, GroupMigrationEventData };
 
@@ -139,7 +147,8 @@ export class SseClient {
 
     try {
       const token = await this.getAuthToken();
-      const response = await fetch(`${this.baseUrl}/sse`, {
+      const url = `${this.baseUrl}/sse`;
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'text/event-stream',
@@ -148,7 +157,37 @@ export class SseClient {
       });
 
       if (!response.ok) {
-        throw new Error(`SSE connection failed: ${response.status}`);
+        // Throw the same typed errors the request path throws. A bare
+        // `Error("SSE connection failed: 401")` forced callers to string-match
+        // the status and guess what it meant, and the honest guess — treat any
+        // 401 as fatal — logs the user out on a routine reconnect after the
+        // access token ages out, discarding a refresh token that was still
+        // good. The distinction is in the header; surface it.
+        const authError = response.headers.get('x-auth-error');
+        const bodyText = await response.text().catch(() => undefined);
+
+        if (
+          response.status === 401 &&
+          authError &&
+          TERMINAL_AUTH_ERRORS.has(authError)
+        ) {
+          throw new AuthRevokedError(
+            authError,
+            response.status,
+            response.statusText,
+            url,
+            response.headers,
+            bodyText,
+          );
+        }
+
+        throw new HTTPError(
+          response.status,
+          response.statusText,
+          url,
+          response.headers,
+          bodyText,
+        );
       }
 
       if (!response.body) {
