@@ -1,3 +1,9 @@
+## [13.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.1...mero-js-v13.2.2) (2026-08-24)
+
+### Bug Fixes
+
+* **fleet:** commit only the files the bump claims ([#110](https://github.com/calimero-network/mero-js/issues/110)) ([1ac802b](https://github.com/calimero-network/mero-js/commit/1ac802bd0498aad4065c922727b44bbee751332a)), closes [#190](https://github.com/calimero-network/mero-js/issues/190) [#194](https://github.com/calimero-network/mero-js/issues/194)
+
 ## [13.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.0...mero-js-v13.2.1) (2026-08-24)
 
 ### Bug Fixes
