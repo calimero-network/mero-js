@@ -514,7 +514,25 @@ export interface JoinNamespaceRequest {
 }
 
 export interface JoinNamespaceResponseData {
-  groupId: string;
+  /**
+   * The namespace that was joined.
+   *
+   * core `0.11.0-rc.25` renamed this field on the wire from `groupId`
+   * (core#3598). The endpoint had been sharing a response DTO with
+   * `POST /admin-api/groups/join`, which leaked the internal "a namespace is a
+   * root group" detail into the namespace API and meant a caller could not use
+   * one spelling across the family.
+   *
+   * {@link AdminClient.joinNamespace} fills this in from whichever spelling the
+   * node sent, so it is populated against nodes on either side of that release.
+   */
+  namespaceId: string;
+  /**
+   * @deprecated The pre-`0.11.0-rc.25` spelling of {@link namespaceId}. Present
+   * only when the node predates that release — read `namespaceId` instead,
+   * which is always set.
+   */
+  groupId?: string;
   /** The key the joiner signs with, base58. */
   memberIdentity: string;
   /**

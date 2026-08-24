@@ -56,7 +56,15 @@ suite('Multi-node E2E — namespace invite/join', () => {
     });
     // node-2 is now a member of the namespace (got its own member identity back).
     expect(joined.memberIdentity).toBeTruthy();
-    expect(joined.groupId).toBeTruthy();
+    // `namespaceId`, not `groupId`: core 0.11.0-rc.25 renamed this field
+    // (core#3598). Asserted here rather than only in the unit tests because
+    // this runs against a real released merod, so it is what catches the next
+    // rename on the way in.
+    //
+    // Shape, not equality against the id we joined with: this field is the
+    // namespace id hex-encoded, while the id the caller passes in is base58, so
+    // the two are the same namespace in two different alphabets.
+    expect(joined.namespaceId).toMatch(/^[0-9a-f]{64}$/);
     // The account it joined as, beside the key it signs with: this is what every
     // member-addressing endpoint takes, and it renders as 64 hex, so a field
     // wired to the bs58 key space instead would fail here rather than silently
