@@ -10,6 +10,9 @@ jobs:
   release:
     name: Create Release and Publish
     runs-on: ubuntu-latest
+    outputs:
+      new_release: ${{ steps.semantic.outputs.new_release }}
+      version: ${{ steps.published.outputs.version }}
     permissions:
       contents: write
       id-token: write
@@ -62,6 +65,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: production
 
+      # Read from the tree rather than parsed out of semantic-release's log:
+      # this is the exact package.json the publish step below uploads, so it
+      # is by construction the version that reaches the registry.
+      - name: Read the published version
+        id: published
+        if: steps.semantic.outputs.new_release == 'true'
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::publishing $version"
+
       - name: Publish to npm with OIDC
         if: steps.semantic.outputs.new_release == 'true'
         run: npm publish --provenance --access public
@@ -71,3 +86,18 @@ jobs:
         run: |
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push origin HEAD:master --follow-tags || true
+
+  # Opens the pull request that moves every consumer in .github/fleet.json onto
+  # the version just published. Majors are skipped by default -- see the header
+  # of fleet-bump.yml for why.
+  fleet-bump:
+    name: Open dependency bump PRs
+    needs: release
+    if: needs.release.outputs.new_release == 'true'
+    uses: ./.github/workflows/fleet-bump.yml
+    with:
+      packages: "@calimero-network/mero-js=${{ needs.release.outputs.version }}"
+      label: mero-js-${{ needs.release.outputs.version }}
+    # GH_APP_PRIVATE_KEY, which the called workflow uses to mint a
+    # per-repository installation token.
+    secrets: inherit
