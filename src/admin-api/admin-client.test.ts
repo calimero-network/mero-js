@@ -706,11 +706,37 @@ describe('AdminApiClient', () => {
     it('joinNamespace sends structured invitation', async () => {
       const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
-        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+        data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
       });
       const result = await client.joinNamespace('ns-1', { invitation, groupName: 'My NS' });
-      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
+      expect(result).toEqual({ namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({ invitation, groupName: 'My NS' });
+    });
+
+    // A node older than core 0.11.0-rc.25 spells this field `groupId`
+    // (core#3598 renamed it). The rename is invisible on the wire — the old
+    // field simply stops arriving — so without this normalisation
+    // `namespaceId` reads `undefined` and the failure surfaces wherever the
+    // caller uses it, not here.
+    it('joinNamespace binds namespaceId from a pre-rc.25 node that sent groupId', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
+      expect(result.namespaceId).toBe('g-1');
+      // The original field is left intact rather than deleted: a caller still
+      // reading it against an old node keeps working.
+      expect(result.groupId).toBe('g-1');
+    });
+
+    // The new spelling must win outright. A node that sent both — or a
+    // normalisation that ran unconditionally — must not overwrite it.
+    it('joinNamespace prefers namespaceId when the node sends both', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { namespaceId: 'ns-1', groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
+      expect(result.namespaceId).toBe('ns-1');
     });
 
     it('createGroupInNamespace sends request', async () => {

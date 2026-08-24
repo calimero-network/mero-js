@@ -705,13 +705,24 @@ export class AdminApiClient {
     namespaceId: string,
     request: JoinNamespaceRequest,
   ): Promise<JoinNamespaceResponseData> {
-    return unwrap(
+    const data = unwrap(
       await this.httpClient.post<{ data: JoinNamespaceResponseData }>(
         `/admin-api/namespaces/${namespaceId}/join`,
         request,
         { timeoutMs: 65000 },
       ),
     );
+
+    // core 0.11.0-rc.25 renamed this response's `groupId` to `namespaceId`
+    // (core#3598). Bind whichever spelling the node actually sent rather than
+    // picking one: the rename lands as `undefined` on the field the client
+    // reads, and nothing errors — no 4xx, no thrown parse — so a client that
+    // knows only one spelling fails much later and somewhere else. Normalising
+    // here means one mero-js works against nodes either side of that release.
+    if (data && data.namespaceId === undefined && data.groupId !== undefined) {
+      return { ...data, namespaceId: data.groupId };
+    }
+    return data;
   }
 
   async createGroupInNamespace(
