@@ -1,3 +1,9 @@
+## [13.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.0...mero-js-v13.2.1) (2026-08-24)
+
+### Bug Fixes
+
+* **admin:** read the namespace-join id under either spelling ([#108](https://github.com/calimero-network/mero-js/issues/108)) ([5d040ab](https://github.com/calimero-network/mero-js/commit/5d040ab974f5fe4beb70649c180eabd9a724a385)), closes [core#3598](https://github.com/calimero-network/core/issues/3598)
+
 ## [13.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.1.0...mero-js-v13.2.0) (2026-08-21)
 
 ### Features
