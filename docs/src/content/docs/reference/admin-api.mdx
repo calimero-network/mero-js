@@ -135,6 +135,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `deleteGroup(groupId, request?): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
+| `listMemberDevices(groupId, options?): Promise<ListMemberDevicesResponseData>` | `GET /groups/{groupId}/member-devices` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
 | `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |
 | `updateMemberRole(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/role` |

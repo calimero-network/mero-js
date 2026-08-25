@@ -677,8 +677,8 @@ export interface GroupMember {
    * and governance rows name the person. Both are 32 bytes, so nothing here or
    * on the server will object if you pass the wrong one; it will simply name a
    * principal that exists nowhere. Feed this value to
-   * {@link RemoveGroupMembersRequest} and {@link UpdateMemberRoleRequest}, not
-   * to {@link GroupMemberInput}.
+   * {@link RemoveGroupMembersRequest}, {@link UpdateMemberRoleRequest}, and
+   * {@link GroupMemberInput} (which also accepts a key).
    */
   identity: string;
   role: string;
@@ -715,11 +715,20 @@ export interface DeleteGroupResponseData {
 
 export interface GroupMemberInput {
   /**
-   * The invitee's signing KEY, in bs58 — NOT an account.
+   * The invitee, named EITHER by its ACCOUNT (64 hex) OR by a signing key
+   * (bs58). A key is resolved to its account as the member is admitted.
    *
-   * Adding is the one member-facing call that names a key: the node binds the
-   * key to an account as it admits it, so before that there is no account to
-   * name. Every call that names an EXISTING member takes the account instead.
+   * Both forms exist because an invitee that has never taken part in a
+   * namespace has no account yet: `GET /admin-api/identity` 404s on such a
+   * node with "this node holds neither a device nor an account root yet; both
+   * are minted the first time it takes part in a namespace", so a key is the
+   * only id it can offer. Prefer the account once the member has one.
+   *
+   * The two cannot be confused - an account is 64 hex characters and bs58 over
+   * 32 bytes is at most 44 - and anything that is neither is rejected with
+   * `expected a 64-hex account id or a bs58 public key`. Adding is the only
+   * member-facing call that accepts a key; every call naming an EXISTING
+   * member takes the account.
    */
   identity: string;
   role: string;
@@ -736,8 +745,8 @@ export type AddGroupMembersResponseData = Record<string, never>;
 export interface RemoveGroupMembersRequest {
   /**
    * The members to remove, as ACCOUNTS (64 hex) — the same ids
-   * {@link GroupMember.identity} returns, and not the keys
-   * {@link GroupMemberInput.identity} took to add them.
+   * {@link GroupMember.identity} returns. A bs58 signing key is accepted only
+   * by {@link GroupMemberInput.identity}, never here.
    */
   members: string[];
   requester?: string;
@@ -753,6 +762,35 @@ export interface UpdateMemberRoleRequest {
 
 // Returns empty
 export type UpdateMemberRoleResponseData = Record<string, never>;
+
+// ---- Member Devices ----
+
+export interface MemberDevice {
+  /** The device's id: 64 hex characters. */
+  deviceId: string;
+  /**
+   * The key this device signs with, in bs58. This is the join column against
+   * a context identity's `publicKey`.
+   */
+  signingKey: string;
+}
+
+export interface MemberDevices {
+  /** The member's ACCOUNT: 64 hex, the same id {@link GroupMember.identity} carries. */
+  account: string;
+  devices: MemberDevice[];
+}
+
+export interface ListMemberDevicesResponseData {
+  members: MemberDevices[];
+}
+
+export interface ListMemberDevicesOptions {
+  /** Accounts to skip. Default `0`. */
+  offset?: number;
+  /** Accounts to return. Server default `100`, capped at `1000`. */
+  limit?: number;
+}
 
 // ---- Group Capabilities & Settings ----
 

@@ -56,6 +56,8 @@ import type {
   CreateGroupInNamespaceRequest,
   CreateGroupInNamespaceResponseData,
   SubgroupEntry,
+  ListMemberDevicesOptions,
+  ListMemberDevicesResponseData,
   Namespace,
   NamespaceIdentity,
   NodeIdentity,
@@ -109,6 +111,29 @@ import type {
  */
 function unwrap<T>(response: { data: T }): T {
   return response?.data as T;
+}
+
+/**
+ * Validate the `members` array both group list endpoints declare as
+ * non-optional, so a contract-violating body (a proxy error page, future API
+ * drift) surfaces as a clear error instead of silently reading as an empty
+ * list. An empty group still passes: merod returns `members: []`, not an
+ * omitted field.
+ */
+function requireMembers<T extends { members: unknown[] }>(
+  response: T | null | undefined,
+  method: string,
+  groupId: string,
+): T {
+  if (!Array.isArray(response?.members)) {
+    // groupId reaches us from caller code rather than parsed input, but
+    // sanitizing keeps untrusted bytes out of error logs and downstream UIs.
+    const safeId = String(groupId).replace(/[\r\n\t\s]/g, '').slice(0, 64);
+    throw new Error(
+      `Invalid ${method} response for group ${safeId}: missing or non-array \`members\` field`,
+    );
+  }
+  return response;
 }
 
 /**
@@ -759,24 +784,42 @@ export class AdminApiClient {
   }
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
-    const response = await this.httpClient.get<ListGroupMembersResponseData>(
-      `/admin-api/groups/${groupId}/members`,
+    return requireMembers(
+      await this.httpClient.get<ListGroupMembersResponseData>(
+        `/admin-api/groups/${groupId}/members`,
+      ),
+      'listGroupMembers',
+      groupId,
     );
-    // Validate the field we declare as non-optional in the type so a
-    // contract-violating response (proxy error body, future API drift,
-    // etc.) surfaces as a clear error rather than silently producing an
-    // empty list. Empty groups still satisfy this — merod returns
-    // `members: []`, not an omitted field.
-    if (!Array.isArray(response?.members)) {
-      // Sanitize before interpolation: groupId reaches us from caller code,
-      // not parsed input, but defending the message keeps untrusted bytes
-      // out of error logs and downstream UIs.
-      const safeId = String(groupId).replace(/[\r\n\t\s]/g, '').slice(0, 64);
-      throw new Error(
-        `Invalid listGroupMembers response for group ${safeId}: missing or non-array \`members\` field`,
-      );
-    }
-    return response;
+  }
+
+  /**
+   * Account -> devices for the members of `groupId` (GET
+   * /admin-api/groups/:group_id/member-devices).
+   *
+   * The join between {@link listGroupMembers}, which names accounts, and
+   * {@link getContextIdentities}, which names bare signing keys: `signingKey` is the
+   * column that matches a context identity back to the account that owns it.
+   *
+   * Scoped to the caller: an admin gets every account in the group, a plain
+   * member only its own entry. Not enveloped - merod returns `{ members }`
+   * directly, so there is nothing to unwrap.
+   */
+  async listMemberDevices(
+    groupId: string,
+    options?: ListMemberDevicesOptions,
+  ): Promise<ListMemberDevicesResponseData> {
+    const params = new URLSearchParams();
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    const query = params.toString();
+    return requireMembers(
+      await this.httpClient.get<ListMemberDevicesResponseData>(
+        `/admin-api/groups/${groupId}/member-devices${query ? `?${query}` : ''}`,
+      ),
+      'listMemberDevices',
+      groupId,
+    );
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
@@ -793,7 +836,7 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not a bs58 signing key.
    */
   async updateMemberRole(
     groupId: string,
@@ -805,7 +848,7 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not a bs58 signing key.
    */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
@@ -817,7 +860,7 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not a bs58 signing key.
    */
   async setMemberCapabilities(
     groupId: string,
@@ -884,7 +927,7 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not a bs58 signing key.
    */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
@@ -1096,7 +1139,7 @@ export class AdminApiClient {
    * /admin-api/groups/:group_id/members/:identity/auto-follow).
    *
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not a bs58 signing key.
    */
   async setMemberAutoFollow(
     groupId: string,

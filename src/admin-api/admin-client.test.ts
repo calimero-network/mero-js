@@ -815,6 +815,81 @@ describe('AdminApiClient', () => {
       expect(result.members).toEqual([]);
     });
 
+    it('listMemberDevices returns the bare members array (no data envelope)', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', {
+        members: [
+          {
+            account: 'aefed1f729e026874e2488e427786c294c64823b4a0660d483b005dc4c913ecb',
+            devices: [
+              {
+                deviceId: 'bff9592c96d8b3ca144e75f0c22cb8f8569392f62b49a60eb854589435fba564',
+                signingKey: 'G52L5f9XmH3cBGQscqUBiKTbavLiFYJW7oKoeFe2vgHM',
+              },
+            ],
+          },
+        ],
+      });
+      const result = await client.listMemberDevices('g-1');
+      expect(result.members).toHaveLength(1);
+      expect(result.members[0].account).toBe(
+        'aefed1f729e026874e2488e427786c294c64823b4a0660d483b005dc4c913ecb',
+      );
+      expect(result.members[0].devices).toEqual([
+        {
+          deviceId: 'bff9592c96d8b3ca144e75f0c22cb8f8569392f62b49a60eb854589435fba564',
+          signingKey: 'G52L5f9XmH3cBGQscqUBiKTbavLiFYJW7oKoeFe2vgHM',
+        },
+      ]);
+    });
+
+    it('listMemberDevices does not unwrap a data envelope the route never sends', async () => {
+      // A response shaped `{ data: { members } }` is drift, not the contract:
+      // reading `.data` here would make the real body look empty.
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', {
+        data: { members: [] },
+      });
+      await expect(client.listMemberDevices('g-1')).rejects.toThrow(
+        /missing or non-array `members` field/,
+      );
+    });
+
+    it('listMemberDevices rejects with an explicit error when the response omits members', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', {});
+      await expect(client.listMemberDevices('g-1')).rejects.toThrow(
+        /Invalid listMemberDevices response for group g-1/,
+      );
+    });
+
+    it('listMemberDevices accepts a group with no visible members', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', { members: [] });
+      expect((await client.listMemberDevices('g-1')).members).toEqual([]);
+    });
+
+    it('listMemberDevices requests the bare path when no paging is asked for', async () => {
+      // The mock throws on any path it has no response for, so resolving is
+      // itself the assertion that no query string was appended.
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', { members: [] });
+      await expect(client.listMemberDevices('g-1')).resolves.toEqual({ members: [] });
+    });
+
+    it('listMemberDevices forwards offset and limit as query params', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices?offset=5&limit=2', {
+        members: [],
+      });
+      await expect(
+        client.listMemberDevices('g-1', { offset: 5, limit: 2 }),
+      ).resolves.toEqual({ members: [] });
+    });
+
+    it('listMemberDevices forwards offset=0, which is not the same as omitting it', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices?offset=0', {
+        members: [],
+      });
+      await expect(client.listMemberDevices('g-1', { offset: 0 })).resolves.toEqual({
+        members: [],
+      });
+    });
+
     it('listGroupContexts unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/contexts', { data: [{ contextId: 'ctx-1', alias: 'Chat' }] });
       const result = await client.listGroupContexts('g-1');
