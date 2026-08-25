@@ -1,3 +1,9 @@
+## [13.2.4](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.3...mero-js-v13.2.4) (2026-08-25)
+
+### Bug Fixes
+
+* **fleet:** record a root lockfile at its repository-relative path ([#112](https://github.com/calimero-network/mero-js/issues/112)) ([95fc7fb](https://github.com/calimero-network/mero-js/commit/95fc7fb60098141f5ef5c52e73f791d9b9665b1f))
+
 ## [13.2.3](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.2...mero-js-v13.2.3) (2026-08-25)
 
 ### Bug Fixes
