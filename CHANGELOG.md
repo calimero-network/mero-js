@@ -1,3 +1,9 @@
+## [13.2.3](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.2...mero-js-v13.2.3) (2026-08-25)
+
+### Bug Fixes
+
+* **fleet:** bump with the pnpm the repository actually uses ([#111](https://github.com/calimero-network/mero-js/issues/111)) ([cf2442d](https://github.com/calimero-network/mero-js/commit/cf2442d624b1536ab9dc4f2dea279ea5a9e215c1))
+
 ## [13.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.1...mero-js-v13.2.2) (2026-08-24)
 
 ### Bug Fixes
