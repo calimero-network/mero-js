@@ -100,6 +100,8 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
+  PerformIntentRequest,
+  PerformIntentResponseData,
 } from './admin-types.js';
 
 /**
@@ -646,6 +648,43 @@ export class AdminApiClient {
   async getNamespaceIdentity(namespaceId: string): Promise<NamespaceIdentity> {
     const node = await this.getNodeIdentity();
     return { namespaceId, publicKey: node.publicKey, account: node.accountId };
+  }
+
+  /**
+   * Ask this node to run one method on a member's behalf, under a warrant that
+   * member signed.
+   *
+   * The node executes and signs the envelope with its own key; the change is
+   * attributed to the **author**. Both halves travel together, so every peer
+   * re-checks that the member consented instead of trusting the relay.
+   *
+   * Three things have to be true first, and none is implied by the others:
+   *
+   * - the author's **account** is a member of the group owning the context —
+   *   their device joins nothing and is in no group's binding rows, which is
+   *   exactly the case a device certificate covers;
+   * - this node holds `CAN_AUTHOR_ON_BEHALF` on that group, which is implied by
+   *   neither membership nor admin;
+   * - the warrant has not been spent. It is single-use: presenting a valid one
+   *   twice is refused, because the signature stays valid forever and replay is
+   *   not forgery.
+   *
+   * A refusal comes back as a `403` carrying the reason — "an admin must grant
+   * CAN_AUTHOR_ON_BEHALF to …", or that the nonce is already spent — so a caller
+   * can tell which precondition failed rather than only that one did.
+   *
+   * This SDK does not mint warrants; see {@link PerformIntentRequest.warrant}.
+   */
+  async performIntent(
+    contextId: string,
+    request: PerformIntentRequest,
+  ): Promise<PerformIntentResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: PerformIntentResponseData }>(
+        `/admin-api/contexts/${contextId}/intents`,
+        request,
+      ),
+    );
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {

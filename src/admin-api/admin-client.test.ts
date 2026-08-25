@@ -608,6 +608,54 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
+    it('performIntent posts the author-side halves and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/intents', {
+        data: { rootHash: 'root-1', returns: null },
+      });
+
+      const result = await client.performIntent('ctx-1', {
+        method: 'set',
+        argsJson: { key: 'k', value: 'v' },
+        warrant: 'aabb',
+        authorProof: 'ccdd',
+      });
+
+      expect(result).toEqual({ rootHash: 'root-1', returns: null });
+      // Only the author's half goes out. The node attaches its own credential,
+      // so a caller never has to learn which of its processes runs the intent —
+      // and a re-key on its side does not void a warrant already issued.
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/intents')).toEqual({
+        method: 'set',
+        argsJson: { key: 'k', value: 'v' },
+        warrant: 'aabb',
+        authorProof: 'ccdd',
+      });
+    });
+
+    it('performIntent leaves nested args untouched', async () => {
+      // The warrant commits to H(method, args), and the node recomputes that
+      // hash from what arrives. Anything this client did to the shape on the way
+      // out — reordering, stringifying, dropping a null — would make a warrant
+      // that verifies nowhere, and it would surface at the node as a bad
+      // signature rather than here as a serialization difference.
+      const argsJson = { outer: { inner: [1, null, 'x'] }, flag: false };
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-2/intents', {
+        data: { rootHash: 'root-2', returns: 'ok' },
+      });
+
+      await client.performIntent('ctx-2', {
+        method: 'nested',
+        argsJson,
+        warrant: 'aa',
+        authorProof: 'bb',
+      });
+
+      expect(
+        (mock.getRequestBody('POST', '/admin-api/contexts/ctx-2/intents') as { argsJson: unknown })
+          .argsJson,
+      ).toEqual(argsJson);
+    });
+
     it('getNodeIdentity unwraps data', async () => {
       const identity = {
         accountId: 'ac-1',

@@ -417,6 +417,58 @@ export type ListNamespacesResponseData = Namespace[];
  * node signs with one key — so none of this varies by namespace, which is why
  * the endpoint behind it takes none.
  */
+/**
+ * A member's request that a node run one method on their behalf.
+ *
+ * Delegated authorship exists for a holder that cannot run the application
+ * itself — a device with only a signing key, which can neither compile the WASM
+ * nor decrypt the state. What makes the resulting write *theirs* is the warrant:
+ * a statement they signed, which travels with the change so every peer verifies
+ * they consented rather than taking the node's word.
+ */
+export interface PerformIntentRequest {
+  /** The method to run. */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+  /**
+   * The author's consent: hex-encoded borsh of a `Warrant`.
+   *
+   * Opaque on purpose. Its canonical form is those bytes — the signature covers
+   * them — so re-describing the fields as JSON would create a second spelling
+   * that could disagree with what was signed.
+   *
+   * Mint it with `merod account warrant` or `meroctl context intent`. This SDK
+   * does not sign: doing so would need ed25519 and a borsh encoding kept
+   * byte-identical with the node's forever, and a one-byte drift is
+   * indistinguishable from a forgery.
+   */
+  warrant: string;
+  /**
+   * Hex-encoded borsh of the author's `AccountProof<DeviceCert>`, proving the
+   * key that signed the warrant is a device of the account it names.
+   *
+   * Only the author's own half. The node attaches its own credential, so a
+   * caller never learns which of the node's processes runs the intent — and a
+   * re-key on its side does not void a warrant already issued.
+   */
+  authorProof: string;
+}
+
+/** What a performed intent reports back. */
+export interface PerformIntentResponseData {
+  /**
+   * The context's scope root after the run — how a caller sees that it wrote.
+   *
+   * Worth asserting on rather than the status alone: an accepted intent that
+   * advanced no state is a real failure mode, and it is cheaper to catch here
+   * than on a later read of a value that was never written.
+   */
+  rootHash: string;
+  /** The method's own return value, if it had one. */
+  returns: unknown | null;
+}
+
 export interface NodeIdentity {
   /**
    * The account this node writes as, 64 hex characters. This — not
