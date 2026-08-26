@@ -752,6 +752,137 @@ describe('AdminApiClient', () => {
     });
   });
 
+  describe('Account Devices & Pairing', () => {
+    // A pair-init answer as merod emits it: every field hex, including the two
+    // public keys, because this payload is a set of round-trip tokens copied
+    // verbatim into pair-complete rather than keys compared against a listing.
+    const HEX32 = 'a'.repeat(64);
+    const HEX64 = 'b'.repeat(128);
+    const PAIR_INIT = {
+      accountId: '1'.repeat(64),
+      deviceId: '2'.repeat(64),
+      kemPublicKey: HEX32,
+      signPublicKey: '3'.repeat(64),
+      statement: HEX64,
+      confirmationCode: '7BC0-DAAC-CCB4-84A4',
+    };
+
+    it('initAccountPairing posts the namespace set and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/account/pair-init', { data: PAIR_INIT });
+      const result = await client.initAccountPairing({
+        accountRootPublicKey: '4'.repeat(64),
+        namespaces: ['5'.repeat(64), '6'.repeat(64)],
+      });
+      // Passed through untouched: the caller's hex is what the node parses, and
+      // the answer's hex is what pair-complete has to receive verbatim.
+      expect(mock.getRequestBody('POST', '/admin-api/account/pair-init')).toEqual({
+        accountRootPublicKey: '4'.repeat(64),
+        namespaces: ['5'.repeat(64), '6'.repeat(64)],
+      });
+      expect(result).toEqual(PAIR_INIT);
+    });
+
+    it('completeAccountPairing sends the whole pair-init payload plus the scope', async () => {
+      const completed = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        keyDelivered: true,
+        confirmationCode: PAIR_INIT.confirmationCode,
+        credential: 'c'.repeat(200),
+      };
+      mock.setMockResponse('POST', '/admin-api/account/pair-complete', { data: completed });
+      const request = {
+        deviceId: PAIR_INIT.deviceId,
+        kemPublicKey: PAIR_INIT.kemPublicKey,
+        signPublicKey: PAIR_INIT.signPublicKey,
+        statement: PAIR_INIT.statement,
+        confirmationCode: PAIR_INIT.confirmationCode,
+        applications: ['App1BaseFiftyEight'],
+      };
+      const result = await client.completeAccountPairing(request);
+      // Asserted whole rather than field by field: the statement is what turns
+      // the three values above from claims by whoever relayed them into a
+      // statement by the device that minted them, so a client that quietly
+      // dropped one field would be asking the node to certify attacker-supplied
+      // keys. The scope stays base58 while everything beside it is hex.
+      expect(mock.getRequestBody('POST', '/admin-api/account/pair-complete')).toEqual(request);
+      expect(result).toEqual(completed);
+    });
+
+    it('completeAccountPairing omits applications when the caller grants every one', async () => {
+      // Absent is the wire's "all", and the SDK must not turn it into `[]` or
+      // into a guess at the full list — the node resolves it.
+      mock.setMockResponse('POST', '/admin-api/account/pair-complete', { data: { keyDelivered: false } });
+      await client.completeAccountPairing({
+        deviceId: PAIR_INIT.deviceId,
+        kemPublicKey: PAIR_INIT.kemPublicKey,
+        signPublicKey: PAIR_INIT.signPublicKey,
+        statement: PAIR_INIT.statement,
+        confirmationCode: PAIR_INIT.confirmationCode,
+      });
+      expect(
+        mock.getRequestBody('POST', '/admin-api/account/pair-complete'),
+      ).not.toHaveProperty('applications');
+    });
+
+    it('relinkAccountDevice names the device in the path and unwraps data', async () => {
+      const relinked = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        applications: ['App1BaseFiftyEight'],
+        linkedIn: [{ namespaceId: '5'.repeat(64), keyDelivered: true }],
+        skipped: [{ namespaceId: '6'.repeat(64), reason: 'outOfScope' }],
+      };
+      mock.setMockResponse('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`, { data: relinked });
+      const result = await client.relinkAccountDevice(PAIR_INIT.deviceId, {
+        applications: ['App1BaseFiftyEight'],
+      });
+      expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({
+        applications: ['App1BaseFiftyEight'],
+      });
+      // `linkedIn` and `skipped` are the whole point of the answer: publication
+      // is per-DAG, so which namespaces the device actually reached — and why
+      // the others were left alone — is a state the caller has to be able to see.
+      expect(result).toEqual(relinked);
+    });
+
+    it('relinkAccountDevice sends an empty body for a repair-only relink', async () => {
+      // No argument means "repair against the stored scope", which the wire
+      // spells as an absent list. It must not become the every-application list
+      // an empty `applications` means on pair-complete.
+      mock.setMockResponse('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`, {
+        data: { applications: [], linkedIn: [], skipped: [] },
+      });
+      await client.relinkAccountDevice(PAIR_INIT.deviceId);
+      expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({});
+    });
+
+    it('listAccountDevices reads the top-level `devices` wrapper, not `data`', async () => {
+      const devices = [
+        {
+          deviceId: PAIR_INIT.deviceId,
+          signingKey: 'BaseFiftyEightSigningKey',
+          isSelf: true,
+          revoked: false,
+          applications: [],
+          namespaces: ['5'.repeat(64)],
+        },
+      ];
+      mock.setMockResponse('GET', '/admin-api/account/devices', { devices });
+      const result = await client.listAccountDevices();
+      // `applications: []` survives as-is: on a device entry an empty list means
+      // EVERY application, so normalizing it away would invert its meaning.
+      expect(result).toEqual(devices);
+      expect(result[0].applications).toEqual([]);
+    });
+
+    it('listAccountApplications reads the top-level `applications` wrapper, not `data`', async () => {
+      const applications = [{ applicationId: 'App1BaseFiftyEight', namespaces: ['5'.repeat(64)] }];
+      mock.setMockResponse('GET', '/admin-api/account/applications', { applications });
+      expect(await client.listAccountApplications()).toEqual(applications);
+    });
+  });
+
   describe('Group Management', () => {
     it('getGroupInfo unwraps data with all fields', async () => {
       const info = {
