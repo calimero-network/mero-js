@@ -1,3 +1,9 @@
+## [13.2.5](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.4...mero-js-v13.2.5) (2026-08-26)
+
+### Bug Fixes
+
+* **fleet:** let the pnpm probe find nothing without killing the step ([#114](https://github.com/calimero-network/mero-js/issues/114)) ([be7aa50](https://github.com/calimero-network/mero-js/commit/be7aa508e315cb336f584578916f66ef5b2e2b9f))
+
 ## [13.2.4](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.3...mero-js-v13.2.4) (2026-08-25)
 
 ### Bug Fixes
