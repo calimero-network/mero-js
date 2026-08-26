@@ -569,15 +569,15 @@ export interface SubgroupEntry {
  * code to read out to them.
  *
  * Account-level, and that is the whole point of it: both credentials pairing
- * mints were always account-wide — the certificate is root-signed and the
- * endorsement node-level, so neither ever named a namespace — while the older
+ * mints were always account-wide - the certificate is root-signed and the
+ * endorsement node-level, so neither ever named a namespace - while the older
  * per-namespace route still made the caller name one, and the device then
  * listened on that one topic while its holder's link fanned out across all of
  * them.
  */
 export interface AccountPairInitRequest {
   /**
-   * The epoch-0 root **public** key of the account to join, 64 hex characters —
+   * The epoch-0 root **public** key of the account to join, 64 hex characters -
    * exactly what {@link NodeIdentity.accountRootPublicKey} reports on the node
    * that already holds the account.
    *
@@ -591,7 +591,7 @@ export interface AccountPairInitRequest {
    * a device certified into nothing listens on no topic.
    *
    * The caller has to supply these, because the joining node cannot discover
-   * them — it is a member of nothing and holds no scope key, so it can neither
+   * them - it is a member of nothing and holds no scope key, so it can neither
    * read the account's namespace set off a DAG nor derive it. The device that
    * already holds the account is the only party that knows it.
    *
@@ -610,7 +610,7 @@ export interface AccountPairInitRequest {
  * the base58 a key is written in elsewhere here. These are round-trip tokens: a
  * caller copies them verbatim into
  * {@link AdminApiClient.completeAccountPairing}, which parses them back as hex,
- * and nothing compares them against a key from anywhere else — the signing key
+ * and nothing compares them against a key from anywhere else - the signing key
  * is the NEW device's, which appears in no member listing yet. So the convention
  * that matters is the one inside the payload, and it is uniform.
  *
@@ -627,7 +627,7 @@ export interface AccountPairInitResponseData {
   /**
    * The Ed25519 key this device signs its ops with, hex.
    *
-   * The account holder cannot derive this — it is minted here — and the
+   * The account holder cannot derive this - it is minted here - and the
    * certificate names it, so it has to travel with the other two.
    */
   signPublicKey: string;
@@ -653,7 +653,7 @@ export interface AccountPairInitResponseData {
 /**
  * Certify a device another node minted, link it, and deliver its scope keys.
  *
- * The second half of pairing, run on the node that holds the account root — the
+ * The second half of pairing, run on the node that holds the account root - the
  * only party that can sign the certificate that makes the device real. Every
  * field but `applications` is copied verbatim from that other node's
  * {@link AccountPairInitResponseData}.
@@ -679,7 +679,7 @@ export interface AccountPairCompleteRequest {
    *
    * Required so the comparison cannot be skipped: this side re-derives the code
    * for the key material that actually arrived and refuses a mismatch. Its value
-   * rests on the code reaching the holder independently of this payload — sent
+   * rests on the code reaching the holder independently of this payload - sent
    * beside the keys, it proves nothing. One code covers the whole pairing,
    * because one device was minted for it.
    */
@@ -689,7 +689,7 @@ export interface AccountPairCompleteRequest {
    * every one of them.
    *
    * Scoped by application rather than by namespace because a person can answer
-   * "which apps may this device use" and cannot answer "which namespaces" — a
+   * "which apps may this device use" and cannot answer "which namespaces" - a
    * namespace is an implementation unit they never named. The node resolves
    * these to namespaces through the same lookup
    * {@link AdminApiClient.listNamespacesForApplication} reads.
@@ -706,13 +706,13 @@ export interface AccountPairCompleteResponseData {
   /**
    * Whether the current scope key was wrapped and published for the device.
    *
-   * `false` does not mean pairing failed — the link is what confers authority,
+   * `false` does not mean pairing failed - the link is what confers authority,
    * and the device's own sync pull re-requests the key. It does mean the device
    * cannot read until that lands.
    */
   keyDelivered: boolean;
   /**
-   * The code for the key material this certified — the same value the request
+   * The code for the key material this certified - the same value the request
    * carried, echoed so the operator can see what the certificate names.
    */
   confirmationCode: string;
@@ -721,7 +721,7 @@ export interface AccountPairCompleteResponseData {
    *
    * The certified device needs this to present itself as a device of the
    * account, and cannot read it off the DAG: doing so means being a member of a
-   * group the account speaks in, which a thin client never is. Not a secret — a
+   * group the account speaks in, which a thin client never is. Not a secret - a
    * certificate is public and proves nothing without the device key it names.
    */
   credential: string;
@@ -734,7 +734,7 @@ export interface AccountPairCompleteResponseData {
  * time, so a namespace created or joined afterwards holds no binding for it and
  * the paired device silently never sees that namespace. This re-runs the fan-out
  * against the namespaces this node takes part in now. The device need not be
- * online, and nothing but its id is required — the certificate is already held
+ * online, and nothing but its id is required - the certificate is already held
  * here, root-signed and naming no namespace, so a fresh endorsement and a key
  * wrap are all a later namespace is missing.
  */
@@ -805,7 +805,7 @@ export interface AccountDeviceEntry {
   /** This device's id, 64 hex characters. */
   deviceId: string;
   /**
-   * The key this device signs its ops with, base58 — not hex, unlike the ids
+   * The key this device signs its ops with, base58 - not hex, unlike the ids
    * around it, and unlike the same key inside a pairing payload.
    */
   signingKey: string;
@@ -814,7 +814,7 @@ export interface AccountDeviceEntry {
   revoked: boolean;
   /**
    * Applications this device may speak for, base58. **Empty means every
-   * application**, the same convention the stored certificate uses — and the
+   * application**, the same convention the stored certificate uses - and the
    * opposite of what an empty {@link RelinkDeviceRequest.applications} asks for.
    * Empty also for a device this node holds no cached certificate for: one bound
    * before the cache existed, or certified by another holder.

@@ -811,7 +811,7 @@ describe('AdminApiClient', () => {
 
     it('completeAccountPairing omits applications when the caller grants every one', async () => {
       // Absent is the wire's "all", and the SDK must not turn it into `[]` or
-      // into a guess at the full list — the node resolves it.
+      // into a guess at the full list - the node resolves it.
       mock.setMockResponse('POST', '/admin-api/account/pair-complete', { data: { keyDelivered: false } });
       await client.completeAccountPairing({
         deviceId: PAIR_INIT.deviceId,
@@ -841,8 +841,8 @@ describe('AdminApiClient', () => {
         applications: ['App1BaseFiftyEight'],
       });
       // `linkedIn` and `skipped` are the whole point of the answer: publication
-      // is per-DAG, so which namespaces the device actually reached — and why
-      // the others were left alone — is a state the caller has to be able to see.
+      // is per-DAG, so which namespaces the device actually reached - and why
+      // the others were left alone - is a state the caller has to be able to see.
       expect(result).toEqual(relinked);
     });
 

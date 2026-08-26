@@ -752,7 +752,7 @@ export class AdminApiClient {
   // ---- Account Devices & Pairing ----
 
   /**
-   * Mint this node a device for an account that already lives somewhere else —
+   * Mint this node a device for an account that already lives somewhere else -
    * the first half of pairing, run on the joining node.
    *
    * Publishes nothing and needs no key: it produces the device id, the two
@@ -764,8 +764,8 @@ export class AdminApiClient {
    * Takes a set of namespaces rather than one, and takes it from the caller
    * because this node cannot discover it: a node that is a member of nothing can
    * neither read the account's namespace set off a DAG nor derive it. One device
-   * covers however many are named — the certificate is over the account, not a
-   * scope — so there is one id and one code to hand over regardless.
+   * covers however many are named - the certificate is over the account, not a
+   * scope - so there is one id and one code to hand over regardless.
    */
   async initAccountPairing(request: AccountPairInitRequest): Promise<AccountPairInitResponseData> {
     return unwrap(
@@ -774,7 +774,7 @@ export class AdminApiClient {
   }
 
   /**
-   * Certify a device another node minted, link it, and deliver its scope keys —
+   * Certify a device another node minted, link it, and deliver its scope keys -
    * the second half of pairing, run on the node that holds the account root.
    *
    * Every field but `applications` is copied verbatim out of that node's
@@ -783,7 +783,7 @@ export class AdminApiClient {
    * holds it.
    *
    * The scope is named in applications, not namespaces, because that is the
-   * question a person can answer — a namespace is an implementation unit they
+   * question a person can answer - a namespace is an implementation unit they
    * never chose. Leave it out to grant every application.
    */
   async completeAccountPairing(
@@ -800,13 +800,13 @@ export class AdminApiClient {
    *
    * Pairing is a snapshot, and this is how it is repeated. A namespace created
    * or joined afterwards holds no binding for a device paired before it, and the
-   * symptom is silence — the device simply never sees that namespace. Nothing
+   * symptom is silence - the device simply never sees that namespace. Nothing
    * but the id is needed to repair it: the certificate is already held here,
    * root-signed and naming no namespace, so a fresh endorsement and a key wrap
    * are all a later namespace is missing. The device does not have to be online.
    *
    * Passing `applications` widens the device's stored scope as well as
-   * repairing. Passing none — or an empty list — repairs against the scope
+   * repairing. Passing none - or an empty list - repairs against the scope
    * already stored, which is deliberately NOT the "every application" that an
    * empty list means on {@link completeAccountPairing}: overloading it here
    * would make the accidental request the widest one.
@@ -824,7 +824,7 @@ export class AdminApiClient {
   }
 
   /**
-   * Every device of this account, as this node sees them — its own included.
+   * Every device of this account, as this node sees them - its own included.
    *
    * Joined from the node-local certificate cache and the live bindings of every
    * namespace this node takes part in, so it is this node's view rather than a
@@ -846,7 +846,7 @@ export class AdminApiClient {
    * What a device-scoping UI lists: {@link completeAccountPairing} and
    * {@link relinkAccountDevice} both take applications, and this is where the
    * ids they take come from. Derived from the namespaces this node takes part
-   * in, so an application installed with no namespace yet is absent — it has
+   * in, so an application installed with no namespace yet is absent - it has
    * nothing to scope a device to until one exists.
    *
    * Wrapped in `applications` on the wire rather than `data`, unwrapped here for
