@@ -1,3 +1,9 @@
+## [13.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.5...mero-js-v13.3.0) (2026-08-26)
+
+### Features
+
+* **admin:** bind performIntent for delegated authorship ([#113](https://github.com/calimero-network/mero-js/issues/113)) ([f51e831](https://github.com/calimero-network/mero-js/commit/f51e831e7dc3b03accf320e49febbbd9b78c1f3e)), closes [core#3636](https://github.com/calimero-network/core/issues/3636) [core#3640](https://github.com/calimero-network/core/issues/3640)
+
 ## [13.2.5](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.4...mero-js-v13.2.5) (2026-08-26)
 
 ### Bug Fixes
