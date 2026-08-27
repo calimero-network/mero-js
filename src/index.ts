@@ -55,6 +55,10 @@ export type { Codec, EphemeralEntry } from './ephemeral/index.js';
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud/index.js';
 
+// Warrant signing — mint the author's consent for a relay to run one intent
+export { signWarrant, intentHash } from './warrant/index.js';
+export type { WarrantInput } from './warrant/index.js';
+
 // Member capability bitmask constants & helpers
 export * from './capabilities.js';
 
