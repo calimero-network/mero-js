@@ -142,8 +142,20 @@ jobs:
 
       - name: Boot 2 merod nodes (embedded auth)
         run: |
-          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded
-          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded
+          # --mdns is load-bearing, not tidy-up. These two nodes have no
+          # bootstrap peer and no rendezvous, so mDNS is their ONLY discovery
+          # path. merod left it on by default until core#3620 ("leave mDNS off
+          # unless asked for"), which first shipped in 0.11.0-rc.26 — and this
+          # job downloads the LATEST release, so it broke the moment rc.26 was
+          # cut, on a run that changed nothing here.
+          #
+          # The symptom points nowhere near the cause: node-2 finds no mesh
+          # peer, falls back to gossip, KeyDelivery times out after 5s, and the
+          # join refuses with a 500. That refusal is correct — a member that
+          # cannot decrypt anything should not land — so the bug reads as
+          # "namespace join is broken" rather than "the nodes never met".
+          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded --mdns
+          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded --mdns
           ./merod --home ./n1 --node n1 run > n1.log 2>&1 & echo $! > n1.pid
           ./merod --home ./n2 --node n2 run > n2.log 2>&1 & echo $! > n2.pid
           for port in 4501 4502; do
