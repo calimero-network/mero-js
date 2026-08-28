@@ -844,7 +844,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async updateMemberRole(
     groupId: string,
@@ -856,7 +857,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
@@ -868,7 +870,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberCapabilities(
     groupId: string,
@@ -935,7 +938,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
@@ -1147,7 +1151,8 @@ export class AdminApiClient {
    * /admin-api/groups/:group_id/members/:identity/auto-follow).
    *
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberAutoFollow(
     groupId: string,

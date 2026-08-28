@@ -31,18 +31,15 @@ const PKCS8_ED25519_PREFIX = new Uint8Array([
   0x22, 0x04, 0x20,
 ]);
 
-const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-
 /** What a warrant authorises. */
 export interface WarrantInput {
   /**
-   * The context, base58 — the same string every other method here takes.
+   * The context, hex — the same string every other method here takes.
    *
-   * Base58 while the two accounts below are hex, because that is how the node
-   * spells them: `ContextId` and `PublicKey` are base58, `AccountId` and
-   * `DeviceId` are hex. Mixing them up produces a valid-looking value that only
-   * fails against real data, so this module decodes each by its own rule rather
-   * than accepting "32 bytes, somehow".
+   * Hex like everything else on this interface. It was base58 while the node
+   * spelled `ContextId` and `PublicKey` that way and `AccountId` and `DeviceId`
+   * in hex; that split is gone, so this module no longer needs a rule per field
+   * and no longer needs a base58 decoder to enforce one.
    */
   context: string;
   /** The author's account, hex — whose consent this is. */
@@ -93,62 +90,6 @@ function fromHex(value: string, label: string, expectedBytes: number): Uint8Arra
   return bytes;
 }
 
-/**
- * Decode base58 to exactly 32 bytes.
- *
- * Hand-rolled rather than pulled in: it is fifteen lines, and a dependency here
- * would be this package's first.
- */
-function fromBase58(value: string, label: string): Uint8Array {
-  const clean = value.trim();
-  let n = 0n;
-  for (const char of clean) {
-    const digit = B58.indexOf(char);
-    if (digit < 0) {
-      throw new Error(`${label} is not base58: unexpected character '${char}'`);
-    }
-    n = n * 58n + BigInt(digit);
-  }
-  const out = new Uint8Array(32);
-  for (let i = 31; i >= 0; i -= 1) {
-    out[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  if (n !== 0n) {
-    throw new Error(`${label} decodes to more than 32 bytes`);
-  }
-
-  // Round-trip, because decoding alone accepts too much. Hex digits are mostly
-  // valid base58 characters, so a context handed over in hex by mistake can
-  // decode to a real-looking 32 bytes instead of failing — `'11'.repeat(32)`
-  // decodes to all zeros. Re-encoding catches it: the canonical form of those
-  // bytes is 32 '1's, not 64.
-  if (toBase58(out) !== clean) {
-    throw new Error(
-      `${label} is not a canonical base58 32-byte id. If you have it in hex, ` +
-        `note that ${label} is base58 here while accounts are hex`,
-    );
-  }
-  return out;
-}
-
-/** Encode 32 bytes as base58, for the canonical check above. */
-function toBase58(bytes: Uint8Array): string {
-  let n = 0n;
-  for (const byte of bytes) {
-    n = (n << 8n) | BigInt(byte);
-  }
-  let out = '';
-  while (n > 0n) {
-    out = B58[Number(n % 58n)] + out;
-    n /= 58n;
-  }
-  let leadingZeros = 0;
-  while (leadingZeros < bytes.length && bytes[leadingZeros] === 0) {
-    leadingZeros += 1;
-  }
-  return '1'.repeat(leadingZeros) + out;
-}
 
 function u64le(value: number | bigint): Uint8Array {
   const out = new Uint8Array(8);
@@ -231,7 +172,7 @@ async function importSigningKey(secretHex: string): Promise<CryptoKey> {
  * was signed.
  */
 export async function signWarrant(input: WarrantInput): Promise<string> {
-  const context = fromBase58(input.context, 'context');
+  const context = fromHex(input.context, 'context', 32);
   const authorAccount = fromHex(input.authorAccount, 'authorAccount', 32);
   const executor = fromHex(input.executor, 'executor', 32);
 

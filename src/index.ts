@@ -18,7 +18,7 @@ export * from './admin-api/index.js';
 export { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
 export type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 
-// Account id encoding (hex on the admin API, base58 in contract data)
+// Account id encoding (hex everywhere core spells one; an app may re-encode)
 export {
   toAccountHex,
   toAccountBase58,

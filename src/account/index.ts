@@ -1,23 +1,23 @@
 /**
  * Account id encoding.
  *
- * Core names the same account in two encodings, and the split is deliberate:
- * the admin API serves and requires **64 hex characters**, while contract data
- * (`sender`, `get_profiles`, anything stamped by `env::account_id()`) carries
- * **base58**. They are rendered differently on purpose, so that handing one
- * where the other is expected fails loudly instead of resolving to the wrong
- * principal.
+ * **Core is hex everywhere now** — the admin API and every other id it spells.
+ * This module used to describe a deliberate split, hex on the admin API against
+ * base58 in contract data, and the core half of that is gone.
  *
- * The cost is that any client reading a member from the admin API and
- * comparing it against a message sender is comparing two spellings of the same
- * value. A raw `===` silently never matches, and passing a contract-sourced id
- * to an admin route answers `400 Invalid account format: expected 64 hex
- * characters (32 bytes)`. Both failure modes are quiet enough to ship.
+ * The app half can remain. `env::account_id()` hands a guest 32 **raw bytes**,
+ * not a string, so whatever an app stores in `sender` or keys `get_profiles` by
+ * is the app's own rendering. An app that base58-encodes those bytes still
+ * produces contract data that a hex admin id will not `===` — and for that app,
+ * these helpers are still the boundary.
  *
- * These helpers canonicalise at that boundary. They convert accounts and
- * nothing else: a device key, an alias or any other value is returned
- * unchanged, because converting is this module's job and destroying what it
- * cannot convert is not.
+ * So they stay, with their reason corrected: the mismatch they bridge is an
+ * application convention, not something core imposes. An app that hex-encodes
+ * needs none of this, and `toAccountHex` is a no-op on what it already holds.
+ *
+ * They convert accounts and nothing else: a device key, an alias or any other
+ * value is returned unchanged, because converting is this module's job and
+ * destroying what it cannot convert is not.
  */
 
 const BASE58_ALPHABET =
