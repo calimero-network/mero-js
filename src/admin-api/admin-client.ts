@@ -673,7 +673,8 @@ export class AdminApiClient {
    * CAN_AUTHOR_ON_BEHALF to …", or that the nonce is already spent — so a caller
    * can tell which precondition failed rather than only that one did.
    *
-   * This SDK does not mint warrants; see {@link PerformIntentRequest.warrant}.
+   * Mint the warrant with {@link signWarrant}; see
+   * {@link PerformIntentRequest.warrant}.
    */
   async performIntent(
     contextId: string,

@@ -438,10 +438,15 @@ export interface PerformIntentRequest {
    * them — so re-describing the fields as JSON would create a second spelling
    * that could disagree with what was signed.
    *
-   * Mint it with `merod account warrant` or `meroctl context intent`. This SDK
-   * does not sign: doing so would need ed25519 and a borsh encoding kept
-   * byte-identical with the node's forever, and a one-byte drift is
-   * indistinguishable from a forgery.
+   * Mint it with {@link signWarrant}, or out of band with `merod account
+   * warrant` / `meroctl context intent`.
+   *
+   * Signing here needs no dependency, which is why it is available at all: the
+   * hash is WebCrypto SHA-256, the signature is WebCrypto Ed25519, and every
+   * field of a warrant is fixed-width so the encoding is concatenation rather
+   * than borsh. The byte contract is pinned on the node's side, at
+   * `crates/account/src/tests/warrant_wire_fixture.rs`, because a drift there
+   * would otherwise surface here as a 403 rather than as an encoding error.
    */
   warrant: string;
   /**
