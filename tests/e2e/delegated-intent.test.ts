@@ -5,15 +5,27 @@
  * in core's `coverage-baseline.json`: that ratchet is fed by this suite, so no
  * amount of merobox coverage moves it.
  *
- * The warrant is minted by real `merod`, not fabricated here. That is deliberate
- * twice over:
+ * **The warrant is signed by this SDK**, and that is the point of the suite now.
+ * It used to be minted by shelling out to `merod`, on the reasoning that "this
+ * SDK does not sign, and should not". It does sign — `signWarrant` shipped — and
+ * the argument against it (ed25519 plus a borsh encoding kept byte-identical
+ * with the node's forever) is precisely the thing that needs a test rather than
+ * an assumption. Unit tests pin those bytes against a fixed vector; only a real
+ * node can say whether the node accepts them.
  *
- * - This SDK does not sign, and should not: it would need ed25519 plus a borsh
- *   encoding kept byte-identical with the node's forever, in a package that has
- *   no runtime dependencies at all.
- * - A test that called the endpoint with a made-up warrant would register
- *   coverage and prove nothing — it would 4xx every time and the ratchet would
- *   not notice. Coverage of a route is not coverage of what the route does.
+ * `merod` is still used for the one thing it alone can do: minting the author's
+ * device certificate offline, with a key that never reaches the node.
+ *
+ * A byte-for-byte comparison against a merod-minted warrant would be stronger
+ * and is deliberately absent: `merod account warrant` takes `--valid-for`
+ * (seconds from its own clock) rather than an absolute `--not-after`, so the two
+ * sides cannot be made to agree on that field, and the signature covers it. Node
+ * acceptance is the available proof, and it is the one that matters — it is the
+ * node's opinion of these bytes that the SDK exists to satisfy.
+ *
+ * A test that called the endpoint with a fabricated warrant would register
+ * coverage and prove nothing: it would 4xx every time and the ratchet would not
+ * notice. Coverage of a route is not coverage of what the route does.
  *
  * Requires MEROD_BINARY. Skipped without it, so a local run against an
  * already-booted node does not fail on a missing binary.
@@ -26,12 +38,16 @@ import { join } from 'path';
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { signWarrant } from '../../src/warrant/index.js';
 import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
 
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();
 const RUN = runId();
 const MEROD = process.env.MEROD_BINARY;
+
+/** The intent every warrant below authorises, shared so they commit alike. */
+const ARGS = { key: 'delegated', value: `from-sdk-${RUN}` };
 
 /**
  * A fixed BIP-39 phrase, so the author's ACCOUNT is deterministic.
@@ -130,12 +146,12 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
     // Minted once and reused below on purpose: the same bytes are refused, then
     // accepted, then refused. That makes the grant the only thing that changed
     // between the first two — a fresh warrant each time would not.
-    warrant = mintWarrant(1);
+    warrant = await mintWarrant(1);
 
     await expect(
       mero.admin.performIntent(contextId, {
         method: 'set',
-        argsJson: { key: 'delegated', value: `from-sdk-${RUN}` },
+        argsJson: ARGS,
         warrant,
         authorProof: device.credential,
       }),
@@ -151,7 +167,7 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
 
     const result = await mero.admin.performIntent(contextId, {
       method: 'set',
-      argsJson: { key: 'delegated', value: `from-sdk-${RUN}` },
+      argsJson: ARGS,
       warrant,
       authorProof: device.credential,
     });
@@ -169,32 +185,32 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
     await expect(
       mero.admin.performIntent(contextId, {
         method: 'set',
-        argsJson: { key: 'delegated', value: `from-sdk-${RUN}` },
+        argsJson: ARGS,
         warrant,
         authorProof: device.credential,
       }),
     ).rejects.toThrow(/nonce/i);
   }, 60_000);
 
-  /** A warrant over the same intent, at the given nonce. */
-  function mintWarrant(nonce: number): string {
-    return merod([
-      'account',
-      'warrant',
-      '--context',
-      contextId,
-      '--method',
-      'set',
-      '--args',
-      JSON.stringify({ key: 'delegated', value: `from-sdk-${RUN}` }),
-      '--executor',
-      relayAccount,
-      '--nonce',
-      String(nonce),
-      '--device-secret',
-      device.secret,
-      '--credential',
-      device.credential,
-    ]).trim();
+  /**
+   * A warrant over the same intent, at the given nonce — signed by THIS SDK.
+   *
+   * `notAfter` is Unix seconds, and the window only has to outlast the request.
+   * A generous one keeps the suite from going red on a slow runner while still
+   * being finite, since an unbounded warrant is the thing the field exists to
+   * prevent.
+   */
+  function mintWarrant(nonce: number): Promise<string> {
+    return signWarrant({
+      context: contextId,
+      authorAccount: device.account,
+      executor: relayAccount,
+      method: 'set',
+      argsJson: ARGS,
+      nonce,
+      notAfter: Math.floor(Date.now() / 1000) + 300,
+      deviceSecret: device.secret,
+    });
   }
+
 });
