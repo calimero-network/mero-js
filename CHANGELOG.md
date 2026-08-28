@@ -1,3 +1,18 @@
+## [15.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v14.0.0...mero-js-v15.0.0) (2026-08-28)
+
+### ⚠ BREAKING CHANGES
+
+* **account:** `toAccountHex`, `toAccountBase58` and `sameAccount` are removed.
+Every id core emits is 64 lowercase hex, so comparing two ids is now `===`. A
+caller holding base58 account ids has data predating the migration; decode it
+once rather than converting on every comparison.
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Features
+
+* **account:** drop the account encoding bridge ([#119](https://github.com/calimero-network/mero-js/issues/119)) ([0090ac7](https://github.com/calimero-network/mero-js/commit/0090ac7459db6c5826e66a68657c58574809d865)), closes [calimero-network/core#3696](https://github.com/calimero-network/core/issues/3696)
+
 ## [14.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.4.0...mero-js-v14.0.0) (2026-08-28)
 
 ### ⚠ BREAKING CHANGES
