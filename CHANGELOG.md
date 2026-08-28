@@ -1,3 +1,13 @@
+## [14.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.4.0...mero-js-v14.0.0) (2026-08-28)
+
+### ⚠ BREAKING CHANGES
+
+* **warrant:** the context is hex, and base58 is gone from this package (#118)
+
+### Bug Fixes
+
+* **warrant:** the context is hex, and base58 is gone from this package ([#118](https://github.com/calimero-network/mero-js/issues/118)) ([9298bea](https://github.com/calimero-network/mero-js/commit/9298beaeadaeb04d2eee3d12641e44e0da6914f0))
+
 ## [13.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.3.0...mero-js-v13.4.0) (2026-08-28)
 
 ### Features
