@@ -173,7 +173,11 @@ describe('E2E — ephemeral presence (single node)', () => {
 
     // The default JSON codec round-trips the slice through the node's byte array.
     expect(entry.state).toEqual({ nonce, cursor: { line: 42, col: 7 } });
-    expect(entry.author).toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/); // bs58 identity key
+    // 64 hex. This asserted the bs58 alphabet until core made every id hex, and
+    // the two character classes overlap enough that the old regex kept passing on
+    // most hex strings — it only failed once an id happened to contain a `0`.
+    // Pinning the length as well as the alphabet is what makes it a real check.
+    expect(entry.author).toMatch(/^[0-9a-f]{64}$/); // hex identity key
     // `subscribe` hands callers a real boolean even though the wire omits the field.
     expect(entry.removed).toBe(false);
     // A live delta is fresh at receipt: `ageMs` must be genuinely ABSENT, not 0
