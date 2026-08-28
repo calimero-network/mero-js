@@ -1,3 +1,9 @@
+## [13.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.3.0...mero-js-v13.4.0) (2026-08-28)
+
+### Features
+
+* **warrant:** mint warrants in JS, with no dependencies ([#116](https://github.com/calimero-network/mero-js/issues/116)) ([8b9ad6a](https://github.com/calimero-network/mero-js/commit/8b9ad6a9aabaea82351fdb9777972b474b721443))
+
 ## [13.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.5...mero-js-v13.3.0) (2026-08-26)
 
 ### Features
