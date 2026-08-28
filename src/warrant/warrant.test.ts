@@ -14,7 +14,9 @@ import { describe, expect, it } from 'vitest';
 import { intentHash, signWarrant } from './warrant.js';
 
 const DEVICE_SECRET = '07'.repeat(32);
-/** base58 of 32 bytes of 0x11 — core's fixture uses the raw bytes. */
+/** 32 bytes of 0x11 — the same bytes core's fixture uses, now spelled in hex. */
+const CONTEXT = '11'.repeat(32);
+/** The same bytes in base58, which this module no longer accepts anywhere. */
 const CONTEXT_B58 = '29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2';
 const AUTHOR_ACCOUNT = '22'.repeat(32);
 const EXECUTOR = '33'.repeat(32);
@@ -39,7 +41,7 @@ describe('warrant signing conformance', () => {
 
   it('produces the exact 240 bytes core produces', async () => {
     const warrant = await signWarrant({
-      context: CONTEXT_B58,
+      context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       method: METHOD,
@@ -71,7 +73,7 @@ describe('warrant signing conformance', () => {
     // A caller able to name a key it does not hold could produce a warrant it
     // cannot sign, and the field would stop meaning "who authorised this".
     const warrant = await signWarrant({
-      context: CONTEXT_B58,
+      context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       method: METHOD,
@@ -86,7 +88,7 @@ describe('warrant signing conformance', () => {
 
 describe('input encodings', () => {
   const base = {
-    context: CONTEXT_B58,
+    context: CONTEXT,
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
     method: METHOD,
@@ -96,28 +98,27 @@ describe('input encodings', () => {
     deviceSecret: DEVICE_SECRET,
   };
 
-  // The ids do not share an encoding, and mixing them up yields a
-  // valid-looking value that only fails against real data.
-  // Two shapes, because they fail for different reasons and only one of them
-  // fails on the alphabet.
-  it('refuses a hex context containing non-base58 characters', async () => {
-    // '0' is not in the base58 alphabet, so this is caught on sight.
+  // Every id on this interface is hex now, so there is one rule and base58 is
+  // simply not it. This inverts two tests that pinned the opposite — that a hex
+  // context was refused, once on the alphabet and once by a canonical
+  // round-trip, because `context` was base58 while the accounts were hex.
+  it('refuses a base58 context', async () => {
     await expect(
-      signWarrant({ ...base, context: '10'.repeat(32) }),
-    ).rejects.toThrow(/not base58/);
+      signWarrant({ ...base, context: CONTEXT_B58 }),
+    ).rejects.toThrow(/context must be 64 hex/);
   });
 
-  it('refuses a hex context that happens to be valid base58', async () => {
-    // The dangerous one. Hex digits are mostly base58 characters, so
-    // `'11'.repeat(32)` DECODES — to 32 zero bytes — rather than failing. Only
-    // the canonical round-trip catches it: those bytes encode as 32 '1's, not
-    // 64, so the input was never a canonical id.
+  it('accepts the hex that used to be refused as non-canonical base58', async () => {
+    // This exact string was the dangerous case: hex digits are mostly base58
+    // characters, so `'11'.repeat(32)` decoded to 32 zero bytes rather than
+    // failing, and only a canonical round-trip caught it. With one alphabet
+    // there is nothing to confuse it with — it is the context, and it signs.
     await expect(
       signWarrant({ ...base, context: '11'.repeat(32) }),
-    ).rejects.toThrow(/canonical base58/);
+    ).resolves.toMatch(/^[0-9a-f]+$/);
   });
 
-  it('refuses a base58 account, which is the hex one', async () => {
+  it('refuses a base58 account', async () => {
     await expect(
       signWarrant({ ...base, authorAccount: CONTEXT_B58 }),
     ).rejects.toThrow(/authorAccount must be 64 hex/);
@@ -132,7 +133,7 @@ describe('input encodings', () => {
 
 describe('the intent it authorises', () => {
   const base = {
-    context: CONTEXT_B58,
+    context: CONTEXT,
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
     nonce: 7,

@@ -357,7 +357,7 @@ export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
   /**
-   * The account the inviter acts as, as 64 hex characters — not the bs58 the
+   * The account the inviter acts as, as 64 hex characters — not the
    * `inviter_identity` key inside the signed body is written in. Governance
    * rows name accounts, and a joiner cannot derive this one: an account is a
    * hash of a root it has never seen.
@@ -492,7 +492,7 @@ export interface NodeIdentity {
    */
   deviceId: string | null;
   /**
-   * The key this node signs ops with, base58.
+   * The key this node signs ops with, 64 hex.
    *
    * The device's signing key, not the account root: the root signs
    * certificates and never an op, so a signature on the wire verifies against
@@ -520,7 +520,7 @@ export interface NodeIdentity {
 export interface NamespaceIdentity {
   /** Echoed back from the argument; it does not describe the identity. */
   namespaceId: string;
-  /** The key this node signs with, base58. */
+  /** The key this node signs with, 64 hex. */
   publicKey: string;
   /**
    * The account this node writes as, 64 hex characters. This — not
@@ -590,7 +590,7 @@ export interface JoinNamespaceResponseData {
    * which is always set.
    */
   groupId?: string;
-  /** The key the joiner signs with, base58. */
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
@@ -748,7 +748,7 @@ export interface GroupMember {
   /**
    * The member's ACCOUNT: 64 hex characters.
    *
-   * Not a signing key, which renders as bs58 — a person may hold several keys
+   * Not a signing key — a person may hold several keys
    * and governance rows name the person. Both are 32 bytes, so nothing here or
    * on the server will object if you pass the wrong one; it will simply name a
    * principal that exists nowhere. Feed this value to
@@ -790,7 +790,8 @@ export interface DeleteGroupResponseData {
 
 export interface GroupMemberInput {
   /**
-   * The invitee's signing KEY, in bs58 — NOT an account.
+   * The invitee's signing KEY, 64 hex — NOT an account. It is spelled exactly
+   * like one, so only the field name says which this is.
    *
    * Adding is the one member-facing call that names a key: the node binds the
    * key to an account as it admits it, so before that there is no account to
@@ -1019,7 +1020,7 @@ export interface JoinGroupRequest {
 
 export interface JoinGroupResponseData {
   groupId: string;
-  /** The key the joiner signs with, base58. */
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
