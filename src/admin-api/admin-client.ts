@@ -102,6 +102,8 @@ import type {
   TeeVerifyQuoteResponseData,
   PerformIntentRequest,
   PerformIntentResponseData,
+  AdmitJoinRequest,
+  AdmitJoinResponseData,
 } from './admin-types.js';
 
 /**
@@ -737,6 +739,36 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData }>(
         `/admin-api/namespaces/${namespaceId}/invite`,
         request ?? {},
+      ),
+    );
+  }
+
+  /**
+   * Present a join this caller signed to a node the inviter named as an
+   * admitter.
+   *
+   * For a member with no node. `joinNamespace` publishes the membership op from
+   * the node making the call; this hands an already-signed op to somebody else's
+   * node to publish. The distinction matters because a keyholder has nowhere to
+   * publish from.
+   *
+   * The op must be signed by the **device key** in the credential it carries —
+   * every peer checks that when applying a join. So the admitter cannot author
+   * this, only carry it: a hostile one can refuse, and nothing else. It cannot
+   * admit a different account, change the group, or grant a role.
+   *
+   * @param namespaceId the namespace being joined, 64 hex
+   * @param request the invitation and the hex-encoded signed op
+   */
+  async admitJoin(
+    namespaceId: string,
+    request: AdmitJoinRequest,
+  ): Promise<AdmitJoinResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AdmitJoinResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/admit`,
+        request,
+        { timeoutMs: 65000 },
       ),
     );
   }
