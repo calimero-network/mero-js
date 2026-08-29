@@ -94,12 +94,32 @@ jobs:
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev-password
           NO_COLOR: '1'
+          # The delegated-intent suite mints an author certificate and a warrant
+          # offline, which only merod can do, so it is `describe.skipIf(!MEROD)`.
+          # The binary is already downloaded above; without this it skipped here
+          # and ran ONLY in core's sdk-e2e.yml — so this repo reported green on a
+          # suite it had never executed.
+          MEROD_BINARY: ${{ github.workspace }}/merod
         run: |
           set -o pipefail
           pnpm test:e2e 2>&1 | tee e2e.log
           # Guard against a vacuous/all-skipped green: require at least one passing test.
           grep -qE "[1-9][0-9]* passed" e2e.log \
             || { echo "::error::e2e produced no passing tests — refusing a vacuous pass"; exit 1; }
+          # And specifically that the delegated suite RAN. The guard above is
+          # satisfied by any other file passing, so a silently skipped
+          # delegated-intent would have gone unnoticed indefinitely — which is
+          # exactly what happened until now. `skipIf` reports the file with no
+          # test count, so requiring the count is what distinguishes ran from
+          # skipped.
+          #
+          # Deliberately strict: it matches `(N tests)` but not
+          # `(N tests | M skipped)`, so adding a conditionally-skipped test to
+          # that file trips it. That is the right way round — a skip in this
+          # suite is precisely what is being guarded against, and a loud failure
+          # naming the file beats the silence it replaces.
+          grep -qE "delegated-intent\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
+            || { echo "::error::delegated-intent suite did not run — MEROD_BINARY unset or merod unusable"; exit 1; }
 
       - name: Upload e2e logs
         if: always()
