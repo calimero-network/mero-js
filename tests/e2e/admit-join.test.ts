@@ -58,16 +58,14 @@ describe('Direct admission E2E', () => {
     expect('invitation' in created).toBe(true);
     if (!('invitation' in created)) return;
 
-    // 32 bytes, and the account we named — the list travels inside the
-    // inviter's signature, so a joiner can tell who is allowed to admit it
-    // without trusting whoever handed it the invitation.
+    // The account we named, spelled the way every other account field is: 64
+    // hex characters. The list travels inside the inviter's signature, so a
+    // joiner can tell who may admit it without trusting whoever passed it along.
     const admitters = created.invitation.invitation.admitters;
     expect(admitters).toBeDefined();
     expect(admitters).toHaveLength(1);
-    expect(admitters?.[0]).toHaveLength(32);
-
-    const asHex = Buffer.from(admitters![0]!).toString('hex');
-    expect(asHex).toBe(selfAccount);
+    expect(admitters?.[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect(admitters?.[0]).toBe(selfAccount);
   }, 30000);
 
   it('refuses an op it cannot decode, rather than publishing it blind', async () => {

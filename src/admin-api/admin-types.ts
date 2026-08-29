@@ -336,7 +336,8 @@ export interface GroupInvitationFromAdmin {
   readonly secret_salt: number[];
   readonly invited_role: number;
   /**
-   * Accounts permitted to admit a claim of this invitation, 32 bytes each.
+   * Accounts permitted to admit a claim of this invitation, 64 hex characters
+   * each — the same spelling every other account-addressing field uses.
    *
    * Empty means admission by broadcast: the joiner announces itself on the
    * namespace topic and any ready peer answers — which publishes the invitation
@@ -345,7 +346,7 @@ export interface GroupInvitationFromAdmin {
    *
    * Inside the inviter's signature, so it cannot be redirected.
    */
-  readonly admitters?: number[][];
+  readonly admitters?: readonly string[];
 }
 
 /**
