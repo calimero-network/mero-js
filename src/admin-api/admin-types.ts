@@ -1027,6 +1027,18 @@ export interface CreateGroupInvitationRequest {
   requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex each.
+   *
+   * Omitted or empty leaves admission open to broadcast, which publishes the
+   * invitation to every subscriber of the namespace topic. Naming admitters
+   * keeps it off the topic: the joiner presents the claim to one of them and
+   * every other peer refuses to answer for it.
+   *
+   * Core signs this list into the invitation, so it cannot be redirected after
+   * the fact.
+   */
+  admitters?: string[];
 }
 
 export interface CreateGroupInvitationResponseData {
