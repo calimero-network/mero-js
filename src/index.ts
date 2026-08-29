@@ -50,6 +50,13 @@ export * from './cloud/index.js';
 
 // Warrant signing — mint the author's consent for a relay to run one intent
 export { signWarrant, intentHash } from './warrant/index.js';
+export {
+  signDeviceCert,
+  mintDeviceId,
+  deviceCertPayload,
+  accountForRoot,
+} from './device-cert/index.js';
+export type { DeviceCertInput } from './device-cert/index.js';
 export type { WarrantInput } from './warrant/index.js';
 
 // Member capability bitmask constants & helpers
