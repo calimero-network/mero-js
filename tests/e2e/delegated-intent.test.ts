@@ -205,11 +205,14 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
    * --not-after`, since the deadline is signed over and merod otherwise takes it
    * from its own clock.
    */
-  it('produces the same bytes merod does, for the same inputs', () => {
+  it('produces the same bytes merod does, for the same inputs', async () => {
     const notAfter = deadline();
     const nonce = 99;
 
-    expect(mintWarrant(nonce, notAfter)).resolves.toBe(
+    // Awaited, not left to `.resolves` — an un-awaited assertion is currently
+    // auto-awaited by vitest and will simply stop asserting in vitest 3, which
+    // would leave this passing while comparing nothing.
+    await expect(mintWarrant(nonce, notAfter)).resolves.toBe(
       mintWarrantWithMerod(nonce, notAfter),
     );
   }, 60_000);
