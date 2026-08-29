@@ -1,3 +1,9 @@
+## [15.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.0.0...mero-js-v15.1.0) (2026-08-29)
+
+### Features
+
+* **device-cert:** certify a device offline from the SDK ([#123](https://github.com/calimero-network/mero-js/issues/123)) ([b20e1d6](https://github.com/calimero-network/mero-js/commit/b20e1d6466e57fd21641a260018199133ef425f4))
+
 ## [15.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v14.0.0...mero-js-v15.0.0) (2026-08-28)
 
 ### ⚠ BREAKING CHANGES
