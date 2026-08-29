@@ -35,18 +35,20 @@ describe('Direct admission E2E', () => {
     const applicationId = await ensureApplication(mero);
 
     const ns = await mero.admin.createNamespace({
-      name: `admit-${RUN}`,
       applicationId,
+      name: `admit-${RUN}`,
     });
     namespaceId = ns.namespaceId;
-    groupId = ns.groupId;
+    // The namespace id *is* its root group id; there is no separate group to
+    // create or look up, and invitations are issued against the group.
+    groupId = namespaceId;
 
     selfAccount = (await mero.admin.getNodeIdentity()).accountId;
     expect(selfAccount).toMatch(/^[0-9a-f]{64}$/);
   }, 60000);
 
   afterAll(() => {
-    mero?.destroy?.();
+    mero?.close();
   });
 
   it('signs the admitter list into the invitation it returns', async () => {
