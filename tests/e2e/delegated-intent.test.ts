@@ -16,12 +16,10 @@
  * `merod` is still used for the one thing it alone can do: minting the author's
  * device certificate offline, with a key that never reaches the node.
  *
- * A byte-for-byte comparison against a merod-minted warrant would be stronger
- * and is deliberately absent: `merod account warrant` takes `--valid-for`
- * (seconds from its own clock) rather than an absolute `--not-after`, so the two
- * sides cannot be made to agree on that field, and the signature covers it. Node
- * acceptance is the available proof, and it is the one that matters — it is the
- * node's opinion of these bytes that the SDK exists to satisfy.
+ * It also mints a second warrant over identical inputs so the two
+ * implementations can be diffed directly. That needs `merod account warrant
+ * --not-after`: the deadline is signed over, and merod otherwise reads it from
+ * its own clock, so "the same warrant" minted twice never matched.
  *
  * A test that called the endpoint with a fabricated warrant would register
  * coverage and prove nothing: it would 4xx every time and the ratchet would not
@@ -193,6 +191,30 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
   }, 60_000);
 
   /**
+   * The two signers agree byte for byte over identical inputs.
+   *
+   * This is the check the acceptance tests above can only imply. A node saying
+   * yes proves it accepted *these* bytes for *this* one intent; it says nothing
+   * about a field the two implementations encode differently but that this
+   * particular input never exercises, and when it does fail it fails as an
+   * opaque 4xx that names nothing.
+   *
+   * Comparing the hex directly fails at the divergence instead, which is what
+   * makes "a borsh encoding kept byte-identical with the node's forever" a
+   * testable claim rather than a hope. It needs `merod account warrant
+   * --not-after`, since the deadline is signed over and merod otherwise takes it
+   * from its own clock.
+   */
+  it('produces the same bytes merod does, for the same inputs', () => {
+    const notAfter = deadline();
+    const nonce = 99;
+
+    expect(mintWarrant(nonce, notAfter)).resolves.toBe(
+      mintWarrantWithMerod(nonce, notAfter),
+    );
+  }, 60_000);
+
+  /**
    * A warrant over the same intent, at the given nonce — signed by THIS SDK.
    *
    * `notAfter` is Unix seconds, and the window only has to outlast the request.
@@ -200,7 +222,7 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
    * being finite, since an unbounded warrant is the thing the field exists to
    * prevent.
    */
-  function mintWarrant(nonce: number): Promise<string> {
+  function mintWarrant(nonce: number, notAfter = deadline()): Promise<string> {
     return signWarrant({
       context: contextId,
       authorAccount: device.account,
@@ -208,9 +230,38 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
       method: 'set',
       argsJson: ARGS,
       nonce,
-      notAfter: Math.floor(Date.now() / 1000) + 300,
+      notAfter,
       deviceSecret: device.secret,
     });
+  }
+
+  /** A deadline that outlasts the request without being unbounded. */
+  function deadline(): number {
+    return Math.floor(Date.now() / 1000) + 300;
+  }
+
+  /** The same warrant as `merod` mints it, for the byte comparison. */
+  function mintWarrantWithMerod(nonce: number, notAfter: number): string {
+    return merod([
+      'account',
+      'warrant',
+      '--context',
+      contextId,
+      '--method',
+      'set',
+      '--args',
+      JSON.stringify(ARGS),
+      '--executor',
+      relayAccount,
+      '--nonce',
+      String(nonce),
+      '--not-after',
+      String(notAfter),
+      '--device-secret',
+      device.secret,
+      '--credential',
+      device.credential,
+    ]).trim();
   }
 
 });
