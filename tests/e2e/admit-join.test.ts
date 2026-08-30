@@ -27,6 +27,7 @@ let mero: MeroJs;
 let namespaceId: string;
 let groupId: string;
 let selfAccount: string;
+let supported = false;
 
 describe('Direct admission E2E', () => {
   beforeAll(async () => {
@@ -45,13 +46,24 @@ describe('Direct admission E2E', () => {
 
     selfAccount = (await mero.admin.getNodeIdentity()).accountId;
     expect(selfAccount).toMatch(/^[0-9a-f]{64}$/);
+
+    // Probe rather than assume: this suite also runs against the last released
+    // merod, which predates the field and the endpoint. A node that ignores
+    // `admitters` echoes an invitation without them, and the tests below skip
+    // visibly instead of passing on a node that cannot do any of this.
+    const probe = await mero.admin.createGroupInvitation(groupId, {
+      admitters: [selfAccount],
+    });
+    supported =
+      'invitation' in probe && (probe.invitation.invitation.admitters?.length ?? 0) > 0;
   }, 60000);
 
   afterAll(() => {
     mero?.close();
   });
 
-  it('signs the admitter list into the invitation it returns', async () => {
+  it('signs the admitter list into the invitation it returns', async (ctx) => {
+    if (!supported) ctx.skip();
     const created = await mero.admin.createGroupInvitation(groupId, {
       admitters: [selfAccount],
     });
@@ -68,7 +80,8 @@ describe('Direct admission E2E', () => {
     expect(admitters?.[0]).toBe(selfAccount);
   }, 30000);
 
-  it('refuses an op it cannot decode, rather than publishing it blind', async () => {
+  it('refuses an op it cannot decode, rather than publishing it blind', async (ctx) => {
+    if (!supported) ctx.skip();
     const created = await mero.admin.createGroupInvitation(groupId, {
       admitters: [selfAccount],
     });
@@ -76,15 +89,20 @@ describe('Direct admission E2E', () => {
 
     // A designated admitter publishes on its own connection, so relaying opaque
     // bytes would make it an injector for the namespace topic. It decodes first.
+    //
+    // Asserting the status, not merely that something threw: a node without the
+    // endpoint answers 404, which would satisfy `rejects` and make this pass
+    // where the route does not exist at all.
     await expect(
       mero.admin.admitJoin(namespaceId, {
         invitation: created.invitation,
         signedOp: 'deadbeef',
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ status: 400 });
   }, 30000);
 
-  it('refuses an empty op', async () => {
+  it('refuses an empty op', async (ctx) => {
+    if (!supported) ctx.skip();
     const created = await mero.admin.createGroupInvitation(groupId, {
       admitters: [selfAccount],
     });
@@ -95,6 +113,6 @@ describe('Direct admission E2E', () => {
         invitation: created.invitation,
         signedOp: '',
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ status: 400 });
   }, 30000);
 });
