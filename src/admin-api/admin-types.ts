@@ -335,6 +335,18 @@ export interface GroupInvitationFromAdmin {
   /** Per-invitation nonce; core keeps the legacy `secret_salt` wire name. */
   readonly secret_salt: number[];
   readonly invited_role: number;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex characters
+   * each — the same spelling every other account-addressing field uses.
+   *
+   * Empty means admission by broadcast: the joiner announces itself on the
+   * namespace topic and any ready peer answers — which publishes the invitation
+   * to every subscriber of that topic. Naming admitters keeps it off the topic,
+   * and the joiner presents it to one of them directly.
+   *
+   * Inside the inviter's signature, so it cannot be redirected.
+   */
+  readonly admitters?: readonly string[];
 }
 
 /**
@@ -356,6 +368,20 @@ export interface GroupInvitationFromAdmin {
 export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
+  /**
+   * Where to reach the accounts in {@link GroupInvitationFromAdmin.admitters}.
+   *
+   * Outside the signature, like the other bootstrap hints: an account is reached
+   * through a peer id, and a joiner that has synced nothing cannot resolve one.
+   * A wrong hint costs a failed connection — the admitting node still has to be
+   * in the signed list for its admission to count.
+   *
+   * `{ multiaddr }` for a joiner that runs a node, `{ url }` for one that holds
+   * only a key and reaches the admin API over HTTPS.
+   */
+  readonly admitter_hints?: ReadonlyArray<
+    { readonly multiaddr: string } | { readonly url: string }
+  >;
   /**
    * The account the inviter acts as, as 64 hex characters — not the
    * `inviter_identity` key inside the signed body is written in. Governance
@@ -1002,6 +1028,18 @@ export interface CreateGroupInvitationRequest {
   requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex each.
+   *
+   * Omitted or empty leaves admission open to broadcast, which publishes the
+   * invitation to every subscriber of the namespace topic. Naming admitters
+   * keeps it off the topic: the joiner presents the claim to one of them and
+   * every other peer refuses to answer for it.
+   *
+   * Core signs this list into the invitation, so it cannot be redirected after
+   * the fact.
+   */
+  admitters?: string[];
 }
 
 export interface CreateGroupInvitationResponseData {
@@ -1104,4 +1142,29 @@ export interface AdminApiClientConfig {
   baseUrl: string;
   getAuthToken?: () => Promise<string | undefined>;
   timeoutMs?: number;
+}
+
+/** A join signed by its subject, handed to an admitter to publish. */
+export interface AdmitJoinRequest {
+  /** The invitation being claimed. Must name the admitter in `admitters`. */
+  readonly invitation: SignedGroupOpenInvitation;
+  /**
+   * The signed `SignedNamespaceOp`, borsh-encoded and hex.
+   *
+   * Signed by the joiner's device key, which is what stops an admitter
+   * substituting a different member: peers check the op's signer against the
+   * credential the op carries.
+   */
+  readonly signedOp: string;
+}
+
+/** What the admitter did with it. */
+export interface AdmitJoinResponseData {
+  /**
+   * Whether the op reached the namespace topic.
+   *
+   * Not "joined" — membership lands when peers apply the op, which the admitter
+   * neither performs nor waits for.
+   */
+  readonly published: boolean;
 }
