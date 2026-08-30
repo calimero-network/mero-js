@@ -1,3 +1,9 @@
+## [15.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.1.0...mero-js-v15.2.0) (2026-08-30)
+
+### Features
+
+* **admin-api:** present a signed join to a designated admitter ([#124](https://github.com/calimero-network/mero-js/issues/124)) ([459f394](https://github.com/calimero-network/mero-js/commit/459f3944cb255497a0f907bedeeb528c51ffce53))
+
 ## [15.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.0.0...mero-js-v15.1.0) (2026-08-29)
 
 ### Features
