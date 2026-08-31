@@ -1,3 +1,9 @@
+## [15.3.4](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.3...mero-js-v15.3.4) (2026-08-31)
+
+### Bug Fixes
+
+* **namespace-op:** emit joined_at, and pick the variant from the invitation ([#129](https://github.com/calimero-network/mero-js/issues/129)) ([80cf1cb](https://github.com/calimero-network/mero-js/commit/80cf1cb077c40469d9e6dd3c523e0811845c7e2d))
+
 ## [15.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.2...mero-js-v15.3.3) (2026-08-31)
 
 ### Bug Fixes
