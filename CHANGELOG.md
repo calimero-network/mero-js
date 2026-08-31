@@ -1,3 +1,9 @@
+## [15.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.0...mero-js-v15.3.1) (2026-08-31)
+
+### Bug Fixes
+
+* **contract:** declare admitters, which every current node now sends ([#126](https://github.com/calimero-network/mero-js/issues/126)) ([f7de4f8](https://github.com/calimero-network/mero-js/commit/f7de4f8279cbd623b78b4618c7968fdb30ee4049)), closes [#124](https://github.com/calimero-network/mero-js/issues/124) [#124](https://github.com/calimero-network/mero-js/issues/124)
+
 ## [15.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.2.0...mero-js-v15.3.0) (2026-08-31)
 
 ### Features
