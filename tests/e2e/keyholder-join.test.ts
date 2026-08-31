@@ -148,22 +148,18 @@ describe('Keyholder join via a designated admitter', () => {
       nonce: 2,
     });
 
-    // The endpoint accepts it, and that is not the bug it looks like. The op is
-    // internally consistent: it is signed by the key it names as `signer`, so its
-    // signature verifies. What makes it inadmissible is `signer` not matching the
-    // credential's `sign_pk`, and that is checked at apply by every peer —
-    // deliberately there rather than here, because it has to hold for ops this
-    // endpoint never sees.
-    const result = await mero.admin.admitJoin(namespaceId, {
-      invitation: created.invitation,
-      signedOp,
-    });
-    expect(result.published).toBe(true);
+    // Refused outright, and the refusal comes from the same check every peer
+    // makes: the endpoint now applies before it publishes, and apply enforces
+    // `signer == credential.statement.sign_pk`. Reusing the authoritative check
+    // rather than a second copy at the edge is what makes the two agree.
+    //
+    // Asserting the status, not merely that something threw — a 404 from a node
+    // without the route would satisfy `rejects` and prove nothing.
+    await expect(
+      mero.admin.admitJoin(namespaceId, { invitation: created.invitation, signedOp }),
+    ).rejects.toMatchObject({ status: 400 });
 
-    // So the property to assert is not a rejection, it is that membership never
-    // lands. Waited out rather than checked once: a pass here has to mean "did
-    // not appear", not "had not appeared yet".
-    await new Promise((r) => setTimeout(r, 5000));
+    // And nothing landed, which is the property the refusal exists to protect.
     const members = await mero.admin.listGroupMembers(namespaceId);
     expect(members.members.some((m) => m.identity === account)).toBe(false);
   }, 60000);

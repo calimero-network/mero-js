@@ -166,10 +166,17 @@ export interface SignMemberJoinInput {
   /** Anti-replay nonce; a node keeps a window per signer. */
   readonly nonce: number | bigint;
   /**
-   * Use `MemberJoinedAt` instead of `MemberJoined`. The `At` form pins the
-   * membership to a position in the log.
+   * When the join happened, unix seconds. Defaults to now.
+   *
+   * Carried only by `MemberJoinedAt`, which is the variant used whenever the
+   * invitation expires — and since core clamps every invitation to
+   * `MAX_INVITATION_VALIDITY_SECS`, that is every invitation. The variant is
+   * inferred from the invitation rather than selected by a flag: an expiring
+   * invitation joined with plain `MemberJoined` is refused at apply with
+   * "expiration is set but joined_at is absent", which is not a mistake worth
+   * leaving available.
    */
-  readonly at?: boolean;
+  readonly joinedAt?: number | bigint;
 }
 
 /**
@@ -180,12 +187,29 @@ export async function signMemberJoinOp(input: SignMemberJoinInput): Promise<stri
   const parents = input.parentOpHashes ?? [];
   const credential = fromHex(input.credential, 'credential', input.credential.length / 2);
 
-  const rootOp = concat(
-    new Uint8Array([input.at ? ROOT_OP.MemberJoinedAt : ROOT_OP.MemberJoined]),
-    fromHex(input.member, 'member', 32),
-    encodeSignedInvitation(input.invitation),
-    credential,
-  );
+  // An invitation that expires must be claimed with `MemberJoinedAt`, which
+  // carries `joined_at` between the invitation and the credential. Choosing the
+  // variant from the invitation keeps the two in step: the discriminant and the
+  // presence of that field are one decision, and splitting them produces bytes
+  // that decode into the wrong shape rather than failing to decode.
+  const expires = BigInt(input.invitation.invitation.expiration_timestamp ?? 0) !== 0n;
+  const joinedAt =
+    input.joinedAt ?? BigInt(Math.floor(Date.now() / 1000));
+
+  const rootOp = expires
+    ? concat(
+        new Uint8Array([ROOT_OP.MemberJoinedAt]),
+        fromHex(input.member, 'member', 32),
+        encodeSignedInvitation(input.invitation),
+        u64le(joinedAt),
+        credential,
+      )
+    : concat(
+        new Uint8Array([ROOT_OP.MemberJoined]),
+        fromHex(input.member, 'member', 32),
+        encodeSignedInvitation(input.invitation),
+        credential,
+      );
 
   const op = concat(new Uint8Array([NAMESPACE_OP_ROOT]), rootOp);
 
