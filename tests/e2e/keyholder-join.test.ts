@@ -115,7 +115,7 @@ describe('Keyholder join via a designated admitter', () => {
     expect(joined, `${account} never appeared in the member list`).toBe(true);
   }, 60000);
 
-  it('refuses an op signed by a key the credential does not name', async (ctx) => {
+  it('never admits an op signed by a key the credential does not name', async (ctx) => {
     if (!supported) ctx.skip();
 
     const rootSecret = '7e'.repeat(32);
@@ -137,9 +137,8 @@ describe('Keyholder join via a designated admitter', () => {
     });
     if (!('invitation' in created)) throw new Error('expected a single invitation');
 
-    // Signed with a DIFFERENT key than the credential names. This is the
-    // substitution an admitter would attempt if it wanted to admit somebody of
-    // its own choosing, and it is the check that makes relaying safe.
+    // Signed with a DIFFERENT key than the credential names — the substitution
+    // an admitter would attempt to admit somebody of its own choosing.
     const signedOp = await signMemberJoinOp({
       namespaceId,
       member: account,
@@ -149,8 +148,23 @@ describe('Keyholder join via a designated admitter', () => {
       nonce: 2,
     });
 
-    await expect(
-      mero.admin.admitJoin(namespaceId, { invitation: created.invitation, signedOp }),
-    ).rejects.toMatchObject({ status: expect.any(Number) });
+    // The endpoint accepts it, and that is not the bug it looks like. The op is
+    // internally consistent: it is signed by the key it names as `signer`, so its
+    // signature verifies. What makes it inadmissible is `signer` not matching the
+    // credential's `sign_pk`, and that is checked at apply by every peer —
+    // deliberately there rather than here, because it has to hold for ops this
+    // endpoint never sees.
+    const result = await mero.admin.admitJoin(namespaceId, {
+      invitation: created.invitation,
+      signedOp,
+    });
+    expect(result.published).toBe(true);
+
+    // So the property to assert is not a rejection, it is that membership never
+    // lands. Waited out rather than checked once: a pass here has to mean "did
+    // not appear", not "had not appeared yet".
+    await new Promise((r) => setTimeout(r, 5000));
+    const members = await mero.admin.listGroupMembers(namespaceId);
+    expect(members.members.some((m) => m.identity === account)).toBe(false);
   }, 60000);
 });
