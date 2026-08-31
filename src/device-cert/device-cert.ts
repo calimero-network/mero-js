@@ -30,7 +30,17 @@ const ACCOUNT_ID_DOMAIN = new TextEncoder().encode('calimero.account.genesis.v1'
 const DEVICE_ID_DOMAIN = new TextEncoder().encode('calimero.device.id.v1');
 
 /** `AccountGenesis::version`, which the credential's borsh encoding leads with. */
-const ACCOUNT_GENESIS_VERSION = 1;
+/**
+ * Core's `ACCOUNT_GENESIS_VERSION`. It is part of the `AccountId` preimage, so
+ * this value decides which account a root key names — a mismatch does not fail
+ * as a version error at the edge, it silently derives a different account and
+ * core refuses the credential as unverifiable.
+ *
+ * `2` since the genesis dropped its per-namespace nonce. This was `1`, which
+ * produced credentials current core rejects outright; the shape was already v2,
+ * only the tag was stale.
+ */
+const ACCOUNT_GENESIS_VERSION = 2;
 
 /** What a root certifies about one device. */
 export interface DeviceCertInput {
