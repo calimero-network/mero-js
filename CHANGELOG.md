@@ -1,3 +1,9 @@
+## [15.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.2.0...mero-js-v15.3.0) (2026-08-31)
+
+### Features
+
+* **namespace-op:** sign a membership op from the SDK, so a keyholder can join ([#125](https://github.com/calimero-network/mero-js/issues/125)) ([a15dd6e](https://github.com/calimero-network/mero-js/commit/a15dd6e2b2b34ed2ce8b7697fff0364db833c131))
+
 ## [15.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.1.0...mero-js-v15.2.0) (2026-08-30)
 
 ### Features
