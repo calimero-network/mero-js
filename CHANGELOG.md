@@ -1,3 +1,9 @@
+## [15.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.2...mero-js-v15.3.3) (2026-08-31)
+
+### Bug Fixes
+
+* **device-cert:** write genesis version 2, the one core accepts ([#128](https://github.com/calimero-network/mero-js/issues/128)) ([5a2c647](https://github.com/calimero-network/mero-js/commit/5a2c647a1c4f7197d7e31e560eb1c89aefe357fc))
+
 ## [15.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.1...mero-js-v15.3.2) (2026-08-31)
 
 ### Bug Fixes
