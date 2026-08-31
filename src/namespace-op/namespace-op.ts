@@ -133,7 +133,11 @@ export function encodeSignedInvitation(signed: SignedGroupOpenInvitation): Uint8
     u32le(hints.length),
     ...hints.map(encodeAdmitterHint),
     optionalBytes32(signed.application_id, 'application_id'),
-    optionalBytes32(signed.bytecode_id, 'bytecode_id'),
+    // Borsh order follows core's field order, where this is `bytecode_id`; the
+    // JSON key is `app_key`, a rename covering both directions that core pins in
+    // a test. Encoding by the Rust name would read `undefined` and emit a None
+    // where the inviter signed a Some.
+    optionalBytes32(signed.app_key, 'app_key'),
   );
 }
 
