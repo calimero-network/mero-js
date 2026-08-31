@@ -147,7 +147,14 @@ const SPECS: Spec[] = [
       inv('secret_salt'),
       inv('invited_role'),
     ],
-    optional: [],
+    optional: [
+      // Who may admit a claim of this invitation. Optional because a node
+      // predating the field omits it — but a current node always sends it, since
+      // core fills the list with the group's admins and TEE nodes when the
+      // caller names none. Declaring the TS field was not enough: this list is
+      // what the contract check reads, and the two are separate registries.
+      inv('admitters'),
+    ],
   },
 ];
 
