@@ -1,3 +1,9 @@
+## [15.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.1...mero-js-v15.3.2) (2026-08-31)
+
+### Bug Fixes
+
+* **e2e:** assert the substitution property where it is actually enforced ([#127](https://github.com/calimero-network/mero-js/issues/127)) ([134fe8e](https://github.com/calimero-network/mero-js/commit/134fe8e3fa60969dd5fc91487ab0541ad8db5faf))
+
 ## [15.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.0...mero-js-v15.3.1) (2026-08-31)
 
 ### Bug Fixes
