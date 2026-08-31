@@ -353,7 +353,7 @@ export interface GroupInvitationFromAdmin {
  * An invitation blob the node signed. **Opaque: pass it through unchanged.**
  *
  * `inviter_signature` covers `invitation`, and the trailing bootstrap fields
- * (`application_id`, `app_key`) are needed by the joiner even though they sit
+ * (`application_id`, `bytecode_id`) are needed by the joiner even though they sit
  * outside the signature — so a value that has been rebuilt field-by-field is
  * not the value the node signed. Rebuilding is what a schema derived from these
  * declarations does: an object schema drops the keys it wasn't told about, and
@@ -397,7 +397,12 @@ export interface SignedGroupOpenInvitation {
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
-  readonly app_key?: number[];
+  /**
+   * Core's field is `bytecode_id`; this was declared as `app_key` and so never
+   * populated. `Option<[u8; 32]>` crosses JSON as an array of byte values, not
+   * as hex — unlike `AccountId`, which has its own hex representation.
+   */
+  readonly bytecode_id?: number[];
   /** @internal Brand — never present at runtime, never write it. */
   readonly __nodeSigned: never;
 }

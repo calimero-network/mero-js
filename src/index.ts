@@ -57,6 +57,12 @@ export {
   accountForRoot,
 } from './device-cert/index.js';
 export type { DeviceCertInput } from './device-cert/index.js';
+export {
+  signMemberJoinOp,
+  encodeSignedInvitation,
+  SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
+} from './namespace-op/index.js';
+export type { SignMemberJoinInput } from './namespace-op/index.js';
 export type { WarrantInput } from './warrant/index.js';
 
 // Member capability bitmask constants & helpers
