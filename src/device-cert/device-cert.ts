@@ -95,6 +95,44 @@ export async function deviceCertPayload(input: {
 }
 
 /**
+ * Borsh-encode an `AccountProof<DeviceCert>` — what core calls a
+ * `JoinAccountCredential`.
+ *
+ * Extracted so the device-cert path and the namespace-op signer encode this from
+ * one implementation. Two copies of a borsh layout drift silently: the encoding
+ * is only checked by a peer rejecting a signature, which points at the signature
+ * rather than at whichever copy went stale.
+ *
+ * Layout is `AccountProof { genesis, chain, statement }`:
+ * `AccountGenesis` (version u8 + root pk 32) + `chain` (empty Vec, u32 len) +
+ * `DeviceCert` (account 32 + device 32 + sign pk 32 + kem pk 32 + key_epoch u32
+ * + device_epoch u32 + signature 64) = 237 bytes with an empty chain.
+ */
+export function accountProofBytes(input: {
+  rootPublicKey: Uint8Array;
+  account: string;
+  device: string;
+  signPublicKey: string;
+  kemPublicKey: string;
+  keyEpoch: number;
+  deviceEpoch: number;
+  signature: Uint8Array;
+}): Uint8Array {
+  return concat(
+    new Uint8Array([ACCOUNT_GENESIS_VERSION]),
+    input.rootPublicKey,
+    u32le(0),
+    fromHex(input.account, 'account', 32),
+    fromHex(input.device, 'device', 32),
+    fromHex(input.signPublicKey, 'signPublicKey', 32),
+    fromHex(input.kemPublicKey, 'kemPublicKey', 32),
+    u32le(input.keyEpoch),
+    u32le(input.deviceEpoch),
+    input.signature,
+  );
+}
+
+/**
  * Certify a device, returning the hex credential `merod account sign-cert`
  * prints — a borsh-encoded `AccountProof<DeviceCert>`.
  *
@@ -141,21 +179,16 @@ export async function signDeviceCert(input: DeviceCertInput): Promise<string> {
     await crypto.subtle.sign('Ed25519', key, payload),
   );
 
-  const credential = concat(
-    // AccountGenesis
-    new Uint8Array([ACCOUNT_GENESIS_VERSION]),
+  const credential = accountProofBytes({
     rootPublicKey,
-    // chain: Vec<RootKeyHandoff>, empty
-    u32le(0),
-    // DeviceCert
-    fromHex(account, 'account', 32),
-    fromHex(input.device, 'device', 32),
-    fromHex(input.signPublicKey, 'signPublicKey', 32),
-    fromHex(input.kemPublicKey, 'kemPublicKey', 32),
-    u32le(keyEpoch),
-    u32le(input.deviceEpoch),
+    account,
+    device: input.device,
+    signPublicKey: input.signPublicKey,
+    kemPublicKey: input.kemPublicKey,
+    keyEpoch,
+    deviceEpoch: input.deviceEpoch,
     signature,
-  );
+  });
 
   return hex(credential);
 }

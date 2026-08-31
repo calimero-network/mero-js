@@ -397,6 +397,12 @@ export interface SignedGroupOpenInvitation {
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
+  /**
+   * The wire name is `app_key`; core's Rust field is `bytecode_id` behind a
+   * `rename` that covers both directions, and core pins this spelling in a test.
+   * `Option<[u8; 32]>` crosses JSON as an array of byte values, not as hex —
+   * unlike `AccountId`, which has its own hex representation.
+   */
   readonly app_key?: number[];
   /** @internal Brand — never present at runtime, never write it. */
   readonly __nodeSigned: never;
