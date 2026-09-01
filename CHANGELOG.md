@@ -1,3 +1,17 @@
+## [16.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.4...mero-js-v16.0.0) (2026-09-01)
+
+### ⚠ BREAKING CHANGES
+
+* **release:** <text>     -> major
+  fix: ...                    -> patch
+  feat: ...                   -> minor
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Bug Fixes
+
+* **release:** stop prose from being read as a breaking change ([#131](https://github.com/calimero-network/mero-js/issues/131)) ([1673df8](https://github.com/calimero-network/mero-js/commit/1673df8d72f1eb4fba67e497e9065cc28e89cc62))
+
 ## [15.3.4](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.3...mero-js-v15.3.4) (2026-08-31)
 
 ### Bug Fixes
