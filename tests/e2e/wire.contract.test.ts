@@ -132,12 +132,12 @@ const SPECS: Spec[] = [
       signed('inviter_account'),
       signed('application_id'),
       signed('app_key'),
-      // Where to reach the invitation's admitters. Optional twice over: a node
-      // that predates the field omits it, and so does one that has no address
-      // for any admitter. It stayed invisible here longer than the others
-      // because core skips it when empty, so the key only reached the wire once
-      // nodes began filling it in.
-      signed('admitter_hints'),
+      // libp2p addresses for the invitation's admitters. Optional twice over: a
+      // node that predates the field omits it, and so does one that has no
+      // address for any admitter. It stayed invisible here longer than the
+      // others because core skips it when empty, so the key only reached the
+      // wire once nodes began filling it in.
+      signed('admitter_addrs'),
     ],
   },
   {

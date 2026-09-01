@@ -86,14 +86,6 @@ function borshString(value: string): Uint8Array {
   return concat(u32le(bytes.length), bytes);
 }
 
-function encodeAdmitterHint(
-  hint: { readonly multiaddr: string } | { readonly url: string },
-): Uint8Array {
-  if ('multiaddr' in hint) {
-    return concat(new Uint8Array([0]), borshString(hint.multiaddr));
-  }
-  return concat(new Uint8Array([1]), borshString(hint.url));
-}
 
 /**
  * Borsh-encode a `SignedGroupOpenInvitation`.
@@ -108,7 +100,7 @@ function encodeAdmitterHint(
 export function encodeSignedInvitation(signed: SignedGroupOpenInvitation): Uint8Array {
   const body = signed.invitation;
   const admitters = body.admitters ?? [];
-  const hints = signed.admitter_hints ?? [];
+  const admitterAddrs = signed.admitter_addrs ?? [];
 
   return concat(
     // GroupInvitationFromAdmin.
@@ -124,14 +116,19 @@ export function encodeSignedInvitation(signed: SignedGroupOpenInvitation): Uint8
     u32le(admitters.length),
     ...admitters.map((a, i) => fromHex(a, `admitters[${i}]`, 32)),
     // ...then the enclosing SignedGroupOpenInvitation, in declaration order.
-    // `inviter_account` sits between the signature and the hints; putting it
+    // `inviter_account` sits between the signature and the addresses; putting it
     // anywhere else still encodes 32 bytes and still verifies as nothing.
     borshString(signed.inviter_signature),
     signed.inviter_account
       ? concat(new Uint8Array([1]), fromHex(signed.inviter_account, 'inviter_account', 32))
       : new Uint8Array([0]),
-    u32le(hints.length),
-    ...hints.map(encodeAdmitterHint),
+    // A `Vec<String>`, so each entry is a bare borsh string. This carried an
+    // enum until core dropped the URL variant, and an enum writes a
+    // discriminant byte ahead of each entry — encoding one here now would shift
+    // every following byte and fail as `invalid invitation signature`, pointing
+    // nowhere near this line.
+    u32le(admitterAddrs.length),
+    ...admitterAddrs.map(borshString),
     optionalBytes32(signed.application_id, 'application_id'),
     // Borsh order follows core's field order, where this is `bytecode_id`; the
     // JSON key is `app_key`, a rename covering both directions that core pins in
