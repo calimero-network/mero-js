@@ -369,19 +369,23 @@ export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
   /**
-   * Where to reach the accounts in {@link GroupInvitationFromAdmin.admitters}.
+   * libp2p addresses for the accounts in
+   * {@link GroupInvitationFromAdmin.admitters}, each a full multiaddr including
+   * its `/p2p/<peer-id>` suffix.
    *
-   * Outside the signature, like the other bootstrap hints: an account is reached
-   * through a peer id, and a joiner that has synced nothing cannot resolve one.
-   * A wrong hint costs a failed connection — the admitting node still has to be
-   * in the signed list for its admission to count.
+   * The peer id travels with the address because a joiner cannot derive it:
+   * resolving an account to a peer needs governance state, which is exactly what
+   * a joiner has not synced yet.
    *
-   * `{ multiaddr }` for a joiner that runs a node, `{ url }` for one that holds
-   * only a key and reaches the admin API over HTTPS.
+   * Outside the signature, like the other bootstrap fields. A wrong address
+   * costs a failed dial — libp2p authenticates the peer id on connect, and the
+   * admitting node still has to be in the signed list for its admission to
+   * count.
+   *
+   * Best-effort: absent on invitations from nodes predating the field, and empty
+   * when the minting node had no address for any admitter.
    */
-  readonly admitter_hints?: ReadonlyArray<
-    { readonly multiaddr: string } | { readonly url: string }
-  >;
+  readonly admitter_addrs?: readonly string[];
   /**
    * The account the inviter acts as, as 64 hex characters — not the
    * `inviter_identity` key inside the signed body is written in. Governance
@@ -1037,15 +1041,27 @@ export interface CreateGroupInvitationRequest {
   /**
    * Accounts permitted to admit a claim of this invitation, 64 hex each.
    *
-   * Omitted or empty leaves admission open to broadcast, which publishes the
-   * invitation to every subscriber of the namespace topic. Naming admitters
-   * keeps it off the topic: the joiner presents the claim to one of them and
-   * every other peer refuses to answer for it.
+   * Omitted or empty is filled in by the node from the group's admins and its
+   * TEE nodes; it refuses to mint if that set comes back empty, because an empty
+   * list on the wire authorises any node to admit. Naming admitters narrows that
+   * set.
    *
    * Core signs this list into the invitation, so it cannot be redirected after
    * the fact.
    */
   admitters?: string[];
+  /**
+   * libp2p addresses for those admitters, each including its `/p2p/<peer-id>`
+   * suffix.
+   *
+   * Omitted or empty asks the node to fill them in from addresses it already has
+   * on file — which is usually what you want. Values supplied here are used as
+   * given rather than merged, on the grounds that a caller naming an address is
+   * correcting the node's view rather than extending it.
+   *
+   * Not signed, so a wrong address costs a failed dial and nothing more.
+   */
+  admitterAddrs?: string[];
 }
 
 export interface CreateGroupInvitationResponseData {

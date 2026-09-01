@@ -127,11 +127,17 @@ const SPECS: Spec[] = [
     sample: () => [invitation.invitation as unknown as Record<string, unknown>],
     required: [signed('invitation'), signed('inviter_signature')],
     optional: [
-      // The account the inviter acts as. Unsigned bootstrap hint like the two
+      // The account the inviter acts as. Unsigned bootstrap hint like the three
       // below, and optional for the same reason: older nodes omit it.
       signed('inviter_account'),
       signed('application_id'),
       signed('app_key'),
+      // libp2p addresses for the invitation's admitters. Optional twice over: a
+      // node that predates the field omits it, and so does one that has no
+      // address for any admitter. It stayed invisible here longer than the
+      // others because core skips it when empty, so the key only reached the
+      // wire once nodes began filling it in.
+      signed('admitter_addrs'),
     ],
   },
   {
