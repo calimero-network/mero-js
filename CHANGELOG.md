@@ -1,3 +1,9 @@
+## [16.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.0.0...mero-js-v16.1.0) (2026-09-01)
+
+### Features
+
+* **invitation:** follow core's rename to admitter_addrs ([#132](https://github.com/calimero-network/mero-js/issues/132)) ([a1e6949](https://github.com/calimero-network/mero-js/commit/a1e6949b6c89a5150c7ec6d4c35602da1d4574d5))
+
 ## [16.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.4...mero-js-v16.0.0) (2026-09-01)
 
 ### ⚠ BREAKING CHANGES
