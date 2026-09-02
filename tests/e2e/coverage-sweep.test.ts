@@ -68,15 +68,16 @@ describe('Admin API E2E — Route coverage sweep', () => {
     expect(true).toBe(true);
   });
 
-  it('install-dev-application (direct) + install-application (url)', async () => {
+  it('install-dev-application (direct) + install-application (coordinates)', async () => {
     await cover('installDev', () =>
       mero.admin.installDevApplication({
         path: fileURLToPath(new URL('./assets/kv-store.mpk', import.meta.url)),
-        metadata: [],
       }),
     );
+    // Coordinates nothing is published at: the node answers 502, which still
+    // proves the SDK sent a shape core accepts (a stale `url` body is a 400).
     await cover('installApp', () =>
-      mero.admin.installApplication({ url: 'http://localhost:2528/none.wasm', metadata: [] }),
+      mero.admin.installApplication({ package: 'com.calimero.nonexistent', version: '0.0.0' }),
     );
     expect(true).toBe(true);
   });

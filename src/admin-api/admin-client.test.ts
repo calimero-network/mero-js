@@ -95,54 +95,20 @@ describe('AdminApiClient', () => {
   });
 
   describe('Application Management', () => {
-    it('installApplication unwraps data', async () => {
+    it('installApplication sends only the coordinates and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-application', { data: { applicationId: 'app-1' } });
-      const result = await client.installApplication({ url: 'http://...', metadata: [] });
+      const result = await client.installApplication({
+        package: 'com.acme.app',
+        version: '2.0.1',
+      });
       expect(result).toEqual({ applicationId: 'app-1' });
+      // Core sets `deny_unknown_fields`, so any extra key here is a 400 — the
+      // body must carry the two coordinates and nothing else.
+      const body = mock.getRequestBody('POST', '/admin-api/install-application');
+      expect(body).toEqual({ package: 'com.acme.app', version: '2.0.1' });
     });
 
-    it('installFromRegistry resolves the artifact URL and installs', async () => {
-      const origFetch = globalThis.fetch;
-      globalThis.fetch = (async (input: RequestInfo | URL) => {
-        // Manifest is fetched by the CALLER's package@version...
-        expect(String(input)).toBe(
-          'https://registry.example.com/api/v2/bundles/com.acme.app/2.0.0',
-        );
-        // ...but resolves to the registry's canonical appVersion (here it
-        // differs from the arg, so the asserts below prove the manifest value
-        // — not the caller's arg — builds the artifact URL + install request).
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ package: 'com.acme.app', appVersion: '2.0.1' }),
-        } as Response;
-      }) as typeof fetch;
-      try {
-        mock.setMockResponse('POST', '/admin-api/install-application', {
-          data: { applicationId: 'app-9' },
-        });
-        const result = await client.installFromRegistry(
-          'https://registry.example.com',
-          'com.acme.app',
-          '2.0.0',
-        );
-        expect(result.applicationId).toBe('app-9');
-        const body = mock.getRequestBody('POST', '/admin-api/install-application') as {
-          url: string;
-          package?: string;
-          version?: string;
-        };
-        expect(body.url).toBe(
-          'https://registry.example.com/artifacts/com.acme.app/2.0.1/com.acme.app-2.0.1.mpk',
-        );
-        expect(body.package).toBe('com.acme.app');
-        expect(body.version).toBe('2.0.1');
-      } finally {
-        globalThis.fetch = origFetch;
-      }
-    });
-
-    it('installFromRegistry throws on a registry error and does not retry a 4xx', async () => {
+    it('getRegistryVersions throws on a registry error and does not retry a 4xx', async () => {
       const origFetch = globalThis.fetch;
       let calls = 0;
       globalThis.fetch = (async () => {
@@ -151,8 +117,8 @@ describe('AdminApiClient', () => {
       }) as typeof fetch;
       try {
         await expect(
-          client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
-        ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+          client.getRegistryVersions('https://registry.example.com', 'missing'),
+        ).rejects.toThrow(/registry versions fetch failed \(404\)/);
         // A 4xx is a definitive answer — no retry.
         expect(calls).toBe(1);
       } finally {
@@ -238,7 +204,7 @@ describe('AdminApiClient', () => {
 
     it('installDevApplication unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-dev-application', { data: { applicationId: 'app-2' } });
-      const result = await client.installDevApplication({ path: '/tmp/app.mpk', metadata: [] });
+      const result = await client.installDevApplication({ path: '/tmp/app.mpk' });
       expect(result).toEqual({ applicationId: 'app-2' });
     });
 
