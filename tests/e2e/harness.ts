@@ -29,7 +29,7 @@ export async function ensureApplication(mero: MeroJs): Promise<string> {
   const existing = apps.find((a) => a.package === KV_STORE_PACKAGE);
   if (existing) return existing.id;
   const path = fileURLToPath(new URL('./assets/kv-store.mpk', import.meta.url));
-  const res = await mero.admin.installDevApplication({ path, metadata: [] });
+  const res = await mero.admin.installDevApplication({ path });
   return res.applicationId;
 }
 

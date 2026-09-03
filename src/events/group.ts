@@ -4,7 +4,7 @@ export interface GroupMembershipEventData {
   type: 'MemberJoined' | 'MemberAdded' | 'MemberRemoved';
   data: {
     /** The member's ACCOUNT, hex-encoded 32 bytes (64 chars) - the principal the
-     * governance rows name. Not a bs58 signing key: the field this replaced
+     * governance rows name. Not a signing key: the field this replaced
      * carried one, and both are strings, so the rename is what makes a stale
      * consumer fail loudly instead of comparing accounts against keys forever. */
     memberAccount: string;

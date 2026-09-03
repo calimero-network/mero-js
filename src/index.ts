@@ -18,13 +18,6 @@ export * from './admin-api/index.js';
 export { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
 export type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 
-// Account id encoding (hex on the admin API, base58 in contract data)
-export {
-  toAccountHex,
-  toAccountBase58,
-  sameAccount,
-} from './account/index.js';
-
 // Token store
 export { MemoryTokenStore, LocalStorageTokenStore } from './token-store/index.js';
 export type { TokenStore } from './token-store/index.js';
@@ -54,6 +47,23 @@ export type { Codec, EphemeralEntry } from './ephemeral/index.js';
 
 // Cloud client (enable-HA, disable-HA)
 export * from './cloud/index.js';
+
+// Warrant signing — mint the author's consent for a relay to run one intent
+export { signWarrant, intentHash } from './warrant/index.js';
+export {
+  signDeviceCert,
+  mintDeviceId,
+  deviceCertPayload,
+  accountForRoot,
+} from './device-cert/index.js';
+export type { DeviceCertInput } from './device-cert/index.js';
+export {
+  signMemberJoinOp,
+  encodeSignedInvitation,
+  SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
+} from './namespace-op/index.js';
+export type { SignMemberJoinInput } from './namespace-op/index.js';
+export type { WarrantInput } from './warrant/index.js';
 
 // Member capability bitmask constants & helpers
 export * from './capabilities.js';

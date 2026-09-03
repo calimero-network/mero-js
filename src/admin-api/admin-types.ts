@@ -16,19 +16,17 @@ export interface AdminAuthStatus {
 
 // ---- Applications ----
 
+/**
+ * Install by coordinates. The node fetches only from its own configured
+ * `[registry]`, so there is no caller-supplied URL; both halves are required.
+ */
 export interface InstallApplicationRequest {
-  url: string;
-  hash?: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
+  package: string;
+  version: string;
 }
 
 export interface InstallDevApplicationRequest {
   path: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
 }
 
 export interface InstallApplicationResponseData {
@@ -114,9 +112,9 @@ export interface BundleMigration {
 }
 
 /**
- * The subset of a registry bundle manifest that `installFromRegistry` consumes
- * to resolve an artifact URL. The registry serves it at
- * `GET {registry}/api/v2/bundles/{package}/{version}`.
+ * The subset of a registry bundle manifest that `getRegistryVersions` consumes.
+ * The registry serves these at `GET {registry}/api/v2/bundles?package={package}`;
+ * installation itself needs only the coordinates, which the node resolves.
  */
 export interface RegistryBundleManifest {
   package: string;
@@ -335,6 +333,18 @@ export interface GroupInvitationFromAdmin {
   /** Per-invitation nonce; core keeps the legacy `secret_salt` wire name. */
   readonly secret_salt: number[];
   readonly invited_role: number;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex characters
+   * each — the same spelling every other account-addressing field uses.
+   *
+   * Empty means admission by broadcast: the joiner announces itself on the
+   * namespace topic and any ready peer answers — which publishes the invitation
+   * to every subscriber of that topic. Naming admitters keeps it off the topic,
+   * and the joiner presents it to one of them directly.
+   *
+   * Inside the inviter's signature, so it cannot be redirected.
+   */
+  readonly admitters?: readonly string[];
 }
 
 /**
@@ -357,7 +367,25 @@ export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
   /**
-   * The account the inviter acts as, as 64 hex characters — not the bs58 the
+   * libp2p addresses for the accounts in
+   * {@link GroupInvitationFromAdmin.admitters}, each a full multiaddr including
+   * its `/p2p/<peer-id>` suffix.
+   *
+   * The peer id travels with the address because a joiner cannot derive it:
+   * resolving an account to a peer needs governance state, which is exactly what
+   * a joiner has not synced yet.
+   *
+   * Outside the signature, like the other bootstrap fields. A wrong address
+   * costs a failed dial — libp2p authenticates the peer id on connect, and the
+   * admitting node still has to be in the signed list for its admission to
+   * count.
+   *
+   * Best-effort: absent on invitations from nodes predating the field, and empty
+   * when the minting node had no address for any admitter.
+   */
+  readonly admitter_addrs?: readonly string[];
+  /**
+   * The account the inviter acts as, as 64 hex characters — not the
    * `inviter_identity` key inside the signed body is written in. Governance
    * rows name accounts, and a joiner cannot derive this one: an account is a
    * hash of a root it has never seen.
@@ -371,6 +399,12 @@ export interface SignedGroupOpenInvitation {
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
+  /**
+   * The wire name is `app_key`; core's Rust field is `bytecode_id` behind a
+   * `rename` that covers both directions, and core pins this spelling in a test.
+   * `Option<[u8; 32]>` crosses JSON as an array of byte values, not as hex —
+   * unlike `AccountId`, which has its own hex representation.
+   */
   readonly app_key?: number[];
   /** @internal Brand — never present at runtime, never write it. */
   readonly __nodeSigned: never;
@@ -417,6 +451,63 @@ export type ListNamespacesResponseData = Namespace[];
  * node signs with one key — so none of this varies by namespace, which is why
  * the endpoint behind it takes none.
  */
+/**
+ * A member's request that a node run one method on their behalf.
+ *
+ * Delegated authorship exists for a holder that cannot run the application
+ * itself — a device with only a signing key, which can neither compile the WASM
+ * nor decrypt the state. What makes the resulting write *theirs* is the warrant:
+ * a statement they signed, which travels with the change so every peer verifies
+ * they consented rather than taking the node's word.
+ */
+export interface PerformIntentRequest {
+  /** The method to run. */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+  /**
+   * The author's consent: hex-encoded borsh of a `Warrant`.
+   *
+   * Opaque on purpose. Its canonical form is those bytes — the signature covers
+   * them — so re-describing the fields as JSON would create a second spelling
+   * that could disagree with what was signed.
+   *
+   * Mint it with {@link signWarrant}, or out of band with `merod account
+   * warrant` / `meroctl context intent`.
+   *
+   * Signing here needs no dependency, which is why it is available at all: the
+   * hash is WebCrypto SHA-256, the signature is WebCrypto Ed25519, and every
+   * field of a warrant is fixed-width so the encoding is concatenation rather
+   * than borsh. The byte contract is pinned on the node's side, at
+   * `crates/account/src/tests/warrant_wire_fixture.rs`, because a drift there
+   * would otherwise surface here as a 403 rather than as an encoding error.
+   */
+  warrant: string;
+  /**
+   * Hex-encoded borsh of the author's `AccountProof<DeviceCert>`, proving the
+   * key that signed the warrant is a device of the account it names.
+   *
+   * Only the author's own half. The node attaches its own credential, so a
+   * caller never learns which of the node's processes runs the intent — and a
+   * re-key on its side does not void a warrant already issued.
+   */
+  authorProof: string;
+}
+
+/** What a performed intent reports back. */
+export interface PerformIntentResponseData {
+  /**
+   * The context's scope root after the run — how a caller sees that it wrote.
+   *
+   * Worth asserting on rather than the status alone: an accepted intent that
+   * advanced no state is a real failure mode, and it is cheaper to catch here
+   * than on a later read of a value that was never written.
+   */
+  rootHash: string;
+  /** The method's own return value, if it had one. */
+  returns: unknown | null;
+}
+
 export interface NodeIdentity {
   /**
    * The account this node writes as, 64 hex characters. This — not
@@ -435,7 +526,7 @@ export interface NodeIdentity {
    */
   deviceId: string | null;
   /**
-   * The key this node signs ops with, base58.
+   * The key this node signs ops with, 64 hex.
    *
    * The device's signing key, not the account root: the root signs
    * certificates and never an op, so a signature on the wire verifies against
@@ -463,7 +554,7 @@ export interface NodeIdentity {
 export interface NamespaceIdentity {
   /** Echoed back from the argument; it does not describe the identity. */
   namespaceId: string;
-  /** The key this node signs with, base58. */
+  /** The key this node signs with, 64 hex. */
   publicKey: string;
   /**
    * The account this node writes as, 64 hex characters. This — not
@@ -533,7 +624,7 @@ export interface JoinNamespaceResponseData {
    * which is always set.
    */
   groupId?: string;
-  /** The key the joiner signs with, base58. */
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
@@ -976,7 +1067,7 @@ export interface GroupMember {
   /**
    * The member's ACCOUNT: 64 hex characters.
    *
-   * Not a signing key, which renders as bs58 — a person may hold several keys
+   * Not a signing key — a person may hold several keys
    * and governance rows name the person. Both are 32 bytes, so nothing here or
    * on the server will object if you pass the wrong one; it will simply name a
    * principal that exists nowhere. Feed this value to
@@ -1018,7 +1109,8 @@ export interface DeleteGroupResponseData {
 
 export interface GroupMemberInput {
   /**
-   * The invitee's signing KEY, in bs58 — NOT an account.
+   * The invitee's signing KEY, 64 hex — NOT an account. It is spelled exactly
+   * like one, so only the field name says which this is.
    *
    * Adding is the one member-facing call that names a key: the node binds the
    * key to an account as it admits it, so before that there is no account to
@@ -1229,6 +1321,30 @@ export interface CreateGroupInvitationRequest {
   requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex each.
+   *
+   * Omitted or empty is filled in by the node from the group's admins and its
+   * TEE nodes; it refuses to mint if that set comes back empty, because an empty
+   * list on the wire authorises any node to admit. Naming admitters narrows that
+   * set.
+   *
+   * Core signs this list into the invitation, so it cannot be redirected after
+   * the fact.
+   */
+  admitters?: string[];
+  /**
+   * libp2p addresses for those admitters, each including its `/p2p/<peer-id>`
+   * suffix.
+   *
+   * Omitted or empty asks the node to fill them in from addresses it already has
+   * on file — which is usually what you want. Values supplied here are used as
+   * given rather than merged, on the grounds that a caller naming an address is
+   * correcting the node's view rather than extending it.
+   *
+   * Not signed, so a wrong address costs a failed dial and nothing more.
+   */
+  admitterAddrs?: string[];
 }
 
 export interface CreateGroupInvitationResponseData {
@@ -1247,7 +1363,7 @@ export interface JoinGroupRequest {
 
 export interface JoinGroupResponseData {
   groupId: string;
-  /** The key the joiner signs with, base58. */
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
@@ -1331,4 +1447,29 @@ export interface AdminApiClientConfig {
   baseUrl: string;
   getAuthToken?: () => Promise<string | undefined>;
   timeoutMs?: number;
+}
+
+/** A join signed by its subject, handed to an admitter to publish. */
+export interface AdmitJoinRequest {
+  /** The invitation being claimed. Must name the admitter in `admitters`. */
+  readonly invitation: SignedGroupOpenInvitation;
+  /**
+   * The signed `SignedNamespaceOp`, borsh-encoded and hex.
+   *
+   * Signed by the joiner's device key, which is what stops an admitter
+   * substituting a different member: peers check the op's signer against the
+   * credential the op carries.
+   */
+  readonly signedOp: string;
+}
+
+/** What the admitter did with it. */
+export interface AdmitJoinResponseData {
+  /**
+   * Whether the op reached the namespace topic.
+   *
+   * Not "joined" — membership lands when peers apply the op, which the admitter
+   * neither performs nor waits for.
+   */
+  readonly published: boolean;
 }

@@ -64,15 +64,7 @@ jobs:
       - name: Download released merod
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-          # gh's --json assets exposes the download URL as `.url` (not `.browser_download_url`).
-          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
-            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
-          echo "Downloading merod from $TAG"
-          curl -sL "$URL" | tar xz
-          chmod +x ./merod
+        run: scripts/download-released-merod.sh
 
       - name: Boot merod (embedded auth, single node)
         run: |
@@ -94,12 +86,32 @@ jobs:
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev-password
           NO_COLOR: '1'
+          # The delegated-intent suite mints an author certificate and a warrant
+          # offline, which only merod can do, so it is `describe.skipIf(!MEROD)`.
+          # The binary is already downloaded above; without this it skipped here
+          # and ran ONLY in core's sdk-e2e.yml — so this repo reported green on a
+          # suite it had never executed.
+          MEROD_BINARY: ${{ github.workspace }}/merod
         run: |
           set -o pipefail
           pnpm test:e2e 2>&1 | tee e2e.log
           # Guard against a vacuous/all-skipped green: require at least one passing test.
           grep -qE "[1-9][0-9]* passed" e2e.log \
             || { echo "::error::e2e produced no passing tests — refusing a vacuous pass"; exit 1; }
+          # And specifically that the delegated suite RAN. The guard above is
+          # satisfied by any other file passing, so a silently skipped
+          # delegated-intent would have gone unnoticed indefinitely — which is
+          # exactly what happened until now. `skipIf` reports the file with no
+          # test count, so requiring the count is what distinguishes ran from
+          # skipped.
+          #
+          # Deliberately strict: it matches `(N tests)` but not
+          # `(N tests | M skipped)`, so adding a conditionally-skipped test to
+          # that file trips it. That is the right way round — a skip in this
+          # suite is precisely what is being guarded against, and a loud failure
+          # naming the file beats the silence it replaces.
+          grep -qE "delegated-intent\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
+            || { echo "::error::delegated-intent suite did not run — MEROD_BINARY unset or merod unusable"; exit 1; }
 
       - name: Upload e2e logs
         if: always()
@@ -132,18 +144,24 @@ jobs:
       - name: Download released merod
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
-            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
-          curl -sL "$URL" | tar xz
-          chmod +x ./merod
+        run: scripts/download-released-merod.sh
 
       - name: Boot 2 merod nodes (embedded auth)
         run: |
-          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded
-          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded
+          # --mdns is load-bearing, not tidy-up. These two nodes have no
+          # bootstrap peer and no rendezvous, so mDNS is their ONLY discovery
+          # path. merod left it on by default until core#3620 ("leave mDNS off
+          # unless asked for"), which first shipped in 0.11.0-rc.26 — and this
+          # job downloads the LATEST release, so it broke the moment rc.26 was
+          # cut, on a run that changed nothing here.
+          #
+          # The symptom points nowhere near the cause: node-2 finds no mesh
+          # peer, falls back to gossip, KeyDelivery times out after 5s, and the
+          # join refuses with a 500. That refusal is correct — a member that
+          # cannot decrypt anything should not land — so the bug reads as
+          # "namespace join is broken" rather than "the nodes never met".
+          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded --mdns
+          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded --mdns
           ./merod --home ./n1 --node n1 run > n1.log 2>&1 & echo $! > n1.pid
           ./merod --home ./n2 --node n2 run > n2.log 2>&1 & echo $! > n2.pid
           for port in 4501 4502; do

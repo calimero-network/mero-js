@@ -108,6 +108,10 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
+  PerformIntentRequest,
+  PerformIntentResponseData,
+  AdmitJoinRequest,
+  AdmitJoinResponseData,
 } from './admin-types.js';
 
 /**
@@ -225,42 +229,15 @@ export class AdminApiClient {
 
   // ---- Application Management ----
 
+  /**
+   * Install a published application by its `package@version` coordinates. The
+   * node resolves and fetches them from its own configured `[registry]`, so no
+   * URL is passed and none is accepted. A 502 means the node's source has
+   * nothing published at those coordinates. This is the discrete "download"
+   * step an Updates flow pairs with a subsequent `upgradeGroup`.
+   */
   async installApplication(request: InstallApplicationRequest): Promise<InstallApplicationResponseData> {
     return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-application', request));
-  }
-
-  /**
-   * Resolve a `package@version` to its registry artifact URL and install it.
-   * Node install is URL-based (no node-side package+version resolution), so this
-   * fetches the bundle manifest from the registry, derives the `.mpk` artifact
-   * URL, then calls {@link installApplication}. `registryUrl` is the registry
-   * origin. This is the discrete "download" step an Updates flow pairs with a
-   * subsequent `upgradeGroup`.
-   */
-  async installFromRegistry(
-    registryUrl: string,
-    packageName: string,
-    version: string,
-  ): Promise<InstallApplicationResponseData> {
-    const base = new URL(registryUrl).origin;
-    const manifestUrl = new URL(
-      `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
-      base,
-    ).toString();
-    const resp = await fetchRegistry(manifestUrl, 'manifest', `${packageName}@${version}`);
-    const bundle = (await resp.json()) as RegistryBundleManifest;
-    // Encode the path segments — the package/version come from a (best-effort
-    // trusted) registry response, so guard against odd characters breaking or
-    // traversing the artifact path. For normal ids/semvers this is a no-op.
-    const pkg = encodeURIComponent(bundle.package);
-    const ver = encodeURIComponent(bundle.appVersion);
-    const artifactUrl = `${base}/artifacts/${pkg}/${ver}/${pkg}-${ver}.mpk`;
-    return this.installApplication({
-      url: artifactUrl,
-      package: bundle.package,
-      version: bundle.appVersion,
-      metadata: [],
-    });
   }
 
   /**
@@ -656,6 +633,44 @@ export class AdminApiClient {
     return { namespaceId, publicKey: node.publicKey, account: node.accountId };
   }
 
+  /**
+   * Ask this node to run one method on a member's behalf, under a warrant that
+   * member signed.
+   *
+   * The node executes and signs the envelope with its own key; the change is
+   * attributed to the **author**. Both halves travel together, so every peer
+   * re-checks that the member consented instead of trusting the relay.
+   *
+   * Three things have to be true first, and none is implied by the others:
+   *
+   * - the author's **account** is a member of the group owning the context —
+   *   their device joins nothing and is in no group's binding rows, which is
+   *   exactly the case a device certificate covers;
+   * - this node holds `CAN_AUTHOR_ON_BEHALF` on that group, which is implied by
+   *   neither membership nor admin;
+   * - the warrant has not been spent. It is single-use: presenting a valid one
+   *   twice is refused, because the signature stays valid forever and replay is
+   *   not forgery.
+   *
+   * A refusal comes back as a `403` carrying the reason — "an admin must grant
+   * CAN_AUTHOR_ON_BEHALF to …", or that the nonce is already spent — so a caller
+   * can tell which precondition failed rather than only that one did.
+   *
+   * Mint the warrant with {@link signWarrant}; see
+   * {@link PerformIntentRequest.warrant}.
+   */
+  async performIntent(
+    contextId: string,
+    request: PerformIntentRequest,
+  ): Promise<PerformIntentResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: PerformIntentResponseData }>(
+        `/admin-api/contexts/${contextId}/intents`,
+        request,
+      ),
+    );
+  }
+
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>(`/admin-api/namespaces/for-application/${applicationId}`));
   }
@@ -705,6 +720,36 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData }>(
         `/admin-api/namespaces/${namespaceId}/invite`,
         request ?? {},
+      ),
+    );
+  }
+
+  /**
+   * Present a join this caller signed to a node the inviter named as an
+   * admitter.
+   *
+   * For a member with no node. `joinNamespace` publishes the membership op from
+   * the node making the call; this hands an already-signed op to somebody else's
+   * node to publish. The distinction matters because a keyholder has nowhere to
+   * publish from.
+   *
+   * The op must be signed by the **device key** in the credential it carries —
+   * every peer checks that when applying a join. So the admitter cannot author
+   * this, only carry it: a hostile one can refuse, and nothing else. It cannot
+   * admit a different account, change the group, or grant a role.
+   *
+   * @param namespaceId the namespace being joined, 64 hex
+   * @param request the invitation and the hex-encoded signed op
+   */
+  async admitJoin(
+    namespaceId: string,
+    request: AdmitJoinRequest,
+  ): Promise<AdmitJoinResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AdmitJoinResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/admit`,
+        request,
+        { timeoutMs: 65000 },
       ),
     );
   }
@@ -922,7 +967,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async updateMemberRole(
     groupId: string,
@@ -934,7 +980,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
@@ -946,7 +993,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberCapabilities(
     groupId: string,
@@ -1013,7 +1061,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
@@ -1225,7 +1274,8 @@ export class AdminApiClient {
    * /admin-api/groups/:group_id/members/:identity/auto-follow).
    *
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberAutoFollow(
     groupId: string,

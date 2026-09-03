@@ -25,7 +25,7 @@ surface.
     { label: 'Node /admin-api', color: '#58a6ff' },
   ]}
   steps={[
-    { from: 0, to: 1, label: 'installApplication({ url, hash })' },
+    { from: 0, to: 1, label: 'installApplication({ package, version })' },
     { from: 1, to: 2, label: 'POST /install-application' },
     { from: 2, to: 1, label: 'applicationId', dashed: true },
     { from: 0, to: 1, label: 'createContext({ applicationId })' },
@@ -42,32 +42,36 @@ surface.
 
 ## Install an application
 
-From a URL (a hosted `.wasm`/`.mpk` bundle):
+By `package@version` coordinates. The node fetches the bundle from the
+`[registry]` its operator configured — you name *what* to install, never
+*where* from, so there is no URL to pass:
 
 ```typescript
 const { applicationId } = await sdk.admin.installApplication({
-  url: 'https://example.com/app.wasm',
-  hash: '…',          // optional integrity hash
-  metadata: [],       // bytes; [] for none
+  package: 'my-package',
+  version: '1.0.0',
 });
 ```
 
-From a **registry** package — the SDK resolves the manifest, derives the bundle
-artifact URL, and installs it:
+To install the newest published version, ask the registry what it has. This
+listing is registry-side, so it takes the registry origin — unlike the install
+above, which uses the node's own configured source:
 
 ```typescript
 // newest first
 const versions = await sdk.admin.getRegistryVersions(registryUrl, 'my-package');
 
-const app = await sdk.admin.installFromRegistry(
-  registryUrl,
-  'my-package',
-  versions[0],
-);
+const app = await sdk.admin.installApplication({
+  package: 'my-package',
+  version: versions[0],
+});
 ```
 
-During local development, install straight from a path with
-`installDevApplication({ path, metadata: [] })`.
+A `502` from `installApplication` means the node's configured source has nothing
+published at those coordinates.
+
+During local development, install straight from a signed `.mpk` path with
+`installDevApplication({ path })`.
 
 Inspect and manage installed apps:
 
