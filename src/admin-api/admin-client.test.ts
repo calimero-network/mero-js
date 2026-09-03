@@ -827,7 +827,7 @@ describe('AdminApiClient', () => {
         signPublicKey: PAIR_INIT.signPublicKey,
         statement: PAIR_INIT.statement,
         confirmationCode: PAIR_INIT.confirmationCode,
-        applications: ['App1BaseFiftyEight'],
+        applications: ['a'.repeat(64)],
       };
       const result = await client.completeAccountPairing(request);
       // Asserted whole rather than field by field: the statement is what turns
@@ -859,16 +859,16 @@ describe('AdminApiClient', () => {
       const relinked = {
         accountId: PAIR_INIT.accountId,
         deviceId: PAIR_INIT.deviceId,
-        applications: ['App1BaseFiftyEight'],
+        applications: ['a'.repeat(64)],
         linkedIn: [{ namespaceId: '5'.repeat(64), keyDelivered: true }],
         skipped: [{ namespaceId: '6'.repeat(64), reason: 'outOfScope' }],
       };
       mock.setMockResponse('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`, { data: relinked });
       const result = await client.relinkAccountDevice(PAIR_INIT.deviceId, {
-        applications: ['App1BaseFiftyEight'],
+        applications: ['a'.repeat(64)],
       });
       expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({
-        applications: ['App1BaseFiftyEight'],
+        applications: ['a'.repeat(64)],
       });
       // `linkedIn` and `skipped` are the whole point of the answer: publication
       // is per-DAG, so which namespaces the device actually reached - and why
@@ -891,7 +891,7 @@ describe('AdminApiClient', () => {
       const devices = [
         {
           deviceId: PAIR_INIT.deviceId,
-          signingKey: 'BaseFiftyEightSigningKey',
+          signingKey: 'b'.repeat(64),
           isSelf: true,
           revoked: false,
           applications: [],
@@ -907,7 +907,7 @@ describe('AdminApiClient', () => {
     });
 
     it('listAccountApplications reads the top-level `applications` wrapper, not `data`', async () => {
-      const applications = [{ applicationId: 'App1BaseFiftyEight', namespaces: ['5'.repeat(64)] }];
+      const applications = [{ applicationId: 'a'.repeat(64), namespaces: ['5'.repeat(64)] }];
       mock.setMockResponse('GET', '/admin-api/account/applications', { applications });
       expect(await client.listAccountApplications()).toEqual(applications);
     });
