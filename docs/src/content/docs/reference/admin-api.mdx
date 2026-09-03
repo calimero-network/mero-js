@@ -123,6 +123,22 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `createGroupInNamespace(namespaceId, request?): Promise<CreateGroupInNamespaceResponseData>` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): Promise<SubgroupEntry[]>` | `GET /namespaces/{namespaceId}/groups` |
 
+## Accounts & devices
+
+A device belongs to an account rather than to a namespace, so these read and
+change the account this node speaks for. `revokeAccountDevice` takes a namespace
+only to say where to publish from — it withdraws the device everywhere and
+reports each namespace back.
+
+| Method | Endpoint |
+| --- | --- |
+| `initAccountPairing(request): Promise<AccountPairInitResponseData>` | `POST /account/pair-init` |
+| `completeAccountPairing(request): Promise<AccountPairCompleteResponseData>` | `POST /account/pair-complete` |
+| `relinkAccountDevice(deviceId, request?): Promise<RelinkDeviceResponseData>` | `POST /account/devices/{deviceId}/relink` |
+| `listAccountDevices(): Promise<AccountDeviceEntry[]>` | `GET /account/devices` |
+| `listAccountApplications(): Promise<AccountApplicationEntry[]>` | `GET /account/applications` |
+| `revokeAccountDevice(namespaceId, request): Promise<RevokeAccountDeviceResponseData>` | `POST /namespaces/{namespaceId}/account/revoke` |
+
 ## Groups
 
 ### Info, membership & contexts

@@ -545,6 +545,18 @@ export interface NodeIdentity {
    * claim something the node the caller chose may not report.
    */
   accountRootPublicKey?: string;
+  /**
+   * Whether this node holds the root key of the account it speaks for. `false`
+   * means it runs on a delegate device key, so it cannot certify another device
+   * into the account — which is what a pairing invite needs to know before
+   * offering the option.
+   *
+   * Optional for the same reason as `accountRootPublicKey`: a node at or below
+   * `0.11.0-rc.30` does not send it. `undefined` is therefore "this node is too
+   * old to say", which is not the same answer as `false`, and a caller gating an
+   * invite on it should not collapse the two.
+   */
+  holdsAccountRoot?: boolean;
 }
 
 /**
@@ -646,6 +658,345 @@ export interface CreateGroupInNamespaceResponseData {
 export interface SubgroupEntry {
   groupId: string;
   name?: string;
+}
+
+// ---- Account devices & pairing ----
+
+/**
+ * Adopt an account that already lives on another device, and mint this node a
+ * device of its own for it.
+ *
+ * The first half of pairing, run on the joining node. It publishes nothing and
+ * needs no key: it produces the values the account holder's
+ * {@link AdminApiClient.completeAccountPairing} certifies, plus a confirmation
+ * code to read out to them.
+ *
+ * Account-level, and that is the whole point of it: both credentials pairing
+ * mints were always account-wide - the certificate is root-signed and the
+ * endorsement node-level, so neither ever named a namespace - while the older
+ * per-namespace route still made the caller name one, and the device then
+ * listened on that one topic while its holder's link fanned out across all of
+ * them.
+ */
+export interface AccountPairInitRequest {
+  /**
+   * The epoch-0 root **public** key of the account to join, 64 hex characters -
+   * exactly what {@link NodeIdentity.accountRootPublicKey} reports on the node
+   * that already holds the account.
+   *
+   * Named for the half it carries. An ed25519 private and public key are both 32
+   * bytes and both hex, so nothing but the name tells them apart; the private
+   * root never crosses this boundary at all.
+   */
+  accountRootPublicKey: string;
+  /**
+   * Ids of the namespaces to enroll into, 64 hex characters each. At least one:
+   * a device certified into nothing listens on no topic.
+   *
+   * The caller has to supply these, because the joining node cannot discover
+   * them - it is a member of nothing and holds no scope key, so it can neither
+   * read the account's namespace set off a DAG nor derive it. The device that
+   * already holds the account is the only party that knows it.
+   *
+   * This decides what the new device *listens* on, and it does not have to agree
+   * with the applications the holder scopes `pair-complete` to: a binding
+   * published where the device is not listening is picked up whenever it does
+   * subscribe, and a subscription the holder never reaches costs nothing.
+   */
+  namespaces: string[];
+}
+
+/**
+ * What the joining device minted, for the account holder to certify.
+ *
+ * These are round-trip tokens: a caller copies them verbatim into
+ * {@link AdminApiClient.completeAccountPairing}. The signing key is the NEW
+ * device's, so it appears in no member listing yet and there is nothing here to
+ * compare it against.
+ *
+ * One device is minted however many namespaces were named, so there is one of
+ * each of these to hand over, not one per namespace.
+ */
+export interface AccountPairInitResponseData {
+  /** The account this device will speak for once linked, 64 hex characters. */
+  accountId: string;
+  /** The device that was minted, 64 hex characters. */
+  deviceId: string;
+  /** X25519 agreement key a scope key must be wrapped under to reach this device, hex. */
+  kemPublicKey: string;
+  /**
+   * The Ed25519 key this device signs its ops with, hex.
+   *
+   * The account holder cannot derive this - it is minted here - and the
+   * certificate names it, so it has to travel with the other two.
+   */
+  signPublicKey: string;
+  /**
+   * Ed25519 signature over the account, the device id and both keys above, hex.
+   *
+   * Carried so the three values arrive as a statement by the device that minted
+   * them rather than as assertions by whoever relayed them; `pair-complete`
+   * refuses without it.
+   */
+  statement: string;
+  /**
+   * The value to read out to the account holder, who compares it against what
+   * their `pair-complete` reports.
+   *
+   * The part a substituting attacker cannot fake: it can re-sign its own
+   * statement, but it would have to make its own keys derive the code the other
+   * side is already reading.
+   */
+  confirmationCode: string;
+}
+
+/**
+ * Certify a device another node minted, link it, and deliver its scope keys.
+ *
+ * The second half of pairing, run on the node that holds the account root - the
+ * only party that can sign the certificate that makes the device real. Every
+ * field but `applications` is copied verbatim from that other node's
+ * {@link AccountPairInitResponseData}.
+ */
+export interface AccountPairCompleteRequest {
+  /** The `deviceId` the other node minted, 64 hex characters. */
+  deviceId: string;
+  /** That device's X25519 agreement key, 64 hex characters. */
+  kemPublicKey: string;
+  /** That device's Ed25519 signing key, 64 hex characters. */
+  signPublicKey: string;
+  /**
+   * The signature from that node's pair-init, 128 hex characters (64 bytes).
+   *
+   * Not optional: without it the three values above are only claims by whoever
+   * sent them, and certifying those would make attacker-supplied keys a trusted
+   * device of this account.
+   */
+  statement: string;
+  /**
+   * The code the account holder read off the pairing device, e.g.
+   * `7BC0-DAAC-CCB4-84A4`. Grouping and case are ignored.
+   *
+   * Required so the comparison cannot be skipped: this side re-derives the code
+   * for the key material that actually arrived and refuses a mismatch. Its value
+   * rests on the code reaching the holder independently of this payload - sent
+   * beside the keys, it proves nothing. One code covers the whole pairing,
+   * because one device was minted for it.
+   */
+  confirmationCode: string;
+  /**
+   * Which applications this device may speak for, 64 hex each. Omitted or empty means
+   * every one of them.
+   *
+   * Scoped by application rather than by namespace because a person can answer
+   * "which apps may this device use" and cannot answer "which namespaces" - a
+   * namespace is an implementation unit they never named. The node resolves
+   * these to namespaces through the same lookup
+   * {@link AdminApiClient.listNamespacesForApplication} reads.
+   */
+  applications?: string[];
+}
+
+/** What pairing established. */
+export interface AccountPairCompleteResponseData {
+  /** The account the device now speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was linked, 64 hex characters. */
+  deviceId: string;
+  /**
+   * Whether the current scope key was wrapped and published for the device.
+   *
+   * `false` does not mean pairing failed - the link is what confers authority,
+   * and the device's own sync pull re-requests the key. It does mean the device
+   * cannot read until that lands.
+   */
+  keyDelivered: boolean;
+  /**
+   * The code for the key material this certified - the same value the request
+   * carried, echoed so the operator can see what the certificate names.
+   */
+  confirmationCode: string;
+  /**
+   * The `AccountProof<DeviceCert>` this pairing minted, hex-encoded borsh.
+   *
+   * The certified device needs this to present itself as a device of the
+   * account, and cannot read it off the DAG: doing so means being a member of a
+   * group the account speaks in, which a thin client never is. Not a secret - a
+   * certificate is public and proves nothing without the device key it names.
+   */
+  credential: string;
+}
+
+/**
+ * Repair or widen the reach of a device this account already certified.
+ *
+ * Pairing is a snapshot: it bound the device wherever this node took part at the
+ * time, so a namespace created or joined afterwards holds no binding for it and
+ * the paired device silently never sees that namespace. This re-runs the fan-out
+ * against the namespaces this node takes part in now. The device need not be
+ * online, and nothing but its id is required - the certificate is already held
+ * here, root-signed and naming no namespace, so a fresh endorsement and a key
+ * wrap are all a later namespace is missing.
+ */
+export interface RelinkDeviceRequest {
+  /**
+   * Applications to add to the device's stored scope, 64 hex each.
+   *
+   * **Omitted or empty changes nothing** and repairs against the scope already
+   * stored, which is the request an operator makes to heal drift. Note that this
+   * is the one place an empty list does not mean "all": widening a narrow scope
+   * to every application is deliberately not expressible here, because
+   * overloading the empty list would make the accidental request the widest one.
+   */
+  applications?: string[];
+}
+
+/** One namespace the relink published the device's link into. */
+export interface RelinkOutcomeEntry {
+  /** The namespace id, 64 hex characters. */
+  namespaceId: string;
+  /**
+   * Whether the scope key was wrapped and published for the device here.
+   *
+   * `false` means the link landed and the delivery did not; the link is what
+   * confers authority, and the device's own sync pull re-requests the key.
+   */
+  keyDelivered: boolean;
+}
+
+/** One namespace the relink published nothing into, and why. */
+export interface RelinkSkipEntry {
+  /** The namespace id, 64 hex characters. */
+  namespaceId: string;
+  /**
+   * Why nothing was published there. Currently one of `outOfScope`,
+   * `alreadyBound`, `noScopeKey`, `revoked`, `ownDevice`, `failed`; left as a
+   * string because a node may report a reason newer than this SDK.
+   */
+  reason: string;
+}
+
+/** What the relink repaired, and what it left alone. */
+export interface RelinkDeviceResponseData {
+  /** The account the device speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was repaired, 64 hex characters. */
+  deviceId: string;
+  /**
+   * The device's scope after the request, 64 hex each. Empty means every
+   * application, which is what a pairing that named none asked for.
+   */
+  applications: string[];
+  /**
+   * Namespaces the link was published into by this call. Reported per namespace
+   * because publication is per-DAG, so which namespaces a device actually
+   * reached is a state the caller has to be able to see.
+   */
+  linkedIn: RelinkOutcomeEntry[];
+  /** Namespaces nothing was published into. */
+  skipped: RelinkSkipEntry[];
+}
+
+/**
+ * One device of this account, joined from the node-local certificate cache and
+ * the live bindings of every namespace this node takes part in.
+ */
+export interface AccountDeviceEntry {
+  /** This device's id, 64 hex characters. */
+  deviceId: string;
+  /** The key this device signs its ops with, 64 hex. */
+  signingKey: string;
+  /** Set only on the device this node itself presents. */
+  isSelf: boolean;
+  revoked: boolean;
+  /**
+   * Applications this device may speak for, 64 hex each. **Empty means every
+   * application**, the same convention the stored certificate uses - and the
+   * opposite of what an empty {@link RelinkDeviceRequest.applications} asks for.
+   * Empty also for a device this node holds no cached certificate for: one bound
+   * before the cache existed, or certified by another holder.
+   */
+  applications: string[];
+  /**
+   * Ids of the namespaces currently holding a live binding for this device, 64
+   * hex characters each. Empty for a certified device not yet bound anywhere.
+   */
+  namespaces: string[];
+}
+
+/**
+ * One application this account speaks in, derived from the namespaces this node
+ * takes part in that target it.
+ *
+ * An application installed with no namespace yet is absent here: it has no
+ * cross-device meaning until a namespace exists, so there is nothing to scope a
+ * device to.
+ */
+export interface AccountApplicationEntry {
+  /** The application id, 64 hex. */
+  applicationId: string;
+  /** Ids of the namespaces targeting it, 64 hex characters each. */
+  namespaces: string[];
+}
+
+/** Withdraw a device from an account, terminally. */
+export interface RevokeAccountDeviceRequest {
+  /** The device to withdraw, 64 hex. */
+  deviceId: string;
+  /**
+   * A hex-encoded, borsh-serialized signed revocation minted elsewhere -
+   * the output of `merod account revoke-proof`.
+   *
+   * The lost-device path: the account root that owns the device is not on this
+   * node, so the proof is signed offline and this node only publishes it. Omit
+   * it and the node mints its own proof if it owns the account, and otherwise
+   * revokes as an admin.
+   *
+   * Not a credential and not a secret - it authorises this one revocation of
+   * this one device, and only alongside a stored binding naming the same
+   * account.
+   */
+  proof?: string;
+}
+
+/** What a revocation withdrew in one namespace. */
+export interface RevocationOutcome {
+  /** The namespace, 64 hex. */
+  namespaceId: string;
+  /**
+   * Whether the scope key rotated in the same op, in THIS namespace.
+   *
+   * `false` means the device stopped writing there at once but still holds the
+   * key it had, so it can keep READING until an admin rotates. Only an admin
+   * may rotate and an account holder revoking their own device usually is not
+   * one, so this is commonly owed rather than exceptional.
+   */
+  keyRotated: boolean;
+}
+
+export interface RevokeAccountDeviceResponseData {
+  /** The account the device spoke for, 64 hex. */
+  accountId: string;
+  /** The device that was withdrawn, 64 hex. */
+  deviceId: string;
+  /**
+   * Whether the scope key rotated in the namespace named in the request.
+   *
+   * {@link revokedIn} is the full picture; prefer it. This reports only the one
+   * namespace the caller asked about and is retained because core keeps it for
+   * a released `calimero-client-py` wheel that requires the field.
+   */
+  keyRotated: boolean;
+  /**
+   * Every namespace the revocation was published into.
+   *
+   * A device belongs to an account rather than to a scope, so revoking it
+   * withdraws it from every namespace holding a binding for it - not only the
+   * one named in the request. Per namespace because publication is per-DAG: a
+   * namespace absent here did not receive the op, and a partially propagated
+   * revocation is a state the caller has to be able to see.
+   */
+  revokedIn: RevocationOutcome[];
 }
 
 // ---- Groups ----
