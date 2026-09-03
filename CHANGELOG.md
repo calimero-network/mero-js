@@ -1,3 +1,62 @@
+## [18.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v17.0.0...mero-js-v18.0.0) (2026-09-03)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** installApplication takes { package, version } instead of
+{ url, hash, metadata }; installFromRegistry is removed - call
+installApplication with the coordinates directly. installDevApplication takes
+{ path } only, following core dropping metadata from the dev request.
+
+* test(e2e): assert the node accepts the install coordinate shape
+
+The route-coverage sweep fires install-application through cover(), which
+swallows every failure. That is right for a state 4xx, but it also swallows a
+400 from a rejected request BODY - and the coverage recorder logs a path when
+the request fires, before the response, so the route reads as covered while
+every call to it fails.
+
+That combination is why core's paired SDK e2e passed on the registry-only
+distribution change while this SDK still sent the old url-shaped body: the one
+place that exercises the route could not tell "nothing published there" from
+"your request shape is wrong".
+
+install-application now asserts instead. These coordinates have nothing
+published at them, so the install cannot succeed; what is checked is that the
+node got past deserialization. Deliberately not pinned to 502: install_by_coords
+propagates a fetch fault as an error, so an unreachable registry is a 500, and
+requiring 502 would make this depend on CI egress to the node's configured
+public registry. A status is required though, so a transport fault cannot pass
+the assertion vacuously.
+
+Verified against merod 0.11.0-rc.30, which predates the change: the coordinate
+body earns `400 missing field \`url\``, which fails the new assertion.
+
+The file header claimed a covered 4xx "proves the SDK builds and sends a correct
+request". It does not prove that about the body, and that sentence is what made
+the hole look intentional - corrected, with a note to assert the shape on any
+route where core rejects unknown fields.
+
+* ci: take the newest release that actually has a merod asset
+
+Both e2e jobs resolved merod with `gh release list --limit 1` and hard-failed
+when that tag carried no linux binary. GitHub publishes a release object before
+its binary matrix finishes uploading, so the newest tag legitimately has no
+merod for a while - 0.11.0-rc.31 sat published with only its test fixture for
+several minutes, and any PR whose e2e ran in that window failed on
+"no merod linux asset", indistinguishable from a genuinely broken release.
+
+Walk back through recent releases and take the first that has the asset. Both
+jobs had their own copy of the download, so it moves to one script they share
+rather than being fixed twice.
+
+Checked both directions against the live release state: it skips rc.31 and
+downloads rc.30, and it exits 1 when no release in the lookback window carries
+the asset.
+
+### Features
+
+* **admin:** install applications by package@version ([#133](https://github.com/calimero-network/mero-js/issues/133)) ([dfd2b9e](https://github.com/calimero-network/mero-js/commit/dfd2b9e9c5b1deab94b3c7a2ba2dabed6ff6d0ff))
+
 ## [17.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.1.0...mero-js-v17.0.0) (2026-09-03)
 
 ### ⚠ BREAKING CHANGES
