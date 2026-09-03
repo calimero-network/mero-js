@@ -911,6 +911,47 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/account/applications', { applications });
       expect(await client.listAccountApplications()).toEqual(applications);
     });
+
+    it('revokeAccountDevice names the namespace in the path and the device in the body', async () => {
+      const revoked = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        keyRotated: false,
+        revokedIn: [
+          { namespaceId: '5'.repeat(64), keyRotated: true },
+          { namespaceId: '6'.repeat(64), keyRotated: false },
+        ],
+      };
+      const path = `/admin-api/namespaces/${'5'.repeat(64)}/account/revoke`;
+      mock.setMockResponse('POST', path, { data: revoked });
+      const result = await client.revokeAccountDevice('5'.repeat(64), {
+        deviceId: PAIR_INIT.deviceId,
+      });
+      // The namespace is a path segment and the device is a body field; swapping
+      // them reaches a real route with the wrong subject rather than 404ing.
+      expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: PAIR_INIT.deviceId });
+      // `revokedIn` is the whole point: a device belongs to the account, so more
+      // namespaces are withdrawn from than the one named, and per-namespace
+      // `keyRotated: false` is the state where the device can no longer write
+      // but can still READ until an admin rotates. Collapsing that to the
+      // top-level flag would report a fully-closed device that is not one.
+      expect(result).toEqual(revoked);
+      expect(result.revokedIn.filter((r) => !r.keyRotated)).toHaveLength(1);
+    });
+
+    it('revokeAccountDevice omits proof unless one is supplied', async () => {
+      // Absent means "node mints its own, or revokes as admin". Sending
+      // `proof: undefined` would serialize the key and is a different request.
+      const path = `/admin-api/namespaces/${'5'.repeat(64)}/account/revoke`;
+      mock.setMockResponse('POST', path, {
+        data: { accountId: 'ac-1', deviceId: 'dv-1', keyRotated: true, revokedIn: [] },
+      });
+      await client.revokeAccountDevice('5'.repeat(64), { deviceId: 'dv-1' });
+      expect(Object.keys(mock.getRequestBody('POST', path) as object)).toEqual(['deviceId']);
+
+      await client.revokeAccountDevice('5'.repeat(64), { deviceId: 'dv-1', proof: 'ab12' });
+      expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: 'dv-1', proof: 'ab12' });
+    });
   });
 
   describe('Group Management', () => {

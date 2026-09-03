@@ -67,6 +67,8 @@ import type {
   RelinkDeviceResponseData,
   AccountDeviceEntry,
   AccountApplicationEntry,
+  RevokeAccountDeviceRequest,
+  RevokeAccountDeviceResponseData,
   GroupInfoResponseData,
   DeleteGroupRequest,
   DeleteGroupResponseData,
@@ -902,6 +904,33 @@ export class AdminApiClient {
       '/admin-api/account/applications',
     );
     return response.applications;
+  }
+
+  /**
+   * Withdraw a device from this account, terminally.
+   *
+   * Two authorities reach the same endpoint. An admin may revoke any device and
+   * rotates the scope key as it goes. The account holder may revoke its own with
+   * a root-signed `proof`, which does not rotate - so read
+   * {@link RevokeAccountDeviceResponseData.revokedIn} rather than assuming the
+   * device lost its access: a namespace reporting `keyRotated: false` has
+   * stopped the device writing but leaves it able to read until an admin
+   * rotates.
+   *
+   * `namespaceId` names where to publish from, not the extent of the revocation:
+   * a device belongs to the account, so every namespace holding a binding for it
+   * is withdrawn from and reported back.
+   */
+  async revokeAccountDevice(
+    namespaceId: string,
+    request: RevokeAccountDeviceRequest,
+  ): Promise<RevokeAccountDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: RevokeAccountDeviceResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/account/revoke`,
+        request,
+      ),
+    );
   }
 
   // ---- Group Management ----

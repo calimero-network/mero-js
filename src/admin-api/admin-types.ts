@@ -939,6 +939,66 @@ export interface AccountApplicationEntry {
   namespaces: string[];
 }
 
+/** Withdraw a device from an account, terminally. */
+export interface RevokeAccountDeviceRequest {
+  /** The device to withdraw, 64 hex. */
+  deviceId: string;
+  /**
+   * A hex-encoded, borsh-serialized signed revocation minted elsewhere -
+   * the output of `merod account revoke-proof`.
+   *
+   * The lost-device path: the account root that owns the device is not on this
+   * node, so the proof is signed offline and this node only publishes it. Omit
+   * it and the node mints its own proof if it owns the account, and otherwise
+   * revokes as an admin.
+   *
+   * Not a credential and not a secret - it authorises this one revocation of
+   * this one device, and only alongside a stored binding naming the same
+   * account.
+   */
+  proof?: string;
+}
+
+/** What a revocation withdrew in one namespace. */
+export interface RevocationOutcome {
+  /** The namespace, 64 hex. */
+  namespaceId: string;
+  /**
+   * Whether the scope key rotated in the same op, in THIS namespace.
+   *
+   * `false` means the device stopped writing there at once but still holds the
+   * key it had, so it can keep READING until an admin rotates. Only an admin
+   * may rotate and an account holder revoking their own device usually is not
+   * one, so this is commonly owed rather than exceptional.
+   */
+  keyRotated: boolean;
+}
+
+export interface RevokeAccountDeviceResponseData {
+  /** The account the device spoke for, 64 hex. */
+  accountId: string;
+  /** The device that was withdrawn, 64 hex. */
+  deviceId: string;
+  /**
+   * Whether the scope key rotated in the namespace named in the request.
+   *
+   * {@link revokedIn} is the full picture; prefer it. This reports only the one
+   * namespace the caller asked about and is retained because core keeps it for
+   * a released `calimero-client-py` wheel that requires the field.
+   */
+  keyRotated: boolean;
+  /**
+   * Every namespace the revocation was published into.
+   *
+   * A device belongs to an account rather than to a scope, so revoking it
+   * withdraws it from every namespace holding a binding for it - not only the
+   * one named in the request. Per namespace because publication is per-DAG: a
+   * namespace absent here did not receive the op, and a partially propagated
+   * revocation is a state the caller has to be able to see.
+   */
+  revokedIn: RevocationOutcome[];
+}
+
 // ---- Groups ----
 
 export interface CreateGroupRequest {
