@@ -25,7 +25,7 @@ import {
 } from '../crypto/internal.js';
 
 /** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 7;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 8;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
@@ -227,7 +227,20 @@ export async function signMemberJoinOp(input: SignMemberJoinInput): Promise<stri
     await crypto.subtle.sign('Ed25519', key, concat(NAMESPACE_SIGN_DOMAIN, signable)),
   );
 
-  // The signed struct repeats the signable fields, then the signature. The domain
-  // is a signing prefix only and is never part of the encoded op.
-  return hex(concat(signable, signature));
+  // The signed struct repeats the signable fields, then the signature, then the
+  // admitter endorsement. The domain is a signing prefix only and is never part
+  // of the encoded op.
+  //
+  // The endorsement is written as borsh `None` — a single `0x00` — and that is
+  // the correct value from here, not a placeholder. It authorises the membership
+  // and can only be signed by an account the invitation named as an admitter,
+  // which a keyholder is not. The admitter attaches its own as it relays the op
+  // through `admitJoin`.
+  //
+  // It sits outside `signable`, so it is outside this signature and outside the
+  // op's id. That is what makes attaching it possible: the admitter changes
+  // neither what was signed here nor which op this is.
+  const unendorsed = new Uint8Array([0]);
+
+  return hex(concat(signable, signature, unendorsed));
 }
