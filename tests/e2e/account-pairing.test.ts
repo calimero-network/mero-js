@@ -119,9 +119,9 @@ describe('Account devices & pairing E2E', () => {
     const entry = applications.find((a) => a.applicationId === applicationId);
     expect(entry).toBeTruthy();
     expect(entry!.namespaces).toContain(namespaceId);
-    // Base58, matching every other application id on the admin API, while the
-    // namespaces beside it are hex. The mixture is the contract.
-    expect(entry!.applicationId).not.toMatch(HEX_32_BYTES);
+    // Hex, like the namespaces beside it: an application id wraps the same Hash
+    // every other id on this API does. There is no mixture to preserve.
+    expect(entry!.applicationId).toMatch(HEX_32_BYTES);
   });
 
   it('mints a pairing device for the account root it is handed', async (ctx) => {
