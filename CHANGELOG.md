@@ -1,3 +1,13 @@
+## [17.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.1.0...mero-js-v17.0.0) (2026-09-03)
+
+### ⚠ BREAKING CHANGES
+
+* **namespace-op:** write the endorsement slot on the envelope (#134)
+
+### Bug Fixes
+
+* **namespace-op:** write the endorsement slot on the envelope ([#134](https://github.com/calimero-network/mero-js/issues/134)) ([d6f99ca](https://github.com/calimero-network/mero-js/commit/d6f99ca2ea2219cd82e1287c4de31a95d7e458ec)), closes [core#3804](https://github.com/calimero-network/core/issues/3804) [core#3819](https://github.com/calimero-network/core/issues/3819) [#3804](https://github.com/calimero-network/mero-js/issues/3804) [calimero-network/core#3819](https://github.com/calimero-network/core/issues/3819)
+
 ## [16.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.0.0...mero-js-v16.1.0) (2026-09-01)
 
 ### Features
