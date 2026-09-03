@@ -4,9 +4,14 @@
  *
  * These are best-effort: the recorder logs a path when the request FIRES (before
  * the response), so a call that 4xx's for a state reason (e.g. can't upgrade
- * without a newer bundle, can't leave as sole owner) still proves the SDK builds
- * and sends a correct request to the right URL/method — which is the bug class
- * the gate exists to catch. Deep success assertions live in the main flows.
+ * without a newer bundle, can't leave as sole owner) still proves the SDK sent a
+ * request to the right URL and method. Deep success assertions live in the main
+ * flows.
+ *
+ * What cover() does NOT prove is that the node accepted the request BODY — a 400
+ * from a stale field shape is indistinguishable from a state 4xx here, and the
+ * route still records as covered. On a route where core rejects unknown fields,
+ * assert the shape explicitly instead of cover()ing it.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { fileURLToPath } from 'node:url';
@@ -68,17 +73,33 @@ describe('Admin API E2E — Route coverage sweep', () => {
     expect(true).toBe(true);
   });
 
-  it('install-dev-application (direct) + install-application (url)', async () => {
+  it('install-dev-application (direct)', async () => {
     await cover('installDev', () =>
       mero.admin.installDevApplication({
         path: fileURLToPath(new URL('./assets/kv-store.mpk', import.meta.url)),
-        metadata: [],
       }),
     );
-    await cover('installApp', () =>
-      mero.admin.installApplication({ url: 'http://localhost:2528/none.wasm', metadata: [] }),
-    );
     expect(true).toBe(true);
+  });
+
+  /**
+   * The one asserted route in this file. Core sets `deny_unknown_fields` on the
+   * install body, so a stale SDK shape earns a 400 that cover() would swallow.
+   * These coordinates have nothing published at them, so the install cannot
+   * succeed — assert only that the node got past deserialization: 502 is
+   * "nothing published there", 500 is "could not reach my registry". Pinning
+   * 502 would make this depend on CI egress to the node's public registry.
+   */
+  it('install-application: the node accepts the coordinate shape', async () => {
+    const err = await mero.admin
+      .installApplication({ package: 'com.calimero.nonexistent', version: '0.0.0' })
+      .then(() => undefined)
+      .catch((e: Error & { status?: number; bodyText?: string }) => e);
+    // No error at all means the coordinates resolved — the shape was accepted.
+    if (!err) return;
+    // Require a status, so a transport fault cannot pass this vacuously.
+    expect(err.status, `no HTTP response from the node: ${err.message}`).toBeTypeOf('number');
+    expect(err.status, `node rejected the request shape: ${err.bodyText ?? ''}`).not.toBe(400);
   });
 
   it('group upgrade + cascade/migration status + abort', async () => {

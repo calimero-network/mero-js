@@ -221,42 +221,15 @@ export class AdminApiClient {
 
   // ---- Application Management ----
 
+  /**
+   * Install a published application by its `package@version` coordinates. The
+   * node resolves and fetches them from its own configured `[registry]`, so no
+   * URL is passed and none is accepted. A 502 means the node's source has
+   * nothing published at those coordinates. This is the discrete "download"
+   * step an Updates flow pairs with a subsequent `upgradeGroup`.
+   */
   async installApplication(request: InstallApplicationRequest): Promise<InstallApplicationResponseData> {
     return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-application', request));
-  }
-
-  /**
-   * Resolve a `package@version` to its registry artifact URL and install it.
-   * Node install is URL-based (no node-side package+version resolution), so this
-   * fetches the bundle manifest from the registry, derives the `.mpk` artifact
-   * URL, then calls {@link installApplication}. `registryUrl` is the registry
-   * origin. This is the discrete "download" step an Updates flow pairs with a
-   * subsequent `upgradeGroup`.
-   */
-  async installFromRegistry(
-    registryUrl: string,
-    packageName: string,
-    version: string,
-  ): Promise<InstallApplicationResponseData> {
-    const base = new URL(registryUrl).origin;
-    const manifestUrl = new URL(
-      `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
-      base,
-    ).toString();
-    const resp = await fetchRegistry(manifestUrl, 'manifest', `${packageName}@${version}`);
-    const bundle = (await resp.json()) as RegistryBundleManifest;
-    // Encode the path segments — the package/version come from a (best-effort
-    // trusted) registry response, so guard against odd characters breaking or
-    // traversing the artifact path. For normal ids/semvers this is a no-op.
-    const pkg = encodeURIComponent(bundle.package);
-    const ver = encodeURIComponent(bundle.appVersion);
-    const artifactUrl = `${base}/artifacts/${pkg}/${ver}/${pkg}-${ver}.mpk`;
-    return this.installApplication({
-      url: artifactUrl,
-      package: bundle.package,
-      version: bundle.appVersion,
-      metadata: [],
-    });
   }
 
   /**

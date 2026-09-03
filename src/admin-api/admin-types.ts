@@ -16,19 +16,17 @@ export interface AdminAuthStatus {
 
 // ---- Applications ----
 
+/**
+ * Install by coordinates. The node fetches only from its own configured
+ * `[registry]`, so there is no caller-supplied URL; both halves are required.
+ */
 export interface InstallApplicationRequest {
-  url: string;
-  hash?: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
+  package: string;
+  version: string;
 }
 
 export interface InstallDevApplicationRequest {
   path: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
 }
 
 export interface InstallApplicationResponseData {
@@ -114,9 +112,9 @@ export interface BundleMigration {
 }
 
 /**
- * The subset of a registry bundle manifest that `installFromRegistry` consumes
- * to resolve an artifact URL. The registry serves it at
- * `GET {registry}/api/v2/bundles/{package}/{version}`.
+ * The subset of a registry bundle manifest that `getRegistryVersions` consumes.
+ * The registry serves these at `GET {registry}/api/v2/bundles?package={package}`;
+ * installation itself needs only the coordinates, which the node resolves.
  */
 export interface RegistryBundleManifest {
   package: string;
