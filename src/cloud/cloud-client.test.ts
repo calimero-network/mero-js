@@ -248,3 +248,125 @@ describe('CloudClient namespaces', () => {
     ]);
   });
 });
+
+describe('CloudClient machines and setup', () => {
+  function signedIn(fetchImpl: typeof fetch) {
+    return new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'session-1',
+      fetch: fetchImpl,
+    });
+  }
+
+  it('maps the account-wide machine view, grouped by machine', async () => {
+    const { fetch, calls } = scriptedFetch([
+      {
+        body: {
+          machines: [
+            {
+              peer_id: '12D3KooWpeer',
+              relay_url: 'https://relay.example',
+              executor_account: EXECUTOR,
+              can_execute: true,
+              namespaces: [
+                {
+                  namespace_id: NS,
+                  status: 'active',
+                  authorship_ready: true,
+                  fresh: true,
+                  confirmed_at: '2026-01-01T00:00:00',
+                  last_seen_at: '2026-01-01T00:01:00',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const machines = await signedIn(fetch).getMyMachines();
+
+    expect(calls[0].url).toBe('https://cloud.example/api/cloud/me/machines');
+    expect(machines).toEqual([
+      {
+        peerId: '12D3KooWpeer',
+        relayUrl: 'https://relay.example',
+        executorAccount: EXECUTOR,
+        canExecute: true,
+        namespaces: [
+          {
+            namespaceId: NS,
+            status: 'active',
+            authorshipReady: true,
+            fresh: true,
+            confirmedAt: '2026-01-01T00:00:00',
+            lastSeenAt: '2026-01-01T00:01:00',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('reports a stale or ungranted machine without hiding it', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          machines: [
+            {
+              peer_id: 'p',
+              relay_url: 'https://relay.example',
+              executor_account: EXECUTOR,
+              can_execute: false,
+              namespaces: [
+                { namespace_id: NS, status: 'active', authorship_ready: false, fresh: false },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const [machine] = await signedIn(fetch).getMyMachines();
+
+    // A machine that cannot write is still a machine the user is paying for —
+    // surfacing it with `canExecute: false` is what lets a UI say which of the
+    // preconditions is missing instead of showing nothing.
+    expect(machine.canExecute).toBe(false);
+    expect(machine.namespaces[0].fresh).toBe(false);
+    expect(machine.namespaces[0].authorshipReady).toBe(false);
+  });
+
+  /**
+   * Core answers `signerPublicKey`/`signedPayload` (its responses are
+   * camelCase); the cloud's field names are snake_case. Forwarding merod's
+   * object verbatim is the obvious client flow, so the client must not
+   * re-shape it — the cloud accepts both.
+   */
+  it('claimNamespace forwards the proof object verbatim', async () => {
+    const { fetch, calls } = scriptedFetch([{ body: { ok: true } }]);
+    const proof = { signerPublicKey: 'ab', signedPayload: 'cd', signature: 'ef' };
+
+    await signedIn(fetch).claimNamespace(NS, proof);
+
+    expect(calls[0].url).toBe('https://cloud.example/api/cloud/namespaces/claim');
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      namespace_id: NS,
+      ownership_proof: proof,
+    });
+  });
+
+  it('enable/disable namespace HA post to the split endpoints with no body of their own', async () => {
+    const { fetch, calls } = scriptedFetch([{ body: {} }, { body: {} }]);
+    const cloud = signedIn(fetch);
+
+    await cloud.enableNamespaceHa(NS);
+    await cloud.disableNamespaceHa(NS);
+
+    expect(calls.map((c) => c.url)).toEqual([
+      `https://cloud.example/api/cloud/namespaces/${NS}/enable-ha`,
+      `https://cloud.example/api/cloud/namespaces/${NS}/disable-ha`,
+    ]);
+    // The claim already established ownership; these carry no proof.
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({});
+  });
+});

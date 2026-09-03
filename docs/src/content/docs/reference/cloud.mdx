@@ -131,9 +131,73 @@ if (!relay) {
 }
 ```
 
+## `getMyMachines(): Promise<CloudMachine[]>`
+
+Every attested machine serving something this account owns — the same rows as
+`getNamespaceRelays`, keyed by machine rather than by namespace, so a UI can
+answer "what is running for me?" in one call.
+
+```typescript
+interface CloudMachine {
+  peerId: string;
+  relayUrl: string | null;
+  executorAccount: string | null;
+  canExecute: boolean;                  // a URL + an account + the grant somewhere
+  namespaces: Array<{
+    namespaceId: string;
+    status: string;                     // 'assigned' | 'active'
+    authorshipReady: boolean;
+    fresh: boolean;                     // heartbeat within the fleet freshness TTL
+    confirmedAt?: string | null;
+    lastSeenAt?: string | null;
+  }>;
+}
+```
+
+Only the caller's own namespaces appear on each machine: a plan's
+`usersPerMachine` is greater than one, so a fleet node routinely serves several
+accounts at once.
+
+The view is deliberately narrow — no zone, machine type, instance name, public
+IP or KMS ids. Those are operator data, and a cloud user is not an operator.
+
+`fresh: false` is worth surfacing rather than filtering: a replica that stopped
+polling otherwise keeps looking healthy, and "my writes stopped working" has no
+visible cause.
+
+## Setting a namespace up
+
+These three are the owner's side of the flow, and they need a node — see the
+[end-to-end guide](/guides/delegated-execution/).
+
+```typescript
+// Proof from a node that is a DIRECT ADMIN of the namespace; merod refuses
+// to issue one otherwise. Forward its response object verbatim.
+const proof = await sdk.admin.issueNamespaceOwnershipProof(namespaceId, { … });
+await cloud.claimNamespace(namespaceId, proof);   // the cloud learns it exists
+await cloud.enableNamespaceHa(namespaceId);       // the fleet is asked to host it
+await cloud.disableNamespaceHa(namespaceId);      // …and to stop
+```
+
+`claimNamespace` is idempotent for the same account; a namespace already claimed
+by someone else is a `409`, and a replayed proof nonce a `403`.
+
+`disableNamespaceHa` is not merely a billing flip: each assigned node notices the
+namespace is no longer assigned to it and **self-leaves**, which makes core evict
+it and purge its local data and keys.
+
+<Aside type="note">
+  `enableNamespaceHa` / `disableNamespaceHa` are the API calls.
+  `enableHA` / `disableHA` (below) open the cloud's web flow in a browser tab for
+  a person to complete by hand — same feature, different surface.
+</Aside>
+
 ## `getMyNode(): Promise<object | null>`
 
-The node assigned to this account, or `null`.
+**Deprecated — use `getMyMachines()`.** This reads the cloud's retired
+`NodeAssignment` ledger, which nothing has written since the v1 retirement, so
+it answers `null` for every namespace-native account. That reads as "you have no
+machine" when the truth is "that is no longer how a machine is assigned".
 
 ## `enableHA(options): void` / `disableHA(options): void`
 

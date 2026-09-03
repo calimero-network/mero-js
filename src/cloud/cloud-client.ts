@@ -97,6 +97,48 @@ export interface CloudRelay {
   confirmedAt?: string | null;
 }
 
+/** One namespace of the caller's that a machine is serving. */
+export interface CloudMachineNamespace {
+  namespaceId: string;
+  /** `'assigned'` (admitted pending confirm) or `'active'`. */
+  status: string;
+  /** Whether the machine holds `CAN_AUTHOR_ON_BEHALF` on this namespace. */
+  authorshipReady: boolean;
+  /**
+   * Whether the machine's heartbeat for this namespace is recent.
+   *
+   * The same freshness rule the per-plan fleet cap uses, so a replica that
+   * stopped polling reads as stale here rather than continuing to look
+   * healthy — otherwise "my writes stopped working" has no visible cause.
+   */
+  fresh: boolean;
+  confirmedAt?: string | null;
+  lastSeenAt?: string | null;
+}
+
+/**
+ * One attested machine serving this account.
+ *
+ * A narrow view on purpose: the zone, machine type, instance name, public IP
+ * and KMS ids are operator data with no client use, and a cloud user is not an
+ * operator.
+ */
+export interface CloudMachine {
+  peerId: string;
+  relayUrl: string | null;
+  executorAccount: string | null;
+  /**
+   * Whether this machine can write for the caller *somewhere* — a URL, an
+   * executor account, and the grant on at least one namespace.
+   *
+   * Folded here so a client does not re-derive the three-way precondition and
+   * get a refusal it cannot explain.
+   */
+  canExecute: boolean;
+  /** Only the caller's own namespaces, even on a machine shared with others. */
+  namespaces: CloudMachineNamespace[];
+}
+
 export interface EnableHAOptions {
   groupId: string;
   contextId: string;
@@ -260,7 +302,108 @@ export class CloudClient {
     );
   }
 
-  /** The node assigned to the signed-in user, or `null`. */
+  /**
+   * Every attested machine currently serving something this account owns.
+   *
+   * The account-wide view of the same rows {@link getNamespaceRelays} returns
+   * per namespace, keyed by machine — so a UI can answer "what is running for
+   * me?" in one call. `canExecute` folds the three-way precondition, so a
+   * caller does not re-derive it.
+   *
+   * Only the caller's own namespaces appear on each machine. A plan's
+   * `usersPerMachine` is greater than one, so a fleet node routinely serves
+   * several accounts at once.
+   */
+  async getMyMachines(): Promise<CloudMachine[]> {
+    const body = await this.request<{ machines?: Array<Record<string, unknown>> }>(
+      'GET',
+      '/api/cloud/me/machines',
+    );
+    return (body.machines ?? []).map((row) => ({
+      peerId: String(row.peer_id ?? ''),
+      relayUrl: (row.relay_url as string | null | undefined) ?? null,
+      executorAccount: (row.executor_account as string | null | undefined) ?? null,
+      canExecute: row.can_execute === true,
+      namespaces: (Array.isArray(row.namespaces) ? row.namespaces : []).map((n) => {
+        const ns = n as Record<string, unknown>;
+        return {
+          namespaceId: String(ns.namespace_id ?? ''),
+          status: String(ns.status ?? ''),
+          authorshipReady: ns.authorship_ready === true,
+          fresh: ns.fresh === true,
+          confirmedAt: (ns.confirmed_at as string | null | undefined) ?? null,
+          lastSeenAt: (ns.last_seen_at as string | null | undefined) ?? null,
+        };
+      }),
+    }));
+  }
+
+  /**
+   * Claim a namespace under this account, proving ownership.
+   *
+   * The cloud has no other way to learn a namespace exists — namespaces are
+   * created on a node, and there is deliberately no "create namespace" in the
+   * cloud. `ownershipProof` comes from
+   * `admin.issueNamespaceOwnershipProof(namespaceId, …)` on a node that is a
+   * **direct admin** of that namespace; merod refuses to issue one otherwise.
+   *
+   * Pass merod's response object straight through. The cloud accepts core's
+   * `signerPublicKey`/`signedPayload` casing as well as snake_case, so there is
+   * no re-keying step — and getting that wrong used to surface as a `422`
+   * naming three missing fields.
+   *
+   * Idempotent for the same account. A namespace already claimed by someone
+   * else is a `409`; a replayed proof nonce is a `403`.
+   */
+  async claimNamespace(namespaceId: string, ownershipProof: unknown): Promise<void> {
+    await this.request<unknown>('POST', '/api/cloud/namespaces/claim', {
+      body: { namespace_id: namespaceId, ownership_proof: ownershipProof },
+    });
+  }
+
+  /**
+   * Ask the fleet to host a claimed namespace — the step that gets a relay
+   * assigned.
+   *
+   * Takes no body: {@link claimNamespace} already established ownership, and
+   * this is the separate "now host it" half. Idempotent.
+   *
+   * Not to be confused with {@link enableHA}, which opens the cloud's web flow
+   * in a browser tab for a user to complete by hand. This is the API call.
+   */
+  async enableNamespaceHa(namespaceId: string): Promise<unknown> {
+    return this.request<unknown>(
+      'POST',
+      `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
+      { body: {} },
+    );
+  }
+
+  /**
+   * Stop hosting a claimed namespace.
+   *
+   * The fleet's own reconcile loop does the rest: each assigned node notices
+   * the namespace is no longer assigned to it and **self-leaves**, which makes
+   * core evict it and purge its local data and keys. So this is not just a
+   * billing flip.
+   */
+  async disableNamespaceHa(namespaceId: string): Promise<unknown> {
+    return this.request<unknown>(
+      'POST',
+      `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/disable-ha`,
+      { body: {} },
+    );
+  }
+
+  /**
+   * The node assigned to the signed-in user, or `null`.
+   *
+   * @deprecated Use {@link getMyMachines}. This reads the cloud's retired
+   * `NodeAssignment` ledger, which nothing has written since the v1
+   * retirement, so it answers `null` for every namespace-native account —
+   * which reads as "you have no machine" when the truth is "that is no longer
+   * how a machine is assigned".
+   */
   async getMyNode(): Promise<Record<string, unknown> | null> {
     const body = await this.request<{ node: Record<string, unknown> | null }>(
       'GET',

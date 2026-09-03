@@ -4,6 +4,8 @@ export type {
   CloudSession,
   CloudNamespace,
   CloudRelay,
+  CloudMachine,
+  CloudMachineNamespace,
   EnableHAOptions,
   DisableHAOptions,
 } from './cloud-client.js';
