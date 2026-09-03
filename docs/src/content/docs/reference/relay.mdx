@@ -176,11 +176,18 @@ Implement `NonceSource` yourself for anything else — it is one method,
 ## Reaching a relay you have no account on
 
 `POST /admin-api/contexts/:id/intents` normally sits behind the node's auth
-guard. A node run as a **relay** (`merod init --public-intents`) serves that
-route and its `GET` twin without a node credential, because they carry their own:
-the warrant commits to this context, method and arguments, is single-use, and is
-refused before execution unless the relay holds the authorship grant.
+guard. A node run as a **relay** serves that route and its `GET` twin without a
+node credential, because they carry their own: the warrant commits to this
+context, method and arguments, is single-use, and is refused before execution
+unless the relay holds the authorship grant.
 
-Hosted TEE fleet nodes are configured this way. A self-hosted node is not, by
-default — a member with their own node authors their own writes and does not
-need this.
+On the node that is `merod init --public-intents` (or
+`server.admin.public_intents`), and for a node behind a reverse proxy — which is
+every hosted one — the proxy has to exempt the same path, since it is the layer
+actually enforcing auth. Hosted TEE fleet nodes are configured that way, from a
+single setting that drives both. A self-hosted node is not, by default: a member
+with their own node authors their own writes and does not need any of this.
+
+So a `401`/`403` from the *proxy* rather than an `IntentRefusedError` from the
+node means you are pointed at a node that is not serving as a relay — not that
+your warrant is wrong.
