@@ -697,13 +697,10 @@ export interface AccountPairInitRequest {
 /**
  * What the joining device minted, for the account holder to certify.
  *
- * Every field is hex, including the two public keys, and deliberately so against
- * the base58 a key is written in elsewhere here. These are round-trip tokens: a
- * caller copies them verbatim into
- * {@link AdminApiClient.completeAccountPairing}, which parses them back as hex,
- * and nothing compares them against a key from anywhere else - the signing key
- * is the NEW device's, which appears in no member listing yet. So the convention
- * that matters is the one inside the payload, and it is uniform.
+ * These are round-trip tokens: a caller copies them verbatim into
+ * {@link AdminApiClient.completeAccountPairing}. The signing key is the NEW
+ * device's, so it appears in no member listing yet and there is nothing here to
+ * compare it against.
  *
  * One device is minted however many namespaces were named, so there is one of
  * each of these to hand over, not one per namespace.
@@ -776,7 +773,7 @@ export interface AccountPairCompleteRequest {
    */
   confirmationCode: string;
   /**
-   * Which applications this device may speak for, base58. Omitted or empty means
+   * Which applications this device may speak for, 64 hex each. Omitted or empty means
    * every one of them.
    *
    * Scoped by application rather than by namespace because a person can answer
@@ -831,7 +828,7 @@ export interface AccountPairCompleteResponseData {
  */
 export interface RelinkDeviceRequest {
   /**
-   * Applications to add to the device's stored scope, base58.
+   * Applications to add to the device's stored scope, 64 hex each.
    *
    * **Omitted or empty changes nothing** and repairs against the scope already
    * stored, which is the request an operator makes to heal drift. Note that this
@@ -874,7 +871,7 @@ export interface RelinkDeviceResponseData {
   /** The device that was repaired, 64 hex characters. */
   deviceId: string;
   /**
-   * The device's scope after the request, base58. Empty means every
+   * The device's scope after the request, 64 hex each. Empty means every
    * application, which is what a pairing that named none asked for.
    */
   applications: string[];
@@ -895,16 +892,13 @@ export interface RelinkDeviceResponseData {
 export interface AccountDeviceEntry {
   /** This device's id, 64 hex characters. */
   deviceId: string;
-  /**
-   * The key this device signs its ops with, base58 - not hex, unlike the ids
-   * around it, and unlike the same key inside a pairing payload.
-   */
+  /** The key this device signs its ops with, 64 hex. */
   signingKey: string;
   /** Set only on the device this node itself presents. */
   isSelf: boolean;
   revoked: boolean;
   /**
-   * Applications this device may speak for, base58. **Empty means every
+   * Applications this device may speak for, 64 hex each. **Empty means every
    * application**, the same convention the stored certificate uses - and the
    * opposite of what an empty {@link RelinkDeviceRequest.applications} asks for.
    * Empty also for a device this node holds no cached certificate for: one bound
@@ -927,7 +921,7 @@ export interface AccountDeviceEntry {
  * device to.
  */
 export interface AccountApplicationEntry {
-  /** The application id, base58. */
+  /** The application id, 64 hex. */
   applicationId: string;
   /** Ids of the namespaces targeting it, 64 hex characters each. */
   namespaces: string[];

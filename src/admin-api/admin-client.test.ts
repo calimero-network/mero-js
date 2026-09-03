@@ -818,7 +818,7 @@ describe('AdminApiClient', () => {
       // the three values above from claims by whoever relayed them into a
       // statement by the device that minted them, so a client that quietly
       // dropped one field would be asking the node to certify attacker-supplied
-      // keys. The scope stays base58 while everything beside it is hex.
+      // keys. Every field here is hex, the scope included.
       expect(mock.getRequestBody('POST', '/admin-api/account/pair-complete')).toEqual(request);
       expect(result).toEqual(completed);
     });

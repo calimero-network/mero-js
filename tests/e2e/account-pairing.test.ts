@@ -24,7 +24,7 @@ import type { AccountPairInitResponseData, NodeIdentity } from '../../src/admin-
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();
 
-/** Ids on this surface are 64 hex characters; keys beside them are base58. */
+/** Every id and key on this surface is 64 hex characters. */
 const HEX_32_BYTES = /^[0-9a-f]{64}$/;
 const HEX_64_BYTES = /^[0-9a-f]{128}$/;
 
@@ -77,11 +77,10 @@ describe('Account devices & pairing E2E', () => {
     // that surfaces as "no such device" far from here.
     for (const device of devices) {
       expect(device.deviceId).toMatch(HEX_32_BYTES);
-      expect(typeof device.signingKey).toBe('string');
-      // The one field on this entry that is NOT hex. It is a key, and a key is
-      // base58 here - unlike the same key inside a pairing payload, which is hex
-      // because that payload is round-tripped rather than compared.
-      expect(device.signingKey).not.toMatch(HEX_32_BYTES);
+      // A key renders exactly like the ids beside it: core's PublicKey wraps a
+      // Hash, which serializes as hex. Asserting the negative here is what made
+      // this suite fail against a real node.
+      expect(device.signingKey).toMatch(HEX_32_BYTES);
       expect(typeof device.isSelf).toBe('boolean');
       expect(typeof device.revoked).toBe('boolean');
       expect(Array.isArray(device.applications)).toBe(true);
@@ -131,11 +130,9 @@ describe('Account devices & pairing E2E', () => {
       namespaces: [namespaceId],
     });
 
-    // Every field hex, including the two public keys, and that is the whole
-    // claim being checked: these are round-trip tokens copied verbatim into
-    // pair-complete, so a field rendered base58 to match keys elsewhere would
-    // fail to parse at the other end of a ceremony that has already asked a
-    // human to read a code aloud.
+    // These are round-trip tokens copied verbatim into pair-complete, so a
+    // field that did not render as the hex the other end parses would fail late
+    // in a ceremony that has already asked a human to read a code aloud.
     expect(offer.accountId).toMatch(HEX_32_BYTES);
     expect(offer.deviceId).toMatch(HEX_32_BYTES);
     expect(offer.kemPublicKey).toMatch(HEX_32_BYTES);
