@@ -100,6 +100,13 @@ describe('Account devices & pairing E2E', () => {
     const selves = devices.filter((d) => d.isSelf);
     expect(selves.length).toBeLessThanOrEqual(1);
     if (selves.length === 1) expect(selves[0].deviceId).toBe(identity.deviceId);
+
+    // The invite gate reads this, so pin that a node reporting it reports a
+    // boolean. Absent is tolerated on purpose: a merod at or below
+    // 0.11.0-rc.30 has no such field, and that is not the same as `false`.
+    if ('holdsAccountRoot' in identity) {
+      expect(typeof identity.holdsAccountRoot).toBe('boolean');
+    }
   });
 
   it('names the application this account speaks in, against the namespace targeting it', async (ctx) => {

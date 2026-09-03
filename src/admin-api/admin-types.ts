@@ -545,6 +545,18 @@ export interface NodeIdentity {
    * claim something the node the caller chose may not report.
    */
   accountRootPublicKey?: string;
+  /**
+   * Whether this node holds the root key of the account it speaks for. `false`
+   * means it runs on a delegate device key, so it cannot certify another device
+   * into the account — which is what a pairing invite needs to know before
+   * offering the option.
+   *
+   * Optional for the same reason as `accountRootPublicKey`: a node at or below
+   * `0.11.0-rc.30` does not send it. `undefined` is therefore "this node is too
+   * old to say", which is not the same answer as `false`, and a caller gating an
+   * invite on it should not collapse the two.
+   */
+  holdsAccountRoot?: boolean;
 }
 
 /**

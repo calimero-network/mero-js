@@ -645,6 +645,22 @@ describe('AdminApiClient', () => {
       expect((await client.getNodeIdentity()).deviceId).toBeNull();
     });
 
+    it('getNodeIdentity keeps holdsAccountRoot false and absent apart', async () => {
+      // Three answers, not two: `true` can certify a new device, `false` runs on
+      // a delegate key and cannot, and absent means the node predates the field
+      // (<= 0.11.0-rc.30) and cannot say. A caller gating a pairing invite has to
+      // tell the last two apart, so neither may be collapsed into the other.
+      const base = { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1' };
+      for (const holdsAccountRoot of [true, false] as const) {
+        mock.setMockResponse('GET', '/admin-api/identity', {
+          data: { ...base, holdsAccountRoot },
+        });
+        expect((await client.getNodeIdentity()).holdsAccountRoot).toBe(holdsAccountRoot);
+      }
+      mock.setMockResponse('GET', '/admin-api/identity', { data: base });
+      expect((await client.getNodeIdentity()).holdsAccountRoot).toBeUndefined();
+    });
+
     it('getNamespaceIdentity answers from the node-level route', async () => {
       // The deprecated shape, kept working by delegation rather than by calling
       // the superseded per-namespace endpoint. Nothing it returns varies by
