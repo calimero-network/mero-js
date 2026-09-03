@@ -1,0 +1,129 @@
+---
+title: connectCloud
+description: The second way to log in — sign in to Calimero Cloud instead of connecting to a node, and write through an attested TEE relay.
+sidebar:
+  order: 10
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`connectCloud` is the login path for a user who has **no node**.
+
+## Two connection shapes, one SDK
+
+`createMeroJs({ baseUrl })` is the node connection: point at a node, hold a
+credential on it, drive its admin API and JSON-RPC. It assumes the caller has a
+node — their own, or one they have an account on.
+
+`connectCloud(...)` is for the caller who has neither. They sign in with the
+identity they already use, and the cloud answers with an attested TEE relay
+serving their namespace. Writes go through [delegated
+execution](/reference/relay/): signed on their machine, run on the relay,
+attributed back to them.
+
+These are not interchangeable options to pick at random — they answer different
+questions. *"Which node do I talk to?"* has an answer for a desktop app and no
+answer at all for a web app whose user has never installed anything.
+`connectCloud` is that missing answer, which is why the login step it replaces
+is the **node-URL prompt**, not the authentication.
+
+```typescript
+import { connectCloud } from '@calimero-network/mero-js';
+
+const connection = await connectCloud({
+  googleIdToken,        // or sessionToken, from a previous sign-in
+  authorAccount,
+  authorProof,
+  deviceSecret,
+});
+
+await connection.execute(contextId, 'set', { key: 'k', value: 'v' });
+```
+
+<Aside type="note">
+  `connectCloud` does not read state. A relay *writes* on your behalf; reads
+  still come from a node you can query, or from your app's own projection of the
+  events it receives. It is deliberately narrow about this rather than handing
+  back a half-working `MeroJs` whose `admin` and `rpc` would need a credential
+  nobody holds.
+</Aside>
+
+## Options
+
+```typescript
+interface ConnectCloudOptions {
+  cloudBaseUrl?: string;        // default 'https://cloud.calimero.network'
+  sessionToken?: string;        // a stored MDMA session — provide this or googleIdToken
+  googleIdToken?: string;       // a Google ID token to exchange — provide this or sessionToken
+  onSession?: (s) => void;      // persist a new / rolling-refreshed session
+
+  authorAccount: string;        // hex — whose writes these will be
+  authorProof: string;          // hex borsh AccountProof<DeviceCert>
+  deviceSecret: string;         // hex ed25519 seed; never transmitted
+
+  namespaceId?: string;         // required only when the account owns several
+  nonces?: NonceSource;         // defaults to localStorage, keyed by device public key
+  ttlSeconds?: number;          // default 300
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
+```
+
+`namespaceId` is optional **only** when the account owns exactly one namespace.
+With several there is no defensible default: guessing would land a write in
+another of the account's tenants rather than failing, so it throws and names
+them.
+
+`nonces` defaults to a `localStorage` source keyed by the author's device
+*public* key (derived locally — the secret must never end up in a storage key
+another script can enumerate), so a page reload continues the sequence instead
+of replaying it. In a runtime with no `localStorage` — Node, a worker, an edge
+runtime — it falls back to an in-memory counter, which is correct there because
+such a process owns its whole sequence. See [nonce
+sources](/reference/relay/#nonce-sources) for why a restart is the one fatal
+case.
+
+## The connection
+
+```typescript
+interface CloudConnection {
+  cloud: CloudClient;     // namespaces, billing, HA, sign-out
+  relay: RelayClient;     // the relay chosen for this namespace
+  namespaceId: string;
+  namespace: CloudNamespace;
+  relayInfo: CloudRelay;  // what the cloud reported about the chosen relay
+  execute<T>(contextId, method, argsJson?): Promise<IntentResult<T>>;
+}
+```
+
+`execute` is `relay.execute` — the shortcut for the one thing this connection
+exists to do. Reach for `connection.relay` for `describe()`, and
+`connection.cloud` for everything else about the account.
+
+## Why it throws instead of degrading
+
+Every failure to reach a writable relay is something the **user** has to go and
+do, and they are four different things. A single "could not connect" would send
+them to the wrong one, so each gets its own message:
+
+| Situation | Message says |
+| --- | --- |
+| the account owns no namespaces | claim one, then enable HA |
+| it owns several and none was named | pass `namespaceId`, and here they are |
+| the namespace has no relays and HA is off | enable HA in the cloud |
+| HA is on but nothing is assigned yet | retry shortly |
+| every relay lacks the grant | an admin must grant `CAN_AUTHOR_ON_BEHALF` to *this account* |
+
+The last one names the executor account, because that is the value the admin has
+to grant the capability *to*:
+
+```bash
+meroctl --node node1 group members set-capabilities <GROUP_ID> <EXECUTOR_ACCOUNT> \
+  --can-author-on-behalf
+```
+
+## Where the intent goes
+
+Straight to the relay. The cloud is the **directory** — it is handed an address
+and a public account id — and never sees a warrant, a device secret, or the
+method and arguments of a write.

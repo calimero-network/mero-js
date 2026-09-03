@@ -137,6 +137,23 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
     });
   });
 
+  it('describes itself as unable to author before the grant', async () => {
+    // The read a client makes BEFORE signing. Two things it cannot derive: whose
+    // account goes in the warrant's `executor`, and whether this node may act
+    // here. Both come from one call, on the path the intent will be presented
+    // to.
+    const relay = await mero.admin.getIntentRelay(contextId);
+
+    expect(relay.executorAccount).toBe(relayAccount);
+    // Not an error — the default state of every context, since the capability
+    // is implied by neither membership nor admin. A client has to be able to
+    // *get* this answer in order to say "ask an admin" rather than presenting a
+    // warrant that will be refused after spending a nonce on it.
+    expect(relay.canAuthorOnBehalf).toBe(false);
+    // The group whose admin has to grant it — which is the namespace root here.
+    expect(relay.groupId).toBe(namespaceId);
+  }, 60_000);
+
   it('refuses the intent before the relay is granted authorship', async () => {
     // The grant is implied by neither membership nor admin, and this is what
     // proves it. Refused at the API, never published as a delta peers would drop.
@@ -174,6 +191,15 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
     // real failure mode — it happened during core's own rollout, where the
     // endpoint reported a null delta id for a run that wrote nothing.
     expect(result.rootHash).toBeTruthy();
+
+    // The descriptor now reports what the write just proved. Asserting it here
+    // rather than in its own case is deliberate: the grant is the ONLY thing
+    // that changed since the `false` above, so the pair pins that this field
+    // tracks the capability and is not a constant.
+    await expect(mero.admin.getIntentRelay(contextId)).resolves.toMatchObject({
+      executorAccount: relayAccount,
+      canAuthorOnBehalf: true,
+    });
   }, 60_000);
 
   it('refuses a spent warrant', async () => {

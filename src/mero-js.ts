@@ -11,6 +11,8 @@ import { RpcClient } from './rpc/index.js';
 import { SseClient } from './events/sse.js';
 import { WsClient } from './events/ws.js';
 import { EphemeralClient } from './ephemeral/index.js';
+import { CloudClient } from './cloud/cloud-client.js';
+import type { CloudClientConfig } from './cloud/cloud-client.js';
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */
@@ -34,6 +36,20 @@ export interface MeroJsConfig {
    * never let a UI failure mask the auth error.
    */
   onAuthRevoked?: () => Promise<void> | void;
+  /**
+   * Calimero Cloud, reachable as `sdk.cloud`.
+   *
+   * A node connection and a cloud account are separate things a client can have
+   * either of, both of, or neither — a desktop app with a local node and a
+   * cloud subscription has both, and needs them from one object. So this is
+   * configuration on the existing SDK rather than a second SDK: pass the
+   * session token (or none, and sign in through `sdk.cloud`) and the node half
+   * is unaffected.
+   *
+   * For a caller with *no* node at all, `connectCloud` is the entry point
+   * instead — it returns a connection that can write without one.
+   */
+  cloud?: CloudClientConfig;
 }
 
 export interface TokenData {
@@ -92,6 +108,7 @@ export class MeroJs {
   private wsClient: WsClient | null = null;
   private wsWarned = false;
   private ephemeralClient?: EphemeralClient;
+  private cloudClient?: CloudClient;
 
   constructor(config: MeroJsConfig) {
     this.config = {
@@ -214,6 +231,23 @@ export class MeroJs {
       });
     }
     return this.ephemeralClient;
+  }
+
+  /**
+   * Calimero Cloud (lazy initialized).
+   *
+   * Available whether or not `cloud` was configured — an app that signs in
+   * later gets an unauthenticated client it can call `signInWithGoogle` on,
+   * which is one fewer construction path than making the getter conditional.
+   * It is entirely independent of this instance's node credential: the cloud
+   * knows nothing about the node's tokens and the node knows nothing about the
+   * cloud session.
+   */
+  get cloud(): CloudClient {
+    if (!this.cloudClient) {
+      this.cloudClient = new CloudClient(this.config.cloud ?? {});
+    }
+    return this.cloudClient;
   }
 
   /**

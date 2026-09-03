@@ -102,6 +102,7 @@ import type {
   TeeVerifyQuoteResponseData,
   PerformIntentRequest,
   PerformIntentResponseData,
+  IntentRelayInfo,
   AdmitJoinRequest,
   AdmitJoinResponseData,
 } from './admin-types.js';
@@ -659,6 +660,33 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: PerformIntentResponseData }>(
         `/admin-api/contexts/${contextId}/intents`,
         request,
+      ),
+    );
+  }
+
+  /**
+   * Ask what this node can do for a member in `contextId`, before they sign
+   * anything.
+   *
+   * The two facts {@link performIntent} needs and a client cannot derive: whose
+   * account goes in the warrant's `executor`, and whether this node holds
+   * `CAN_AUTHOR_ON_BEHALF` on the owning group. `canAuthorOnBehalf: false` comes
+   * back as an answer rather than an error — it is the default state of every
+   * context — so a caller can say "an admin of `groupId` must grant it to
+   * `executorAccount`" instead of presenting a warrant that will be refused
+   * after the author has spent a nonce on it.
+   *
+   * `404` means the context belongs to no group, or this node holds no account
+   * yet; either way it can be named as no warrant's executor.
+   *
+   * For a caller with no credential on the node at all — a browser tab holding
+   * one signing key — use `RelayClient`, which reads this same route on a node
+   * run as a relay.
+   */
+  async getIntentRelay(contextId: string): Promise<IntentRelayInfo> {
+    return unwrap(
+      await this.httpClient.get<{ data: IntentRelayInfo }>(
+        `/admin-api/contexts/${contextId}/intents`,
       ),
     );
   }

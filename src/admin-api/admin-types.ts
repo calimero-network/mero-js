@@ -508,6 +508,41 @@ export interface PerformIntentResponseData {
   returns: unknown | null;
 }
 
+/**
+ * What a node says about running intents in one context — read before minting a
+ * warrant, not after being refused one.
+ *
+ * Every input to a warrant is something the author already holds except two:
+ * whose name goes in `executor`, and whether that node may act here at all. Both
+ * belong to the node, so both are answered here, on the path the intent will be
+ * presented to.
+ *
+ * Reading it first is what lets a client fail before signing. A warrant spends a
+ * nonce from a monotonic per-device sequence, and one naming the wrong executor
+ * is unspendable — the number is gone and the write never happened.
+ */
+export interface IntentRelayInfo {
+  /**
+   * The account a warrant for this node must name as its `executor`, 64 hex.
+   *
+   * An account, not the node's signing key: one of its processes re-keying must
+   * not void warrants already issued to it.
+   */
+  executorAccount: string;
+  /**
+   * Whether this node holds `CAN_AUTHOR_ON_BEHALF` on the group owning the
+   * context.
+   *
+   * `false` is an answer, not an error, and it is the *default* state of every
+   * context — the capability is implied by neither membership nor admin, and is
+   * not propagated by the subgroup cascade. A client reads it to tell "ask an
+   * admin of `groupId`" from "retry later".
+   */
+  canAuthorOnBehalf: boolean;
+  /** The group whose admin must grant that capability, 64 hex. */
+  groupId: string;
+}
+
 export interface NodeIdentity {
   /**
    * The account this node writes as, 64 hex characters. This — not

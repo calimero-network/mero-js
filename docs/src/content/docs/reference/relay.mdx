@@ -1,0 +1,186 @@
+---
+title: Relay client
+description: RelayClient — write to a context through a relay, holding nothing but a signing key. Mints a warrant locally and presents it as an intent; the relay executes as your principal.
+sidebar:
+  order: 9
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`RelayClient` writes to a context through a **relay** — another node that runs
+the method on your behalf, under a warrant you signed.
+
+It is the path for a caller that cannot execute at all. `sdk.rpc.execute` asks a
+node to run a method *as itself*: it needs a node, that node has to be a member,
+and you need a credential on it. A browser tab, a phone, or an agent has none of
+the three — the runtime cannot compile WASM against materialized state, never
+received the scope key that seals the deltas, and has no account on anybody's
+node.
+
+What makes the resulting write *yours* rather than the relay's is the warrant:
+the delta carries your consent, so every peer verifies you asked rather than
+taking the relay's word. It is attributed to **your** account and device — your
+replica slot, your membership, your name in the app. See [Core → Delegated
+Authorship](https://calimero-network.github.io/core/protocol/delegated-authorship/)
+for the protocol.
+
+```typescript
+import {
+  RelayClient,
+  createLocalStorageNonceSource,
+} from '@calimero-network/mero-js';
+
+const relay = new RelayClient({
+  relayUrl: 'https://relay-01.tee.calimero.network',
+  executorAccount,          // optional — discovered on first use
+  authorAccount,
+  authorProof,
+  deviceSecret,
+  nonces: createLocalStorageNonceSource(`warrant-nonce:${devicePublicKey}`),
+});
+
+const { rootHash, returns } = await relay.execute(contextId, 'set', { key: 'k', value: 'v' });
+```
+
+For the hosted tier, [`connectCloud`](/reference/connect-cloud/) builds this for
+you from a cloud sign-in — it finds the relay, learns the executor account, and
+picks a persisted nonce source.
+
+## Constructor
+
+```typescript
+interface RelayClientConfig {
+  relayUrl: string;              // the node's origin, not a path
+  executorAccount?: string;      // hex; discovered via describe() when omitted
+  authorAccount: string;         // hex — whose consent the warrant carries
+  authorProof: string;           // hex borsh AccountProof<DeviceCert>
+  deviceSecret: string;          // hex ed25519 seed; NEVER transmitted
+  nonces: NonceSource;
+  ttlSeconds?: number;           // default 300
+  fetch?: typeof fetch;
+  timeoutMs?: number;            // default 10000
+}
+```
+
+`executorAccount` is an **account**, not the relay's signing key, so one of the
+relay's processes rotating its key does not void warrants already issued to it.
+
+`deviceSecret` signs in your process and only the signature leaves. That is the
+whole reason a keyholder can author without a node.
+
+## `describe(contextId): Promise<RelayDescription>`
+
+What the relay can do here — read this *before* signing anything.
+
+```typescript
+interface RelayDescription {
+  executorAccount: string;    // what the warrant's `executor` must name
+  canAuthorOnBehalf: boolean; // does the relay hold the grant on the owning group?
+  groupId: string;            // whose admin grants it
+}
+```
+
+`canAuthorOnBehalf: false` is an answer, not an error, and it is the **default
+state of every context** — `CAN_AUTHOR_ON_BEHALF` is implied by neither
+membership nor admin, and is not propagated by the subgroup cascade. Read it to
+tell "ask an admin of `groupId` to grant it to `executorAccount`" from "retry
+later".
+
+Checking first is not politeness: minting a warrant spends a nonce from a
+monotonic per-device sequence, and one naming the wrong executor is unspendable
+— the number is gone and the write never happened.
+
+## `execute(contextId, method, argsJson?): Promise<IntentResult>`
+
+Mint a warrant for `method(argsJson)` and present it.
+
+```typescript
+interface IntentResult<T = unknown> {
+  rootHash: string;   // the context's scope root after the run — did this change anything?
+  returns: T | null;  // the method's own return value
+}
+```
+
+One intent, once. The warrant authorizes exactly this method and these arguments
+in exactly this context, and its nonce is spent by the network on apply —
+nothing accumulates and nothing is reusable.
+
+When `executorAccount` was not configured, the first call runs `describe` and
+remembers the answer; later calls go straight to the write.
+
+## `IntentRefusedError`
+
+A refusal (`400` or `403`) surfaces as `IntentRefusedError` rather than a bare
+`HTTPError`, carrying the relay's own explanation:
+
+```typescript
+class IntentRefusedError extends Error {
+  reason: string;      // the relay's explanation, verbatim
+  retryable: boolean;  // true only when a FRESH warrant may work (spent nonce)
+  status: number;      // 400 or 403
+}
+```
+
+The distinction is the whole reason the type exists. A `403` from this endpoint
+means one of three unrelated things and they send you somewhere completely
+different:
+
+| Reason | What to do |
+| --- | --- |
+| the relay holds no `CAN_AUTHOR_ON_BEHALF` grant | ask an admin of the group — `retryable: false` |
+| the author's account is not a member of the group | get an invitation — `retryable: false` |
+| the warrant's nonce is already spent | re-present under a fresh warrant — `retryable: true` |
+
+A `500` stays an `HTTPError`: that is the node's problem, not a precondition of
+yours. A transport failure is an `HTTPError` with `status: 0`, as everywhere
+else in this SDK.
+
+## Nonce sources
+
+A warrant's nonce is not a local detail. It is spent, once, per
+`(context, author device)` on every node that applies the delta, and the client
+is the only party that can keep the sequence.
+
+The receiving ledger is a **sliding window 64 wide**, not a high-water mark,
+which makes the two failure modes very different:
+
+- **Skipping** numbers is free. Gossip gives no ordering, so the window exists
+  precisely to accept whatever unseen nonce arrives.
+- **Restarting** the sequence is fatal. A tab that reloads and resumes at `1`
+  re-presents nonces the network has already spent, and every one of those
+  writes is refused as a replay — indistinguishable, to the user, from the app
+  silently not saving.
+
+```typescript
+createLocalStorageNonceSource(key, storage?)  // persisted; survives a reload
+createMemoryNonceSource(start = 1)            // for a process that owns its whole sequence
+```
+
+Key it per author **device**, not per account: two devices of one account are
+independent replicas with independent sequences, and sharing a counter would
+have them refusing each other's warrants.
+
+<Aside type="caution">
+  `createLocalStorageNonceSource` reserves before it hands out — the stored
+  value is advanced *before* the nonce is returned — so a crash between the two
+  loses a number rather than reusing one. What it cannot solve is concurrent
+  tabs, because `localStorage` has no atomic read-modify-write: two tabs racing
+  can hand out the same nonce, and the loser's write is refused as a replay
+  (a visible error, not corruption). If your app genuinely writes from several
+  tabs at once, hold a Web Lock around `next()` or give each tab its own device.
+</Aside>
+
+Implement `NonceSource` yourself for anything else — it is one method,
+`next(): Promise<bigint>`, and must never go backwards.
+
+## Reaching a relay you have no account on
+
+`POST /admin-api/contexts/:id/intents` normally sits behind the node's auth
+guard. A node run as a **relay** (`merod init --public-intents`) serves that
+route and its `GET` twin without a node credential, because they carry their own:
+the warrant commits to this context, method and arguments, is single-use, and is
+refused before execution unless the relay holds the authorship grant.
+
+Hosted TEE fleet nodes are configured this way. A self-hosted node is not, by
+default — a member with their own node authors their own writes and does not
+need this.

@@ -622,6 +622,44 @@ describe('AdminApiClient', () => {
       ).toEqual(argsJson);
     });
 
+    it('getIntentRelay reads the executor account and the grant off the same path', async () => {
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-3/intents', {
+        data: {
+          executorAccount: '4d'.repeat(32),
+          canAuthorOnBehalf: true,
+          groupId: 'ab'.repeat(32),
+        },
+      });
+
+      const relay = await client.getIntentRelay('ctx-3');
+
+      expect(relay).toEqual({
+        executorAccount: '4d'.repeat(32),
+        canAuthorOnBehalf: true,
+        groupId: 'ab'.repeat(32),
+      });
+    });
+
+    it('getIntentRelay reports a missing grant as an answer, not a failure', async () => {
+      // `canAuthorOnBehalf: false` is the DEFAULT state of every context — the
+      // capability is implied by neither membership nor admin, and is not
+      // propagated by the subgroup cascade. If this threw, a caller could not
+      // distinguish "ask an admin of this group" from "the node is unreachable",
+      // which is the whole reason the read exists.
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-4/intents', {
+        data: {
+          executorAccount: '4d'.repeat(32),
+          canAuthorOnBehalf: false,
+          groupId: 'ab'.repeat(32),
+        },
+      });
+
+      await expect(client.getIntentRelay('ctx-4')).resolves.toMatchObject({
+        canAuthorOnBehalf: false,
+        groupId: 'ab'.repeat(32),
+      });
+    });
+
     it('getNodeIdentity unwraps data', async () => {
       const identity = {
         accountId: 'ac-1',

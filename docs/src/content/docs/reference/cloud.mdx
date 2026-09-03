@@ -1,17 +1,19 @@
 ---
 title: Cloud client
-description: CloudClient — toggle TEE High Availability for a context by opening the Calimero cloud enable-HA / disable-HA flow.
+description: CloudClient — sign in to Calimero Cloud, list the namespaces an account owns, discover the TEE relays serving them, and toggle High Availability.
 sidebar:
   order: 7
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`CloudClient` starts the Calimero cloud's TEE **High Availability** flow for a
-context. Unlike the other clients it is standalone — construct it directly, it
-makes no authenticated node calls, and each method opens the cloud UI in a new
-browser tab. See the [high-availability guide](/guides/high-availability/) for
-context.
+`CloudClient` talks to **Calimero Cloud** — the control plane that knows which
+namespaces an account owns and which attested TEE nodes are assigned to each.
+
+It is the discovery half of [delegated
+execution](/reference/relay/): a caller who runs no node cannot know which relay
+serves their namespace, or which account that relay writes as, and a warrant is
+unusable without both. The cloud answers that.
 
 ```typescript
 import { CloudClient } from '@calimero-network/mero-js';
@@ -20,18 +22,123 @@ const cloud = new CloudClient();                 // default host
 // or: new CloudClient({ cloudBaseUrl: 'https://cloud.example.com' })
 ```
 
+It is also reachable from an existing SDK instance as `sdk.cloud`, so an app
+with both a node connection and a cloud account drives them from one object:
+
+```typescript
+const sdk = createMeroJs({ baseUrl: 'http://localhost:2528', cloud: { sessionToken } });
+await sdk.cloud.getMyNamespaces();
+```
+
+<Aside type="note">
+  The cloud session and the node credential are unrelated. Signing in to the
+  cloud does not authenticate you to any node, and vice versa — they answer
+  different questions ("what do I own?" versus "may I drive this node?").
+</Aside>
+
 ## Constructor
 
 ```typescript
 class CloudClient {
-  constructor(config?: { cloudBaseUrl?: string });  // default 'https://cloud.calimero.network'
+  constructor(config?: {
+    cloudBaseUrl?: string;                              // default 'https://cloud.calimero.network'
+    sessionToken?: string;                              // a stored session, to skip re-signing in
+    onSession?: (s: CloudSession | null) => void;       // persist a new / refreshed session
+    fetch?: typeof fetch;                               // for tests and non-browser runtimes
+    timeoutMs?: number;                                 // default 10000
+  });
 }
 ```
 
-## `enableHA(options): void`
+## Signing in
 
-Opens `${cloudBaseUrl}/enable-ha` with the group and context as query
-parameters, and an optional `redirect_url` the cloud returns to when done.
+The app owns the Google flow (One Tap, an auth-code popup, a native browser) and
+hands the resulting ID token over once. Everything after that uses the returned
+session token.
+
+```typescript
+const session = await cloud.signInWithGoogle(googleIdToken);
+// { sessionToken, expiresAt /* epoch SECONDS */, user: { email, name, picture } }
+```
+
+Sessions are 7-day JWTs, so persist `sessionToken` via `onSession` and pass it
+back in the constructor next launch rather than re-running the Google flow.
+
+The cloud **rotates the token on activity** and returns the replacement in a
+response header; this client adopts it automatically and calls `onSession`
+again. Ignoring that would cost nothing today and log the user out a week later.
+
+`refreshSession()` forces a rotation, which is rarely needed. `signOut()` revokes
+the session server-side and clears it locally — the local half happens even if
+the server call fails, because the caller asked to be signed out.
+
+## `getMyNamespaces(): Promise<CloudNamespace[]>`
+
+The namespaces this account owns.
+
+```typescript
+interface CloudNamespace {
+  namespaceId: string;
+  groupId: string;        // always equal to namespaceId; kept for wire compatibility
+  haStatus: string;       // 'enabled' | 'disabled' | 'none' ('none' = never enabled)
+  haEnabledAt?: string | null;
+  contexts: string[];
+  fleetReplicas?: unknown;
+}
+```
+
+## `getNamespaceRelays(namespaceId): Promise<CloudRelay[]>`
+
+The relays serving one namespace: where to present an intent, and as whom.
+
+```typescript
+interface CloudRelay {
+  peerId: string;
+  relayUrl: string | null;          // null when the cloud knows no URL yet
+  executorAccount: string | null;   // the account a warrant must name as `executor`
+  status: string;                   // 'assigned' | 'active'
+  authorshipReady: boolean;         // does it hold CAN_AUTHOR_ON_BEHALF here?
+  lastSeenAt?: string | null;
+  confirmedAt?: string | null;
+}
+```
+
+`authorshipReady` is **reported, not decided** by the cloud.
+`CAN_AUTHOR_ON_BEHALF` is a governance capability granted by an admin of the
+namespace and observable only by a node holding that group's key, so the cloud
+relays what the relay last told it. A relay that is `active` with
+`authorshipReady: false` is a healthy replica **waiting for a grant** — and that
+is the normal first state, because core implies the capability from nothing.
+
+An owned namespace with no relays comes back as an empty array, not a 404: "HA
+is not enabled" and "you do not own this" must not look alike. A namespace this
+account does not own is a `404` `HTTPError`.
+
+## `findExecutingRelay(namespaceId): Promise<CloudRelay | null>`
+
+The first relay that can *actually* run an intent, or `null`.
+
+Three independent conditions have to hold, and a caller who checks fewer gets a
+refusal it cannot explain — after the author has already spent a nonce on the
+warrant: the cloud must know a URL, the relay must have reported its executor
+account, and the grant must be in place.
+
+```typescript
+const relay = await cloud.findExecutingRelay(namespaceId);
+if (!relay) {
+  // enable HA, wait for an assignment, or ask an admin for the grant —
+  // `getNamespaceRelays` tells you which
+}
+```
+
+## `getMyNode(): Promise<object | null>`
+
+The node assigned to this account, or `null`.
+
+## `enableHA(options): void` / `disableHA(options): void`
+
+Open the cloud's HA flow in a new browser tab. See the [high-availability
+guide](/guides/high-availability/).
 
 ```typescript
 interface EnableHAOptions {
@@ -41,19 +148,20 @@ interface EnableHAOptions {
 }
 
 cloud.enableHA({ groupId, contextId, redirectUrl: window.location.href });
-```
-
-## `disableHA(options): void`
-
-The mirror of `enableHA`, opening `${cloudBaseUrl}/disable-ha`. Same options
-(`DisableHAOptions` is structurally identical to `EnableHAOptions`).
-
-```typescript
 cloud.disableHA({ groupId, contextId });
 ```
 
 <Aside type="caution">
-  Both methods call `window.open(...)`, so they are **browser-only** — there is
-  no `window` in Node or edge runtimes. Guard with `typeof window !== 'undefined'`
-  if your code also runs on the server.
+  These two call `window.open(...)`, so they are **browser-only** — there is no
+  `window` in Node or edge runtimes. Guard with `typeof window !== 'undefined'`
+  if your code also runs on the server. The API methods above have no such
+  restriction.
 </Aside>
+
+## What this client never sees
+
+Discovery goes through the cloud; the **write goes straight from your client to
+the relay**. The cloud is handed an address and a public account id, and never a
+warrant, a device secret, or an intent. A cloud that proxied intents would read
+the method and arguments of every write its users make — the plaintext is the
+whole point of that hop — and would put itself on the critical path of each one.
