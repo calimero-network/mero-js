@@ -50,6 +50,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
     "typecheck:consumer": "tsc --noEmit -p tsconfig.consumer.json",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "test:contract": "vitest run --config vitest.config.ts src/__contract__",
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",

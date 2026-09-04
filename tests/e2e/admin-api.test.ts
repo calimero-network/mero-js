@@ -324,12 +324,6 @@ describe('Admin API E2E — Namespace Model', () => {
       const info = await mero.admin.getGroupInfo(namespaceGroupId);
       expect(info.defaultCapabilities).toBe(7);
     });
-
-    it.skip('should set group alias (no SDK method; group rename is via metadata)', async () => {
-      await mero.admin.setGroupAlias(namespaceGroupId, { alias: 'renamed-group' });
-      const info = await mero.admin.getGroupInfo(namespaceGroupId);
-      expect(info.alias).toBe('renamed-group');
-    });
   });
 
   // ---- Namespace Invitation Flow ----

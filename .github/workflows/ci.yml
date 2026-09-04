@@ -45,6 +45,9 @@ jobs:
       # Binds each contract spec's field names to the declared types; the live
       # half of the same suites runs in the e2e job below.
       - run: pnpm typecheck:contract
+      # The e2e suite needs a node to run, but its types don't - so a stale key
+      # or dropped field fails here rather than mid-run against a live merod.
+      - run: pnpm typecheck:e2e
       - run: pnpm lint
 
   e2e:

@@ -382,8 +382,12 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: ContextStorageResponseData }>(`/admin-api/contexts/${contextId}/storage`));
   }
 
+  /** Sync one context, or every context when `contextId` is omitted. */
   async syncContext(contextId?: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/contexts/sync/${contextId ?? ''}`, {});
+    // Sync-all is `/contexts/sync` with no trailing slash - core routes the two
+    // spellings separately and 404s the trailing one.
+    const path = contextId ? `/admin-api/contexts/sync/${contextId}` : '/admin-api/contexts/sync';
+    await this.httpClient.post(path, {});
   }
 
   /**

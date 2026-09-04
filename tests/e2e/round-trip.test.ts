@@ -188,7 +188,7 @@ describe('Round-trip E2E — Groups', () => {
       name: `rt-grp-${RUN}`,
     });
     expect(created.groupId).toBeTruthy();
-    const info = (await mero.admin.getGroupInfo(created.groupId)) as Record<string, unknown>;
+    const info = await mero.admin.getGroupInfo(created.groupId);
     expect(info).toBeTruthy();
   });
 });

@@ -41,3 +41,6 @@ data/
 
 # local agent scratch
 .superpowers/
+
+# e2e coverage recorder output (MERO_COVERAGE_OUT)
+covered-endpoints.json
