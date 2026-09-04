@@ -1,3 +1,9 @@
+## [18.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.1.1...mero-js-v18.2.0) (2026-09-04)
+
+### Features
+
+* **admin:** surface the account each migration-status row speaks for ([#105](https://github.com/calimero-network/mero-js/issues/105)) ([005597c](https://github.com/calimero-network/mero-js/commit/005597cd61055ee4d3db1709fd7e44851dd9a890)), closes [#3558](https://github.com/calimero-network/mero-js/issues/3558)
+
 ## [18.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v18.1.0...mero-js-v18.1.1) (2026-09-04)
 
 ### Bug Fixes
