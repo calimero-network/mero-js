@@ -385,10 +385,10 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/ctx-1')).toEqual({});
     });
 
-    it('syncContext without id syncs all', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/sync/', { data: null });
+    it('syncContext without id posts to /contexts/sync, which core routes; the trailing-slash spelling 404s', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/sync', { data: null });
       await client.syncContext();
-      expect(mock.getRequestBody('POST', '/admin-api/contexts/sync/')).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/sync')).toEqual({});
     });
 
     it('resyncContext posts force and parses the flat (un-enveloped) payload', async () => {
