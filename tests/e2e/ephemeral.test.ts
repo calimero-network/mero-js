@@ -87,7 +87,7 @@ beforeAll(async () => {
   mero = new MeroJs({ baseUrl: NODE_URL });
   await mero.authenticate(CREDS);
   applicationId = await ensureApplication(mero);
-  const ns = await mero.admin.createNamespace({ applicationId, alias: `eph-${RUN}` });
+  const ns = await mero.admin.createNamespace({ applicationId, name: `eph-${RUN}` });
   namespaceId = ns.namespaceId;
   const ctx = await mero.admin.createContext({ applicationId, groupId: namespaceId });
   contextId = ctx.contextId;

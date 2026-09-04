@@ -58,7 +58,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | Method | Endpoint |
 | --- | --- |
 | `createContext(request): Promise<CreateContextResponseData>` | `POST /contexts` |
-| `deleteContext(contextId, request?): Promise<DeleteContextResponseData>` | `DELETE /contexts/{contextId}` |
+| `deleteContext(contextId): Promise<DeleteContextResponseData>` | `DELETE /contexts/{contextId}` |
 | `getContexts(): Promise<GetContextsResponseData>` | `GET /contexts` |
 | `getContext(contextId): Promise<Context>` | `GET /contexts/{contextId}` |
 | `getContextsForApplication(applicationId): Promise<GetContextsResponseData>` | `GET /contexts/for-application/{applicationId}` |
@@ -66,7 +66,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `getContextStorage(contextId): Promise<ContextStorageResponseData>` | `GET /contexts/{contextId}/storage` |
 | `getContextsWithExecutorsForApplication(applicationId): Promise<ContextsWithExecutorsResponseData>` | `GET /contexts/with-executors/for-application/{applicationId}` |
 | `joinContext(contextId): Promise<JoinContextResponseData>` | `POST /contexts/{contextId}/join` |
-| `leaveContext(contextId, request?): Promise<void>` | `POST /contexts/{contextId}/leave` |
+| `leaveContext(contextId): Promise<void>` | `POST /contexts/{contextId}/leave` |
 | `updateContextApplication(contextId, request): Promise<void>` | `POST /contexts/{contextId}/application` |
 | `syncContext(contextId?): Promise<void>` | `POST /contexts/sync/{contextId?}` |
 | `resyncContext(contextId, request?): Promise<ResyncContextResponseData>` | `POST /contexts/{contextId}/resync` |
@@ -116,10 +116,10 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `getNamespaceIdentity(namespaceId): Promise<NamespaceIdentity>` — **deprecated**, use `getNodeIdentity()` | delegates to `GET /identity` |
 | `listNamespacesForApplication(applicationId): Promise<ListNamespacesResponseData>` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): Promise<CreateNamespaceResponseData>` | `POST /namespaces` |
-| `deleteNamespace(namespaceId, request?): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
+| `deleteNamespace(namespaceId): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
 | `createNamespaceInvitation(namespaceId, request?): Promise<…InvitationResponseData>` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): Promise<JoinNamespaceResponseData>` | `POST /namespaces/{namespaceId}/join` |
-| `leaveNamespace(namespaceId, request?): Promise<void>` | `POST /namespaces/{namespaceId}/leave` |
+| `leaveNamespace(namespaceId): Promise<void>` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request?): Promise<CreateGroupInNamespaceResponseData>` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): Promise<SubgroupEntry[]>` | `GET /namespaces/{namespaceId}/groups` |
 
@@ -145,16 +145,16 @@ reports each namespace back.
 
 | Method | Endpoint |
 | --- | --- |
-| `createGroup(request): Promise<{ groupId: string }>` | `POST /groups` |
+| `createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData>` | `POST /groups` |
 | `getGroupInfo(groupId): Promise<GroupInfoResponseData>` | `GET /groups/{groupId}` |
-| `deleteGroup(groupId, request?): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
+| `deleteGroup(groupId): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
 | `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |
 | `updateMemberRole(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/role` |
-| `setMemberAutoFollow(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/auto-follow` |
-| `leaveGroup(groupId, request?): Promise<void>` | `POST /groups/{groupId}/leave` |
+| `setMemberAutoFollow(groupId, identity, request: SetMemberAutoFollowRequest): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/auto-follow` |
+| `leaveGroup(groupId): Promise<void>` | `POST /groups/{groupId}/leave` |
 
 ### Capabilities & settings
 
@@ -189,22 +189,22 @@ reports each namespace back.
 | `joinSubgroupInheritance(groupId): Promise<JoinSubgroupInheritanceResponseData>` | `POST /groups/{groupId}/join-via-inheritance` |
 | `listSubgroups(groupId): Promise<SubgroupEntry[]>` | `GET /groups/{groupId}/subgroups` |
 | `reparentGroup(childGroupId, request): Promise<ReparentGroupResponseData>` | `POST /groups/{childGroupId}/reparent` |
-| `detachContextFromGroup(groupId, contextId, request?): Promise<void>` | `POST /groups/{groupId}/contexts/{contextId}/remove` |
-| `issueOwnershipProof(groupId, request?): Promise<unknown>` | `POST /groups/{groupId}/issue-ownership-proof` |
-| `issueNamespaceOwnershipProof(groupId, request?): Promise<unknown>` | `POST /groups/{groupId}/issue-namespace-ownership-proof` |
+| `detachContextFromGroup(groupId, contextId): Promise<void>` | `POST /groups/{groupId}/contexts/{contextId}/remove` |
+| `issueOwnershipProof(groupId, request: IssueOwnershipProofRequest): Promise<IssueOwnershipProofResponseData>` | `POST /groups/{groupId}/issue-ownership-proof` |
+| `issueNamespaceOwnershipProof(groupId, request: IssueNamespaceOwnershipProofRequest): Promise<IssueOwnershipProofResponseData>` | `POST /groups/{groupId}/issue-namespace-ownership-proof` |
 
 ### Sync, signing, upgrades & migration
 
 | Method | Endpoint |
 | --- | --- |
-| `syncGroup(groupId, request?): Promise<SyncGroupResponseData>` | `POST /groups/{groupId}/sync` |
+| `syncGroup(groupId): Promise<SyncGroupResponseData>` | `POST /groups/{groupId}/sync` |
 | `registerGroupSigningKey(groupId, request): Promise<RegisterGroupSigningKeyResponseData>` | `POST /groups/{groupId}/signing-key` |
 | `upgradeGroup(groupId, request): Promise<UpgradeGroupResponseData>` | `POST /groups/{groupId}/upgrade` |
 | `getGroupUpgradeStatus(groupId): Promise<GroupUpgradeStatusResponseData>` | `GET /groups/{groupId}/upgrade/status` |
-| `retryGroupUpgrade(groupId, request?): Promise<RetryGroupUpgradeResponseData>` | `POST /groups/{groupId}/upgrade/retry` |
+| `retryGroupUpgrade(groupId): Promise<RetryGroupUpgradeResponseData>` | `POST /groups/{groupId}/upgrade/retry` |
 | `getMigrationStatus(namespaceId): Promise<MigrationStatus>` | `GET /groups/{namespaceId}/migration-status` |
 | `getCascadeStatus(namespaceId): Promise<CascadeStatusEntry[]>` | `GET /groups/{namespaceId}/cascade-status` |
-| `abortMigration(namespaceId, request?): Promise<unknown>` | `POST /groups/{namespaceId}/migration/abort` |
+| `abortMigration(namespaceId): Promise<unknown>` | `POST /groups/{namespaceId}/migration/abort` |
 
 ## TEE
 

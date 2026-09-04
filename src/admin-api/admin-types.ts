@@ -143,10 +143,6 @@ export interface CreateContextResponseData {
   groupCreated?: boolean;
 }
 
-export interface DeleteContextRequest {
-  requester?: string;
-}
-
 export interface DeleteContextResponseData {
   isDeleted: boolean;
 }
@@ -588,16 +584,11 @@ export interface CreateNamespaceResponseData {
   namespaceId: string;
 }
 
-export interface DeleteNamespaceRequest {
-  requester?: string;
-}
-
 export interface DeleteNamespaceResponseData {
   isDeleted: boolean;
 }
 
 export interface CreateNamespaceInvitationRequest {
-  requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
 }
@@ -647,8 +638,9 @@ export interface JoinNamespaceResponseData {
 }
 
 export interface CreateGroupInNamespaceRequest {
-  groupId?: string;
-  name?: string;
+  groupName?: string;
+  /** Subgroup visibility at birth. Absent means `'restricted'`. */
+  visibility?: 'open' | 'restricted';
 }
 
 export interface CreateGroupInNamespaceResponseData {
@@ -1163,10 +1155,6 @@ export interface GroupContextEntry {
 
 export type ListGroupContextsResponseData = GroupContextEntry[];
 
-export interface DeleteGroupRequest {
-  requester?: string;
-}
-
 export interface DeleteGroupResponseData {
   isDeleted: boolean;
 }
@@ -1188,7 +1176,6 @@ export interface GroupMemberInput {
 
 export interface AddGroupMembersRequest {
   members: GroupMemberInput[];
-  requester?: string;
 }
 
 // Returns empty
@@ -1201,7 +1188,6 @@ export interface RemoveGroupMembersRequest {
    * {@link GroupMemberInput.identity} took to add them.
    */
   members: string[];
-  requester?: string;
 }
 
 // Returns empty
@@ -1209,7 +1195,6 @@ export type RemoveGroupMembersResponseData = Record<string, never>;
 
 export interface UpdateMemberRoleRequest {
   role: string;
-  requester?: string;
 }
 
 // Returns empty
@@ -1223,7 +1208,6 @@ export interface MemberCapabilities {
 
 export interface SetMemberCapabilitiesRequest {
   capabilities: number;
-  requester?: string;
 }
 
 // Returns empty
@@ -1231,15 +1215,23 @@ export type SetMemberCapabilitiesResponseData = Record<string, never>;
 
 export interface SetDefaultCapabilitiesRequest {
   defaultCapabilities: number;
-  requester?: string;
 }
 
 // Returns empty
 export type SetDefaultCapabilitiesResponseData = Record<string, never>;
 
+export interface SetMemberAutoFollowRequest {
+  /** Auto-join contexts registered in this group. */
+  autoFollowContexts: boolean;
+  /** Self-admit into subgroups nested under this group. */
+  autoFollowSubgroups: boolean;
+}
+
+// Returns empty
+export type SetMemberAutoFollowResponseData = Record<string, never>;
+
 export interface SetSubgroupVisibilityRequest {
   subgroupVisibility: string;
-  requester?: string;
 }
 
 // Returns empty
@@ -1253,7 +1245,6 @@ export interface SetTeeAdmissionPolicyRequest {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
-  requester?: string;
 }
 
 // Returns empty
@@ -1297,7 +1288,6 @@ export interface MetadataRecord {
 export interface SetMetadataRequest {
   name?: string;
   data?: Record<string, string>;
-  requester?: string;
 }
 
 export type SetGroupMetadataRequest = SetMetadataRequest;
@@ -1317,10 +1307,6 @@ export interface GetMetadataResponseData {
 
 // ---- Group Sync, Signing & Upgrades ----
 
-export interface SyncGroupRequest {
-  requester?: string;
-}
-
 export interface SyncGroupResponseData {
   groupId: string;
   appKey: string;
@@ -1331,7 +1317,6 @@ export interface SyncGroupResponseData {
 
 export interface UpgradeGroupRequest {
   targetApplicationId: string;
-  requester?: string;
   /** Fan the upgrade out to every descendant subgroup running the same app
    *  (one atomic cascade op). Without it the upgrade applies to the target
    *  group only - members' subgroups never learn the migration. Server
@@ -1355,10 +1340,6 @@ export interface UpgradeGroupResponseData {
 
 export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;
 
-export interface RetryGroupUpgradeRequest {
-  requester?: string;
-}
-
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
@@ -1367,24 +1348,48 @@ export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 export interface ReparentGroupRequest {
   /** 64-char id of the destination parent group. */
   newParentId: string;
-  requester?: string;
 }
 
 export interface ReparentGroupResponseData {
   reparented: boolean;
 }
 
-export interface DetachContextFromGroupRequest {
-  requester?: string;
-}
-
 // Returns empty
 export type DetachContextFromGroupResponseData = Record<string, never>;
+
+// ---- Group Ownership Proofs ----
+
+export interface IssueOwnershipProofRequest {
+  /** Who the proof is for. Non-empty, <= 256 characters. */
+  audience: string;
+  /** 64-hex context id the proof is scoped to. */
+  contextId: string;
+  /** What is being claimed. Non-empty, <= 512 characters. */
+  subject: string;
+  /** Caller-chosen hex nonce, 32-128 characters (even length). */
+  nonce: string;
+  /** Requested expiry, unix ms. Core clamps it to issue time + 5 minutes. */
+  expiresAtMs: number;
+}
+
+/** Namespace-scoped sibling: identical minus `contextId`. */
+export type IssueNamespaceOwnershipProofRequest = Omit<IssueOwnershipProofRequest, 'contextId'>;
+
+export interface IssueOwnershipProofResponseData {
+  /** Hex 32-byte ed25519 public key of the signer. */
+  signerPublicKey: string;
+  /**
+   * Base64 opaque UTF-8 JSON bytes of the claim. Verifiers re-parse these exact
+   * bytes and sign over `"calimero.ownership-claim.v1\0" || signedPayload`.
+   */
+  signedPayload: string;
+  /** Base64 64-byte ed25519 signature. */
+  signature: string;
+}
 
 // ---- Group Invitation & Join ----
 
 export interface CreateGroupInvitationRequest {
-  requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
   /**

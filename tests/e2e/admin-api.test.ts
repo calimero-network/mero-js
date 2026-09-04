@@ -105,7 +105,7 @@ describe('Admin API E2E — Namespace Model', () => {
     it('should create a namespace', async () => {
       const response = await mero.admin.createNamespace({
         applicationId,
-        alias: `e2e-test-ns-${RUN}`,
+        name: `e2e-test-ns-${RUN}`,
       });
       expect(response.namespaceId).toBeTruthy();
       namespaceId = response.namespaceId;
@@ -152,7 +152,7 @@ describe('Admin API E2E — Namespace Model', () => {
 
   describe('Group Management', () => {
     it('should create a group in namespace', async () => {
-      const response = await mero.admin.createGroupInNamespace(namespaceId, { alias: 'e2e-subgroup' });
+      const response = await mero.admin.createGroupInNamespace(namespaceId, { groupName: 'e2e-subgroup' });
       expect(response.groupId).toBeTruthy();
       subgroupId = response.groupId;
     });
@@ -398,7 +398,7 @@ describe('Admin API E2E — Namespace Model', () => {
   describe('Cleanup', () => {
     it('should delete context', async () => {
       if (!contextId) return;
-      const result = await mero.admin.deleteContext(contextId, { requester: memberPublicKey });
+      const result = await mero.admin.deleteContext(contextId);
       expect(result.isDeleted).toBe(true);
     });
 
