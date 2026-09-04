@@ -133,10 +133,11 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
     } as never);
 
     // A member is ADDED by the key it signs with, and ADDRESSED by the account
-    // that key writes as — two id spaces, rendered differently (bs58 vs 64 hex)
-    // so neither can stand in for the other. The listing is where the account
-    // becomes knowable: it is a hash of a root this caller has never seen, so
-    // there is nothing to derive it from locally.
+    // that key writes as. Both are 32 bytes rendered as 64 hex, so nothing in
+    // either string says which it is - passing one where the other belongs
+    // addresses a different member silently rather than failing. The listing is
+    // where the account becomes knowable: it is a hash of a root this caller has
+    // never seen, so there is nothing to derive it from locally.
     const added = (await listMemberIds()).filter((id) => !before.includes(id));
     expect(added.length).toBe(1);
     const memberAccount = added[0]!;

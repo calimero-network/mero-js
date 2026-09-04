@@ -1,3 +1,9 @@
+## [18.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.0.0...mero-js-v18.1.0) (2026-09-03)
+
+### Features
+
+* **admin:** account-level device pairing, relink and listings ([#115](https://github.com/calimero-network/mero-js/issues/115)) ([2cb206e](https://github.com/calimero-network/mero-js/commit/2cb206ee14215a7be711f63332b84d16a50034bb)), closes [core#3774](https://github.com/calimero-network/core/issues/3774)
+
 ## [18.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v17.0.0...mero-js-v18.0.0) (2026-09-03)
 
 ### ⚠ BREAKING CHANGES

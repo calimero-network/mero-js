@@ -59,6 +59,16 @@ import type {
   Namespace,
   NamespaceIdentity,
   NodeIdentity,
+  AccountPairInitRequest,
+  AccountPairInitResponseData,
+  AccountPairCompleteRequest,
+  AccountPairCompleteResponseData,
+  RelinkDeviceRequest,
+  RelinkDeviceResponseData,
+  AccountDeviceEntry,
+  AccountApplicationEntry,
+  RevokeAccountDeviceRequest,
+  RevokeAccountDeviceResponseData,
   GroupInfoResponseData,
   DeleteGroupRequest,
   DeleteGroupResponseData,
@@ -812,6 +822,143 @@ export class AdminApiClient {
 
   async listNamespaceGroups(namespaceId: string): Promise<SubgroupEntry[]> {
     return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/namespaces/${namespaceId}/groups`));
+  }
+
+  // ---- Account Devices & Pairing ----
+
+  /**
+   * Mint this node a device for an account that already lives somewhere else -
+   * the first half of pairing, run on the joining node.
+   *
+   * Publishes nothing and needs no key: it produces the device id, the two
+   * public keys and the signature that the account holder's
+   * {@link completeAccountPairing} certifies, plus a code to read out to them
+   * over a channel the payload does not travel on. Until that second half runs,
+   * the device this mints is inert.
+   *
+   * Takes a set of namespaces rather than one, and takes it from the caller
+   * because this node cannot discover it: a node that is a member of nothing can
+   * neither read the account's namespace set off a DAG nor derive it. One device
+   * covers however many are named - the certificate is over the account, not a
+   * scope - so there is one id and one code to hand over regardless.
+   */
+  async initAccountPairing(request: AccountPairInitRequest): Promise<AccountPairInitResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccountPairInitResponseData }>('/admin-api/account/pair-init', request),
+    );
+  }
+
+  /**
+   * Certify a device another node minted, link it, and deliver its scope keys -
+   * the second half of pairing, run on the node that holds the account root.
+   *
+   * Every field but `applications` is copied verbatim out of that node's
+   * {@link initAccountPairing} answer. Only this side can complete it: the
+   * certificate is signed by the account root, which never leaves the node that
+   * holds it.
+   *
+   * The scope is named in applications, not namespaces, because that is the
+   * question a person can answer - a namespace is an implementation unit they
+   * never chose. Leave it out to grant every application.
+   */
+  async completeAccountPairing(
+    request: AccountPairCompleteRequest,
+  ): Promise<AccountPairCompleteResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccountPairCompleteResponseData }>('/admin-api/account/pair-complete', request),
+    );
+  }
+
+  /**
+   * Re-run the pairing fan-out for a device this account already certified,
+   * against the namespaces this node takes part in now.
+   *
+   * Pairing is a snapshot, and this is how it is repeated. A namespace created
+   * or joined afterwards holds no binding for a device paired before it, and the
+   * symptom is silence - the device simply never sees that namespace. Nothing
+   * but the id is needed to repair it: the certificate is already held here,
+   * root-signed and naming no namespace, so a fresh endorsement and a key wrap
+   * are all a later namespace is missing. The device does not have to be online.
+   *
+   * Passing `applications` widens the device's stored scope as well as
+   * repairing. Passing none - or an empty list - repairs against the scope
+   * already stored, which is deliberately NOT the "every application" that an
+   * empty list means on {@link completeAccountPairing}: overloading it here
+   * would make the accidental request the widest one.
+   */
+  async relinkAccountDevice(
+    deviceId: string,
+    request?: RelinkDeviceRequest,
+  ): Promise<RelinkDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: RelinkDeviceResponseData }>(
+        `/admin-api/account/devices/${deviceId}/relink`,
+        request ?? {},
+      ),
+    );
+  }
+
+  /**
+   * Every device of this account, as this node sees them - its own included.
+   *
+   * Joined from the node-local certificate cache and the live bindings of every
+   * namespace this node takes part in, so it is this node's view rather than a
+   * global one: a device certified by another holder appears with an empty
+   * `applications`, because the certificate that would name its scope is not
+   * cached here.
+   *
+   * The wire wraps this in `devices` rather than the usual `data`; the array is
+   * what a caller wants, so that wrapper is not passed on.
+   */
+  async listAccountDevices(): Promise<AccountDeviceEntry[]> {
+    const response = await this.httpClient.get<{ devices: AccountDeviceEntry[] }>('/admin-api/account/devices');
+    return response.devices;
+  }
+
+  /**
+   * Every application this account speaks in, with the namespaces targeting each.
+   *
+   * What a device-scoping UI lists: {@link completeAccountPairing} and
+   * {@link relinkAccountDevice} both take applications, and this is where the
+   * ids they take come from. Derived from the namespaces this node takes part
+   * in, so an application installed with no namespace yet is absent - it has
+   * nothing to scope a device to until one exists.
+   *
+   * Wrapped in `applications` on the wire rather than `data`, unwrapped here for
+   * the same reason {@link listAccountDevices} unwraps `devices`.
+   */
+  async listAccountApplications(): Promise<AccountApplicationEntry[]> {
+    const response = await this.httpClient.get<{ applications: AccountApplicationEntry[] }>(
+      '/admin-api/account/applications',
+    );
+    return response.applications;
+  }
+
+  /**
+   * Withdraw a device from this account, terminally.
+   *
+   * Two authorities reach the same endpoint. An admin may revoke any device and
+   * rotates the scope key as it goes. The account holder may revoke its own with
+   * a root-signed `proof`, which does not rotate - so read
+   * {@link RevokeAccountDeviceResponseData.revokedIn} rather than assuming the
+   * device lost its access: a namespace reporting `keyRotated: false` has
+   * stopped the device writing but leaves it able to read until an admin
+   * rotates.
+   *
+   * `namespaceId` names where to publish from, not the extent of the revocation:
+   * a device belongs to the account, so every namespace holding a binding for it
+   * is withdrawn from and reported back.
+   */
+  async revokeAccountDevice(
+    namespaceId: string,
+    request: RevokeAccountDeviceRequest,
+  ): Promise<RevokeAccountDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: RevokeAccountDeviceResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/account/revoke`,
+        request,
+      ),
+    );
   }
 
   // ---- Group Management ----
