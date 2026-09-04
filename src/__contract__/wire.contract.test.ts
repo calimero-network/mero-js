@@ -23,6 +23,10 @@ import type {
   CreateContextRequest,
   CreateContextResponseData,
   GroupUpgradeStatus,
+  MemberMigrationReport,
+  MemberMigrationStatusEntry,
+  MigrationStatus,
+  MigrationStatusRollup,
   ReparentGroupRequest,
   ReparentGroupResponseData,
   UpgradeGroupResponseData,
@@ -48,9 +52,9 @@ interface Spec {
   optional: string[];
   /** Core-optional fields the SDK intentionally does not model (no drift). */
   ignoredCoreKeys?: string[];
-  /** Envelope key to descend into first. Core wraps some admin responses in
-   * `data`; the SDK type models the inner object. */
-  envelope?: string;
+  /** Dotted path to descend into before comparing: an envelope key (`data`),
+   * a nested object (`rollup`), or an array element (`members.1`). */
+  path?: string;
 }
 
 const ctxReq = key<CreateContextRequest>();
@@ -60,6 +64,10 @@ const reRes = key<ReparentGroupResponseData>();
 const exec = key<ExecuteParams>();
 const upRes = key<UpgradeGroupResponseData>();
 const upStatus = key<GroupUpgradeStatus>();
+const mStatus = key<MigrationStatus>();
+const mRollup = key<MigrationStatusRollup>();
+const mEntry = key<MemberMigrationStatusEntry>();
+const mReport = key<MemberMigrationReport>();
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
 // unexported inline type whose index signature makes `key<T>()` accept any
@@ -104,7 +112,7 @@ const SPECS: Spec[] = [
   {
     type: 'UpgradeGroupResponseData',
     file: 'groups/upgrade.res.json',
-    envelope: 'data',
+    path: 'data',
     required: [upRes('groupId'), upRes('status')],
     optional: [
       upRes('localContextsTotal'),
@@ -115,7 +123,7 @@ const SPECS: Spec[] = [
   {
     type: 'GroupUpgradeStatus',
     file: 'groups/upgrade_status.res.json',
-    envelope: 'data',
+    path: 'data',
     required: [
       upStatus('fromVersion'),
       upStatus('toVersion'),
@@ -130,7 +138,71 @@ const SPECS: Spec[] = [
       upStatus('completedAt'),
     ],
   },
+  {
+    type: 'MigrationStatus',
+    file: 'groups/migration_status.res.json',
+    required: [
+      mStatus('targetVersion'),
+      mStatus('expectedMembers'),
+      mStatus('rollup'),
+      mStatus('members'),
+    ],
+    optional: [mStatus('cohortPinnedAtHlc'), mStatus('fleetCompletedAt')],
+  },
+  {
+    type: 'MigrationStatusRollup',
+    file: 'groups/migration_status.res.json',
+    path: 'rollup',
+    required: [
+      mRollup('migrated'),
+      mRollup('inProgress'),
+      mRollup('unknown'),
+      mRollup('failed'),
+      mRollup('total'),
+      mRollup('allMigrated'),
+      mRollup('membersPendingSignature'),
+    ],
+    optional: [],
+  },
+  // The fixture's second member is the one carrying every optional at once: an
+  // account, a report, and a `migrationFailed` inside it.
+  {
+    type: 'MemberMigrationStatusEntry',
+    file: 'groups/migration_status.res.json',
+    path: 'members.1',
+    required: [mEntry('peer'), mEntry('state')],
+    optional: [mEntry('account'), mEntry('report')],
+  },
+  {
+    type: 'MemberMigrationReport',
+    file: 'groups/migration_status.res.json',
+    path: 'members.1.report',
+    required: [
+      mReport('schemaVersion'),
+      mReport('residueAuto'),
+      mReport('syncedUpToHlc'),
+      mReport('reportedAt'),
+      mReport('authoredRemaining'),
+    ],
+    optional: [mReport('migrationFailed')],
+    // Always 0 on the wire and slated for removal once the client-py floor moves.
+    ignoredCoreKeys: ['residueIdentity'],
+  },
 ];
+
+/** Resolves a Spec's dotted `path` against the parsed fixture. */
+function descend(
+  raw: unknown,
+  path?: string,
+): Record<string, unknown> | undefined {
+  if (!path) return raw as Record<string, unknown>;
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (value, k) => (value as Record<string, unknown> | undefined)?.[k],
+      raw,
+    ) as Record<string, unknown> | undefined;
+}
 
 describe('wire contract (core fixtures ↔ SDK types)', () => {
   if (!WIRE_DIR) {
@@ -143,8 +215,10 @@ describe('wire contract (core fixtures ↔ SDK types)', () => {
       const raw = JSON.parse(
         readFileSync(join(WIRE_DIR, spec.file), 'utf8'),
       ) as Record<string, unknown>;
-      const fixture = (spec.envelope ? raw[spec.envelope] : raw) as Record<string, unknown>;
-      expect(fixture, `fixture ${spec.file} has no '${spec.envelope}' envelope`).toBeTruthy();
+      const fixture = descend(raw, spec.path);
+      if (!fixture) {
+        throw new Error(`fixture ${spec.file} has nothing at '${spec.path}'`);
+      }
       const fixtureKeys = Object.keys(fixture);
       const known = new Set([
         ...spec.required,
