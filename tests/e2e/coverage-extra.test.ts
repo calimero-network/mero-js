@@ -87,8 +87,8 @@ describe('Admin API E2E — Coverage filler', () => {
   });
 
   it('reparents a subgroup under another (groups/:id/reparent)', async () => {
-    const a = await mero.admin.createGroupInNamespace(namespaceId, { name: `cov-a-${RUN}` });
-    const b = await mero.admin.createGroupInNamespace(namespaceId, { name: `cov-b-${RUN}` });
+    const a = await mero.admin.createGroupInNamespace(namespaceId, { groupName: `cov-a-${RUN}` });
+    const b = await mero.admin.createGroupInNamespace(namespaceId, { groupName: `cov-b-${RUN}` });
     const res = await mero.admin.reparentGroup(b.groupId, { newParentId: a.groupId });
     expect(typeof res.reparented).toBe('boolean');
   });
