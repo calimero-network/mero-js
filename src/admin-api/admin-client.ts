@@ -16,7 +16,6 @@ import type {
   RegistryBundleManifest,
   CreateContextRequest,
   CreateContextResponseData,
-  DeleteContextRequest,
   DeleteContextResponseData,
   GetContextsResponseData,
   Context,
@@ -46,7 +45,6 @@ import type {
   ListNamespacesResponseData,
   CreateNamespaceRequest,
   CreateNamespaceResponseData,
-  DeleteNamespaceRequest,
   DeleteNamespaceResponseData,
   CreateNamespaceInvitationRequest,
   CreateNamespaceInvitationResponseData,
@@ -70,7 +68,8 @@ import type {
   RevokeAccountDeviceRequest,
   RevokeAccountDeviceResponseData,
   GroupInfoResponseData,
-  DeleteGroupRequest,
+  CreateGroupRequest,
+  CreateGroupResponseData,
   DeleteGroupResponseData,
   ListGroupMembersResponseData,
   ListGroupContextsResponseData,
@@ -80,6 +79,7 @@ import type {
   MemberCapabilities,
   SetMemberCapabilitiesRequest,
   SetDefaultCapabilitiesRequest,
+  SetMemberAutoFollowRequest,
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
@@ -88,18 +88,18 @@ import type {
   SetContextMetadataRequest,
   MetadataRecord,
   GetMetadataResponseData,
-  SyncGroupRequest,
   SyncGroupResponseData,
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
   MigrationStatus,
   CascadeStatusEntry,
-  RetryGroupUpgradeRequest,
   RetryGroupUpgradeResponseData,
   ReparentGroupRequest,
   ReparentGroupResponseData,
-  DetachContextFromGroupRequest,
+  IssueOwnershipProofRequest,
+  IssueNamespaceOwnershipProofRequest,
+  IssueOwnershipProofResponseData,
   CreateGroupInvitationRequest,
   CreateGroupInvitationResponseData,
   CreateRecursiveGroupInvitationResponseData,
@@ -334,16 +334,7 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', body));
   }
 
-  async deleteContext(contextId: string, request?: DeleteContextRequest): Promise<DeleteContextResponseData> {
-    if (request) {
-      return unwrap(
-        await this.httpClient.request<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`, {
-          method: 'DELETE',
-          body: JSON.stringify(request),
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
+  async deleteContext(contextId: string): Promise<DeleteContextResponseData> {
     return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`));
   }
 
@@ -678,37 +669,18 @@ export class AdminApiClient {
   }
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
-    // `upgradePolicy` is sent even though the request type no longer carries it.
-    //
-    // The concept was deleted server-side (calimero-network/core#3393), but only
-    // on master: every RELEASED node still declares the field required and
-    // rejects a body without it — `missing field 'upgradePolicy'`. A node that
-    // has dropped it ignores the extra key, so sending it is the one shape that
-    // works against both, and this SDK does not get to choose which node a
-    // caller points it at.
-    //
-    // `LazyOnAccess` because it was the default and is the only behaviour that
-    // survives the removal, so an old node given it does what a new one does.
-    //
-    // Remove once no supported release predates that change.
     return unwrap(
-      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', {
-        upgradePolicy: 'LazyOnAccess',
-        ...request,
-      }),
+      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request),
     );
   }
 
-  async deleteNamespace(
-    namespaceId: string,
-    request?: DeleteNamespaceRequest,
-  ): Promise<DeleteNamespaceResponseData> {
-    // Core requires `Content-Type: application/json` on this DELETE even when the
-    // body is empty, so always send the header and a (possibly empty) JSON body.
+  async deleteNamespace(namespaceId: string): Promise<DeleteNamespaceResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even though
+    // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
       await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${namespaceId}`, {
         method: 'DELETE',
-        body: JSON.stringify(request ?? {}),
+        body: '{}',
         headers: { 'Content-Type': 'application/json' },
       }),
     );
@@ -949,13 +921,13 @@ export class AdminApiClient {
     return (await this.getGroupInfo(groupId)).subgroupVisibility;
   }
 
-  async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
-    // Core requires `Content-Type: application/json` on this DELETE even with an
-    // empty body, so always send the header and a (possibly empty) JSON body.
+  async deleteGroup(groupId: string): Promise<DeleteGroupResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even though
+    // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
       await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
         method: 'DELETE',
-        body: JSON.stringify(request ?? {}),
+        body: '{}',
         headers: { 'Content-Type': 'application/json' },
       }),
     );
@@ -1117,8 +1089,8 @@ export class AdminApiClient {
     return response?.data ?? null;
   }
 
-  async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
-    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, request ?? {}));
+  async syncGroup(groupId: string): Promise<SyncGroupResponseData> {
+    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, {}));
   }
 
   async upgradeGroup(groupId: string, request: UpgradeGroupRequest): Promise<UpgradeGroupResponseData> {
@@ -1149,14 +1121,11 @@ export class AdminApiClient {
     );
   }
 
-  async retryGroupUpgrade(
-    groupId: string,
-    request?: RetryGroupUpgradeRequest,
-  ): Promise<RetryGroupUpgradeResponseData> {
+  async retryGroupUpgrade(groupId: string): Promise<RetryGroupUpgradeResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: RetryGroupUpgradeResponseData }>(
         `/admin-api/groups/${groupId}/upgrade/retry`,
-        request ?? {},
+        {},
       ),
     );
   }
@@ -1180,12 +1149,8 @@ export class AdminApiClient {
     return response.subgroups ?? response.data ?? [];
   }
 
-  async detachContextFromGroup(
-    groupId: string,
-    contextId: string,
-    request?: DetachContextFromGroupRequest,
-  ): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, request ?? {});
+  async detachContextFromGroup(groupId: string, contextId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, {});
   }
 
   // ---- Group Invitation & Join ----
@@ -1257,44 +1222,46 @@ export class AdminApiClient {
   // ---- Group / context / namespace membership ----
 
   /** Create a standalone group (POST /admin-api/groups). */
-  async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
-    // `upgradePolicy` for the same reason as `createNamespace` above — these are
-    // the only two requests a released node still requires it on, and it ignores
-    // the extra key once the concept is gone. Spread after the caller's request
-    // so an explicit value wins.
+  async createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', {
-        upgradePolicy: 'LazyOnAccess',
-        ...request,
-      }),
+      await this.httpClient.post<{ data: CreateGroupResponseData }>('/admin-api/groups', request),
     );
   }
 
   /** Leave a group (POST /admin-api/groups/:group_id/leave). */
-  async leaveGroup(groupId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, request ?? {});
+  async leaveGroup(groupId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, {});
   }
 
   /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
-  async leaveContext(contextId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, request ?? {});
+  async leaveContext(contextId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, {});
   }
 
   /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
-  async leaveNamespace(namespaceId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, request ?? {});
+  async leaveNamespace(namespaceId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, {});
   }
 
   /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
-  async issueOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(`/admin-api/groups/${groupId}/issue-ownership-proof`, request ?? {});
+  async issueOwnershipProof(
+    groupId: string,
+    request: IssueOwnershipProofRequest,
+  ): Promise<IssueOwnershipProofResponseData> {
+    return this.httpClient.post<IssueOwnershipProofResponseData>(
+      `/admin-api/groups/${groupId}/issue-ownership-proof`,
+      request,
+    );
   }
 
   /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
-  async issueNamespaceOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(
+  async issueNamespaceOwnershipProof(
+    groupId: string,
+    request: IssueNamespaceOwnershipProofRequest,
+  ): Promise<IssueOwnershipProofResponseData> {
+    return this.httpClient.post<IssueOwnershipProofResponseData>(
       `/admin-api/groups/${groupId}/issue-namespace-ownership-proof`,
-      request ?? {},
+      request,
     );
   }
 
@@ -1309,16 +1276,13 @@ export class AdminApiClient {
   async setMemberAutoFollow(
     groupId: string,
     identity: string,
-    request: Record<string, unknown>,
+    request: SetMemberAutoFollowRequest,
   ): Promise<void> {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/auto-follow`, request);
   }
 
   /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
-  async abortMigration(namespaceId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(
-      `/admin-api/groups/${namespaceId}/migration/abort`,
-      request ?? {},
-    );
+  async abortMigration(namespaceId: string): Promise<unknown> {
+    return this.httpClient.post<unknown>(`/admin-api/groups/${namespaceId}/migration/abort`, {});
   }
 }

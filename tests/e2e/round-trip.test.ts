@@ -25,7 +25,7 @@ beforeAll(async () => {
   applicationId = await ensureApplication(mero);
   const ns = await mero.admin.createNamespace({
     applicationId,
-    alias: `rt-${RUN}`,
+    name: `rt-${RUN}`,
   });
   namespaceId = ns.namespaceId;
   groupId = namespaceId;

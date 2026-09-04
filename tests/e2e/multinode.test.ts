@@ -34,7 +34,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
 
     const ns = await n1.admin.createNamespace({
       applicationId,
-      alias: `mn-${RUN}`,
+      name: `mn-${RUN}`,
     });
     namespaceId = ns.namespaceId;
   }, 90000);

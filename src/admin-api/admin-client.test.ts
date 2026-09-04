@@ -309,13 +309,6 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ isDeleted: true });
     });
 
-    it('deleteContext with requester sends body', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/contexts/ctx-1', { data: { isDeleted: true } });
-      const result = await client.deleteContext('ctx-1', { requester: 'pk-admin' });
-      expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/contexts/ctx-1')).toEqual({ requester: 'pk-admin' });
-    });
-
     it('getContexts returns contexts with groupId and contextStateHash', async () => {
       const ctx = { id: 'ctx-1', applicationId: 'app-1', contextStateHash: 'abc', dagHeads: [], groupId: 'g-1' };
       mock.setMockResponse('GET', '/admin-api/contexts', { data: { contexts: [ctx] } });
@@ -697,13 +690,8 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       const result = await client.createNamespace({ applicationId: 'app-1', name: 'My NS' });
       expect(result).toEqual({ namespaceId: 'ns-1' });
-      // `upgradePolicy` rides along for released nodes that still require it;
-      // a node that dropped the concept ignores it. Asserted rather than
-      // tolerated, so removing it later is a deliberate change and not a
-      // silent one — the field is what keeps this SDK usable against a node
-      // the caller chose and we did not.
+      // Core declares this body `deny_unknown_fields`, so any extra key is a 400.
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
-        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         name: 'My NS',
       });
@@ -713,17 +701,16 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       await client.createNamespace({ applicationId: 'app-1', appKey: 'deadbeef' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
-        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         appKey: 'deadbeef',
       });
     });
 
-    it('deleteNamespace with requester', async () => {
+    it('deleteNamespace sends an empty JSON body', async () => {
       mock.setMockResponse('DELETE', '/admin-api/namespaces/ns-1', { data: { isDeleted: true } });
-      const result = await client.deleteNamespace('ns-1', { requester: 'pk-admin' });
+      const result = await client.deleteNamespace('ns-1');
       expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/namespaces/ns-1')).toEqual({ requester: 'pk-admin' });
+      expect(mock.getRequestBody('DELETE', '/admin-api/namespaces/ns-1')).toEqual({});
     });
 
     it('createNamespaceInvitation sends structured request', async () => {
@@ -769,10 +756,17 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
-    it('createGroupInNamespace sends request', async () => {
+    it('createGroupInNamespace sends groupName and visibility', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/groups', { data: { groupId: 'g-1' } });
-      const result = await client.createGroupInNamespace('ns-1', { name: 'Sub' });
+      const result = await client.createGroupInNamespace('ns-1', {
+        groupName: 'Sub',
+        visibility: 'open',
+      });
       expect(result).toEqual({ groupId: 'g-1' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/groups')).toEqual({
+        groupName: 'Sub',
+        visibility: 'open',
+      });
     });
 
     it('listNamespaceGroups unwraps data', async () => {
@@ -1007,17 +1001,11 @@ describe('AdminApiClient', () => {
       expect(await client.getSubgroupVisibility('g-1')).toBe('open');
     });
 
-    it('deleteGroup without requester', async () => {
+    it('deleteGroup sends an empty JSON body', async () => {
       mock.setMockResponse('DELETE', '/admin-api/groups/g-1', { data: { isDeleted: true } });
       const result = await client.deleteGroup('g-1');
       expect(result).toEqual({ isDeleted: true });
-    });
-
-    it('deleteGroup with requester sends body', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/groups/g-1', { data: { isDeleted: true } });
-      const result = await client.deleteGroup('g-1', { requester: 'pk-admin' });
-      expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1')).toEqual({ requester: 'pk-admin' });
+      expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1')).toEqual({});
     });
 
     it('listGroupMembers returns the members', async () => {
@@ -1049,15 +1037,11 @@ describe('AdminApiClient', () => {
       expect(result).toEqual([{ contextId: 'ctx-1', alias: 'Chat' }]);
     });
 
-    it('addGroupMembers sends structured members with requester', async () => {
+    it('addGroupMembers sends structured members', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/members', {});
-      await client.addGroupMembers('g-1', {
-        members: [{ identity: 'pk-1', role: 'Member' }],
-        requester: 'pk-admin',
-      });
+      await client.addGroupMembers('g-1', { members: [{ identity: 'pk-1', role: 'Member' }] });
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/members')).toEqual({
         members: [{ identity: 'pk-1', role: 'Member' }],
-        requester: 'pk-admin',
       });
     });
 
@@ -1081,12 +1065,23 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ capabilities: 7 });
     });
 
-    it('setMemberCapabilities sends bitmask with requester', async () => {
+    it('setMemberCapabilities sends bitmask', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/pk-1/capabilities', {});
-      await client.setMemberCapabilities('g-1', 'pk-1', { capabilities: 7, requester: 'pk-admin' });
+      await client.setMemberCapabilities('g-1', 'pk-1', { capabilities: 7 });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/pk-1/capabilities')).toEqual({
         capabilities: 7,
-        requester: 'pk-admin',
+      });
+    });
+
+    it('setMemberAutoFollow sends both flags', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/pk-1/auto-follow', {});
+      await client.setMemberAutoFollow('g-1', 'pk-1', {
+        autoFollowContexts: true,
+        autoFollowSubgroups: false,
+      });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/pk-1/auto-follow')).toEqual({
+        autoFollowContexts: true,
+        autoFollowSubgroups: false,
       });
     });
   });
@@ -1105,18 +1100,6 @@ describe('AdminApiClient', () => {
       await client.setSubgroupVisibility('g-1', { subgroupVisibility: 'open' });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
         subgroupVisibility: 'open',
-      });
-    });
-
-    it('setSubgroupVisibility forwards requester when provided', async () => {
-      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility', {});
-      await client.setSubgroupVisibility('g-1', {
-        subgroupVisibility: 'restricted',
-        requester: 'pk-admin',
-      });
-      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
-        subgroupVisibility: 'restricted',
-        requester: 'pk-admin',
       });
     });
 
@@ -1369,14 +1352,10 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({ newParentId: 'parent-2' });
     });
 
-    it('reparentGroup forwards an explicit requester', async () => {
+    it('reparentGroup unwraps a refused move', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: false } });
-      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2', requester: 'pk-admin' });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2' });
       expect(result.reparented).toBe(false);
-      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({
-        newParentId: 'parent-2',
-        requester: 'pk-admin',
-      });
     });
 
     it('listSubgroups reads the `subgroups` field (current server shape)', async () => {
@@ -1402,10 +1381,10 @@ describe('AdminApiClient', () => {
       expect(result).toEqual([]);
     });
 
-    it('detachContextFromGroup sends request', async () => {
+    it('detachContextFromGroup sends an empty body', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove', {});
-      await client.detachContextFromGroup('g-1', 'ctx-1', { requester: 'pk-admin' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove')).toEqual({ requester: 'pk-admin' });
+      await client.detachContextFromGroup('g-1', 'ctx-1');
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove')).toEqual({});
     });
   });
 

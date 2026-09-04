@@ -23,7 +23,7 @@ describe('Admin API E2E — Coverage filler', () => {
     applicationId = await ensureApplication(mero);
     const ns = await mero.admin.createNamespace({
       applicationId,
-      alias: `cov-ns-${RUN}`,
+      name: `cov-ns-${RUN}`,
     });
     namespaceId = ns.namespaceId;
     const ctx = await mero.admin.createContext({ applicationId, groupId: namespaceId });
@@ -31,15 +31,7 @@ describe('Admin API E2E — Coverage filler', () => {
   }, 60000);
 
   afterAll(async () => {
-    if (contextId) {
-      const ctx = await mero.admin.getContext(contextId).catch(() => null);
-      if (ctx) {
-        const ids = await mero.admin.getContextIdentities(contextId).catch(() => null);
-        await mero.admin
-          .deleteContext(contextId, { requester: ids?.identities?.[0] })
-          .catch(() => {});
-      }
-    }
+    if (contextId) await mero.admin.deleteContext(contextId).catch(() => {});
     if (namespaceId) await mero.admin.deleteNamespace(namespaceId).catch(() => {});
     mero.close();
   }, 60000);
