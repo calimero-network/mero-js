@@ -1,3 +1,219 @@
+## [18.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v18.1.0...mero-js-v18.1.1) (2026-09-04)
+
+### Bug Fixes
+
+* **admin:** send only the fields core declares ([#136](https://github.com/calimero-network/mero-js/issues/136)) ([fc95c0d](https://github.com/calimero-network/mero-js/commit/fc95c0d6190d94a16b73d187cb26f1fed8be5014))
+
+## [18.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.0.0...mero-js-v18.1.0) (2026-09-03)
+
+### Features
+
+* **admin:** account-level device pairing, relink and listings ([#115](https://github.com/calimero-network/mero-js/issues/115)) ([2cb206e](https://github.com/calimero-network/mero-js/commit/2cb206ee14215a7be711f63332b84d16a50034bb)), closes [core#3774](https://github.com/calimero-network/core/issues/3774)
+
+## [18.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v17.0.0...mero-js-v18.0.0) (2026-09-03)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** installApplication takes { package, version } instead of
+{ url, hash, metadata }; installFromRegistry is removed - call
+installApplication with the coordinates directly. installDevApplication takes
+{ path } only, following core dropping metadata from the dev request.
+
+* test(e2e): assert the node accepts the install coordinate shape
+
+The route-coverage sweep fires install-application through cover(), which
+swallows every failure. That is right for a state 4xx, but it also swallows a
+400 from a rejected request BODY - and the coverage recorder logs a path when
+the request fires, before the response, so the route reads as covered while
+every call to it fails.
+
+That combination is why core's paired SDK e2e passed on the registry-only
+distribution change while this SDK still sent the old url-shaped body: the one
+place that exercises the route could not tell "nothing published there" from
+"your request shape is wrong".
+
+install-application now asserts instead. These coordinates have nothing
+published at them, so the install cannot succeed; what is checked is that the
+node got past deserialization. Deliberately not pinned to 502: install_by_coords
+propagates a fetch fault as an error, so an unreachable registry is a 500, and
+requiring 502 would make this depend on CI egress to the node's configured
+public registry. A status is required though, so a transport fault cannot pass
+the assertion vacuously.
+
+Verified against merod 0.11.0-rc.30, which predates the change: the coordinate
+body earns `400 missing field \`url\``, which fails the new assertion.
+
+The file header claimed a covered 4xx "proves the SDK builds and sends a correct
+request". It does not prove that about the body, and that sentence is what made
+the hole look intentional - corrected, with a note to assert the shape on any
+route where core rejects unknown fields.
+
+* ci: take the newest release that actually has a merod asset
+
+Both e2e jobs resolved merod with `gh release list --limit 1` and hard-failed
+when that tag carried no linux binary. GitHub publishes a release object before
+its binary matrix finishes uploading, so the newest tag legitimately has no
+merod for a while - 0.11.0-rc.31 sat published with only its test fixture for
+several minutes, and any PR whose e2e ran in that window failed on
+"no merod linux asset", indistinguishable from a genuinely broken release.
+
+Walk back through recent releases and take the first that has the asset. Both
+jobs had their own copy of the download, so it moves to one script they share
+rather than being fixed twice.
+
+Checked both directions against the live release state: it skips rc.31 and
+downloads rc.30, and it exits 1 when no release in the lookback window carries
+the asset.
+
+### Features
+
+* **admin:** install applications by package@version ([#133](https://github.com/calimero-network/mero-js/issues/133)) ([dfd2b9e](https://github.com/calimero-network/mero-js/commit/dfd2b9e9c5b1deab94b3c7a2ba2dabed6ff6d0ff))
+
+## [17.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.1.0...mero-js-v17.0.0) (2026-09-03)
+
+### ⚠ BREAKING CHANGES
+
+* **namespace-op:** write the endorsement slot on the envelope (#134)
+
+### Bug Fixes
+
+* **namespace-op:** write the endorsement slot on the envelope ([#134](https://github.com/calimero-network/mero-js/issues/134)) ([d6f99ca](https://github.com/calimero-network/mero-js/commit/d6f99ca2ea2219cd82e1287c4de31a95d7e458ec)), closes [core#3804](https://github.com/calimero-network/core/issues/3804) [core#3819](https://github.com/calimero-network/core/issues/3819) [#3804](https://github.com/calimero-network/mero-js/issues/3804) [calimero-network/core#3819](https://github.com/calimero-network/core/issues/3819)
+
+## [16.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v16.0.0...mero-js-v16.1.0) (2026-09-01)
+
+### Features
+
+* **invitation:** follow core's rename to admitter_addrs ([#132](https://github.com/calimero-network/mero-js/issues/132)) ([a1e6949](https://github.com/calimero-network/mero-js/commit/a1e6949b6c89a5150c7ec6d4c35602da1d4574d5))
+
+## [16.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.4...mero-js-v16.0.0) (2026-09-01)
+
+### ⚠ BREAKING CHANGES
+
+* **release:** <text>     -> major
+  fix: ...                    -> patch
+  feat: ...                   -> minor
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Bug Fixes
+
+* **release:** stop prose from being read as a breaking change ([#131](https://github.com/calimero-network/mero-js/issues/131)) ([1673df8](https://github.com/calimero-network/mero-js/commit/1673df8d72f1eb4fba67e497e9065cc28e89cc62))
+
+## [15.3.4](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.3...mero-js-v15.3.4) (2026-08-31)
+
+### Bug Fixes
+
+* **namespace-op:** emit joined_at, and pick the variant from the invitation ([#129](https://github.com/calimero-network/mero-js/issues/129)) ([80cf1cb](https://github.com/calimero-network/mero-js/commit/80cf1cb077c40469d9e6dd3c523e0811845c7e2d))
+
+## [15.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.2...mero-js-v15.3.3) (2026-08-31)
+
+### Bug Fixes
+
+* **device-cert:** write genesis version 2, the one core accepts ([#128](https://github.com/calimero-network/mero-js/issues/128)) ([5a2c647](https://github.com/calimero-network/mero-js/commit/5a2c647a1c4f7197d7e31e560eb1c89aefe357fc))
+
+## [15.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.1...mero-js-v15.3.2) (2026-08-31)
+
+### Bug Fixes
+
+* **e2e:** assert the substitution property where it is actually enforced ([#127](https://github.com/calimero-network/mero-js/issues/127)) ([134fe8e](https://github.com/calimero-network/mero-js/commit/134fe8e3fa60969dd5fc91487ab0541ad8db5faf))
+
+## [15.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v15.3.0...mero-js-v15.3.1) (2026-08-31)
+
+### Bug Fixes
+
+* **contract:** declare admitters, which every current node now sends ([#126](https://github.com/calimero-network/mero-js/issues/126)) ([f7de4f8](https://github.com/calimero-network/mero-js/commit/f7de4f8279cbd623b78b4618c7968fdb30ee4049)), closes [#124](https://github.com/calimero-network/mero-js/issues/124) [#124](https://github.com/calimero-network/mero-js/issues/124)
+
+## [15.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.2.0...mero-js-v15.3.0) (2026-08-31)
+
+### Features
+
+* **namespace-op:** sign a membership op from the SDK, so a keyholder can join ([#125](https://github.com/calimero-network/mero-js/issues/125)) ([a15dd6e](https://github.com/calimero-network/mero-js/commit/a15dd6e2b2b34ed2ce8b7697fff0364db833c131))
+
+## [15.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.1.0...mero-js-v15.2.0) (2026-08-30)
+
+### Features
+
+* **admin-api:** present a signed join to a designated admitter ([#124](https://github.com/calimero-network/mero-js/issues/124)) ([459f394](https://github.com/calimero-network/mero-js/commit/459f3944cb255497a0f907bedeeb528c51ffce53))
+
+## [15.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v15.0.0...mero-js-v15.1.0) (2026-08-29)
+
+### Features
+
+* **device-cert:** certify a device offline from the SDK ([#123](https://github.com/calimero-network/mero-js/issues/123)) ([b20e1d6](https://github.com/calimero-network/mero-js/commit/b20e1d6466e57fd21641a260018199133ef425f4))
+
+## [15.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v14.0.0...mero-js-v15.0.0) (2026-08-28)
+
+### ⚠ BREAKING CHANGES
+
+* **account:** `toAccountHex`, `toAccountBase58` and `sameAccount` are removed.
+Every id core emits is 64 lowercase hex, so comparing two ids is now `===`. A
+caller holding base58 account ids has data predating the migration; decode it
+once rather than converting on every comparison.
+
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+### Features
+
+* **account:** drop the account encoding bridge ([#119](https://github.com/calimero-network/mero-js/issues/119)) ([0090ac7](https://github.com/calimero-network/mero-js/commit/0090ac7459db6c5826e66a68657c58574809d865)), closes [calimero-network/core#3696](https://github.com/calimero-network/core/issues/3696)
+
+## [14.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.4.0...mero-js-v14.0.0) (2026-08-28)
+
+### ⚠ BREAKING CHANGES
+
+* **warrant:** the context is hex, and base58 is gone from this package (#118)
+
+### Bug Fixes
+
+* **warrant:** the context is hex, and base58 is gone from this package ([#118](https://github.com/calimero-network/mero-js/issues/118)) ([9298bea](https://github.com/calimero-network/mero-js/commit/9298beaeadaeb04d2eee3d12641e44e0da6914f0))
+
+## [13.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.3.0...mero-js-v13.4.0) (2026-08-28)
+
+### Features
+
+* **warrant:** mint warrants in JS, with no dependencies ([#116](https://github.com/calimero-network/mero-js/issues/116)) ([8b9ad6a](https://github.com/calimero-network/mero-js/commit/8b9ad6a9aabaea82351fdb9777972b474b721443))
+
+## [13.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.5...mero-js-v13.3.0) (2026-08-26)
+
+### Features
+
+* **admin:** bind performIntent for delegated authorship ([#113](https://github.com/calimero-network/mero-js/issues/113)) ([f51e831](https://github.com/calimero-network/mero-js/commit/f51e831e7dc3b03accf320e49febbbd9b78c1f3e)), closes [core#3636](https://github.com/calimero-network/core/issues/3636) [core#3640](https://github.com/calimero-network/core/issues/3640)
+
+## [13.2.5](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.4...mero-js-v13.2.5) (2026-08-26)
+
+### Bug Fixes
+
+* **fleet:** let the pnpm probe find nothing without killing the step ([#114](https://github.com/calimero-network/mero-js/issues/114)) ([be7aa50](https://github.com/calimero-network/mero-js/commit/be7aa508e315cb336f584578916f66ef5b2e2b9f))
+
+## [13.2.4](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.3...mero-js-v13.2.4) (2026-08-25)
+
+### Bug Fixes
+
+* **fleet:** record a root lockfile at its repository-relative path ([#112](https://github.com/calimero-network/mero-js/issues/112)) ([95fc7fb](https://github.com/calimero-network/mero-js/commit/95fc7fb60098141f5ef5c52e73f791d9b9665b1f))
+
+## [13.2.3](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.2...mero-js-v13.2.3) (2026-08-25)
+
+### Bug Fixes
+
+* **fleet:** bump with the pnpm the repository actually uses ([#111](https://github.com/calimero-network/mero-js/issues/111)) ([cf2442d](https://github.com/calimero-network/mero-js/commit/cf2442d624b1536ab9dc4f2dea279ea5a9e215c1))
+
+## [13.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.1...mero-js-v13.2.2) (2026-08-24)
+
+### Bug Fixes
+
+* **fleet:** commit only the files the bump claims ([#110](https://github.com/calimero-network/mero-js/issues/110)) ([1ac802b](https://github.com/calimero-network/mero-js/commit/1ac802bd0498aad4065c922727b44bbee751332a)), closes [#190](https://github.com/calimero-network/mero-js/issues/190) [#194](https://github.com/calimero-network/mero-js/issues/194)
+
+## [13.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v13.2.0...mero-js-v13.2.1) (2026-08-24)
+
+### Bug Fixes
+
+* **admin:** read the namespace-join id under either spelling ([#108](https://github.com/calimero-network/mero-js/issues/108)) ([5d040ab](https://github.com/calimero-network/mero-js/commit/5d040ab974f5fe4beb70649c180eabd9a724a385)), closes [core#3598](https://github.com/calimero-network/core/issues/3598)
+
+## [13.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.1.0...mero-js-v13.2.0) (2026-08-21)
+
+### Features
+
+* **account:** canonicalise account ids, and give SSE failures their reason ([#106](https://github.com/calimero-network/mero-js/issues/106)) ([82e58a5](https://github.com/calimero-network/mero-js/commit/82e58a58cfacab9971aaf667d6a41d5d653b3123))
+
 ## [13.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v13.0.0...mero-js-v13.1.0) (2026-08-18)
 
 ### Features

@@ -16,19 +16,17 @@ export interface AdminAuthStatus {
 
 // ---- Applications ----
 
+/**
+ * Install by coordinates. The node fetches only from its own configured
+ * `[registry]`, so there is no caller-supplied URL; both halves are required.
+ */
 export interface InstallApplicationRequest {
-  url: string;
-  hash?: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
+  package: string;
+  version: string;
 }
 
 export interface InstallDevApplicationRequest {
   path: string;
-  metadata: number[];
-  package?: string;
-  version?: string;
 }
 
 export interface InstallApplicationResponseData {
@@ -114,9 +112,9 @@ export interface BundleMigration {
 }
 
 /**
- * The subset of a registry bundle manifest that `installFromRegistry` consumes
- * to resolve an artifact URL. The registry serves it at
- * `GET {registry}/api/v2/bundles/{package}/{version}`.
+ * The subset of a registry bundle manifest that `getRegistryVersions` consumes.
+ * The registry serves these at `GET {registry}/api/v2/bundles?package={package}`;
+ * installation itself needs only the coordinates, which the node resolves.
  */
 export interface RegistryBundleManifest {
   package: string;
@@ -143,10 +141,6 @@ export interface CreateContextResponseData {
   memberPublicKey: string;
   groupId?: string;
   groupCreated?: boolean;
-}
-
-export interface DeleteContextRequest {
-  requester?: string;
 }
 
 export interface DeleteContextResponseData {
@@ -335,6 +329,18 @@ export interface GroupInvitationFromAdmin {
   /** Per-invitation nonce; core keeps the legacy `secret_salt` wire name. */
   readonly secret_salt: number[];
   readonly invited_role: number;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex characters
+   * each — the same spelling every other account-addressing field uses.
+   *
+   * Empty means admission by broadcast: the joiner announces itself on the
+   * namespace topic and any ready peer answers — which publishes the invitation
+   * to every subscriber of that topic. Naming admitters keeps it off the topic,
+   * and the joiner presents it to one of them directly.
+   *
+   * Inside the inviter's signature, so it cannot be redirected.
+   */
+  readonly admitters?: readonly string[];
 }
 
 /**
@@ -357,7 +363,25 @@ export interface SignedGroupOpenInvitation {
   readonly invitation: GroupInvitationFromAdmin;
   readonly inviter_signature: string;
   /**
-   * The account the inviter acts as, as 64 hex characters — not the bs58 the
+   * libp2p addresses for the accounts in
+   * {@link GroupInvitationFromAdmin.admitters}, each a full multiaddr including
+   * its `/p2p/<peer-id>` suffix.
+   *
+   * The peer id travels with the address because a joiner cannot derive it:
+   * resolving an account to a peer needs governance state, which is exactly what
+   * a joiner has not synced yet.
+   *
+   * Outside the signature, like the other bootstrap fields. A wrong address
+   * costs a failed dial — libp2p authenticates the peer id on connect, and the
+   * admitting node still has to be in the signed list for its admission to
+   * count.
+   *
+   * Best-effort: absent on invitations from nodes predating the field, and empty
+   * when the minting node had no address for any admitter.
+   */
+  readonly admitter_addrs?: readonly string[];
+  /**
+   * The account the inviter acts as, as 64 hex characters — not the
    * `inviter_identity` key inside the signed body is written in. Governance
    * rows name accounts, and a joiner cannot derive this one: an account is a
    * hash of a root it has never seen.
@@ -371,6 +395,12 @@ export interface SignedGroupOpenInvitation {
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
   readonly application_id?: number[];
   /** Unsigned bootstrap field; absent on invitations from older nodes. */
+  /**
+   * The wire name is `app_key`; core's Rust field is `bytecode_id` behind a
+   * `rename` that covers both directions, and core pins this spelling in a test.
+   * `Option<[u8; 32]>` crosses JSON as an array of byte values, not as hex —
+   * unlike `AccountId`, which has its own hex representation.
+   */
   readonly app_key?: number[];
   /** @internal Brand — never present at runtime, never write it. */
   readonly __nodeSigned: never;
@@ -417,6 +447,63 @@ export type ListNamespacesResponseData = Namespace[];
  * node signs with one key — so none of this varies by namespace, which is why
  * the endpoint behind it takes none.
  */
+/**
+ * A member's request that a node run one method on their behalf.
+ *
+ * Delegated authorship exists for a holder that cannot run the application
+ * itself — a device with only a signing key, which can neither compile the WASM
+ * nor decrypt the state. What makes the resulting write *theirs* is the warrant:
+ * a statement they signed, which travels with the change so every peer verifies
+ * they consented rather than taking the node's word.
+ */
+export interface PerformIntentRequest {
+  /** The method to run. */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+  /**
+   * The author's consent: hex-encoded borsh of a `Warrant`.
+   *
+   * Opaque on purpose. Its canonical form is those bytes — the signature covers
+   * them — so re-describing the fields as JSON would create a second spelling
+   * that could disagree with what was signed.
+   *
+   * Mint it with {@link signWarrant}, or out of band with `merod account
+   * warrant` / `meroctl context intent`.
+   *
+   * Signing here needs no dependency, which is why it is available at all: the
+   * hash is WebCrypto SHA-256, the signature is WebCrypto Ed25519, and every
+   * field of a warrant is fixed-width so the encoding is concatenation rather
+   * than borsh. The byte contract is pinned on the node's side, at
+   * `crates/account/src/tests/warrant_wire_fixture.rs`, because a drift there
+   * would otherwise surface here as a 403 rather than as an encoding error.
+   */
+  warrant: string;
+  /**
+   * Hex-encoded borsh of the author's `AccountProof<DeviceCert>`, proving the
+   * key that signed the warrant is a device of the account it names.
+   *
+   * Only the author's own half. The node attaches its own credential, so a
+   * caller never learns which of the node's processes runs the intent — and a
+   * re-key on its side does not void a warrant already issued.
+   */
+  authorProof: string;
+}
+
+/** What a performed intent reports back. */
+export interface PerformIntentResponseData {
+  /**
+   * The context's scope root after the run — how a caller sees that it wrote.
+   *
+   * Worth asserting on rather than the status alone: an accepted intent that
+   * advanced no state is a real failure mode, and it is cheaper to catch here
+   * than on a later read of a value that was never written.
+   */
+  rootHash: string;
+  /** The method's own return value, if it had one. */
+  returns: unknown | null;
+}
+
 export interface NodeIdentity {
   /**
    * The account this node writes as, 64 hex characters. This — not
@@ -435,7 +522,7 @@ export interface NodeIdentity {
    */
   deviceId: string | null;
   /**
-   * The key this node signs ops with, base58.
+   * The key this node signs ops with, 64 hex.
    *
    * The device's signing key, not the account root: the root signs
    * certificates and never an op, so a signature on the wire verifies against
@@ -454,6 +541,18 @@ export interface NodeIdentity {
    * claim something the node the caller chose may not report.
    */
   accountRootPublicKey?: string;
+  /**
+   * Whether this node holds the root key of the account it speaks for. `false`
+   * means it runs on a delegate device key, so it cannot certify another device
+   * into the account — which is what a pairing invite needs to know before
+   * offering the option.
+   *
+   * Optional for the same reason as `accountRootPublicKey`: a node at or below
+   * `0.11.0-rc.30` does not send it. `undefined` is therefore "this node is too
+   * old to say", which is not the same answer as `false`, and a caller gating an
+   * invite on it should not collapse the two.
+   */
+  holdsAccountRoot?: boolean;
 }
 
 /**
@@ -463,7 +562,7 @@ export interface NodeIdentity {
 export interface NamespaceIdentity {
   /** Echoed back from the argument; it does not describe the identity. */
   namespaceId: string;
-  /** The key this node signs with, base58. */
+  /** The key this node signs with, 64 hex. */
   publicKey: string;
   /**
    * The account this node writes as, 64 hex characters. This — not
@@ -485,16 +584,11 @@ export interface CreateNamespaceResponseData {
   namespaceId: string;
 }
 
-export interface DeleteNamespaceRequest {
-  requester?: string;
-}
-
 export interface DeleteNamespaceResponseData {
   isDeleted: boolean;
 }
 
 export interface CreateNamespaceInvitationRequest {
-  requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
 }
@@ -514,8 +608,26 @@ export interface JoinNamespaceRequest {
 }
 
 export interface JoinNamespaceResponseData {
-  groupId: string;
-  /** The key the joiner signs with, base58. */
+  /**
+   * The namespace that was joined.
+   *
+   * core `0.11.0-rc.25` renamed this field on the wire from `groupId`
+   * (core#3598). The endpoint had been sharing a response DTO with
+   * `POST /admin-api/groups/join`, which leaked the internal "a namespace is a
+   * root group" detail into the namespace API and meant a caller could not use
+   * one spelling across the family.
+   *
+   * {@link AdminClient.joinNamespace} fills this in from whichever spelling the
+   * node sent, so it is populated against nodes on either side of that release.
+   */
+  namespaceId: string;
+  /**
+   * @deprecated The pre-`0.11.0-rc.25` spelling of {@link namespaceId}. Present
+   * only when the node predates that release — read `namespaceId` instead,
+   * which is always set.
+   */
+  groupId?: string;
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
@@ -526,8 +638,9 @@ export interface JoinNamespaceResponseData {
 }
 
 export interface CreateGroupInNamespaceRequest {
-  groupId?: string;
-  name?: string;
+  groupName?: string;
+  /** Subgroup visibility at birth. Absent means `'restricted'`. */
+  visibility?: 'open' | 'restricted';
 }
 
 export interface CreateGroupInNamespaceResponseData {
@@ -537,6 +650,345 @@ export interface CreateGroupInNamespaceResponseData {
 export interface SubgroupEntry {
   groupId: string;
   name?: string;
+}
+
+// ---- Account devices & pairing ----
+
+/**
+ * Adopt an account that already lives on another device, and mint this node a
+ * device of its own for it.
+ *
+ * The first half of pairing, run on the joining node. It publishes nothing and
+ * needs no key: it produces the values the account holder's
+ * {@link AdminApiClient.completeAccountPairing} certifies, plus a confirmation
+ * code to read out to them.
+ *
+ * Account-level, and that is the whole point of it: both credentials pairing
+ * mints were always account-wide - the certificate is root-signed and the
+ * endorsement node-level, so neither ever named a namespace - while the older
+ * per-namespace route still made the caller name one, and the device then
+ * listened on that one topic while its holder's link fanned out across all of
+ * them.
+ */
+export interface AccountPairInitRequest {
+  /**
+   * The epoch-0 root **public** key of the account to join, 64 hex characters -
+   * exactly what {@link NodeIdentity.accountRootPublicKey} reports on the node
+   * that already holds the account.
+   *
+   * Named for the half it carries. An ed25519 private and public key are both 32
+   * bytes and both hex, so nothing but the name tells them apart; the private
+   * root never crosses this boundary at all.
+   */
+  accountRootPublicKey: string;
+  /**
+   * Ids of the namespaces to enroll into, 64 hex characters each. At least one:
+   * a device certified into nothing listens on no topic.
+   *
+   * The caller has to supply these, because the joining node cannot discover
+   * them - it is a member of nothing and holds no scope key, so it can neither
+   * read the account's namespace set off a DAG nor derive it. The device that
+   * already holds the account is the only party that knows it.
+   *
+   * This decides what the new device *listens* on, and it does not have to agree
+   * with the applications the holder scopes `pair-complete` to: a binding
+   * published where the device is not listening is picked up whenever it does
+   * subscribe, and a subscription the holder never reaches costs nothing.
+   */
+  namespaces: string[];
+}
+
+/**
+ * What the joining device minted, for the account holder to certify.
+ *
+ * These are round-trip tokens: a caller copies them verbatim into
+ * {@link AdminApiClient.completeAccountPairing}. The signing key is the NEW
+ * device's, so it appears in no member listing yet and there is nothing here to
+ * compare it against.
+ *
+ * One device is minted however many namespaces were named, so there is one of
+ * each of these to hand over, not one per namespace.
+ */
+export interface AccountPairInitResponseData {
+  /** The account this device will speak for once linked, 64 hex characters. */
+  accountId: string;
+  /** The device that was minted, 64 hex characters. */
+  deviceId: string;
+  /** X25519 agreement key a scope key must be wrapped under to reach this device, hex. */
+  kemPublicKey: string;
+  /**
+   * The Ed25519 key this device signs its ops with, hex.
+   *
+   * The account holder cannot derive this - it is minted here - and the
+   * certificate names it, so it has to travel with the other two.
+   */
+  signPublicKey: string;
+  /**
+   * Ed25519 signature over the account, the device id and both keys above, hex.
+   *
+   * Carried so the three values arrive as a statement by the device that minted
+   * them rather than as assertions by whoever relayed them; `pair-complete`
+   * refuses without it.
+   */
+  statement: string;
+  /**
+   * The value to read out to the account holder, who compares it against what
+   * their `pair-complete` reports.
+   *
+   * The part a substituting attacker cannot fake: it can re-sign its own
+   * statement, but it would have to make its own keys derive the code the other
+   * side is already reading.
+   */
+  confirmationCode: string;
+}
+
+/**
+ * Certify a device another node minted, link it, and deliver its scope keys.
+ *
+ * The second half of pairing, run on the node that holds the account root - the
+ * only party that can sign the certificate that makes the device real. Every
+ * field but `applications` is copied verbatim from that other node's
+ * {@link AccountPairInitResponseData}.
+ */
+export interface AccountPairCompleteRequest {
+  /** The `deviceId` the other node minted, 64 hex characters. */
+  deviceId: string;
+  /** That device's X25519 agreement key, 64 hex characters. */
+  kemPublicKey: string;
+  /** That device's Ed25519 signing key, 64 hex characters. */
+  signPublicKey: string;
+  /**
+   * The signature from that node's pair-init, 128 hex characters (64 bytes).
+   *
+   * Not optional: without it the three values above are only claims by whoever
+   * sent them, and certifying those would make attacker-supplied keys a trusted
+   * device of this account.
+   */
+  statement: string;
+  /**
+   * The code the account holder read off the pairing device, e.g.
+   * `7BC0-DAAC-CCB4-84A4`. Grouping and case are ignored.
+   *
+   * Required so the comparison cannot be skipped: this side re-derives the code
+   * for the key material that actually arrived and refuses a mismatch. Its value
+   * rests on the code reaching the holder independently of this payload - sent
+   * beside the keys, it proves nothing. One code covers the whole pairing,
+   * because one device was minted for it.
+   */
+  confirmationCode: string;
+  /**
+   * Which applications this device may speak for, 64 hex each. Omitted or empty means
+   * every one of them.
+   *
+   * Scoped by application rather than by namespace because a person can answer
+   * "which apps may this device use" and cannot answer "which namespaces" - a
+   * namespace is an implementation unit they never named. The node resolves
+   * these to namespaces through the same lookup
+   * {@link AdminApiClient.listNamespacesForApplication} reads.
+   */
+  applications?: string[];
+}
+
+/** What pairing established. */
+export interface AccountPairCompleteResponseData {
+  /** The account the device now speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was linked, 64 hex characters. */
+  deviceId: string;
+  /**
+   * Whether the current scope key was wrapped and published for the device.
+   *
+   * `false` does not mean pairing failed - the link is what confers authority,
+   * and the device's own sync pull re-requests the key. It does mean the device
+   * cannot read until that lands.
+   */
+  keyDelivered: boolean;
+  /**
+   * The code for the key material this certified - the same value the request
+   * carried, echoed so the operator can see what the certificate names.
+   */
+  confirmationCode: string;
+  /**
+   * The `AccountProof<DeviceCert>` this pairing minted, hex-encoded borsh.
+   *
+   * The certified device needs this to present itself as a device of the
+   * account, and cannot read it off the DAG: doing so means being a member of a
+   * group the account speaks in, which a thin client never is. Not a secret - a
+   * certificate is public and proves nothing without the device key it names.
+   */
+  credential: string;
+}
+
+/**
+ * Repair or widen the reach of a device this account already certified.
+ *
+ * Pairing is a snapshot: it bound the device wherever this node took part at the
+ * time, so a namespace created or joined afterwards holds no binding for it and
+ * the paired device silently never sees that namespace. This re-runs the fan-out
+ * against the namespaces this node takes part in now. The device need not be
+ * online, and nothing but its id is required - the certificate is already held
+ * here, root-signed and naming no namespace, so a fresh endorsement and a key
+ * wrap are all a later namespace is missing.
+ */
+export interface RelinkDeviceRequest {
+  /**
+   * Applications to add to the device's stored scope, 64 hex each.
+   *
+   * **Omitted or empty changes nothing** and repairs against the scope already
+   * stored, which is the request an operator makes to heal drift. Note that this
+   * is the one place an empty list does not mean "all": widening a narrow scope
+   * to every application is deliberately not expressible here, because
+   * overloading the empty list would make the accidental request the widest one.
+   */
+  applications?: string[];
+}
+
+/** One namespace the relink published the device's link into. */
+export interface RelinkOutcomeEntry {
+  /** The namespace id, 64 hex characters. */
+  namespaceId: string;
+  /**
+   * Whether the scope key was wrapped and published for the device here.
+   *
+   * `false` means the link landed and the delivery did not; the link is what
+   * confers authority, and the device's own sync pull re-requests the key.
+   */
+  keyDelivered: boolean;
+}
+
+/** One namespace the relink published nothing into, and why. */
+export interface RelinkSkipEntry {
+  /** The namespace id, 64 hex characters. */
+  namespaceId: string;
+  /**
+   * Why nothing was published there. Currently one of `outOfScope`,
+   * `alreadyBound`, `noScopeKey`, `revoked`, `ownDevice`, `failed`; left as a
+   * string because a node may report a reason newer than this SDK.
+   */
+  reason: string;
+}
+
+/** What the relink repaired, and what it left alone. */
+export interface RelinkDeviceResponseData {
+  /** The account the device speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was repaired, 64 hex characters. */
+  deviceId: string;
+  /**
+   * The device's scope after the request, 64 hex each. Empty means every
+   * application, which is what a pairing that named none asked for.
+   */
+  applications: string[];
+  /**
+   * Namespaces the link was published into by this call. Reported per namespace
+   * because publication is per-DAG, so which namespaces a device actually
+   * reached is a state the caller has to be able to see.
+   */
+  linkedIn: RelinkOutcomeEntry[];
+  /** Namespaces nothing was published into. */
+  skipped: RelinkSkipEntry[];
+}
+
+/**
+ * One device of this account, joined from the node-local certificate cache and
+ * the live bindings of every namespace this node takes part in.
+ */
+export interface AccountDeviceEntry {
+  /** This device's id, 64 hex characters. */
+  deviceId: string;
+  /** The key this device signs its ops with, 64 hex. */
+  signingKey: string;
+  /** Set only on the device this node itself presents. */
+  isSelf: boolean;
+  revoked: boolean;
+  /**
+   * Applications this device may speak for, 64 hex each. **Empty means every
+   * application**, the same convention the stored certificate uses - and the
+   * opposite of what an empty {@link RelinkDeviceRequest.applications} asks for.
+   * Empty also for a device this node holds no cached certificate for: one bound
+   * before the cache existed, or certified by another holder.
+   */
+  applications: string[];
+  /**
+   * Ids of the namespaces currently holding a live binding for this device, 64
+   * hex characters each. Empty for a certified device not yet bound anywhere.
+   */
+  namespaces: string[];
+}
+
+/**
+ * One application this account speaks in, derived from the namespaces this node
+ * takes part in that target it.
+ *
+ * An application installed with no namespace yet is absent here: it has no
+ * cross-device meaning until a namespace exists, so there is nothing to scope a
+ * device to.
+ */
+export interface AccountApplicationEntry {
+  /** The application id, 64 hex. */
+  applicationId: string;
+  /** Ids of the namespaces targeting it, 64 hex characters each. */
+  namespaces: string[];
+}
+
+/** Withdraw a device from an account, terminally. */
+export interface RevokeAccountDeviceRequest {
+  /** The device to withdraw, 64 hex. */
+  deviceId: string;
+  /**
+   * A hex-encoded, borsh-serialized signed revocation minted elsewhere -
+   * the output of `merod account revoke-proof`.
+   *
+   * The lost-device path: the account root that owns the device is not on this
+   * node, so the proof is signed offline and this node only publishes it. Omit
+   * it and the node mints its own proof if it owns the account, and otherwise
+   * revokes as an admin.
+   *
+   * Not a credential and not a secret - it authorises this one revocation of
+   * this one device, and only alongside a stored binding naming the same
+   * account.
+   */
+  proof?: string;
+}
+
+/** What a revocation withdrew in one namespace. */
+export interface RevocationOutcome {
+  /** The namespace, 64 hex. */
+  namespaceId: string;
+  /**
+   * Whether the scope key rotated in the same op, in THIS namespace.
+   *
+   * `false` means the device stopped writing there at once but still holds the
+   * key it had, so it can keep READING until an admin rotates. Only an admin
+   * may rotate and an account holder revoking their own device usually is not
+   * one, so this is commonly owed rather than exceptional.
+   */
+  keyRotated: boolean;
+}
+
+export interface RevokeAccountDeviceResponseData {
+  /** The account the device spoke for, 64 hex. */
+  accountId: string;
+  /** The device that was withdrawn, 64 hex. */
+  deviceId: string;
+  /**
+   * Whether the scope key rotated in the namespace named in the request.
+   *
+   * {@link revokedIn} is the full picture; prefer it. This reports only the one
+   * namespace the caller asked about and is retained because core keeps it for
+   * a released `calimero-client-py` wheel that requires the field.
+   */
+  keyRotated: boolean;
+  /**
+   * Every namespace the revocation was published into.
+   *
+   * A device belongs to an account rather than to a scope, so revoking it
+   * withdraws it from every namespace holding a binding for it - not only the
+   * one named in the request. Per namespace because publication is per-DAG: a
+   * namespace absent here did not receive the op, and a partially propagated
+   * revocation is a state the caller has to be able to see.
+   */
+  revokedIn: RevocationOutcome[];
 }
 
 // ---- Groups ----
@@ -679,7 +1131,7 @@ export interface GroupMember {
   /**
    * The member's ACCOUNT: 64 hex characters.
    *
-   * Not a signing key, which renders as bs58 — a person may hold several keys
+   * Not a signing key — a person may hold several keys
    * and governance rows name the person. Both are 32 bytes, so nothing here or
    * on the server will object if you pass the wrong one; it will simply name a
    * principal that exists nowhere. Feed this value to
@@ -709,10 +1161,6 @@ export interface GroupContextEntry {
 
 export type ListGroupContextsResponseData = GroupContextEntry[];
 
-export interface DeleteGroupRequest {
-  requester?: string;
-}
-
 export interface DeleteGroupResponseData {
   isDeleted: boolean;
 }
@@ -721,7 +1169,8 @@ export interface DeleteGroupResponseData {
 
 export interface GroupMemberInput {
   /**
-   * The invitee's signing KEY, in bs58 — NOT an account.
+   * The invitee's signing KEY, 64 hex — NOT an account. It is spelled exactly
+   * like one, so only the field name says which this is.
    *
    * Adding is the one member-facing call that names a key: the node binds the
    * key to an account as it admits it, so before that there is no account to
@@ -733,7 +1182,6 @@ export interface GroupMemberInput {
 
 export interface AddGroupMembersRequest {
   members: GroupMemberInput[];
-  requester?: string;
 }
 
 // Returns empty
@@ -746,7 +1194,6 @@ export interface RemoveGroupMembersRequest {
    * {@link GroupMemberInput.identity} took to add them.
    */
   members: string[];
-  requester?: string;
 }
 
 // Returns empty
@@ -754,7 +1201,6 @@ export type RemoveGroupMembersResponseData = Record<string, never>;
 
 export interface UpdateMemberRoleRequest {
   role: string;
-  requester?: string;
 }
 
 // Returns empty
@@ -768,7 +1214,6 @@ export interface MemberCapabilities {
 
 export interface SetMemberCapabilitiesRequest {
   capabilities: number;
-  requester?: string;
 }
 
 // Returns empty
@@ -776,15 +1221,23 @@ export type SetMemberCapabilitiesResponseData = Record<string, never>;
 
 export interface SetDefaultCapabilitiesRequest {
   defaultCapabilities: number;
-  requester?: string;
 }
 
 // Returns empty
 export type SetDefaultCapabilitiesResponseData = Record<string, never>;
 
+export interface SetMemberAutoFollowRequest {
+  /** Auto-join contexts registered in this group. */
+  autoFollowContexts: boolean;
+  /** Self-admit into subgroups nested under this group. */
+  autoFollowSubgroups: boolean;
+}
+
+// Returns empty
+export type SetMemberAutoFollowResponseData = Record<string, never>;
+
 export interface SetSubgroupVisibilityRequest {
   subgroupVisibility: string;
-  requester?: string;
 }
 
 // Returns empty
@@ -798,7 +1251,6 @@ export interface SetTeeAdmissionPolicyRequest {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
-  requester?: string;
 }
 
 // Returns empty
@@ -842,7 +1294,6 @@ export interface MetadataRecord {
 export interface SetMetadataRequest {
   name?: string;
   data?: Record<string, string>;
-  requester?: string;
 }
 
 export type SetGroupMetadataRequest = SetMetadataRequest;
@@ -862,10 +1313,6 @@ export interface GetMetadataResponseData {
 
 // ---- Group Sync, Signing & Upgrades ----
 
-export interface SyncGroupRequest {
-  requester?: string;
-}
-
 export interface SyncGroupResponseData {
   groupId: string;
   appKey: string;
@@ -876,7 +1323,6 @@ export interface SyncGroupResponseData {
 
 export interface UpgradeGroupRequest {
   targetApplicationId: string;
-  requester?: string;
   /** Fan the upgrade out to every descendant subgroup running the same app
    *  (one atomic cascade op). Without it the upgrade applies to the target
    *  group only - members' subgroups never learn the migration. Server
@@ -900,10 +1346,6 @@ export interface UpgradeGroupResponseData {
 
 export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;
 
-export interface RetryGroupUpgradeRequest {
-  requester?: string;
-}
-
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
@@ -912,26 +1354,74 @@ export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 export interface ReparentGroupRequest {
   /** 64-char id of the destination parent group. */
   newParentId: string;
-  requester?: string;
 }
 
 export interface ReparentGroupResponseData {
   reparented: boolean;
 }
 
-export interface DetachContextFromGroupRequest {
-  requester?: string;
-}
-
 // Returns empty
 export type DetachContextFromGroupResponseData = Record<string, never>;
+
+// ---- Group Ownership Proofs ----
+
+export interface IssueOwnershipProofRequest {
+  /** Who the proof is for. Non-empty, <= 256 characters. */
+  audience: string;
+  /** 64-hex context id the proof is scoped to. */
+  contextId: string;
+  /** What is being claimed. Non-empty, <= 512 characters. */
+  subject: string;
+  /** Caller-chosen hex nonce, 32-128 characters (even length). */
+  nonce: string;
+  /** Requested expiry, unix ms. Core clamps it to issue time + 5 minutes. */
+  expiresAtMs: number;
+}
+
+/** Namespace-scoped sibling: identical minus `contextId`. */
+export type IssueNamespaceOwnershipProofRequest = Omit<IssueOwnershipProofRequest, 'contextId'>;
+
+export interface IssueOwnershipProofResponseData {
+  /** Hex 32-byte ed25519 public key of the signer. */
+  signerPublicKey: string;
+  /**
+   * Base64 opaque UTF-8 JSON bytes of the claim. Verifiers re-parse these exact
+   * bytes and sign over `"calimero.ownership-claim.v1\0" || signedPayload`.
+   */
+  signedPayload: string;
+  /** Base64 64-byte ed25519 signature. */
+  signature: string;
+}
 
 // ---- Group Invitation & Join ----
 
 export interface CreateGroupInvitationRequest {
-  requester?: string;
   expirationTimestamp?: number;
   recursive?: boolean;
+  /**
+   * Accounts permitted to admit a claim of this invitation, 64 hex each.
+   *
+   * Omitted or empty is filled in by the node from the group's admins and its
+   * TEE nodes; it refuses to mint if that set comes back empty, because an empty
+   * list on the wire authorises any node to admit. Naming admitters narrows that
+   * set.
+   *
+   * Core signs this list into the invitation, so it cannot be redirected after
+   * the fact.
+   */
+  admitters?: string[];
+  /**
+   * libp2p addresses for those admitters, each including its `/p2p/<peer-id>`
+   * suffix.
+   *
+   * Omitted or empty asks the node to fill them in from addresses it already has
+   * on file — which is usually what you want. Values supplied here are used as
+   * given rather than merged, on the grounds that a caller naming an address is
+   * correcting the node's view rather than extending it.
+   *
+   * Not signed, so a wrong address costs a failed dial and nothing more.
+   */
+  admitterAddrs?: string[];
 }
 
 export interface CreateGroupInvitationResponseData {
@@ -950,7 +1440,7 @@ export interface JoinGroupRequest {
 
 export interface JoinGroupResponseData {
   groupId: string;
-  /** The key the joiner signs with, base58. */
+  /** The key the joiner signs with, 64 hex. */
   memberIdentity: string;
   /**
    * The account that key joined as, 64 hex characters. This — not
@@ -1034,4 +1524,29 @@ export interface AdminApiClientConfig {
   baseUrl: string;
   getAuthToken?: () => Promise<string | undefined>;
   timeoutMs?: number;
+}
+
+/** A join signed by its subject, handed to an admitter to publish. */
+export interface AdmitJoinRequest {
+  /** The invitation being claimed. Must name the admitter in `admitters`. */
+  readonly invitation: SignedGroupOpenInvitation;
+  /**
+   * The signed `SignedNamespaceOp`, borsh-encoded and hex.
+   *
+   * Signed by the joiner's device key, which is what stops an admitter
+   * substituting a different member: peers check the op's signer against the
+   * credential the op carries.
+   */
+  readonly signedOp: string;
+}
+
+/** What the admitter did with it. */
+export interface AdmitJoinResponseData {
+  /**
+   * Whether the op reached the namespace topic.
+   *
+   * Not "joined" — membership lands when peers apply the op, which the admitter
+   * neither performs nor waits for.
+   */
+  readonly published: boolean;
 }

@@ -95,54 +95,20 @@ describe('AdminApiClient', () => {
   });
 
   describe('Application Management', () => {
-    it('installApplication unwraps data', async () => {
+    it('installApplication sends only the coordinates and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-application', { data: { applicationId: 'app-1' } });
-      const result = await client.installApplication({ url: 'http://...', metadata: [] });
+      const result = await client.installApplication({
+        package: 'com.acme.app',
+        version: '2.0.1',
+      });
       expect(result).toEqual({ applicationId: 'app-1' });
+      // Core sets `deny_unknown_fields`, so any extra key here is a 400 — the
+      // body must carry the two coordinates and nothing else.
+      const body = mock.getRequestBody('POST', '/admin-api/install-application');
+      expect(body).toEqual({ package: 'com.acme.app', version: '2.0.1' });
     });
 
-    it('installFromRegistry resolves the artifact URL and installs', async () => {
-      const origFetch = globalThis.fetch;
-      globalThis.fetch = (async (input: RequestInfo | URL) => {
-        // Manifest is fetched by the CALLER's package@version...
-        expect(String(input)).toBe(
-          'https://registry.example.com/api/v2/bundles/com.acme.app/2.0.0',
-        );
-        // ...but resolves to the registry's canonical appVersion (here it
-        // differs from the arg, so the asserts below prove the manifest value
-        // — not the caller's arg — builds the artifact URL + install request).
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ package: 'com.acme.app', appVersion: '2.0.1' }),
-        } as Response;
-      }) as typeof fetch;
-      try {
-        mock.setMockResponse('POST', '/admin-api/install-application', {
-          data: { applicationId: 'app-9' },
-        });
-        const result = await client.installFromRegistry(
-          'https://registry.example.com',
-          'com.acme.app',
-          '2.0.0',
-        );
-        expect(result.applicationId).toBe('app-9');
-        const body = mock.getRequestBody('POST', '/admin-api/install-application') as {
-          url: string;
-          package?: string;
-          version?: string;
-        };
-        expect(body.url).toBe(
-          'https://registry.example.com/artifacts/com.acme.app/2.0.1/com.acme.app-2.0.1.mpk',
-        );
-        expect(body.package).toBe('com.acme.app');
-        expect(body.version).toBe('2.0.1');
-      } finally {
-        globalThis.fetch = origFetch;
-      }
-    });
-
-    it('installFromRegistry throws on a registry error and does not retry a 4xx', async () => {
+    it('getRegistryVersions throws on a registry error and does not retry a 4xx', async () => {
       const origFetch = globalThis.fetch;
       let calls = 0;
       globalThis.fetch = (async () => {
@@ -151,8 +117,8 @@ describe('AdminApiClient', () => {
       }) as typeof fetch;
       try {
         await expect(
-          client.installFromRegistry('https://registry.example.com', 'missing', '9.9.9'),
-        ).rejects.toThrow(/registry manifest fetch failed \(404\)/);
+          client.getRegistryVersions('https://registry.example.com', 'missing'),
+        ).rejects.toThrow(/registry versions fetch failed \(404\)/);
         // A 4xx is a definitive answer — no retry.
         expect(calls).toBe(1);
       } finally {
@@ -238,7 +204,7 @@ describe('AdminApiClient', () => {
 
     it('installDevApplication unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/install-dev-application', { data: { applicationId: 'app-2' } });
-      const result = await client.installDevApplication({ path: '/tmp/app.mpk', metadata: [] });
+      const result = await client.installDevApplication({ path: '/tmp/app.mpk' });
       expect(result).toEqual({ applicationId: 'app-2' });
     });
 
@@ -341,13 +307,6 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('DELETE', '/admin-api/contexts/ctx-1', { data: { isDeleted: true } });
       const result = await client.deleteContext('ctx-1');
       expect(result).toEqual({ isDeleted: true });
-    });
-
-    it('deleteContext with requester sends body', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/contexts/ctx-1', { data: { isDeleted: true } });
-      const result = await client.deleteContext('ctx-1', { requester: 'pk-admin' });
-      expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/contexts/ctx-1')).toEqual({ requester: 'pk-admin' });
     });
 
     it('getContexts returns contexts with groupId and contextStateHash', async () => {
@@ -608,6 +567,54 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
+    it('performIntent posts the author-side halves and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/intents', {
+        data: { rootHash: 'root-1', returns: null },
+      });
+
+      const result = await client.performIntent('ctx-1', {
+        method: 'set',
+        argsJson: { key: 'k', value: 'v' },
+        warrant: 'aabb',
+        authorProof: 'ccdd',
+      });
+
+      expect(result).toEqual({ rootHash: 'root-1', returns: null });
+      // Only the author's half goes out. The node attaches its own credential,
+      // so a caller never has to learn which of its processes runs the intent —
+      // and a re-key on its side does not void a warrant already issued.
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/intents')).toEqual({
+        method: 'set',
+        argsJson: { key: 'k', value: 'v' },
+        warrant: 'aabb',
+        authorProof: 'ccdd',
+      });
+    });
+
+    it('performIntent leaves nested args untouched', async () => {
+      // The warrant commits to H(method, args), and the node recomputes that
+      // hash from what arrives. Anything this client did to the shape on the way
+      // out — reordering, stringifying, dropping a null — would make a warrant
+      // that verifies nowhere, and it would surface at the node as a bad
+      // signature rather than here as a serialization difference.
+      const argsJson = { outer: { inner: [1, null, 'x'] }, flag: false };
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-2/intents', {
+        data: { rootHash: 'root-2', returns: 'ok' },
+      });
+
+      await client.performIntent('ctx-2', {
+        method: 'nested',
+        argsJson,
+        warrant: 'aa',
+        authorProof: 'bb',
+      });
+
+      expect(
+        (mock.getRequestBody('POST', '/admin-api/contexts/ctx-2/intents') as { argsJson: unknown })
+          .argsJson,
+      ).toEqual(argsJson);
+    });
+
     it('getNodeIdentity unwraps data', async () => {
       const identity = {
         accountId: 'ac-1',
@@ -629,6 +636,22 @@ describe('AdminApiClient', () => {
         data: { accountId: 'ac-1', deviceId: null, publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
       });
       expect((await client.getNodeIdentity()).deviceId).toBeNull();
+    });
+
+    it('getNodeIdentity keeps holdsAccountRoot false and absent apart', async () => {
+      // Three answers, not two: `true` can certify a new device, `false` runs on
+      // a delegate key and cannot, and absent means the node predates the field
+      // (<= 0.11.0-rc.30) and cannot say. A caller gating a pairing invite has to
+      // tell the last two apart, so neither may be collapsed into the other.
+      const base = { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1' };
+      for (const holdsAccountRoot of [true, false] as const) {
+        mock.setMockResponse('GET', '/admin-api/identity', {
+          data: { ...base, holdsAccountRoot },
+        });
+        expect((await client.getNodeIdentity()).holdsAccountRoot).toBe(holdsAccountRoot);
+      }
+      mock.setMockResponse('GET', '/admin-api/identity', { data: base });
+      expect((await client.getNodeIdentity()).holdsAccountRoot).toBeUndefined();
     });
 
     it('getNamespaceIdentity answers from the node-level route', async () => {
@@ -667,13 +690,8 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       const result = await client.createNamespace({ applicationId: 'app-1', name: 'My NS' });
       expect(result).toEqual({ namespaceId: 'ns-1' });
-      // `upgradePolicy` rides along for released nodes that still require it;
-      // a node that dropped the concept ignores it. Asserted rather than
-      // tolerated, so removing it later is a deliberate change and not a
-      // silent one — the field is what keeps this SDK usable against a node
-      // the caller chose and we did not.
+      // Core declares this body `deny_unknown_fields`, so any extra key is a 400.
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
-        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         name: 'My NS',
       });
@@ -683,17 +701,16 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
       await client.createNamespace({ applicationId: 'app-1', appKey: 'deadbeef' });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
-        upgradePolicy: 'LazyOnAccess',
         applicationId: 'app-1',
         appKey: 'deadbeef',
       });
     });
 
-    it('deleteNamespace with requester', async () => {
+    it('deleteNamespace sends an empty JSON body', async () => {
       mock.setMockResponse('DELETE', '/admin-api/namespaces/ns-1', { data: { isDeleted: true } });
-      const result = await client.deleteNamespace('ns-1', { requester: 'pk-admin' });
+      const result = await client.deleteNamespace('ns-1');
       expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/namespaces/ns-1')).toEqual({ requester: 'pk-admin' });
+      expect(mock.getRequestBody('DELETE', '/admin-api/namespaces/ns-1')).toEqual({});
     });
 
     it('createNamespaceInvitation sends structured request', async () => {
@@ -706,23 +723,228 @@ describe('AdminApiClient', () => {
     it('joinNamespace sends structured invitation', async () => {
       const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
-        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+        data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
       });
       const result = await client.joinNamespace('ns-1', { invitation, groupName: 'My NS' });
-      expect(result).toEqual({ groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
+      expect(result).toEqual({ namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) });
       expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({ invitation, groupName: 'My NS' });
     });
 
-    it('createGroupInNamespace sends request', async () => {
+    // A node older than core 0.11.0-rc.25 spells this field `groupId`
+    // (core#3598 renamed it). The rename is invisible on the wire — the old
+    // field simply stops arriving — so without this normalisation
+    // `namespaceId` reads `undefined` and the failure surfaces wherever the
+    // caller uses it, not here.
+    it('joinNamespace binds namespaceId from a pre-rc.25 node that sent groupId', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
+      expect(result.namespaceId).toBe('g-1');
+      // The original field is left intact rather than deleted: a caller still
+      // reading it against an old node keeps working.
+      expect(result.groupId).toBe('g-1');
+    });
+
+    // The new spelling must win outright. A node that sent both — or a
+    // normalisation that ran unconditionally — must not overwrite it.
+    it('joinNamespace prefers namespaceId when the node sends both', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { namespaceId: 'ns-1', groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
+      expect(result.namespaceId).toBe('ns-1');
+    });
+
+    it('createGroupInNamespace sends groupName and visibility', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/groups', { data: { groupId: 'g-1' } });
-      const result = await client.createGroupInNamespace('ns-1', { name: 'Sub' });
+      const result = await client.createGroupInNamespace('ns-1', {
+        groupName: 'Sub',
+        visibility: 'open',
+      });
       expect(result).toEqual({ groupId: 'g-1' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/groups')).toEqual({
+        groupName: 'Sub',
+        visibility: 'open',
+      });
     });
 
     it('listNamespaceGroups unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/groups', { data: [{ groupId: 'g-1', name: 'Sub' }] });
       const result = await client.listNamespaceGroups('ns-1');
       expect(result).toEqual([{ groupId: 'g-1', name: 'Sub' }]);
+    });
+  });
+
+  describe('Account Devices & Pairing', () => {
+    // A pair-init answer as merod emits it: every field hex, including the two
+    // public keys, because this payload is a set of round-trip tokens copied
+    // verbatim into pair-complete rather than keys compared against a listing.
+    const HEX32 = 'a'.repeat(64);
+    const HEX64 = 'b'.repeat(128);
+    const PAIR_INIT = {
+      accountId: '1'.repeat(64),
+      deviceId: '2'.repeat(64),
+      kemPublicKey: HEX32,
+      signPublicKey: '3'.repeat(64),
+      statement: HEX64,
+      confirmationCode: '7BC0-DAAC-CCB4-84A4',
+    };
+
+    it('initAccountPairing posts the namespace set and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/account/pair-init', { data: PAIR_INIT });
+      const result = await client.initAccountPairing({
+        accountRootPublicKey: '4'.repeat(64),
+        namespaces: ['5'.repeat(64), '6'.repeat(64)],
+      });
+      // Passed through untouched: the caller's hex is what the node parses, and
+      // the answer's hex is what pair-complete has to receive verbatim.
+      expect(mock.getRequestBody('POST', '/admin-api/account/pair-init')).toEqual({
+        accountRootPublicKey: '4'.repeat(64),
+        namespaces: ['5'.repeat(64), '6'.repeat(64)],
+      });
+      expect(result).toEqual(PAIR_INIT);
+    });
+
+    it('completeAccountPairing sends the whole pair-init payload plus the scope', async () => {
+      const completed = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        keyDelivered: true,
+        confirmationCode: PAIR_INIT.confirmationCode,
+        credential: 'c'.repeat(200),
+      };
+      mock.setMockResponse('POST', '/admin-api/account/pair-complete', { data: completed });
+      const request = {
+        deviceId: PAIR_INIT.deviceId,
+        kemPublicKey: PAIR_INIT.kemPublicKey,
+        signPublicKey: PAIR_INIT.signPublicKey,
+        statement: PAIR_INIT.statement,
+        confirmationCode: PAIR_INIT.confirmationCode,
+        applications: ['a'.repeat(64)],
+      };
+      const result = await client.completeAccountPairing(request);
+      // Asserted whole rather than field by field: the statement is what turns
+      // the three values above from claims by whoever relayed them into a
+      // statement by the device that minted them, so a client that quietly
+      // dropped one field would be asking the node to certify attacker-supplied
+      // keys. Every field here is hex, the scope included.
+      expect(mock.getRequestBody('POST', '/admin-api/account/pair-complete')).toEqual(request);
+      expect(result).toEqual(completed);
+    });
+
+    it('completeAccountPairing omits applications when the caller grants every one', async () => {
+      // Absent is the wire's "all", and the SDK must not turn it into `[]` or
+      // into a guess at the full list - the node resolves it.
+      mock.setMockResponse('POST', '/admin-api/account/pair-complete', { data: { keyDelivered: false } });
+      await client.completeAccountPairing({
+        deviceId: PAIR_INIT.deviceId,
+        kemPublicKey: PAIR_INIT.kemPublicKey,
+        signPublicKey: PAIR_INIT.signPublicKey,
+        statement: PAIR_INIT.statement,
+        confirmationCode: PAIR_INIT.confirmationCode,
+      });
+      expect(
+        mock.getRequestBody('POST', '/admin-api/account/pair-complete'),
+      ).not.toHaveProperty('applications');
+    });
+
+    it('relinkAccountDevice names the device in the path and unwraps data', async () => {
+      const relinked = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        applications: ['a'.repeat(64)],
+        linkedIn: [{ namespaceId: '5'.repeat(64), keyDelivered: true }],
+        skipped: [{ namespaceId: '6'.repeat(64), reason: 'outOfScope' }],
+      };
+      mock.setMockResponse('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`, { data: relinked });
+      const result = await client.relinkAccountDevice(PAIR_INIT.deviceId, {
+        applications: ['a'.repeat(64)],
+      });
+      expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({
+        applications: ['a'.repeat(64)],
+      });
+      // `linkedIn` and `skipped` are the whole point of the answer: publication
+      // is per-DAG, so which namespaces the device actually reached - and why
+      // the others were left alone - is a state the caller has to be able to see.
+      expect(result).toEqual(relinked);
+    });
+
+    it('relinkAccountDevice sends an empty body for a repair-only relink', async () => {
+      // No argument means "repair against the stored scope", which the wire
+      // spells as an absent list. It must not become the every-application list
+      // an empty `applications` means on pair-complete.
+      mock.setMockResponse('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`, {
+        data: { applications: [], linkedIn: [], skipped: [] },
+      });
+      await client.relinkAccountDevice(PAIR_INIT.deviceId);
+      expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({});
+    });
+
+    it('listAccountDevices reads the top-level `devices` wrapper, not `data`', async () => {
+      const devices = [
+        {
+          deviceId: PAIR_INIT.deviceId,
+          signingKey: 'b'.repeat(64),
+          isSelf: true,
+          revoked: false,
+          applications: [],
+          namespaces: ['5'.repeat(64)],
+        },
+      ];
+      mock.setMockResponse('GET', '/admin-api/account/devices', { devices });
+      const result = await client.listAccountDevices();
+      // `applications: []` survives as-is: on a device entry an empty list means
+      // EVERY application, so normalizing it away would invert its meaning.
+      expect(result).toEqual(devices);
+      expect(result[0].applications).toEqual([]);
+    });
+
+    it('listAccountApplications reads the top-level `applications` wrapper, not `data`', async () => {
+      const applications = [{ applicationId: 'a'.repeat(64), namespaces: ['5'.repeat(64)] }];
+      mock.setMockResponse('GET', '/admin-api/account/applications', { applications });
+      expect(await client.listAccountApplications()).toEqual(applications);
+    });
+
+    it('revokeAccountDevice names the namespace in the path and the device in the body', async () => {
+      const revoked = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        keyRotated: false,
+        revokedIn: [
+          { namespaceId: '5'.repeat(64), keyRotated: true },
+          { namespaceId: '6'.repeat(64), keyRotated: false },
+        ],
+      };
+      const path = `/admin-api/namespaces/${'5'.repeat(64)}/account/revoke`;
+      mock.setMockResponse('POST', path, { data: revoked });
+      const result = await client.revokeAccountDevice('5'.repeat(64), {
+        deviceId: PAIR_INIT.deviceId,
+      });
+      // The namespace is a path segment and the device is a body field; swapping
+      // them reaches a real route with the wrong subject rather than 404ing.
+      expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: PAIR_INIT.deviceId });
+      // `revokedIn` is the whole point: a device belongs to the account, so more
+      // namespaces are withdrawn from than the one named, and per-namespace
+      // `keyRotated: false` is the state where the device can no longer write
+      // but can still READ until an admin rotates. Collapsing that to the
+      // top-level flag would report a fully-closed device that is not one.
+      expect(result).toEqual(revoked);
+      expect(result.revokedIn.filter((r) => !r.keyRotated)).toHaveLength(1);
+    });
+
+    it('revokeAccountDevice omits proof unless one is supplied', async () => {
+      // Absent means "node mints its own, or revokes as admin". Sending
+      // `proof: undefined` would serialize the key and is a different request.
+      const path = `/admin-api/namespaces/${'5'.repeat(64)}/account/revoke`;
+      mock.setMockResponse('POST', path, {
+        data: { accountId: 'ac-1', deviceId: 'dv-1', keyRotated: true, revokedIn: [] },
+      });
+      await client.revokeAccountDevice('5'.repeat(64), { deviceId: 'dv-1' });
+      expect(Object.keys(mock.getRequestBody('POST', path) as object)).toEqual(['deviceId']);
+
+      await client.revokeAccountDevice('5'.repeat(64), { deviceId: 'dv-1', proof: 'ab12' });
+      expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: 'dv-1', proof: 'ab12' });
     });
   });
 
@@ -779,17 +1001,11 @@ describe('AdminApiClient', () => {
       expect(await client.getSubgroupVisibility('g-1')).toBe('open');
     });
 
-    it('deleteGroup without requester', async () => {
+    it('deleteGroup sends an empty JSON body', async () => {
       mock.setMockResponse('DELETE', '/admin-api/groups/g-1', { data: { isDeleted: true } });
       const result = await client.deleteGroup('g-1');
       expect(result).toEqual({ isDeleted: true });
-    });
-
-    it('deleteGroup with requester sends body', async () => {
-      mock.setMockResponse('DELETE', '/admin-api/groups/g-1', { data: { isDeleted: true } });
-      const result = await client.deleteGroup('g-1', { requester: 'pk-admin' });
-      expect(result).toEqual({ isDeleted: true });
-      expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1')).toEqual({ requester: 'pk-admin' });
+      expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1')).toEqual({});
     });
 
     it('listGroupMembers returns the members', async () => {
@@ -821,15 +1037,11 @@ describe('AdminApiClient', () => {
       expect(result).toEqual([{ contextId: 'ctx-1', alias: 'Chat' }]);
     });
 
-    it('addGroupMembers sends structured members with requester', async () => {
+    it('addGroupMembers sends structured members', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/members', {});
-      await client.addGroupMembers('g-1', {
-        members: [{ identity: 'pk-1', role: 'Member' }],
-        requester: 'pk-admin',
-      });
+      await client.addGroupMembers('g-1', { members: [{ identity: 'pk-1', role: 'Member' }] });
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/members')).toEqual({
         members: [{ identity: 'pk-1', role: 'Member' }],
-        requester: 'pk-admin',
       });
     });
 
@@ -853,12 +1065,23 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ capabilities: 7 });
     });
 
-    it('setMemberCapabilities sends bitmask with requester', async () => {
+    it('setMemberCapabilities sends bitmask', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/pk-1/capabilities', {});
-      await client.setMemberCapabilities('g-1', 'pk-1', { capabilities: 7, requester: 'pk-admin' });
+      await client.setMemberCapabilities('g-1', 'pk-1', { capabilities: 7 });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/pk-1/capabilities')).toEqual({
         capabilities: 7,
-        requester: 'pk-admin',
+      });
+    });
+
+    it('setMemberAutoFollow sends both flags', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/pk-1/auto-follow', {});
+      await client.setMemberAutoFollow('g-1', 'pk-1', {
+        autoFollowContexts: true,
+        autoFollowSubgroups: false,
+      });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/pk-1/auto-follow')).toEqual({
+        autoFollowContexts: true,
+        autoFollowSubgroups: false,
       });
     });
   });
@@ -877,18 +1100,6 @@ describe('AdminApiClient', () => {
       await client.setSubgroupVisibility('g-1', { subgroupVisibility: 'open' });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
         subgroupVisibility: 'open',
-      });
-    });
-
-    it('setSubgroupVisibility forwards requester when provided', async () => {
-      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility', {});
-      await client.setSubgroupVisibility('g-1', {
-        subgroupVisibility: 'restricted',
-        requester: 'pk-admin',
-      });
-      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/subgroup-visibility')).toEqual({
-        subgroupVisibility: 'restricted',
-        requester: 'pk-admin',
       });
     });
 
@@ -1147,14 +1358,10 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({ newParentId: 'parent-2' });
     });
 
-    it('reparentGroup forwards an explicit requester', async () => {
+    it('reparentGroup unwraps a refused move', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/child-1/reparent', { data: { reparented: false } });
-      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2', requester: 'pk-admin' });
+      const result = await client.reparentGroup('child-1', { newParentId: 'parent-2' });
       expect(result.reparented).toBe(false);
-      expect(mock.getRequestBody('POST', '/admin-api/groups/child-1/reparent')).toEqual({
-        newParentId: 'parent-2',
-        requester: 'pk-admin',
-      });
     });
 
     it('listSubgroups reads the `subgroups` field (current server shape)', async () => {
@@ -1180,10 +1387,10 @@ describe('AdminApiClient', () => {
       expect(result).toEqual([]);
     });
 
-    it('detachContextFromGroup sends request', async () => {
+    it('detachContextFromGroup sends an empty body', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove', {});
-      await client.detachContextFromGroup('g-1', 'ctx-1', { requester: 'pk-admin' });
-      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove')).toEqual({ requester: 'pk-admin' });
+      await client.detachContextFromGroup('g-1', 'ctx-1');
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/contexts/ctx-1/remove')).toEqual({});
     });
   });
 

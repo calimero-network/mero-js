@@ -4,9 +4,14 @@
  *
  * These are best-effort: the recorder logs a path when the request FIRES (before
  * the response), so a call that 4xx's for a state reason (e.g. can't upgrade
- * without a newer bundle, can't leave as sole owner) still proves the SDK builds
- * and sends a correct request to the right URL/method — which is the bug class
- * the gate exists to catch. Deep success assertions live in the main flows.
+ * without a newer bundle, can't leave as sole owner) still proves the SDK sent a
+ * request to the right URL and method. Deep success assertions live in the main
+ * flows.
+ *
+ * What cover() does NOT prove is that the node accepted the request BODY — a 400
+ * from a stale field shape is indistinguishable from a state 4xx here, and the
+ * route still records as covered. On a route where core rejects unknown fields,
+ * assert the shape explicitly instead of cover()ing it.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +40,25 @@ async function cover(label: string, fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+/**
+ * Like {@link cover}, but for a route whose body core declares
+ * `deny_unknown_fields`: a state 4xx still passes, a 400 (stale SDK shape) does
+ * not.
+ */
+async function coverShape(label: string, fn: () => Promise<unknown>): Promise<void> {
+  const err = await fn()
+    .then(() => undefined)
+    .catch((e: Error & { status?: number; bodyText?: string }) => e);
+  if (!err) return;
+  // Require a status, so a transport fault cannot pass this vacuously.
+  expect(err.status, `${label}: no HTTP response from the node: ${err.message}`).toBeTypeOf(
+    'number',
+  );
+  expect(err.status, `${label}: node rejected the request shape: ${err.bodyText ?? ''}`).not.toBe(
+    400,
+  );
+}
+
 describe('Admin API E2E — Route coverage sweep', () => {
   beforeAll(async () => {
     mero = new MeroJs({ baseUrl: NODE_URL });
@@ -42,7 +66,7 @@ describe('Admin API E2E — Route coverage sweep', () => {
     applicationId = await ensureApplication(mero);
     const ns = await mero.admin.createNamespace({
       applicationId,
-      alias: `sweep-${RUN}`,
+      name: `sweep-${RUN}`,
     });
     namespaceId = ns.namespaceId;
     groupId = namespaceId; // namespace root group
@@ -68,17 +92,27 @@ describe('Admin API E2E — Route coverage sweep', () => {
     expect(true).toBe(true);
   });
 
-  it('install-dev-application (direct) + install-application (url)', async () => {
+  it('install-dev-application (direct)', async () => {
     await cover('installDev', () =>
       mero.admin.installDevApplication({
         path: fileURLToPath(new URL('./assets/kv-store.mpk', import.meta.url)),
-        metadata: [],
       }),
     );
-    await cover('installApp', () =>
-      mero.admin.installApplication({ url: 'http://localhost:2528/none.wasm', metadata: [] }),
-    );
     expect(true).toBe(true);
+  });
+
+  /**
+   * The one asserted route in this file. Core sets `deny_unknown_fields` on the
+   * install body, so a stale SDK shape earns a 400 that cover() would swallow.
+   * These coordinates have nothing published at them, so the install cannot
+   * succeed — assert only that the node got past deserialization: 502 is
+   * "nothing published there", 500 is "could not reach my registry". Pinning
+   * 502 would make this depend on CI egress to the node's public registry.
+   */
+  it('install-application: the node accepts the coordinate shape', async () => {
+    await coverShape('installApp', () =>
+      mero.admin.installApplication({ package: 'com.calimero.nonexistent', version: '0.0.0' }),
+    );
   });
 
   it('group upgrade + cascade/migration status + abort', async () => {
@@ -97,8 +131,18 @@ describe('Admin API E2E — Route coverage sweep', () => {
     await cover('updateApp', () =>
       mero.admin.updateContextApplication(contextId, { applicationId, executorPublicKey: executor }),
     );
-    await cover('ownProof', () => mero.admin.issueOwnershipProof(groupId, { requester: executor }));
-    await cover('nsOwnProof', () => mero.admin.issueNamespaceOwnershipProof(groupId, { requester: executor }));
+    // Both proof bodies are `deny_unknown_fields` and validated, so assert the
+    // shape rather than cover()ing it. Issuing may still 4xx on ownership state.
+    const proof = {
+      audience: 'https://example.test',
+      subject: `sweep-${RUN}`,
+      nonce: 'a'.repeat(32),
+      expiresAtMs: Date.now() + 60_000,
+    };
+    await coverShape('ownProof', () =>
+      mero.admin.issueOwnershipProof(groupId, { ...proof, contextId }),
+    );
+    await coverShape('nsOwnProof', () => mero.admin.issueNamespaceOwnershipProof(groupId, proof));
     // Uninstall a non-existent app — fires DELETE /applications/:id safely.
     await cover('uninstallApp', () => mero.admin.uninstallApplication('1'.repeat(32)));
     expect(true).toBe(true);
@@ -113,10 +157,10 @@ describe('Admin API E2E — Route coverage sweep', () => {
   });
 
   it('detach + leave ops (destructive — run last)', async () => {
-    await cover('detach', () => mero.admin.detachContextFromGroup(groupId, contextId, { requester: executor }));
-    await cover('leaveContext', () => mero.admin.leaveContext(contextId, { requester: executor }));
-    await cover('leaveGroup', () => mero.admin.leaveGroup(groupId, { requester: executor }));
-    await cover('leaveNamespace', () => mero.admin.leaveNamespace(namespaceId, { requester: executor }));
+    await cover('detach', () => mero.admin.detachContextFromGroup(groupId, contextId));
+    await cover('leaveContext', () => mero.admin.leaveContext(contextId));
+    await cover('leaveGroup', () => mero.admin.leaveGroup(groupId));
+    await cover('leaveNamespace', () => mero.admin.leaveNamespace(namespaceId));
     expect(true).toBe(true);
   });
 });

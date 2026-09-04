@@ -108,7 +108,7 @@ describe('MeroJs E2E — Full Flow', () => {
     it('should create a namespace for the application', async () => {
       const response = await mero.admin.createNamespace({
         applicationId,
-        alias: `e2e-full-${runId()}`,
+        name: `e2e-full-${runId()}`,
       });
       expect(response.namespaceId).toBeTruthy();
       namespaceId = response.namespaceId;
@@ -385,10 +385,7 @@ describe('MeroJs E2E — Full Flow', () => {
   describe('Cleanup', () => {
     it('should delete context', async () => {
       if (!contextId) return;
-      // Core requires a requester to delete a group context.
-      const result = await mero.admin.deleteContext(contextId, {
-        requester: executorPublicKey,
-      });
+      const result = await mero.admin.deleteContext(contextId);
       expect(result.isDeleted).toBe(true);
     });
 

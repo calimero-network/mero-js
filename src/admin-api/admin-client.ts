@@ -16,7 +16,6 @@ import type {
   RegistryBundleManifest,
   CreateContextRequest,
   CreateContextResponseData,
-  DeleteContextRequest,
   DeleteContextResponseData,
   GetContextsResponseData,
   Context,
@@ -46,7 +45,6 @@ import type {
   ListNamespacesResponseData,
   CreateNamespaceRequest,
   CreateNamespaceResponseData,
-  DeleteNamespaceRequest,
   DeleteNamespaceResponseData,
   CreateNamespaceInvitationRequest,
   CreateNamespaceInvitationResponseData,
@@ -59,8 +57,19 @@ import type {
   Namespace,
   NamespaceIdentity,
   NodeIdentity,
+  AccountPairInitRequest,
+  AccountPairInitResponseData,
+  AccountPairCompleteRequest,
+  AccountPairCompleteResponseData,
+  RelinkDeviceRequest,
+  RelinkDeviceResponseData,
+  AccountDeviceEntry,
+  AccountApplicationEntry,
+  RevokeAccountDeviceRequest,
+  RevokeAccountDeviceResponseData,
   GroupInfoResponseData,
-  DeleteGroupRequest,
+  CreateGroupRequest,
+  CreateGroupResponseData,
   DeleteGroupResponseData,
   ListGroupMembersResponseData,
   ListGroupContextsResponseData,
@@ -70,6 +79,7 @@ import type {
   MemberCapabilities,
   SetMemberCapabilitiesRequest,
   SetDefaultCapabilitiesRequest,
+  SetMemberAutoFollowRequest,
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
@@ -78,18 +88,18 @@ import type {
   SetContextMetadataRequest,
   MetadataRecord,
   GetMetadataResponseData,
-  SyncGroupRequest,
   SyncGroupResponseData,
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
   MigrationStatus,
   CascadeStatusEntry,
-  RetryGroupUpgradeRequest,
   RetryGroupUpgradeResponseData,
   ReparentGroupRequest,
   ReparentGroupResponseData,
-  DetachContextFromGroupRequest,
+  IssueOwnershipProofRequest,
+  IssueNamespaceOwnershipProofRequest,
+  IssueOwnershipProofResponseData,
   CreateGroupInvitationRequest,
   CreateGroupInvitationResponseData,
   CreateRecursiveGroupInvitationResponseData,
@@ -100,6 +110,10 @@ import type {
   TeeAttestResponseData,
   TeeVerifyQuoteRequest,
   TeeVerifyQuoteResponseData,
+  PerformIntentRequest,
+  PerformIntentResponseData,
+  AdmitJoinRequest,
+  AdmitJoinResponseData,
 } from './admin-types.js';
 
 /**
@@ -217,42 +231,15 @@ export class AdminApiClient {
 
   // ---- Application Management ----
 
+  /**
+   * Install a published application by its `package@version` coordinates. The
+   * node resolves and fetches them from its own configured `[registry]`, so no
+   * URL is passed and none is accepted. A 502 means the node's source has
+   * nothing published at those coordinates. This is the discrete "download"
+   * step an Updates flow pairs with a subsequent `upgradeGroup`.
+   */
   async installApplication(request: InstallApplicationRequest): Promise<InstallApplicationResponseData> {
     return unwrap(await this.httpClient.post<{ data: InstallApplicationResponseData }>('/admin-api/install-application', request));
-  }
-
-  /**
-   * Resolve a `package@version` to its registry artifact URL and install it.
-   * Node install is URL-based (no node-side package+version resolution), so this
-   * fetches the bundle manifest from the registry, derives the `.mpk` artifact
-   * URL, then calls {@link installApplication}. `registryUrl` is the registry
-   * origin. This is the discrete "download" step an Updates flow pairs with a
-   * subsequent `upgradeGroup`.
-   */
-  async installFromRegistry(
-    registryUrl: string,
-    packageName: string,
-    version: string,
-  ): Promise<InstallApplicationResponseData> {
-    const base = new URL(registryUrl).origin;
-    const manifestUrl = new URL(
-      `/api/v2/bundles/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
-      base,
-    ).toString();
-    const resp = await fetchRegistry(manifestUrl, 'manifest', `${packageName}@${version}`);
-    const bundle = (await resp.json()) as RegistryBundleManifest;
-    // Encode the path segments — the package/version come from a (best-effort
-    // trusted) registry response, so guard against odd characters breaking or
-    // traversing the artifact path. For normal ids/semvers this is a no-op.
-    const pkg = encodeURIComponent(bundle.package);
-    const ver = encodeURIComponent(bundle.appVersion);
-    const artifactUrl = `${base}/artifacts/${pkg}/${ver}/${pkg}-${ver}.mpk`;
-    return this.installApplication({
-      url: artifactUrl,
-      package: bundle.package,
-      version: bundle.appVersion,
-      metadata: [],
-    });
   }
 
   /**
@@ -347,16 +334,7 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: CreateContextResponseData }>('/admin-api/contexts', body));
   }
 
-  async deleteContext(contextId: string, request?: DeleteContextRequest): Promise<DeleteContextResponseData> {
-    if (request) {
-      return unwrap(
-        await this.httpClient.request<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`, {
-          method: 'DELETE',
-          body: JSON.stringify(request),
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
+  async deleteContext(contextId: string): Promise<DeleteContextResponseData> {
     return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`));
   }
 
@@ -648,42 +626,61 @@ export class AdminApiClient {
     return { namespaceId, publicKey: node.publicKey, account: node.accountId };
   }
 
+  /**
+   * Ask this node to run one method on a member's behalf, under a warrant that
+   * member signed.
+   *
+   * The node executes and signs the envelope with its own key; the change is
+   * attributed to the **author**. Both halves travel together, so every peer
+   * re-checks that the member consented instead of trusting the relay.
+   *
+   * Three things have to be true first, and none is implied by the others:
+   *
+   * - the author's **account** is a member of the group owning the context —
+   *   their device joins nothing and is in no group's binding rows, which is
+   *   exactly the case a device certificate covers;
+   * - this node holds `CAN_AUTHOR_ON_BEHALF` on that group, which is implied by
+   *   neither membership nor admin;
+   * - the warrant has not been spent. It is single-use: presenting a valid one
+   *   twice is refused, because the signature stays valid forever and replay is
+   *   not forgery.
+   *
+   * A refusal comes back as a `403` carrying the reason — "an admin must grant
+   * CAN_AUTHOR_ON_BEHALF to …", or that the nonce is already spent — so a caller
+   * can tell which precondition failed rather than only that one did.
+   *
+   * Mint the warrant with {@link signWarrant}; see
+   * {@link PerformIntentRequest.warrant}.
+   */
+  async performIntent(
+    contextId: string,
+    request: PerformIntentRequest,
+  ): Promise<PerformIntentResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: PerformIntentResponseData }>(
+        `/admin-api/contexts/${contextId}/intents`,
+        request,
+      ),
+    );
+  }
+
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>(`/admin-api/namespaces/for-application/${applicationId}`));
   }
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
-    // `upgradePolicy` is sent even though the request type no longer carries it.
-    //
-    // The concept was deleted server-side (calimero-network/core#3393), but only
-    // on master: every RELEASED node still declares the field required and
-    // rejects a body without it — `missing field 'upgradePolicy'`. A node that
-    // has dropped it ignores the extra key, so sending it is the one shape that
-    // works against both, and this SDK does not get to choose which node a
-    // caller points it at.
-    //
-    // `LazyOnAccess` because it was the default and is the only behaviour that
-    // survives the removal, so an old node given it does what a new one does.
-    //
-    // Remove once no supported release predates that change.
     return unwrap(
-      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', {
-        upgradePolicy: 'LazyOnAccess',
-        ...request,
-      }),
+      await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request),
     );
   }
 
-  async deleteNamespace(
-    namespaceId: string,
-    request?: DeleteNamespaceRequest,
-  ): Promise<DeleteNamespaceResponseData> {
-    // Core requires `Content-Type: application/json` on this DELETE even when the
-    // body is empty, so always send the header and a (possibly empty) JSON body.
+  async deleteNamespace(namespaceId: string): Promise<DeleteNamespaceResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even though
+    // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
       await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${namespaceId}`, {
         method: 'DELETE',
-        body: JSON.stringify(request ?? {}),
+        body: '{}',
         headers: { 'Content-Type': 'application/json' },
       }),
     );
@@ -701,17 +698,58 @@ export class AdminApiClient {
     );
   }
 
+  /**
+   * Present a join this caller signed to a node the inviter named as an
+   * admitter.
+   *
+   * For a member with no node. `joinNamespace` publishes the membership op from
+   * the node making the call; this hands an already-signed op to somebody else's
+   * node to publish. The distinction matters because a keyholder has nowhere to
+   * publish from.
+   *
+   * The op must be signed by the **device key** in the credential it carries —
+   * every peer checks that when applying a join. So the admitter cannot author
+   * this, only carry it: a hostile one can refuse, and nothing else. It cannot
+   * admit a different account, change the group, or grant a role.
+   *
+   * @param namespaceId the namespace being joined, 64 hex
+   * @param request the invitation and the hex-encoded signed op
+   */
+  async admitJoin(
+    namespaceId: string,
+    request: AdmitJoinRequest,
+  ): Promise<AdmitJoinResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AdmitJoinResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/admit`,
+        request,
+        { timeoutMs: 65000 },
+      ),
+    );
+  }
+
   async joinNamespace(
     namespaceId: string,
     request: JoinNamespaceRequest,
   ): Promise<JoinNamespaceResponseData> {
-    return unwrap(
+    const data = unwrap(
       await this.httpClient.post<{ data: JoinNamespaceResponseData }>(
         `/admin-api/namespaces/${namespaceId}/join`,
         request,
         { timeoutMs: 65000 },
       ),
     );
+
+    // core 0.11.0-rc.25 renamed this response's `groupId` to `namespaceId`
+    // (core#3598). Bind whichever spelling the node actually sent rather than
+    // picking one: the rename lands as `undefined` on the field the client
+    // reads, and nothing errors — no 4xx, no thrown parse — so a client that
+    // knows only one spelling fails much later and somewhere else. Normalising
+    // here means one mero-js works against nodes either side of that release.
+    if (data && data.namespaceId === undefined && data.groupId !== undefined) {
+      return { ...data, namespaceId: data.groupId };
+    }
+    return data;
   }
 
   async createGroupInNamespace(
@@ -730,6 +768,143 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/namespaces/${namespaceId}/groups`));
   }
 
+  // ---- Account Devices & Pairing ----
+
+  /**
+   * Mint this node a device for an account that already lives somewhere else -
+   * the first half of pairing, run on the joining node.
+   *
+   * Publishes nothing and needs no key: it produces the device id, the two
+   * public keys and the signature that the account holder's
+   * {@link completeAccountPairing} certifies, plus a code to read out to them
+   * over a channel the payload does not travel on. Until that second half runs,
+   * the device this mints is inert.
+   *
+   * Takes a set of namespaces rather than one, and takes it from the caller
+   * because this node cannot discover it: a node that is a member of nothing can
+   * neither read the account's namespace set off a DAG nor derive it. One device
+   * covers however many are named - the certificate is over the account, not a
+   * scope - so there is one id and one code to hand over regardless.
+   */
+  async initAccountPairing(request: AccountPairInitRequest): Promise<AccountPairInitResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccountPairInitResponseData }>('/admin-api/account/pair-init', request),
+    );
+  }
+
+  /**
+   * Certify a device another node minted, link it, and deliver its scope keys -
+   * the second half of pairing, run on the node that holds the account root.
+   *
+   * Every field but `applications` is copied verbatim out of that node's
+   * {@link initAccountPairing} answer. Only this side can complete it: the
+   * certificate is signed by the account root, which never leaves the node that
+   * holds it.
+   *
+   * The scope is named in applications, not namespaces, because that is the
+   * question a person can answer - a namespace is an implementation unit they
+   * never chose. Leave it out to grant every application.
+   */
+  async completeAccountPairing(
+    request: AccountPairCompleteRequest,
+  ): Promise<AccountPairCompleteResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccountPairCompleteResponseData }>('/admin-api/account/pair-complete', request),
+    );
+  }
+
+  /**
+   * Re-run the pairing fan-out for a device this account already certified,
+   * against the namespaces this node takes part in now.
+   *
+   * Pairing is a snapshot, and this is how it is repeated. A namespace created
+   * or joined afterwards holds no binding for a device paired before it, and the
+   * symptom is silence - the device simply never sees that namespace. Nothing
+   * but the id is needed to repair it: the certificate is already held here,
+   * root-signed and naming no namespace, so a fresh endorsement and a key wrap
+   * are all a later namespace is missing. The device does not have to be online.
+   *
+   * Passing `applications` widens the device's stored scope as well as
+   * repairing. Passing none - or an empty list - repairs against the scope
+   * already stored, which is deliberately NOT the "every application" that an
+   * empty list means on {@link completeAccountPairing}: overloading it here
+   * would make the accidental request the widest one.
+   */
+  async relinkAccountDevice(
+    deviceId: string,
+    request?: RelinkDeviceRequest,
+  ): Promise<RelinkDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: RelinkDeviceResponseData }>(
+        `/admin-api/account/devices/${deviceId}/relink`,
+        request ?? {},
+      ),
+    );
+  }
+
+  /**
+   * Every device of this account, as this node sees them - its own included.
+   *
+   * Joined from the node-local certificate cache and the live bindings of every
+   * namespace this node takes part in, so it is this node's view rather than a
+   * global one: a device certified by another holder appears with an empty
+   * `applications`, because the certificate that would name its scope is not
+   * cached here.
+   *
+   * The wire wraps this in `devices` rather than the usual `data`; the array is
+   * what a caller wants, so that wrapper is not passed on.
+   */
+  async listAccountDevices(): Promise<AccountDeviceEntry[]> {
+    const response = await this.httpClient.get<{ devices: AccountDeviceEntry[] }>('/admin-api/account/devices');
+    return response.devices;
+  }
+
+  /**
+   * Every application this account speaks in, with the namespaces targeting each.
+   *
+   * What a device-scoping UI lists: {@link completeAccountPairing} and
+   * {@link relinkAccountDevice} both take applications, and this is where the
+   * ids they take come from. Derived from the namespaces this node takes part
+   * in, so an application installed with no namespace yet is absent - it has
+   * nothing to scope a device to until one exists.
+   *
+   * Wrapped in `applications` on the wire rather than `data`, unwrapped here for
+   * the same reason {@link listAccountDevices} unwraps `devices`.
+   */
+  async listAccountApplications(): Promise<AccountApplicationEntry[]> {
+    const response = await this.httpClient.get<{ applications: AccountApplicationEntry[] }>(
+      '/admin-api/account/applications',
+    );
+    return response.applications;
+  }
+
+  /**
+   * Withdraw a device from this account, terminally.
+   *
+   * Two authorities reach the same endpoint. An admin may revoke any device and
+   * rotates the scope key as it goes. The account holder may revoke its own with
+   * a root-signed `proof`, which does not rotate - so read
+   * {@link RevokeAccountDeviceResponseData.revokedIn} rather than assuming the
+   * device lost its access: a namespace reporting `keyRotated: false` has
+   * stopped the device writing but leaves it able to read until an admin
+   * rotates.
+   *
+   * `namespaceId` names where to publish from, not the extent of the revocation:
+   * a device belongs to the account, so every namespace holding a binding for it
+   * is withdrawn from and reported back.
+   */
+  async revokeAccountDevice(
+    namespaceId: string,
+    request: RevokeAccountDeviceRequest,
+  ): Promise<RevokeAccountDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: RevokeAccountDeviceResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/account/revoke`,
+        request,
+      ),
+    );
+  }
+
   // ---- Group Management ----
 
   async getGroupInfo(groupId: string): Promise<GroupInfoResponseData> {
@@ -746,13 +921,13 @@ export class AdminApiClient {
     return (await this.getGroupInfo(groupId)).subgroupVisibility;
   }
 
-  async deleteGroup(groupId: string, request?: DeleteGroupRequest): Promise<DeleteGroupResponseData> {
-    // Core requires `Content-Type: application/json` on this DELETE even with an
-    // empty body, so always send the header and a (possibly empty) JSON body.
+  async deleteGroup(groupId: string): Promise<DeleteGroupResponseData> {
+    // Core requires `Content-Type: application/json` on this DELETE even though
+    // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
       await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
         method: 'DELETE',
-        body: JSON.stringify(request ?? {}),
+        body: '{}',
         headers: { 'Content-Type': 'application/json' },
       }),
     );
@@ -793,7 +968,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async updateMemberRole(
     groupId: string,
@@ -805,7 +981,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
@@ -817,7 +994,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberCapabilities(
     groupId: string,
@@ -884,7 +1062,8 @@ export class AdminApiClient {
 
   /**
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
@@ -910,8 +1089,8 @@ export class AdminApiClient {
     return response?.data ?? null;
   }
 
-  async syncGroup(groupId: string, request?: SyncGroupRequest): Promise<SyncGroupResponseData> {
-    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, request ?? {}));
+  async syncGroup(groupId: string): Promise<SyncGroupResponseData> {
+    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, {}));
   }
 
   async upgradeGroup(groupId: string, request: UpgradeGroupRequest): Promise<UpgradeGroupResponseData> {
@@ -942,14 +1121,11 @@ export class AdminApiClient {
     );
   }
 
-  async retryGroupUpgrade(
-    groupId: string,
-    request?: RetryGroupUpgradeRequest,
-  ): Promise<RetryGroupUpgradeResponseData> {
+  async retryGroupUpgrade(groupId: string): Promise<RetryGroupUpgradeResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: RetryGroupUpgradeResponseData }>(
         `/admin-api/groups/${groupId}/upgrade/retry`,
-        request ?? {},
+        {},
       ),
     );
   }
@@ -973,12 +1149,8 @@ export class AdminApiClient {
     return response.subgroups ?? response.data ?? [];
   }
 
-  async detachContextFromGroup(
-    groupId: string,
-    contextId: string,
-    request?: DetachContextFromGroupRequest,
-  ): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, request ?? {});
+  async detachContextFromGroup(groupId: string, contextId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, {});
   }
 
   // ---- Group Invitation & Join ----
@@ -1050,44 +1222,46 @@ export class AdminApiClient {
   // ---- Group / context / namespace membership ----
 
   /** Create a standalone group (POST /admin-api/groups). */
-  async createGroup(request: Record<string, unknown>): Promise<{ groupId: string }> {
-    // `upgradePolicy` for the same reason as `createNamespace` above — these are
-    // the only two requests a released node still requires it on, and it ignores
-    // the extra key once the concept is gone. Spread after the caller's request
-    // so an explicit value wins.
+  async createGroup(request: CreateGroupRequest): Promise<CreateGroupResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: { groupId: string } }>('/admin-api/groups', {
-        upgradePolicy: 'LazyOnAccess',
-        ...request,
-      }),
+      await this.httpClient.post<{ data: CreateGroupResponseData }>('/admin-api/groups', request),
     );
   }
 
   /** Leave a group (POST /admin-api/groups/:group_id/leave). */
-  async leaveGroup(groupId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, request ?? {});
+  async leaveGroup(groupId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, {});
   }
 
   /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
-  async leaveContext(contextId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, request ?? {});
+  async leaveContext(contextId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, {});
   }
 
   /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
-  async leaveNamespace(namespaceId: string, request?: Record<string, unknown>): Promise<void> {
-    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, request ?? {});
+  async leaveNamespace(namespaceId: string): Promise<void> {
+    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, {});
   }
 
   /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
-  async issueOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(`/admin-api/groups/${groupId}/issue-ownership-proof`, request ?? {});
+  async issueOwnershipProof(
+    groupId: string,
+    request: IssueOwnershipProofRequest,
+  ): Promise<IssueOwnershipProofResponseData> {
+    return this.httpClient.post<IssueOwnershipProofResponseData>(
+      `/admin-api/groups/${groupId}/issue-ownership-proof`,
+      request,
+    );
   }
 
   /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
-  async issueNamespaceOwnershipProof(groupId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(
+  async issueNamespaceOwnershipProof(
+    groupId: string,
+    request: IssueNamespaceOwnershipProofRequest,
+  ): Promise<IssueOwnershipProofResponseData> {
+    return this.httpClient.post<IssueOwnershipProofResponseData>(
       `/admin-api/groups/${groupId}/issue-namespace-ownership-proof`,
-      request ?? {},
+      request,
     );
   }
 
@@ -1096,21 +1270,19 @@ export class AdminApiClient {
    * /admin-api/groups/:group_id/members/:identity/auto-follow).
    *
    * `identity` is the member's ACCOUNT (64 hex), as returned by
-   * {@link listGroupMembers} — not the bs58 signing key that added them.
+   * {@link listGroupMembers} — not the signing key that added them. Both are
+   * 64 hex, so nothing but the source tells them apart.
    */
   async setMemberAutoFollow(
     groupId: string,
     identity: string,
-    request: Record<string, unknown>,
+    request: SetMemberAutoFollowRequest,
   ): Promise<void> {
     await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/auto-follow`, request);
   }
 
   /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
-  async abortMigration(namespaceId: string, request?: Record<string, unknown>): Promise<unknown> {
-    return this.httpClient.post<unknown>(
-      `/admin-api/groups/${namespaceId}/migration/abort`,
-      request ?? {},
-    );
+  async abortMigration(namespaceId: string): Promise<unknown> {
+    return this.httpClient.post<unknown>(`/admin-api/groups/${namespaceId}/migration/abort`, {});
   }
 }

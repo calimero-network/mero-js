@@ -95,7 +95,7 @@ const SPECS: Spec[] = [
     type: 'ReparentGroupRequest',
     file: 'groups/reparent.req.json',
     required: [reReq('newParentId')],
-    optional: [reReq('requester')],
+    optional: [],
   },
   {
     type: 'ReparentGroupResponseData',
