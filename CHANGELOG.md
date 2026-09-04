@@ -1,3 +1,9 @@
+## [18.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v18.1.0...mero-js-v18.1.1) (2026-09-04)
+
+### Bug Fixes
+
+* **admin:** send only the fields core declares ([#136](https://github.com/calimero-network/mero-js/issues/136)) ([fc95c0d](https://github.com/calimero-network/mero-js/commit/fc95c0d6190d94a16b73d187cb26f1fed8be5014))
+
 ## [18.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.0.0...mero-js-v18.1.0) (2026-09-03)
 
 ### Features
