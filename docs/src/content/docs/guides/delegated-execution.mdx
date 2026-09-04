@@ -136,6 +136,33 @@ somebody owns, not nodeless namespace creation.
    Within a second the relay notices and re-reports, and
    `getNamespaceRelays` flips to `authorshipReady: true`.
 
+   :::tip[For a fleet, set the namespace default instead]
+   The grant above is per-relay, which is right when you run one. A namespace
+   that keeps admitting TEE nodes — the cloud case, where replicas come and go —
+   would need one admin-signed op per admission.
+
+   The group's **default-capability mask** removes that: set it once and every
+   non-admin member admitted afterwards inherits it, with no per-node op.
+
+   ```typescript
+   // once, on the owner's node — applies to every node admitted after it
+   const current = await owner.admin.getDefaultCapabilities(namespaceId);
+   await owner.admin.setDefaultCapabilities(namespaceId, {
+     defaultCapabilities: withCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
+   });
+   ```
+
+   Two things to know. It is **not retroactive** — nodes already admitted keep
+   whatever mask they have, so grant those individually as above. And it applies
+   to every non-admin member, not only TEE nodes, so it is a statement about the
+   namespace's posture rather than about one machine: set it on a namespace whose
+   members you are willing to have relay, and use the per-relay grant otherwise.
+
+   Pinned by `a_groups_default_capabilities_reach_an_admitted_tee_node` in
+   core's `governance-store`, which asserts it through the same
+   `account_may_author` the relay path itself calls.
+   :::
+
 6. **Owner adds the keyholder as a member, by account.**
 
    The keyholder generates its own identity offline first — no node, no network:
