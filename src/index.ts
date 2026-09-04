@@ -45,8 +45,11 @@ export type {
 export { EphemeralClient, jsonCodec } from './ephemeral/index.js';
 export type { Codec, EphemeralEntry } from './ephemeral/index.js';
 
-// Cloud client (enable-HA, disable-HA)
+// Cloud client — namespaces, relays, HA, and the cloud sign-in path
 export * from './cloud/index.js';
+
+// Relay client — write through delegated execution, holding only a signing key
+export * from './relay/index.js';
 
 // Warrant signing — mint the author's consent for a relay to run one intent
 export { signWarrant, intentHash } from './warrant/index.js';

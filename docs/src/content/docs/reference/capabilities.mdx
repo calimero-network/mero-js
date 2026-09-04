@@ -18,7 +18,7 @@ flow.
 
 ## `CAPABILITIES`
 
-The assigned bits (core `MemberCapabilities`, bits 0–8):
+The assigned bits (core `MemberCapabilities`, bits 0–9):
 
 ```typescript
 const CAPABILITIES = {
@@ -31,6 +31,7 @@ const CAPABILITIES = {
   CAN_DELETE_SUBGROUP:     1 << 6,
   CAN_MANAGE_VISIBILITY:   1 << 7,
   CAN_MANAGE_METADATA:     1 << 8,
+  CAN_AUTHOR_ON_BEHALF:    1 << 9,
 } as const;
 
 type CapabilityName = keyof typeof CAPABILITIES;   // 'CAN_CREATE_CONTEXT' | …
@@ -38,9 +39,32 @@ type CapabilityBit  = (typeof CAPABILITIES)[CapabilityName];
 ```
 
 <Aside type="caution">
-  Bits 9 and above are unassigned and reserved for future core releases — do
+  Bits 10 and above are unassigned and reserved for future core releases — do
   **not** repurpose them for application data.
 </Aside>
+
+### `CAN_AUTHOR_ON_BEHALF`
+
+The grant [delegated execution](/reference/relay/) runs on: it lets a member
+publish writes attributed to **another** member, under a warrant that member
+signed. Held by relays.
+
+It is implied by nothing — not by membership, not by admin, and it is
+deliberately not propagated by the subgroup-admit cascade. So every group is
+authorship-closed until an admin sets this bit, and a relay without it is
+refused before anything executes. Granting it is the step that makes a namespace
+writable by keyholders who run no node:
+
+```typescript
+const current = await sdk.admin.getMemberCapabilities(groupId, relayAccount);
+await sdk.admin.setMemberCapabilities(groupId, relayAccount, {
+  capabilities: withCap(current.capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
+});
+```
+
+Note the subject is the relay's **account**, not its signing key — which is what
+lets the relay rotate keys without the grant, or any warrant already issued
+against it, needing to be reissued.
 
 ## Helpers
 

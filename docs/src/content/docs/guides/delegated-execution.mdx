@@ -1,0 +1,270 @@
+---
+title: Writing without a node, end to end
+description: The full path from a Google sign-in to a keyholder's first write through a hosted TEE relay — who has to do what, in what order, and which step surprises people.
+sidebar:
+  order: 9
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Every piece of delegated execution works. Getting a first write through it
+touches four systems, and the order matters, so this is the whole path in one
+place.
+
+## Read this first: somebody needs a node
+
+This does **not** let a person sign up with Google and use Calimero with nothing
+installed. Two of the steps below can only be done from a node that is a direct
+admin of the namespace:
+
+- **claiming the namespace in the cloud** requires a merod-signed ownership
+  proof, and merod refuses to issue one unless the node is a direct admin of
+  that group;
+- **granting the relay authorship** is a governance op an admin signs.
+
+So the shape is: *one* person (or one machine — a desktop app, a CI runner, a
+server) owns the namespace and does the setup once. After that, any number of
+**keyholders with no node at all** — browser tabs, phones, agents, that person's
+own other devices — write into it through the relay.
+
+That is the feature. It is multi-device and thin-client access to a namespace
+somebody owns, not nodeless namespace creation.
+
+<Aside type="caution" title="What is still missing for true self-service">
+  A keyholder can mint its account and device certificate entirely offline, and
+  can *write* through a relay it has no account on. It cannot yet **join**
+  through one: `POST /admin-api/namespaces/:id/admit` — the route built for
+  precisely a joiner with no node — is still behind the node's auth guard, so a
+  keyholder cannot present its own signed join to a relay.
+
+  Until that changes, the namespace admin adds the keyholder by **account id**
+  (step 6). That works and is what this guide does. Core's
+  [direct-admission docs](https://calimero-network.github.io/core/protocol/direct-admission/#known-gap)
+  track the gap.
+</Aside>
+
+## The cast
+
+| Who | Holds | Does |
+| --- | --- | --- |
+| **Owner** | a node, admin of the namespace | steps 1–3, 5–6 |
+| **Cloud** (MDMA) | the account and the fleet directory | steps 2–4 |
+| **Relay** (TEE fleet node) | the group key, the app, an account | steps 4, 7 |
+| **Keyholder** | one ed25519 key, nothing else | step 7 |
+
+## The path
+
+<Steps>
+
+1. **Owner creates the namespace and a context** from their node.
+
+   ```typescript
+   const owner = createMeroJs({ baseUrl: 'http://localhost:2528' });
+   await owner.authenticate({ username, password });
+
+   const { namespaceId } = await owner.admin.createNamespace({ applicationId, name: 'my-app' });
+   const { contextId } = await owner.admin.createContext({ applicationId, groupId: namespaceId });
+   ```
+
+2. **Owner claims it in the cloud**, proving ownership with a node-signed proof.
+   The cloud has no other way to know the namespace exists — there is
+   deliberately no "create namespace" button in the cloud UI.
+
+   ```typescript
+   const cloud = owner.cloud;                       // or new CloudClient({...})
+   await cloud.signInWithGoogle(googleIdToken);
+
+   const proof = await owner.admin.issueNamespaceOwnershipProof(namespaceId, {
+     audience: 'mdma:enable-ha-namespace',
+     subject: cloud.getSession().user.email,   // must equal the cloud account
+     nonce: crypto.randomUUID(),               // single-use, cloud-side
+     expiresAtMs: Date.now() + 60_000,
+   });
+
+   await cloud.claimNamespace(namespaceId, proof);
+   ```
+
+   The proof is minted, presented and spent within a minute; the cloud rejects a
+   replayed nonce for any user. Forward merod's response object as-is — the
+   cloud accepts core's `signerPublicKey`/`signedPayload` casing as well as
+   snake_case, so there is no re-keying step.
+
+3. **Owner enables HA** on the namespace — the step that asks the fleet to host
+   it. It carries no proof of its own: the claim already established ownership.
+
+   ```typescript
+   await cloud.enableNamespaceHa(namespaceId);
+   ```
+
+4. **The fleet assigns a machine, and it reports itself.** Nothing for anyone to
+   do — the sidecar on each attested node polls once a second, is assigned the
+   namespace, joins it by TDX attestation, and reports the two facts the cloud
+   cannot derive: the account it writes as, and the URL to reach it.
+
+   ```typescript
+   const relays = await cloud.getNamespaceRelays(namespaceId);
+   // [{ peerId, relayUrl, executorAccount, status: 'active', authorshipReady: false }]
+
+   // or, across every namespace this account owns:
+   const machines = await cloud.getMyMachines();
+   // [{ peerId, relayUrl, executorAccount, canExecute: false, namespaces: [...] }]
+   ```
+
+   `authorshipReady: false` is expected here. That is step 5.
+
+5. **Owner grants the relay authorship.** This is the step that is missed most
+   often, because everything up to it looks finished.
+
+   ```bash
+   meroctl --node node1 group members set-capabilities <NAMESPACE_ID> <EXECUTOR_ACCOUNT> \
+     --can-author-on-behalf
+   ```
+
+   ```typescript
+   // or from the SDK, on the owner's node
+   const current = await owner.admin.getMemberCapabilities(namespaceId, executorAccount);
+   await owner.admin.setMemberCapabilities(namespaceId, executorAccount, {
+     capabilities: withCap(current.capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
+   });
+   ```
+
+   `CAN_AUTHOR_ON_BEHALF` is implied by nothing — not membership, not admin, and
+   it is not propagated by the subgroup cascade — so every namespace starts
+   authorship-closed. The mask is **replaced**, not merged: re-pass any flag the
+   relay already holds.
+
+   Within a second the relay notices and re-reports, and
+   `getNamespaceRelays` flips to `authorshipReady: true`.
+
+   :::tip[For a fleet, set the namespace default instead]
+   The grant above is per-relay, which is right when you run one. A namespace
+   that keeps admitting TEE nodes — the cloud case, where replicas come and go —
+   would need one admin-signed op per admission.
+
+   The group's **default-capability mask** removes that: set it once and every
+   non-admin member admitted afterwards inherits it, with no per-node op.
+
+   ```typescript
+   // once, on the owner's node — applies to every node admitted after it
+   const current = await owner.admin.getDefaultCapabilities(namespaceId);
+   await owner.admin.setDefaultCapabilities(namespaceId, {
+     defaultCapabilities: withCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
+   });
+   ```
+
+   Two things to know. It is **not retroactive** — nodes already admitted keep
+   whatever mask they have, so grant those individually as above. And it applies
+   to every non-admin member, not only TEE nodes, so it is a statement about the
+   namespace's posture rather than about one machine: set it on a namespace whose
+   members you are willing to have relay, and use the per-relay grant otherwise.
+
+   Pinned by `a_groups_default_capabilities_reach_an_admitted_tee_node` in
+   core's `governance-store`, which asserts it through the same
+   `account_may_author` the relay path itself calls.
+   :::
+
+6. **Owner adds the keyholder as a member, by account.**
+
+   The keyholder generates its own identity offline first — no node, no network:
+
+   ```typescript
+   import { accountForRoot, mintDeviceId, signDeviceCert } from '@calimero-network/mero-js';
+
+   // `rootSecret` is the account root's signing secret — kept offline, and the
+   // only thing that can certify a device into this account.
+   const account = await accountForRoot(rootSecret);
+   const device = await mintDeviceId(account, crypto.getRandomValues(new Uint8Array(16)));
+   const authorProof = await signDeviceCert({
+     rootSecret,
+     device,
+     signPublicKey,   // the device key that will sign warrants
+     kemPublicKey,    // X25519, where a group key would be delivered
+     deviceEpoch: 1,
+   });
+   ```
+
+   `authorProof` is the hex `AccountProof<DeviceCert>` that step 7 passes.
+
+   The owner then adds that **account**, not a key:
+
+   ```typescript
+   await owner.admin.addGroupMembers(namespaceId, {
+     members: [{ identity: account, role: 'Member' }],
+   });
+   ```
+
+   By account because the keyholder's *device* joins nothing and will never
+   appear in any group's binding rows — which is exactly the case a device
+   certificate covers. A key-based membership check would refuse every write
+   below.
+
+7. **The keyholder writes.** No node, no group key, no credential on the relay.
+
+   ```typescript
+   import { connectCloud } from '@calimero-network/mero-js';
+
+   const connection = await connectCloud({
+     googleIdToken,          // or a stored sessionToken
+     authorAccount: account, // from step 6
+     authorProof,            // the device certificate from step 6
+     deviceSecret,           // the DEVICE signing secret — never transmitted
+   });
+
+   await connection.execute(contextId, 'set', { key: 'greeting', value: 'hello' });
+   ```
+
+</Steps>
+
+## Where it breaks, and what each failure means
+
+Every one of these is a different action, which is why the SDK reports them
+apart rather than as "could not connect".
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `connectCloud`: "owns no namespaces" | step 2 not done | claim the namespace from the owner's node |
+| `connectCloud`: "owns N namespaces — pass namespaceId" | ambiguous | name it |
+| `connectCloud`: "no relays: enable HA" | step 3 not done | enable HA in the cloud |
+| `connectCloud`: "no relay has been assigned yet" | step 4 in flight | wait; if it persists, no attested node has capacity or the MRTD is not allowlisted |
+| `connectCloud`: "waiting for the authorship grant" (names an account) | **step 5 not done** | grant `CAN_AUTHOR_ON_BEHALF` to that account |
+| `IntentRefusedError`, "author's account is not a member" | step 6 not done | add the keyholder's account to the group |
+| `IntentRefusedError`, `retryable: true`, "nonce" | warrant replayed | re-present under a fresh warrant; if it repeats, the [nonce source](/reference/relay/#nonce-sources) is restarting |
+| `relay_url: null` in the cloud | the deployment publishes no relay URL | operator sets `MDMA_TEE_RELAY_URL_TEMPLATE` |
+| `401`/`403` from the relay host, not an `IntentRefusedError` | the node is not serving as a relay | the image needs delegated execution enabled at both merod and its ingress |
+
+## What the cloud stores, and how to read it back
+
+Useful when debugging: these are the only rows that tie a person to a namespace
+and a machine.
+
+| Row | Key | Written by |
+| --- | --- | --- |
+| `UserNamespace` | `(user_email, namespace_id)`, `namespace_id` globally unique | the claim in step 2, after the ownership proof verifies. **This is the authorization boundary** for every namespace read |
+| `HaRequest` | `group_id` unique | enable-HA in step 3 |
+| `FleetAssignment` | `(peer_id, group_id)` | the relay's own poll and confirm in step 4 — including `authorship_ready` |
+| `Node` | `name`, plus `peer_id` | the dispatcher at create time; `executor_account` and `relay_url` come from the relay's poll |
+
+Read them back with:
+
+- `GET /api/cloud/me/namespaces` — what this account owns, with HA state, its
+  contexts, and replica counts.
+- `GET /api/cloud/me/namespaces/{ns}/relays` — the relays for one namespace.
+- `GET /api/cloud/me/machines` — every machine serving this account, grouped by
+  machine, with `can_execute` folding the three-way precondition.
+
+<Aside type="note">
+  `GET /api/cloud/me/node` looks like the machine view and is not: it reads the
+  retired `NodeAssignment` ledger, which nothing writes any more, so it answers
+  `{"node": null}` for every namespace-native account. Use `/me/machines`.
+</Aside>
+
+## Why the intent does not go through the cloud
+
+The cloud is a **directory**. It is handed an address and a public account id,
+and the write goes straight from the client to the relay.
+
+A cloud that proxied intents would read the method and arguments of every write
+its users make — the plaintext is the whole point of the relay hop, since the
+relay has to run the method — and would sit on the critical path of every write
+in the fleet. What the client sends the cloud is "which relay serves me?"; what
+it sends the relay is the intent and a warrant it signed itself.
