@@ -57,8 +57,15 @@ class MockHttpClient implements HttpClient {
     this.requestBodies.set(`PATCH ${path}`, body);
     return this.getResponse('PATCH', path) as T;
   }
-  async head(_path: string): Promise<{ headers: Record<string, string>; status: number }> {
-    return { headers: {}, status: 200 };
+  async head(path: string): Promise<{ headers: Record<string, string>; status: number }> {
+    // Records the path so a test can assert the query string, and serves a
+    // registered `HEAD <path>` response when one exists. Unregistered paths keep
+    // the old empty-header stub rather than throwing, so callers that only care
+    // that HEAD was reachable are unaffected.
+    this.requestBodies.set(`HEAD ${path}`, path);
+    const key = `HEAD ${path}`;
+    if (!this.mockResponses.has(key)) return { headers: {}, status: 200 };
+    return this.mockResponses.get(key) as { headers: Record<string, string>; status: number };
   }
   async request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
     const method = init?.method ?? 'GET';
@@ -491,6 +498,72 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/blobs/blob-1', bytes);
       const result = await client.getBlob('blob-1');
       expect(result).toBe(bytes);
+    });
+
+    it('getBlob appends context_id to opt into network discovery', async () => {
+      const bytes = new Uint8Array([5, 6]).buffer;
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1?context_id=ctx-1', bytes);
+      const result = await client.getBlob('blob-1', { contextId: 'ctx-1' });
+      expect(result).toBe(bytes);
+    });
+
+    it('getBlobInfo maps the x-blob-* headers and reports a local source', async () => {
+      mock.setMockResponse('HEAD', '/admin-api/blobs/blob-1', {
+        status: 200,
+        headers: {
+          'content-length': '4',
+          'x-blob-id': 'blob-1',
+          'x-blob-hash': 'abcd',
+          'x-blob-mime-type': 'application/gzip',
+          'x-blob-source': 'local',
+        },
+      });
+      expect(await client.getBlobInfo('blob-1')).toEqual({
+        blobId: 'blob-1',
+        size: 4,
+        hash: 'abcd',
+        mimeType: 'application/gzip',
+        source: 'local',
+      });
+      // no context => no query string
+      expect(mock.getRequestBody('HEAD', '/admin-api/blobs/blob-1')).toBe(
+        '/admin-api/blobs/blob-1',
+      );
+    });
+
+    it('getBlobInfo with contextId probes peers: query sent, hash/mimeType absent', async () => {
+      // A probe answer carries only presence and size, so hash/mimeType are
+      // undefined — the optional fields exist precisely for this shape.
+      mock.setMockResponse('HEAD', '/admin-api/blobs/blob-1?context_id=ctx-1', {
+        status: 200,
+        headers: { 'content-length': '9', 'x-blob-source': 'peer' },
+      });
+      expect(await client.getBlobInfo('blob-1', { contextId: 'ctx-1' })).toEqual({
+        blobId: 'blob-1',
+        size: 9,
+        hash: undefined,
+        mimeType: undefined,
+        source: 'peer',
+      });
+    });
+
+    it('getBlobInfo leaves source undefined on a node that omits the header', async () => {
+      mock.setMockResponse('HEAD', '/admin-api/blobs/blob-1', {
+        status: 200,
+        headers: { 'content-length': 'not-a-number' },
+      });
+      const info = await client.getBlobInfo('blob-1');
+      expect(info.source).toBeUndefined();
+      // non-numeric content-length degrades to 0, never NaN
+      expect(info.size).toBe(0);
+    });
+
+    it('getBlob leaves the path untouched for an options bag with no contextId', async () => {
+      // The local-only path must stay byte-identical, not gain an empty query.
+      const bytes = new Uint8Array([7]).buffer;
+      mock.setMockResponse('GET', '/admin-api/blobs/blob-1', bytes);
+      expect(await client.getBlob('blob-1', {})).toBe(bytes);
+      expect(await client.getBlob('blob-1', { contextId: undefined })).toBe(bytes);
     });
   });
 

@@ -36,6 +36,7 @@ import type {
   DeleteBlobResponseData,
   ListBlobsResponseData,
   GetBlobInfoResponseData,
+  BlobReadOptions,
   CreateContextAliasRequest,
   CreateApplicationAliasRequest,
   CreateAliasResponseData,
@@ -488,12 +489,30 @@ export class AdminApiClient {
   }
 
   /**
+   * Blob-read query params. `context_id` is the same snake_case param
+   * {@link uploadBlob} announces with; building it in one place keeps the read
+   * side from drifting from the write side.
+   */
+  private blobPath(blobId: string, options?: BlobReadOptions): string {
+    if (!options?.contextId) return `/admin-api/blobs/${blobId}`;
+    const params = new URLSearchParams({ context_id: options.contextId });
+    return `/admin-api/blobs/${blobId}?${params.toString()}`;
+  }
+
+  /**
    * Download a blob's raw bytes. `GET /admin-api/blobs/:id` streams the blob
    * content (e.g. `application/gzip`), NOT JSON — so fetch it as an ArrayBuffer.
    * Use {@link listBlobs} for `{ blobId, size }` metadata.
+   *
+   * Without `contextId` the read is local-only: the node answers from its own
+   * blob store and returns immediately, or 404s. Passing `contextId` opts into
+   * network discovery — the node probes that context's peers (availability
+   * nodes first) for a holder, then transfers the bytes. Budget for it: core
+   * bounds discovery by a ~30s deadline, and the transfer is on top of that, so
+   * the worst case is well past what a UI should block on unhinted.
    */
-  async getBlob(blobId: string): Promise<ArrayBuffer> {
-    return this.httpClient.get<ArrayBuffer>(`/admin-api/blobs/${blobId}`, {
+  async getBlob(blobId: string, options?: BlobReadOptions): Promise<ArrayBuffer> {
+    return this.httpClient.get<ArrayBuffer>(this.blobPath(blobId, options), {
       parse: 'arrayBuffer',
     });
   }
@@ -502,18 +521,32 @@ export class AdminApiClient {
    * Fetch a blob's metadata without downloading it. `HEAD /admin-api/blobs/:id`
    * returns the info in response headers (size via `content-length`, plus
    * `x-blob-id`/`x-blob-hash`/`x-blob-mime-type`).
+   *
+   * Without `contextId` this is a local-only presence check that returns
+   * immediately. Passing `contextId` opts into the same network discovery
+   * {@link getBlob} uses — presence and size answered by probing the context's
+   * peers, with no transfer — so it inherits core's ~30s discovery deadline as
+   * its worst case. A probe only carries `found` and `size`, so a peer-sourced
+   * answer has no `hash`/`mimeType`; read `source` to tell the two apart.
    */
-  async getBlobInfo(blobId: string): Promise<GetBlobInfoResponseData> {
+  async getBlobInfo(
+    blobId: string,
+    options?: BlobReadOptions,
+  ): Promise<GetBlobInfoResponseData> {
     // HEAD throws (HttpError) on a non-2xx status, so we only reach here on success
     // — the x-blob-* headers are present. Guard size against a missing/non-numeric
     // content-length anyway (defaults to 0 rather than NaN).
-    const { headers } = await this.httpClient.head(`/admin-api/blobs/${blobId}`);
+    const { headers } = await this.httpClient.head(this.blobPath(blobId, options));
     const size = Number(headers['content-length']);
     return {
       blobId: headers['x-blob-id'] ?? blobId,
       size: Number.isFinite(size) ? size : 0,
       hash: headers['x-blob-hash'],
       mimeType: headers['x-blob-mime-type'],
+      // Nodes that predate the context-aware HEAD omit this header entirely, so
+      // it stays undefined rather than being defaulted to 'local' — absent means
+      // "the node didn't say", which is not the same claim as "served locally".
+      source: headers['x-blob-source'] as GetBlobInfoResponseData['source'],
     };
   }
 
