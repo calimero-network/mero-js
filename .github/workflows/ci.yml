@@ -149,7 +149,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/download-released-merod.sh
 
-      - name: Boot 2 merod nodes (embedded auth)
+      - name: Boot 3 merod nodes (embedded auth)
         run: |
           # --mdns is load-bearing, not tidy-up. These two nodes have no
           # bootstrap peer and no rendezvous, so mDNS is their ONLY discovery
