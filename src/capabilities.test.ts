@@ -13,8 +13,9 @@ describe('capabilities', () => {
       CAN_DELETE_SUBGROUP: 64,
       CAN_MANAGE_VISIBILITY: 128,
       CAN_MANAGE_METADATA: 256,
+      CAN_AUTHOR_ON_BEHALF: 512,
     });
-    expect(Object.keys(CAPABILITIES)).toHaveLength(9);
+    expect(Object.keys(CAPABILITIES)).toHaveLength(10);
     for (const value of Object.values(CAPABILITIES)) {
       expect(value & (value - 1)).toBe(0); // exactly one bit set
     }

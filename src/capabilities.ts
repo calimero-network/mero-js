@@ -1,6 +1,6 @@
 // Member capability bitmask constants — mirrors core's `MemberCapabilities`
 // (crates/context/config/src/lib.rs). The value stored per-member is a u32
-// bitmask. Core currently assigns bits 0..=8; bits 9 and above are unassigned
+// bitmask. Core currently assigns bits 0..=9; bits 10 and above are unassigned
 // and may be claimed by future core versions, so an application MUST NOT
 // assume any particular bit is safe for its own use unless core documents it
 // as reserved for applications.
@@ -8,8 +8,8 @@
 /**
  * Capability bits as defined by core's `MemberCapabilities`.
  *
- * The per-member value is a u32 bitmask. Core currently assigns bits 0..=8
- * (the entries below); bits 9 and above are unassigned — do not repurpose
+ * The per-member value is a u32 bitmask. Core currently assigns bits 0..=9
+ * (the entries below); bits 10 and above are unassigned — do not repurpose
  * them for application data, as a future core release may claim them.
  */
 export const CAPABILITIES = {
@@ -22,6 +22,18 @@ export const CAPABILITIES = {
   CAN_DELETE_SUBGROUP: 1 << 6,
   CAN_MANAGE_VISIBILITY: 1 << 7,
   CAN_MANAGE_METADATA: 1 << 8,
+  /**
+   * Publish writes attributed to ANOTHER member, under a warrant that member
+   * signed — the grant delegated execution runs on.
+   *
+   * Implied by nothing: not by membership, not by admin, and not propagated by
+   * the subgroup-admit cascade. So every group is authorship-closed until an
+   * admin sets this bit, and a relay without it is refused at
+   * `performIntent` before anything executes. That is why it is worth naming
+   * here rather than leaving callers to write `1 << 9`: a client granting it
+   * has to be able to say what it is granting.
+   */
+  CAN_AUTHOR_ON_BEHALF: 1 << 9,
 } as const;
 
 export type CapabilityName = keyof typeof CAPABILITIES;

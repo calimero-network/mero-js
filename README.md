@@ -89,6 +89,53 @@ Every failure surfaces as a typed error:
 you only see a `401` if the refresh itself fails. Full details in the
 [error model reference](https://calimero-network.github.io/mero-js/reference/error-model/).
 
+## Writing without a node
+
+The quickstart above assumes you have a node and a credential on it. A browser
+tab, a phone, or an agent has neither — the runtime cannot compile the app's WASM
+against materialized state, and never received the scope key that seals the
+deltas. So there is a second connection shape: sign in to **Calimero Cloud**, and
+write through an attested TEE **relay** using
+[delegated execution](https://calimero-network.github.io/core/protocol/delegated-authorship/).
+
+You sign a *warrant* locally — your consent for one specific intent, once — the
+relay runs the method as **your** principal, and the resulting change is
+attributed to your account and device. Your signing key never leaves the
+process; only signatures do.
+
+```typescript
+import { connectCloud } from '@calimero-network/mero-js';
+
+const connection = await connectCloud({
+  googleIdToken,        // or a stored sessionToken
+  authorAccount,        // your account, hex
+  authorProof,          // your AccountProof<DeviceCert>, hex borsh
+  deviceSecret,         // your device's ed25519 seed, hex — never transmitted
+});
+
+const { rootHash, returns } = await connection.execute(contextId, 'set', {
+  key: 'greeting',
+  value: 'hello',
+});
+```
+
+`connectCloud` replaces the **node-URL prompt**, not the authentication: it asks
+the cloud which namespaces the account owns and which relay serves them, then
+builds the relay client. `sdk.cloud` exposes the same cloud API from an existing
+`MeroJs` instance for apps that have both a node and a cloud account, and
+`RelayClient` is available directly for a relay you were told about out of band.
+
+One precondition is not yours to satisfy: an admin of the namespace must grant
+the relay `CAN_AUTHOR_ON_BEHALF` (core implies it from nothing — not from
+membership, not from admin). Until then `connectCloud` throws naming the account
+that needs the grant, and `relay.describe(contextId)` reports
+`canAuthorOnBehalf: false` so a UI can say so rather than failing a write.
+
+See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
+[relay client](https://calimero-network.github.io/mero-js/reference/relay/) and
+[connectCloud](https://calimero-network.github.io/mero-js/reference/connect-cloud/)
+references — including why a warrant nonce must never restart.
+
 ## Lower-level HTTP client
 
 If you need raw HTTP against a node (without the `MeroJs` facade), the SDK
