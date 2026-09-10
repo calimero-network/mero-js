@@ -1,3 +1,9 @@
+## [18.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.2.0...mero-js-v18.3.0) (2026-09-10)
+
+### Features
+
+* **cloud,relay:** write through a relay with only a signing key ([#135](https://github.com/calimero-network/mero-js/issues/135)) ([a670bfc](https://github.com/calimero-network/mero-js/commit/a670bfc68dcb3c8cb373c860d027dc6bd14096e4))
+
 ## [18.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.1.1...mero-js-v18.2.0) (2026-09-04)
 
 ### Features
