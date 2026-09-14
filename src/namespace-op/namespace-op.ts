@@ -24,8 +24,14 @@ import {
   u64le,
 } from '../crypto/internal.js';
 
-/** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 8;
+/**
+ * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
+ *
+ * 9: core tagged the root key a handoff names with its algorithm, so a join
+ * credential whose chain carries a handoff changes layout. The empty chain this
+ * package encodes is byte-identical; only the version byte moves.
+ */
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 9;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
