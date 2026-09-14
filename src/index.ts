@@ -80,3 +80,10 @@ export {
   discoverLocalNodes,
 } from './nodeDiscovery.js';
 export type { DiscoverLocalNodesOptions } from './nodeDiscovery.js';
+export {
+  DEVICE_LOGIN_DOMAIN,
+  deviceLoginPayload,
+  loginWithDevice,
+  signerFromCryptoKeyPair,
+} from './device-login/device-login.js';
+export type { DeviceLoginInput, DeviceSession, Signer } from './device-login/device-login.js';
