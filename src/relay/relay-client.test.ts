@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { RelayClient, IntentRefusedError } from './relay-client.js';
 import { createMemoryNonceSource } from './nonce-source.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { parseWarrant } from '../warrant/warrant.js';
 
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
@@ -95,14 +96,13 @@ describe('RelayClient.execute', () => {
     const sent = JSON.parse(String(calls[0].init?.body)) as Record<string, string>;
     expect(sent.method).toBe('set');
     expect(sent.authorProof).toBe('aa');
-    // 240 bytes of fixed-width fields plus the signature, hex-encoded. The
-    // encoding IS the canonical form — the signature covers exactly these
-    // bytes — so the shape is worth pinning here.
+    // The encoding IS the canonical form — the signature covers exactly these
+    // bytes — so the shape is worth pinning here. It is no longer a constant
+    // length: warrant v2 carries the method as a string and two cited-head
+    // lists as vectors, so `parseWarrant` reads it rather than a fixed offset,
+    // which would find a neighbouring field instead of failing.
     expect(sent.warrant).toMatch(/^[0-9a-f]+$/);
-    expect(sent.warrant).toHaveLength(240 * 2);
-    // The executor is inside those bytes at a fixed offset: context (32),
-    // author account (32), author device key (32), then executor (32).
-    expect(sent.warrant.slice(96 * 2, 128 * 2)).toBe(EXECUTOR);
+    expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
   });
 
   /**
@@ -120,7 +120,7 @@ describe('RelayClient.execute', () => {
 
     expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST']);
     const sent = JSON.parse(String(calls[1].init?.body)) as Record<string, string>;
-    expect(sent.warrant.slice(96 * 2, 128 * 2)).toBe(EXECUTOR);
+    expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
   });
 
   it('does not re-discover once the account is known', async () => {
@@ -153,13 +153,11 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', {});
     await relay.execute(CONTEXT, 'set', {});
 
-    // Nonce is the u64 little-endian field after context, author account,
-    // author device key, executor and the 32-byte intent hash.
+    // Nonce is a u64 little-endian, read by name rather than by offset.
     const nonceOf = (call: (typeof calls)[number]) =>
-      (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant.slice(
-        160 * 2,
-        168 * 2,
-      );
+      parseWarrant(
+        (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
+      ).nonce;
     expect(nonceOf(calls[0])).toBe('0100000000000000');
     expect(nonceOf(calls[1])).toBe('0200000000000000');
   });
@@ -175,10 +173,9 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', { key: 'b' });
 
     const intentHashOf = (call: (typeof calls)[number]) =>
-      (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant.slice(
-        128 * 2,
-        160 * 2,
-      );
+      parseWarrant(
+        (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
+      ).intentHash;
     expect(intentHashOf(calls[0])).not.toBe(intentHashOf(calls[1]));
   });
 
@@ -279,7 +276,7 @@ describe('RelayClient.execute', () => {
       );
 
       const warrant = (JSON.parse(String(calls[0].init?.body)) as { warrant: string }).warrant;
-      const notAfterLe = warrant.slice(168 * 2, 176 * 2);
+      const notAfterLe = parseWarrant(warrant).notAfter;
       const bytes = notAfterLe.match(/../g) as string[];
       const notAfter = bytes
         .reverse()
