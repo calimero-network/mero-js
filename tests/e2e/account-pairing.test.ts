@@ -178,4 +178,35 @@ describe('Account devices & pairing E2E', () => {
     // routes are served.
     await expect(mero.admin.relinkAccountDevice('0'.repeat(64))).rejects.toMatchObject({ status: 404 });
   });
+
+  /**
+   * Revoke's refusals, which is all one node can settle: its only device is its
+   * own, and withdrawing that would take the rest of the suite with it. The
+   * happy path pairs a throwaway device first and lives in multinode.test.ts.
+   *
+   * Asserted by status because these run in validation, before the account is
+   * known - so they are deterministic here, unlike a well-formed id for a device
+   * the account does not hold, whose status depends on how far the handler gets.
+   */
+  it('refuses a revocation whose device id is not 32 hex bytes', async (ctx) => {
+    if (routesMissing) return ctx.skip();
+    for (const deviceId of ['', 'abc', 'z'.repeat(64), 'a'.repeat(63)]) {
+      const err = await mero.admin
+        .revokeAccountDevice(namespaceId, { deviceId })
+        .then(() => undefined)
+        .catch((e: Error & { status?: number }) => e);
+      expect(err?.status, `deviceId ${JSON.stringify(deviceId)} was not refused`).toBe(400);
+    }
+  });
+
+  it('refuses an empty proof rather than reading it as absent', async (ctx) => {
+    if (routesMissing) return ctx.skip();
+    // Omitting `proof` means "mint one, or revoke as an admin". An empty string
+    // is always a caller mistake, so core rejects it instead of picking one.
+    const err = await mero.admin
+      .revokeAccountDevice(namespaceId, { deviceId: 'a'.repeat(64), proof: '' })
+      .then(() => undefined)
+      .catch((e: Error & { status?: number }) => e);
+    expect(err?.status).toBe(400);
+  });
 });

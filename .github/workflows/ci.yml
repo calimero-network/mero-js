@@ -149,7 +149,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/download-released-merod.sh
 
-      - name: Boot 2 merod nodes (embedded auth)
+      - name: Boot 3 merod nodes (embedded auth)
         run: |
           # --mdns is load-bearing, not tidy-up. These two nodes have no
           # bootstrap peer and no rendezvous, so mDNS is their ONLY discovery
@@ -165,22 +165,29 @@ jobs:
           # "namespace join is broken" rather than "the nodes never met".
           ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded --mdns
           ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded --mdns
+          # n3 exists to be paired INTO n1's account and must therefore join
+          # nothing: pair-init refuses a machine that already holds a linked
+          # device of another account ("moving a machine between accounts means
+          # revoking the existing device first"), which n2 becomes on join.
+          ./merod --home ./n3 --node n3 init --server-port 4503 --swarm-port 4603 --auth-mode embedded --mdns
           ./merod --home ./n1 --node n1 run > n1.log 2>&1 & echo $! > n1.pid
           ./merod --home ./n2 --node n2 run > n2.log 2>&1 & echo $! > n2.pid
-          for port in 4501 4502; do
+          ./merod --home ./n3 --node n3 run > n3.log 2>&1 & echo $! > n3.pid
+          for port in 4501 4502 4503; do
             for i in $(seq 1 30); do
               curl -sf "http://localhost:$port/admin-api/health" >/dev/null 2>&1 && break
               sleep 2
               [ "$i" = "30" ] && { echo "merod on $port did not become healthy"; exit 1; }
             done
           done
-          echo "both nodes healthy"
+          echo "all three nodes healthy"
 
       - name: Run multi-node e2e
         env:
           MERO_MULTINODE: "1"
           MERO_NODE1_URL: http://localhost:4501
           MERO_NODE2_URL: http://localhost:4502
+          MERO_NODE3_URL: http://localhost:4503
           MERO_E2E_USER: dev
           MERO_E2E_PASS: dev-password
           NO_COLOR: '1'
@@ -190,6 +197,11 @@ jobs:
           # The multi-node test is MERO_MULTINODE-gated; require it actually ran (not skipped).
           grep -qE "[1-9][0-9]* passed" mn.log \
             || { echo "::error::multi-node test did not run (skipped/vacuous) — failing"; exit 1; }
+          # And that BOTH ran. The pairing test additionally needs MERO_NODE3_URL,
+          # so it skips silently if n3 is missing while the join test alone still
+          # satisfies the guard above.
+          grep -qE "([2-9]|[0-9]{2,}) passed" mn.log \
+            || { echo "::error::only one multi-node test ran — the pairing test skipped (MERO_NODE3_URL unset?)"; exit 1; }
 
       - name: Upload multi-node logs
         if: always()
