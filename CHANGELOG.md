@@ -1,3 +1,13 @@
+## [19.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.3.0...mero-js-v19.0.0) (2026-09-16)
+
+### ⚠ BREAKING CHANGES
+
+* **warrant:** sign the v2 layout core now verifies (#148)
+
+### Features
+
+* **warrant:** sign the v2 layout core now verifies ([#148](https://github.com/calimero-network/mero-js/issues/148)) ([e0e8fc7](https://github.com/calimero-network/mero-js/commit/e0e8fc758ba061b010ee03345166fbea9a319774)), closes [core#3933](https://github.com/calimero-network/core/issues/3933)
+
 ## [18.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.2.0...mero-js-v18.3.0) (2026-09-10)
 
 ### Features
