@@ -947,6 +947,34 @@ describe('AdminApiClient', () => {
       expect(result).toEqual(PAIR_INIT);
     });
 
+    it('initAccountPairing posts the account namespace verbatim alongside an empty namespace set', async () => {
+      mock.setMockResponse('POST', '/admin-api/account/pair-init', { data: PAIR_INIT });
+      await client.initAccountPairing({
+        accountRootPublicKey: '4'.repeat(64),
+        accountNamespace: '9'.repeat(64),
+        namespaces: [],
+      });
+      expect(mock.getRequestBody('POST', '/admin-api/account/pair-init')).toEqual({
+        accountRootPublicKey: '4'.repeat(64),
+        accountNamespace: '9'.repeat(64),
+        namespaces: [],
+      });
+    });
+
+    it('initAccountPairing omits accountNamespace when the caller names namespaces instead', async () => {
+      // deny_unknown_fields on core's side means an explicit `undefined` here
+      // must never serialize as a present key - JSON.stringify already drops
+      // it, this pins that no code path turns it into null.
+      mock.setMockResponse('POST', '/admin-api/account/pair-init', { data: PAIR_INIT });
+      await client.initAccountPairing({
+        accountRootPublicKey: '4'.repeat(64),
+        namespaces: ['5'.repeat(64)],
+      });
+      expect(
+        mock.getRequestBody('POST', '/admin-api/account/pair-init'),
+      ).not.toHaveProperty('accountNamespace');
+    });
+
     it('completeAccountPairing sends the whole pair-init payload plus the scope', async () => {
       const completed = {
         accountId: PAIR_INIT.accountId,

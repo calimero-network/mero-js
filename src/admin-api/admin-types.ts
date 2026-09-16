@@ -760,8 +760,7 @@ export interface AccountPairInitRequest {
    */
   accountRootPublicKey: string;
   /**
-   * Ids of the namespaces to enroll into, 64 hex characters each. At least one:
-   * a device certified into nothing listens on no topic.
+   * Ids of the namespaces to enroll into, 64 hex characters each.
    *
    * The caller has to supply these, because the joining node cannot discover
    * them - it is a member of nothing and holds no scope key, so it can neither
@@ -772,8 +771,20 @@ export interface AccountPairInitRequest {
    * with the applications the holder scopes `pair-complete` to: a binding
    * published where the device is not listening is picked up whenever it does
    * subscribe, and a subscription the holder never reaches costs nothing.
+   *
+   * Core refuses only a request that names neither this nor `accountNamespace`.
+   * A caller that sends `accountNamespace` may leave this empty.
    */
-  namespaces: string[];
+  namespaces?: string[];
+  /**
+   * Hex id of the account namespace to follow - the value
+   * {@link NodeIdentity.accountNamespaceId} reports on the holder.
+   *
+   * The device then learns the account's namespaces from the account namespace
+   * itself, so the caller need not know them up front. A caller that does not
+   * send this must name at least one namespace above.
+   */
+  accountNamespace?: string;
 }
 
 /**
