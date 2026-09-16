@@ -1,3 +1,21 @@
+## [19.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.3.0...mero-js-v19.4.0) (2026-09-16)
+
+### Features
+
+* **login:** the handshake around the signer, not just the signature ([#151](https://github.com/calimero-network/mero-js/issues/151)) ([ff31a7c](https://github.com/calimero-network/mero-js/commit/ff31a7ce184069bb14d04a4e0359934f800d953d)), closes [#84](https://github.com/calimero-network/mero-js/issues/84) [#87](https://github.com/calimero-network/mero-js/issues/87) [#88](https://github.com/calimero-network/mero-js/issues/88)
+
+## [19.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.2.0...mero-js-v19.3.0) (2026-09-16)
+
+### Features
+
+* **login:** sign the statement a device presents for a session ([#150](https://github.com/calimero-network/mero-js/issues/150)) ([5dde61c](https://github.com/calimero-network/mero-js/commit/5dde61c0134d1100b8117f7ca7a081394c99cded))
+
+## [19.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.1.0...mero-js-v19.2.0) (2026-09-16)
+
+### Features
+
+* **admin:** identity and pair-init carry the account namespace ([#149](https://github.com/calimero-network/mero-js/issues/149)) ([d93b26d](https://github.com/calimero-network/mero-js/commit/d93b26d88bc11aa87e5e12cff51f0fe86ea5ac59))
+
 ## [19.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.0.0...mero-js-v19.1.0) (2026-09-16)
 
 ### Features
