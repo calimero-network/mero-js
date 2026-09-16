@@ -20,6 +20,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import type {
+  AccountDeviceEntry,
+  AccountPairInitRequest,
   CreateContextRequest,
   CreateContextResponseData,
   GroupUpgradeStatus,
@@ -27,6 +29,7 @@ import type {
   MemberMigrationStatusEntry,
   MigrationStatus,
   MigrationStatusRollup,
+  NodeIdentity,
   ReparentGroupRequest,
   ReparentGroupResponseData,
   UpgradeGroupResponseData,
@@ -68,6 +71,9 @@ const mStatus = key<MigrationStatus>();
 const mRollup = key<MigrationStatusRollup>();
 const mEntry = key<MemberMigrationStatusEntry>();
 const mReport = key<MemberMigrationReport>();
+const nodeId = key<NodeIdentity>();
+const pairInitReq = key<AccountPairInitRequest>();
+const deviceEntry = key<AccountDeviceEntry>();
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
 // unexported inline type whose index signature makes `key<T>()` accept any
@@ -187,6 +193,39 @@ const SPECS: Spec[] = [
     optional: [mReport('migrationFailed')],
     // Always 0 on the wire and slated for removal once the client-py floor moves.
     ignoredCoreKeys: ['residueIdentity'],
+  },
+  {
+    type: 'NodeIdentity',
+    file: 'identity/node_identity.res.json',
+    path: 'data',
+    required: [nodeId('accountId'), nodeId('deviceId'), nodeId('publicKey')],
+    optional: [
+      nodeId('accountRootPublicKey'),
+      nodeId('deviceAgreementKey'),
+      nodeId('holdsAccountRoot'),
+      nodeId('deviceCertified'),
+      nodeId('accountNamespaceId'),
+    ],
+  },
+  {
+    type: 'AccountPairInitRequest',
+    file: 'account/pair_init.req.json',
+    required: [pairInitReq('accountRootPublicKey')],
+    optional: [pairInitReq('namespaces'), pairInitReq('accountNamespace')],
+  },
+  {
+    type: 'AccountDeviceEntry',
+    file: 'account/devices.res.json',
+    path: 'devices.0',
+    required: [
+      deviceEntry('deviceId'),
+      deviceEntry('signingKey'),
+      deviceEntry('isSelf'),
+      deviceEntry('revoked'),
+      deviceEntry('applications'),
+      deviceEntry('namespaces'),
+    ],
+    optional: [],
   },
 ];
 

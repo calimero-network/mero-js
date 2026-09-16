@@ -608,6 +608,29 @@ export interface NodeIdentity {
    * invite on it should not collapse the two.
    */
   holdsAccountRoot?: boolean;
+  /**
+   * Whether this node's device is certified into the account it speaks for.
+   *
+   * Pair-init mints a device but only pair-complete certifies it, and
+   * `holdsAccountRoot` is `false` across both states, so this is what tells
+   * them apart. Absent on a node predating the field.
+   */
+  deviceCertified?: boolean;
+  /**
+   * Hex X25519 public agreement key of this node's device, `null` before it
+   * has a device row.
+   *
+   * The same key pairing calls `kemPublicKey`; core's name is kept here.
+   */
+  deviceAgreementKey?: string | null;
+  /**
+   * Hex id of the account namespace this node follows.
+   *
+   * A holder derives it before the namespace exists so an invite can carry
+   * it; a device records it at pair-init. `null` on a node that neither holds
+   * a root nor has paired with the id; absent on an old node.
+   */
+  accountNamespaceId?: string | null;
 }
 
 /**
@@ -737,8 +760,7 @@ export interface AccountPairInitRequest {
    */
   accountRootPublicKey: string;
   /**
-   * Ids of the namespaces to enroll into, 64 hex characters each. At least one:
-   * a device certified into nothing listens on no topic.
+   * Ids of the namespaces to enroll into, 64 hex characters each.
    *
    * The caller has to supply these, because the joining node cannot discover
    * them - it is a member of nothing and holds no scope key, so it can neither
@@ -749,8 +771,20 @@ export interface AccountPairInitRequest {
    * with the applications the holder scopes `pair-complete` to: a binding
    * published where the device is not listening is picked up whenever it does
    * subscribe, and a subscription the holder never reaches costs nothing.
+   *
+   * Core refuses only a request that names neither this nor `accountNamespace`.
+   * A caller that sends `accountNamespace` may leave this empty.
    */
-  namespaces: string[];
+  namespaces?: string[];
+  /**
+   * Hex id of the account namespace to follow - the value
+   * {@link NodeIdentity.accountNamespaceId} reports on the holder.
+   *
+   * The device then learns the account's namespaces from the account namespace
+   * itself, so the caller need not know them up front. A caller that does not
+   * send this must name at least one namespace above.
+   */
+  accountNamespace?: string;
 }
 
 /**

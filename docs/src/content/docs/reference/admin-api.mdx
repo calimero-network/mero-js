@@ -130,6 +130,11 @@ change the account this node speaks for. `revokeAccountDevice` takes a namespace
 only to say where to publish from — it withdraws the device everywhere and
 reports each namespace back.
 
+Every account also has one hidden account namespace.
+The holder's `getNodeIdentity().accountNamespaceId` names it.
+A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey, accountNamespace, namespaces: [] })` makes the device follow the account's namespaces on its own.
+`listNamespaces` never lists it.
+
 | Method | Endpoint |
 | --- | --- |
 | `initAccountPairing(request): Promise<AccountPairInitResponseData>` | `POST /account/pair-init` |
@@ -269,6 +274,17 @@ interface MetadataRecord {
   data: Record<string, string>;
   updatedAt: number;
   updatedBy: string;
+}
+
+interface NodeIdentity {
+  accountId: string;
+  deviceId: string | null;
+  publicKey: string;
+  accountRootPublicKey?: string;
+  holdsAccountRoot?: boolean;
+  deviceCertified?: boolean;
+  deviceAgreementKey?: string | null;
+  accountNamespaceId?: string | null;
 }
 
 interface BlobInfo { blobId: string; size: number }
