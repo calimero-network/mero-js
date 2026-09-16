@@ -608,6 +608,29 @@ export interface NodeIdentity {
    * invite on it should not collapse the two.
    */
   holdsAccountRoot?: boolean;
+  /**
+   * Whether this node's device is certified into the account it speaks for.
+   *
+   * Pair-init mints a device but only pair-complete certifies it, and
+   * `holdsAccountRoot` is `false` across both states, so this is what tells
+   * them apart. Absent on a node predating the field.
+   */
+  deviceCertified?: boolean;
+  /**
+   * Hex X25519 public agreement key of this node's device, `null` before it
+   * has a device row.
+   *
+   * The same key pairing calls `kemPublicKey`; core's name is kept here.
+   */
+  deviceAgreementKey?: string | null;
+  /**
+   * Hex id of the account namespace this node follows.
+   *
+   * A holder derives it before the namespace exists so an invite can carry
+   * it; a device records it at pair-init. `null` on a node that neither holds
+   * a root nor has paired with the id; absent on an old node.
+   */
+  accountNamespaceId?: string | null;
 }
 
 /**

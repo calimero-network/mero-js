@@ -765,6 +765,36 @@ describe('AdminApiClient', () => {
       expect((await client.getNodeIdentity()).holdsAccountRoot).toBeUndefined();
     });
 
+    it('getNodeIdentity passes through deviceCertified, deviceAgreementKey and accountNamespaceId', async () => {
+      const base = { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1' };
+      mock.setMockResponse('GET', '/admin-api/identity', {
+        data: {
+          ...base,
+          deviceCertified: true,
+          deviceAgreementKey: 'k'.repeat(64),
+          accountNamespaceId: 'n'.repeat(64),
+        },
+      });
+      const withValues = await client.getNodeIdentity();
+      expect(withValues.deviceCertified).toBe(true);
+      expect(withValues.deviceAgreementKey).toBe('k'.repeat(64));
+      expect(withValues.accountNamespaceId).toBe('n'.repeat(64));
+
+      mock.setMockResponse('GET', '/admin-api/identity', {
+        data: { ...base, deviceCertified: false, deviceAgreementKey: null, accountNamespaceId: null },
+      });
+      const withNulls = await client.getNodeIdentity();
+      expect(withNulls.deviceCertified).toBe(false);
+      expect(withNulls.deviceAgreementKey).toBeNull();
+      expect(withNulls.accountNamespaceId).toBeNull();
+
+      mock.setMockResponse('GET', '/admin-api/identity', { data: base });
+      const absent = await client.getNodeIdentity();
+      expect(absent.deviceCertified).toBeUndefined();
+      expect(absent.deviceAgreementKey).toBeUndefined();
+      expect(absent.accountNamespaceId).toBeUndefined();
+    });
+
     it('getNamespaceIdentity answers from the node-level route', async () => {
       // The deprecated shape, kept working by delegation rather than by calling
       // the superseded per-namespace endpoint. Nothing it returns varies by
