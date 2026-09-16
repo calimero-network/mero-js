@@ -21,11 +21,15 @@ const bytes = new Uint8Array(await file.arrayBuffer());
 const { blobId } = await sdk.admin.uploadBlob({
   data: bytes,
   hash: '…',          // optional
-  contextId: 'ctx-id', // optional — scope to a context
+  contextId: 'ctx-id', // optional — announce to a context
 });
 ```
 
 The body is sent as `application/octet-stream` to `PUT /admin-api/blobs`.
+
+Passing `contextId` **announces** the blob to that context's availability nodes,
+so its other members can later discover it. Without it the blob stays local to
+this node.
 
 ## List
 
@@ -41,7 +45,7 @@ the response headers without transferring the body:
 
 ```typescript
 const info = await sdk.admin.getBlobInfo(blobId);
-// { blobId, size, hash?, mimeType? }
+// { blobId, size, hash?, mimeType?, source? }
 ```
 
 ## Download
@@ -58,6 +62,28 @@ const view = new Uint8Array(buffer);
   Use `listBlobs()` / `getBlobInfo()` when you only need the `{ blobId, size }`
   metadata — reserve `getBlob()` for when you actually need the bytes.
 </Aside>
+
+## Read a blob this node doesn't hold
+
+Both reads take an optional context. Without one the node answers from its own
+store or 404s. With one it discovers the blob on the network — probing the
+context's peers, availability nodes first — and then transfers it:
+
+```typescript
+const buffer = await sdk.admin.getBlob(blobId, { contextId: 'ctx-id' });
+const info = await sdk.admin.getBlobInfo(blobId, { contextId: 'ctx-id' });
+```
+
+<Aside type="caution">
+  A context-scoped read is **slow in the worst case**: the node bounds discovery
+  by a ~30s deadline, and the transfer comes on top of that. A local-only read
+  returns immediately. Don't put a context-scoped read behind a click without a
+  spinner and a timeout of your own.
+</Aside>
+
+A `getBlobInfo` answered by a peer probe carries only presence and size, so
+`hash` and `mimeType` are absent; `source` says which side answered
+(`'local'` or `'peer'`) on nodes that report it.
 
 ## Delete
 

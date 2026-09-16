@@ -281,9 +281,29 @@ export interface ListBlobsResponseData {
 
 export type GetBlobResponseData = BlobInfo;
 
+/**
+ * Optional context for a blob read. Supplying `contextId` sends the
+ * `context_id` query param (the same one {@link UploadBlobRequest} announces
+ * with) and opts the read into network discovery instead of a local-only
+ * lookup — see {@link AdminClient.getBlob}/{@link AdminClient.getBlobInfo} for
+ * the latency this buys.
+ */
+export interface BlobReadOptions {
+  /** Context whose peers to probe for the blob; sent as the `context_id` query param. */
+  contextId?: string;
+}
+
 export interface GetBlobInfoResponseData extends BlobInfo {
+  /** Absent when the answer came from a peer probe, which carries only presence and size. */
   hash?: string;
+  /** Absent when the answer came from a peer probe, which carries only presence and size. */
   mimeType?: string;
+  /**
+   * Where the node answered from, per the `x-blob-source` response header:
+   * `'local'` for its own blob store, `'peer'` for a context probe. Undefined
+   * on nodes that don't send the header.
+   */
+  source?: 'local' | 'peer';
 }
 
 // ---- Aliases ----
