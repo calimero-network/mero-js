@@ -71,6 +71,12 @@ export type { WarrantInput } from './warrant/index.js';
 // Login-statement signing — the device's half of a password-free session
 export { signLoginStatement } from './login/index.js';
 export type { Audience, LoginStatementInput } from './login/index.js';
+export { login, generateSessionKey } from './login/index.js';
+export type {
+  LoginConfig,
+  DelegatedSession,
+  SessionKeyPair,
+} from './login/index.js';
 
 // Member capability bitmask constants & helpers
 export * from './capabilities.js';
