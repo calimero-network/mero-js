@@ -39,6 +39,7 @@ import type {
   BlobReadOptions,
   CreateContextAliasRequest,
   CreateApplicationAliasRequest,
+  CreateDeviceAliasRequest,
   CreateAliasResponseData,
   LookupAliasResponseData,
   DeleteAliasResponseData,
@@ -616,6 +617,37 @@ export class AdminApiClient {
 
   async listApplicationAliases(): Promise<ListAliasesResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/application'));
+  }
+
+  async createDeviceAlias(request: CreateDeviceAliasRequest): Promise<CreateAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreateAliasResponseData }>(
+        '/admin-api/alias/create/device',
+        { alias: request.alias, deviceId: request.deviceId },
+      ),
+    );
+  }
+
+  async lookupDeviceAlias(name: string): Promise<LookupAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: LookupAliasResponseData }>(
+        `/admin-api/alias/lookup/device/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
+  }
+
+  async deleteDeviceAlias(name: string): Promise<DeleteAliasResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: DeleteAliasResponseData }>(
+        `/admin-api/alias/delete/device/${encodeURIComponent(name)}`,
+        {},
+      ),
+    );
+  }
+
+  async listDeviceAliases(): Promise<ListAliasesResponseData> {
+    return unwrap(await this.httpClient.get<{ data: ListAliasesResponseData }>('/admin-api/alias/list/device'));
   }
 
   // ---- Namespace Management ----

@@ -320,10 +320,15 @@ export interface CreateApplicationAliasRequest {
   applicationId: string;
 }
 
+export interface CreateDeviceAliasRequest {
+  alias: string;
+  deviceId: string;
+}
+
 /**
  * Core's `ListAliasesResponse` is `{ data: BTreeMap<Alias<T>, T> }`, so once the
  * `data` envelope is stripped the payload is a flat `{ alias: id }` map — not a
- * list of entries. Applies to context and application aliases.
+ * list of entries. Applies to context, application, and device aliases.
  */
 export type ListAliasesResponseData = Record<string, string>;
 
