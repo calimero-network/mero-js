@@ -102,6 +102,10 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `deleteApplicationAlias(name): Promise<DeleteAliasResponseData>` | `POST /alias/delete/application/{name}` |
 | `listContextAliases(): Promise<ListAliasesResponseData>` | `GET /alias/list/context` |
 | `listApplicationAliases(): Promise<ListAliasesResponseData>` | `GET /alias/list/application` |
+| `createDeviceAlias(request): Promise<CreateAliasResponseData>` | `POST /alias/create/device` |
+| `lookupDeviceAlias(name): Promise<LookupAliasResponseData>` | `POST /alias/lookup/device/{name}` |
+| `deleteDeviceAlias(name): Promise<DeleteAliasResponseData>` | `POST /alias/delete/device/{name}` |
+| `listDeviceAliases(): Promise<ListAliasesResponseData>` | `GET /alias/list/device` |
 | `listContextIdentityAliases(contextId): Promise<ListContextIdentityAliasesResponseData>` | `GET /alias/list/identity/{contextId}` |
 | `createContextIdentityAlias(contextId, request): Promise<CreateContextIdentityAliasResponseData>` | `POST /alias/create/identity/{contextId}` |
 | `lookupContextIdentityAlias(contextId, name): Promise<LookupContextIdentityAliasResponseData>` | `POST /alias/lookup/identity/{contextId}/{name}` |
