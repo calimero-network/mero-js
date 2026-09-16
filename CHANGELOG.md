@@ -1,3 +1,9 @@
+## [19.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.0.0...mero-js-v19.1.0) (2026-09-16)
+
+### Features
+
+* **admin-api:** accept a context on blob reads for network discovery ([#142](https://github.com/calimero-network/mero-js/issues/142)) ([013d9e2](https://github.com/calimero-network/mero-js/commit/013d9e232a7807bc9e1b4396b12ab07a14c404f5))
+
 ## [19.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v18.3.0...mero-js-v19.0.0) (2026-09-16)
 
 ### ⚠ BREAKING CHANGES
