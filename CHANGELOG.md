@@ -1,3 +1,9 @@
+## [19.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.2.0...mero-js-v19.3.0) (2026-09-16)
+
+### Features
+
+* **login:** sign the statement a device presents for a session ([#150](https://github.com/calimero-network/mero-js/issues/150)) ([5dde61c](https://github.com/calimero-network/mero-js/commit/5dde61c0134d1100b8117f7ca7a081394c99cded))
+
 ## [19.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.1.0...mero-js-v19.2.0) (2026-09-16)
 
 ### Features
