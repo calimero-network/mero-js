@@ -623,6 +623,34 @@ describe('AdminApiClient', () => {
       const result = await client.listApplicationAliases();
       expect(result).toEqual({});
     });
+
+    it('createDeviceAlias sends { alias, deviceId }', async () => {
+      mock.setMockResponse('POST', '/admin-api/alias/create/device', { data: {} });
+      const result = await client.createDeviceAlias({ alias: 'my-device', deviceId: 'device-1' });
+      expect(result).toEqual({});
+      expect(mock.getRequestBody('POST', '/admin-api/alias/create/device')).toEqual({
+        alias: 'my-device',
+        deviceId: 'device-1',
+      });
+    });
+
+    it('lookupDeviceAlias unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/alias/lookup/device/my-device', { data: { value: 'device-1' } });
+      const result = await client.lookupDeviceAlias('my-device');
+      expect(result).toEqual({ value: 'device-1' });
+    });
+
+    it('deleteDeviceAlias unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/alias/delete/device/my-device', { data: {} });
+      const result = await client.deleteDeviceAlias('my-device');
+      expect(result).toEqual({});
+    });
+
+    it('listDeviceAliases unwraps the alias -> id map', async () => {
+      mock.setMockResponse('GET', '/admin-api/alias/list/device', { data: { a: 'device-1' } });
+      const result = await client.listDeviceAliases();
+      expect(result).toEqual({ a: 'device-1' });
+    });
   });
 
   describe('Namespace Management', () => {
