@@ -1,3 +1,9 @@
+## [19.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.3.0...mero-js-v19.4.0) (2026-09-16)
+
+### Features
+
+* **login:** the handshake around the signer, not just the signature ([#151](https://github.com/calimero-network/mero-js/issues/151)) ([ff31a7c](https://github.com/calimero-network/mero-js/commit/ff31a7ce184069bb14d04a4e0359934f800d953d)), closes [#84](https://github.com/calimero-network/mero-js/issues/84) [#87](https://github.com/calimero-network/mero-js/issues/87) [#88](https://github.com/calimero-network/mero-js/issues/88)
+
 ## [19.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.2.0...mero-js-v19.3.0) (2026-09-16)
 
 ### Features
