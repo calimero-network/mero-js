@@ -68,6 +68,10 @@ export {
 export type { SignMemberJoinInput } from './namespace-op/index.js';
 export type { WarrantInput } from './warrant/index.js';
 
+// Login-statement signing — the device's half of a password-free session
+export { signLoginStatement } from './login/index.js';
+export type { Audience, LoginStatementInput } from './login/index.js';
+
 // Member capability bitmask constants & helpers
 export * from './capabilities.js';
 
