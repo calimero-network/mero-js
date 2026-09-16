@@ -1,0 +1,106 @@
+---
+title: Account roots
+description: Mint a Calimero account root with a 24-word recovery phrase, restore one from that phrase, and prove possession of it to Calimero Cloud — all offline, with no node involved.
+sidebar:
+  order: 11
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+An **account root** is the signing key an account is named after. It certifies
+devices into the account, and it is the credential that proves ownership of it to
+Calimero Cloud. Everything on this page runs offline: no node, no network, no
+cloud session.
+
+Every other keyholder API assumes a `rootSecret` already exists. This is where it
+comes from.
+
+## `generateAccountRoot(): Promise<RecoverableAccountRoot>`
+
+Mint a brand-new root from the platform CSPRNG.
+
+```typescript
+import { generateAccountRoot } from '@calimero-network/mero-js';
+
+const { secret, publicKey, accountId, phrase } = await generateAccountRoot();
+// phrase: 24 words — show it once, have the holder write it down, keep nothing
+```
+
+`secret` is the whole account. It signs device certificates and cloud links, and
+there is no recovery path that does not go through it or its phrase — so it is
+never sent anywhere, and in a browser it does not belong in `localStorage`.
+
+`accountId` is what an owner adds as a group member, and what a warrant is
+attributed to. `publicKey` is safe to publish.
+
+## `accountRootFromPhrase(phrase): Promise<RecoverableAccountRoot>`
+
+Restore a root on another device.
+
+```typescript
+const restored = await accountRootFromPhrase(savedPhrase);
+```
+
+Case and whitespace are normalised, so a phrase pasted out of a text editor with
+a trailing newline or a stray double space restores fine. A word outside the
+list, a wrong word count, or a failed checksum throws rather than returning some
+other account — a single mistyped word is the common failure, and the phrase's
+checksum catches all but 1 in 256 of them.
+
+<Aside type="caution" title="The phrase is BIP39 entropy, not a BIP39 seed">
+The 24 words are the standard BIP39 English encoding of the 32-byte root secret.
+A tool restoring one of these phrases must call the equivalent of
+`mnemonicToEntropy(phrase)` and use those 32 bytes as the ed25519 secret
+directly.
+
+`mnemonicToSeed(phrase)` — which most wallet libraries reach for first — runs
+PBKDF2 and returns 64 different bytes. Feeding those in names a *different*
+account, so it surfaces as "wrong account" rather than as a decoding error.
+
+There is no passphrase and no BIP32 derivation path.
+</Aside>
+
+## `accountRootFromSecret(secret): Promise<AccountRoot>`
+
+The public half of a root you already hold, without re-deriving it by hand.
+
+```typescript
+const { publicKey, accountId } = await accountRootFromSecret(rootSecret);
+```
+
+Throws if `secret` is not 32 hex-encoded bytes, so a truncated paste fails here
+rather than silently naming an unrelated account.
+
+## `signAccountLink({ rootSecret, nonce }): Promise<string>`
+
+Sign a Calimero Cloud link challenge with the account root. Returns standard
+base64.
+
+Most callers want [`CloudClient.linkAccount()`](/reference/cloud/), which fetches
+the challenge and posts the proof around this. Reach for `signAccountLink`
+directly when the root lives somewhere the cloud client cannot reach it — a
+desktop app, a hardware key, an air-gapped machine — and only the signature comes
+back.
+
+```typescript
+const { nonce } = await cloud.getAccountLinkChallenge();
+const signature = await signAccountLink({ rootSecret, nonce }); // wherever the root lives
+await cloud.submitAccountLink({ accountId, rootPublicKey, nonce, signature });
+```
+
+The challenge is single-use, so one fetched and abandoned is spent — get it when
+the holder is ready to sign, not when the screen opens.
+
+The nonce is signed under a domain separator, so a signature gathered for a cloud
+link cannot be replayed into any other protocol that has a root sign opaque
+bytes.
+
+## Where the root can live
+
+The cloud does not care which of these produced the signature — only that it
+verifies and names the account being claimed:
+
+- **Generated here**, with the phrase written down. The path above.
+- **Held by a desktop app or a hardware key**, which signs the challenge without
+  the secret ever entering the browser. Pass the resulting signature straight to
+  the link endpoint.

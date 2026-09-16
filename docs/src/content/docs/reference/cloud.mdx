@@ -72,6 +72,43 @@ again. Ignoring that would cost nothing today and log the user out a week later.
 the session server-side and clears it locally — the local half happens even if
 the server call fails, because the caller asked to be signed out.
 
+## Linking a Calimero account
+
+A cloud login is an email; a Calimero identity is a 32-byte account. Linking the
+two is what lets the cloud bill a hosted node to somebody, and sign that account
+back in later. It is **not** what authorizes a write — a relay runs an intent on
+a warrant alone, and never asks the cloud who you are.
+
+```typescript
+const link = await cloud.linkAccount(rootSecret);
+// { accountId, linkedAt, alreadyLinked }
+```
+
+One call, two hops: it fetches a single-use challenge and signs it with the
+account root. The secret never leaves the process — only a signature over a
+nonce the cloud minted does — and the account id and root public key are derived
+from it here, because the cloud refuses a proof whose `account_id` is not the
+account the signing key names.
+
+Root-signed rather than device-signed on purpose: the root is the credential
+someone still holds after losing a device, which is the case linking exists to
+serve.
+
+Re-linking the same account to the same login is a no-op that reports
+`alreadyLinked: true`, so re-running onboarding is safe. An account linked to a
+*different* login is a `409`; a replayed or expired challenge is a `403`; and
+exceeding the plan's limit is a `402`.
+
+Where `rootSecret` comes from is the app's choice — a freshly generated root, a
+restored recovery phrase, or a desktop app or hardware key that already holds
+one. See [Account roots](/reference/account-roots/).
+
+```typescript
+const { accounts, limit } = await cloud.getMyAccounts();
+// accounts: [{ accountId, linkedAt, hasRecoveryEnvelope }]
+// limit: how many the plan allows, or null for no limit
+```
+
 ## `getMyNamespaces(): Promise<CloudNamespace[]>`
 
 The namespaces this account owns.

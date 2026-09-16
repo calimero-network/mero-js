@@ -80,6 +80,7 @@ export default defineConfig({
             'reference/rpc',
             'reference/events',
             'reference/cloud',
+            'reference/account-roots',
             'reference/capabilities',
             'reference/error-model',
           ],
