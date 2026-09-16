@@ -1,3 +1,9 @@
+## [19.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.1.0...mero-js-v19.2.0) (2026-09-16)
+
+### Features
+
+* **admin:** identity and pair-init carry the account namespace ([#149](https://github.com/calimero-network/mero-js/issues/149)) ([d93b26d](https://github.com/calimero-network/mero-js/commit/d93b26d88bc11aa87e5e12cff51f0fe86ea5ac59))
+
 ## [19.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.0.0...mero-js-v19.1.0) (2026-09-16)
 
 ### Features
