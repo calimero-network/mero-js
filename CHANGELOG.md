@@ -1,3 +1,9 @@
+## [19.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.4.0...mero-js-v19.5.0) (2026-09-16)
+
+### Features
+
+* **admin:** device alias methods ([#152](https://github.com/calimero-network/mero-js/issues/152)) ([46141d9](https://github.com/calimero-network/mero-js/commit/46141d9ee61f6f8a4a62fcfeb8b073dca7f5e51c))
+
 ## [19.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.3.0...mero-js-v19.4.0) (2026-09-16)
 
 ### Features
