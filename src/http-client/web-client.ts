@@ -26,10 +26,17 @@ const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
 function extractErrorMessage(bodyText?: string): string | undefined {
   if (!bodyText) return undefined;
   try {
-    const error = (JSON.parse(bodyText) as { error?: unknown })?.error;
+    const body = JSON.parse(bodyText) as { error?: unknown; detail?: unknown };
+    const error = body?.error;
     if (typeof error === 'string' && error.trim() !== '') return error;
     const nested = (error as { message?: unknown } | null)?.message;
     if (typeof nested === 'string' && nested.trim() !== '') return nested;
+    // FastAPI's spelling, which is what every Calimero Cloud route answers
+    // with. Without it a manager's carefully worded refusal — "ownership is
+    // recorded, but the account is not linked" — reached callers as a bare
+    // "HTTP 403", and the one thing they could do about it was invisible.
+    const detail = body?.detail;
+    if (typeof detail === 'string' && detail.trim() !== '') return detail;
   } catch {
     // Not JSON — the status line is all we can honestly report.
   }

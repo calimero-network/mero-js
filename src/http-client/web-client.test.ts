@@ -567,6 +567,23 @@ describe('WebHttpClient - Token Refresh', () => {
   });
 
   describe("HTTPError.message carries the node's explanation", () => {
+    it("includes the cloud's `detail`, which is how every MDMA route refuses", async () => {
+      // The cloud is FastAPI and answers `{"detail": "..."}`. Reading only
+      // `error` left a caller with a bare "HTTP 403" and no way to tell a bad
+      // signature from an unlinked account -- two refusals with entirely
+      // different remedies.
+      const body = JSON.stringify({
+        detail: 'ownership of account abcd is recorded, but it is not linked to a cloud login',
+      });
+      mockFetch.mockResolvedValueOnce(
+        new Response(body, { status: 403, statusText: 'Forbidden' }),
+      );
+
+      await expect(client.post('/api/auth/account', {})).rejects.toThrow(
+        /not linked to a cloud login/,
+      );
+    });
+
     it("includes core's error envelope and keeps every field intact", async () => {
       const body = JSON.stringify({
         error: 'Invalid group id format: expected hex-encoded 32 bytes',
