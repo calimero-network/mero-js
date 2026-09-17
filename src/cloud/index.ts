@@ -13,6 +13,8 @@ export type {
   CloudAccountLink,
   AccountLinkChallenge,
   AccountLinkProof,
+  AccountLoginChallenge,
+  AccountLoginProof,
   EnableHAOptions,
   DisableHAOptions,
 } from './cloud-client.js';

@@ -95,6 +95,33 @@ The nonce is signed under a domain separator, so a signature gathered for a clou
 link cannot be replayed into any other protocol that has a root sign opaque
 bytes.
 
+## `signAccountLogin({ rootSecret, nonce }): Promise<string>`
+
+Sign a Calimero Cloud **login** challenge with the account root. Returns standard
+base64.
+
+The statement it makes is *"I hold the root of account X"*, which is the one
+statement a device credential can never make: a
+[routing proof](/reference/cloud/#proving-an-account-for-this-read) shows the
+caller holds a device the root certified, but certificates are public and travel
+in the clear inside every device-link op, so they can only ever say *a device of
+X is asking*.
+
+Most callers want [`CloudClient.signInWithAccount()`](/reference/cloud/), which
+fetches the challenge and posts the proof around this. Reach for this directly
+for the same reason as `signAccountLink` — a root the cloud client cannot reach.
+
+```typescript
+const { nonce } = await cloud.getAccountLoginChallenge();
+const signature = await signAccountLogin({ rootSecret, nonce }); // wherever the root lives
+await cloud.submitAccountLogin({ rootPublicKey, nonce, signature });
+```
+
+A different domain separator from `signAccountLink`, and that is the point: both
+are a root signature over a cloud-issued nonce, so without the separation a
+signature gathered while linking — an operation performed by someone already
+signed in and trusting the page — would be replayable as a login.
+
 ## Where the root can live
 
 The cloud does not care which of these produced the signature — only that it

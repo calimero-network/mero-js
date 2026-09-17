@@ -59,11 +59,13 @@ export {
   accountRootFromPhrase,
   accountRootFromSecret,
   signAccountLink,
+  signAccountLogin,
 } from './account/index.js';
 export type {
   AccountRoot,
   RecoverableAccountRoot,
   AccountLinkInput,
+  AccountLoginInput,
 } from './account/index.js';
 export {
   signDeviceCert,

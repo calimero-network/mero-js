@@ -4,9 +4,11 @@ export {
   accountRootFromPhrase,
   accountRootFromSecret,
   signAccountLink,
+  signAccountLogin,
 } from './account.js';
 export type {
   AccountRoot,
   RecoverableAccountRoot,
   AccountLinkInput,
+  AccountLoginInput,
 } from './account.js';
