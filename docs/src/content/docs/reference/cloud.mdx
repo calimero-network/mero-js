@@ -168,6 +168,75 @@ if (!relay) {
 }
 ```
 
+## `getNamespaceRouting(namespaceId): Promise<CloudNamespaceRouting>`
+
+Where to reach a namespace **without owning it**: one read, both verbs.
+
+Unlike every method above, this one needs no session — and that is the point. A
+joiner is by construction not the namespace owner: it holds an invitation, a
+namespace id and its own keys, nothing else. Requiring a cloud account here
+would make the password-free join path cloud-only.
+
+```typescript
+interface CloudNamespaceRouting {
+  namespaceId: string;
+  nodes: CloudNamespaceNode[];   // usable first, then a stable order
+  servable: boolean;             // can any listed node take a join now?
+  writable: boolean;             // can any listed node take a delegated write now?
+}
+
+interface CloudNamespaceNode {
+  peerId: string;
+  account: string | null;        // intersect against the invitation's `admitters`
+  relayUrl: string | null;
+  admitUrl: string | null;       // ready-made, so you never rebuild the path
+  status: string;                // 'assigned' | 'active'
+  fresh: boolean;
+  canAdmit: boolean;             // a URL + an account + a fresh heartbeat
+  authorshipReady: boolean;      // does it hold CAN_AUTHOR_ON_BEHALF here?
+  canExecute: boolean;           // the above + the grant
+}
+```
+
+Admission and writability are answered **together** because a keyholder resolves
+a namespace to a node once and then admits, reads and posts intents against that
+same node. The per-context routing read cannot serve the first of those: it
+needs a context id a joiner does not have yet.
+
+`canAdmit` deliberately does **not** require `authorshipReady`. Relaying a join
+the joiner already signed is not authoring on anyone's behalf — merod checks
+only that the node is on the invitation's signed `admitters` list — so a node
+with no grant is a perfectly good admitter.
+
+`canExecute` is the **namespace-level** answer, and like `authorshipReady` above
+it is reported, never decided by the cloud. A context in a restricted subgroup is
+governed by that subgroup, so a node can hold the grant on the namespace and not
+on the group owning one context; if a write is refused despite `canExecute`, fall
+back to the per-context routing read.
+
+An empty `nodes` array is a state, not an error: a namespace with no fleet
+assignment has no cloud node, and the joiner must use one of the invitation's
+other admitters — another admin's node, or a self-hosted peer.
+
+## `findAdmitter(namespaceId, admitters?): Promise<CloudNamespaceNode | null>`
+
+The node to send a signed join to, chosen from those the invitation names.
+
+```typescript
+const node = await cloud.findAdmitter(namespaceId, invitation.admitters);
+if (!node) {
+  // no cloud node this invitation names can take the join — use another
+  // admitter from the invitation, or a self-hosted peer
+}
+await fetch(node.admitUrl, { method: 'POST', body: signedJoin });
+```
+
+**Pass the invitation's `admitters`.** The cloud lists every node assigned to the
+namespace, while `admitters` is a snapshot signed when the invitation was minted
+— a node added afterwards is live, healthy, listed, and answers `403`. Omit the
+argument only for an invitation that names none, since an empty list on the wire
+authorises any node to admit.
+
 ## `getMyMachines(): Promise<CloudMachine[]>`
 
 Every attested machine serving something this account owns — the same rows as

@@ -4,6 +4,8 @@ export type {
   CloudSession,
   CloudNamespace,
   CloudRelay,
+  CloudNamespaceNode,
+  CloudNamespaceRouting,
   CloudMachine,
   CloudMachineNamespace,
   CloudLinkedAccount,
