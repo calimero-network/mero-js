@@ -260,6 +260,24 @@ export interface AccountLinkProof {
   signature: string;
 }
 
+/** Where to send someone so a cloud login can consent to linking an account. */
+export interface AccountLinkHandoff {
+  /** The cloud portal URL to open — a new tab, a popup, or the system browser. */
+  url: string;
+  /** The account the consent will be for, echoed so a caller can show it. */
+  accountId: string;
+}
+
+/** What comes back on the callback: a grant, a refusal, or neither. */
+export interface AccountLinkCallback {
+  /** The grant to spend with {@link CloudClient.linkAccountWithGrant}. */
+  grant?: string;
+  /** The account the grant is for, as the portal echoed it. */
+  accountId?: string;
+  /** `'denied'` when the person cancelled. Absent on success. */
+  error?: string;
+}
+
 /** A single-use challenge for an account root to sign itself in with. */
 export interface AccountLoginChallenge {
   /** Sign this verbatim. Opaque and sealed by the cloud; nonces live ~2 minutes. */
@@ -859,6 +877,114 @@ export class CloudClient {
     );
     return {
       accountId: String(body.account_id ?? proof.accountId),
+      linkedAt: (body.linked_at as string | null | undefined) ?? null,
+      alreadyLinked: body.already_linked === true,
+    };
+  }
+
+  /**
+   * Where to send someone to authorise linking this account, and what to expect
+   * back. Pairs with {@link readAccountLinkCallback} and
+   * {@link linkAccountWithGrant}.
+   *
+   * This exists because a browser app is in a bind: it holds an account root and
+   * can never hold a *first* cloud session, since only Google issues one. So the
+   * person goes to the cloud, where they are signed in, and consents there. What
+   * comes back is a grant — consent to link this one account, spendable only by
+   * whoever can sign with its root.
+   *
+   * @param callbackUrl where the portal sends the person back. Must be an origin
+   *   the cloud allows; unlisted ones are refused when the grant is minted, not
+   *   here. The grant arrives in the URL **fragment**, which browsers do not
+   *   send to servers.
+   *
+   * Static, so it needs no client and no session: there is nothing to
+   * authenticate as yet.
+   */
+  static accountLinkHandoff(options: {
+    /** The cloud portal's origin, e.g. `https://cloud.calimero.network`. */
+    portalUrl: string;
+    /** The account to be linked, 64 hex — derive it, never let a user type it. */
+    accountId: string;
+    /** Where to come back to. */
+    callbackUrl: string;
+  }): AccountLinkHandoff {
+    const portal = options.portalUrl.replace(/\/+$/, '');
+    const query = new URLSearchParams({
+      'link-account': options.accountId,
+      'callback-url': options.callbackUrl,
+    });
+    return { url: `${portal}/?${query.toString()}`, accountId: options.accountId };
+  }
+
+  /**
+   * Read the portal's answer out of a callback URL's fragment.
+   *
+   * Returns `{}` when there is nothing to read, so it is safe to call on every
+   * load — which is how a redirected app finds out it has been sent back.
+   *
+   * @param href defaults to the current location, when there is one.
+   */
+  static readAccountLinkCallback(href?: string): AccountLinkCallback {
+    const source = href ?? (typeof window === 'undefined' ? '' : window.location.href);
+    if (!source) return {};
+    let hash: string;
+    try {
+      hash = new URL(source).hash;
+    } catch {
+      return {};
+    }
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const grant = params.get('grant');
+    const accountId = params.get('account');
+    const error = params.get('error');
+    const out: AccountLinkCallback = {};
+    if (grant) out.grant = grant;
+    if (accountId) out.accountId = accountId;
+    if (error) out.error = error;
+    return out;
+  }
+
+  /**
+   * Spend a link grant: sign it with the account root and post the pair.
+   *
+   * Anonymous, and it has to be — the app doing this holds no cloud session,
+   * which is the whole reason the grant exists. The grant carries the consenting
+   * login sealed inside it, so nothing here names one; a caller-supplied email
+   * would be a field to lie in.
+   *
+   * The signature is an ordinary account-link signature with the grant as the
+   * nonce, so the same {@link signAccountLink} every other link path uses signs
+   * this one. Both halves are required: a grant without the key links nothing,
+   * which is what makes it safe to carry through a browser redirect.
+   *
+   * A `403` means the grant was bad, expired, already spent, or signed by a key
+   * that names a different account; `409` that the account belongs to another
+   * login; `402` that the plan is full.
+   */
+  async linkAccountWithGrant(options: {
+    grant: string;
+    /** The root of the account the grant names, 64 hex. */
+    rootSecret: string;
+  }): Promise<CloudAccountLink> {
+    const root = await accountRootFromSecret(options.rootSecret);
+    const body = await this.request<Record<string, unknown>>(
+      'POST',
+      '/api/cloud/accounts/link',
+      {
+        body: {
+          grant: options.grant,
+          root_public_key: root.publicKey,
+          signature: await signAccountLink({
+            rootSecret: options.rootSecret,
+            nonce: options.grant,
+          }),
+        },
+        anonymous: true,
+      },
+    );
+    return {
+      accountId: String(body.account_id ?? root.accountId),
       linkedAt: (body.linked_at as string | null | undefined) ?? null,
       alreadyLinked: body.already_linked === true,
     };

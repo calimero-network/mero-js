@@ -13,6 +13,8 @@ export type {
   CloudAccountLink,
   AccountLinkChallenge,
   AccountLinkProof,
+  AccountLinkHandoff,
+  AccountLinkCallback,
   AccountLoginChallenge,
   AccountLoginProof,
   EnableHAOptions,

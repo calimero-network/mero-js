@@ -81,6 +81,49 @@ again. Ignoring that would cost nothing today and log the user out a week later.
 the session server-side and clears it locally — the local half happens even if
 the server call fails, because the caller asked to be signed out.
 
+## Linking from an app that holds the root, not a session
+
+The bind a browser app is in: only Google issues a *first* cloud session, so an
+app that mints an account root can prove it owns that account and still never
+get a session — [the proof says who you are, the link says what you are entitled
+to](#signing-in-as-an-account-with-no-password-anywhere), and linking lives
+behind a session.
+
+The way across is a redirect. The person goes to the cloud, where they are
+signed in, consents to linking one named account, and comes back holding a
+**grant**.
+
+```typescript
+// 1. Send them, having derived the account id — never let a user type it.
+const { url } = CloudClient.accountLinkHandoff({
+  portalUrl: 'https://cloud.calimero.network',
+  accountId: root.accountId,
+  callbackUrl: window.location.origin + '/connected',
+});
+window.open(url, '_blank');
+
+// 2. On the way back, read the fragment. Safe to call on every load.
+const { grant, error } = CloudClient.readAccountLinkCallback();
+if (error === 'denied') return; // they pressed Cancel
+
+// 3. Spend it: the root signs the grant, and both halves go together.
+if (grant) await cloud.linkAccountWithGrant({ grant, rootSecret });
+```
+
+**A grant is not a session token, and deliberately not a Google ID token.** It
+authorises exactly one state transition on one named account, expires in five
+minutes, and is spendable only by whoever can produce the account root's
+signature over it — so a grant intercepted in transit links nothing. That is
+what makes it safe to carry back through a browser redirect, and it is why the
+callback puts it in the URL *fragment*, which browsers never send to servers.
+
+The callback origin must be allow-listed on the cloud
+(`account_link_callback_origins`), and the flow is off where none is configured.
+An unlisted origin is refused when the grant is minted, not when it is spent.
+
+The signature is an ordinary account-link signature with the grant as the nonce,
+so `signAccountLink` signs this the same way it signs every other link.
+
 ## Signing in as an account, with no password anywhere
 
 A keyholder can open a session with nothing but the account root — no Google, no
