@@ -81,6 +81,38 @@ again. Ignoring that would cost nothing today and log the user out a week later.
 the session server-side and clears it locally — the local half happens even if
 the server call fails, because the caller asked to be signed out.
 
+## Signing in as an account, with no password anywhere
+
+A keyholder can open a session with nothing but the account root — no Google, no
+password, no server-held secret. The cloud mints a challenge, the root signs it,
+and what comes back is the same session token `signInWithGoogle` returns and
+every cloud route already accepts.
+
+```typescript
+const session = await cloud.signInWithAccount(rootSecret);
+// { sessionToken, expiresAt, user: { email } } -- the linked login's email
+```
+
+Doing this **once** is what makes that account's later device proofs mean
+something. The cloud records the ownership claim, and from then on it knows the
+account behind a
+[routing proof](#proving-an-account-for-this-read) was claimed by whoever holds
+its root — which a device credential can never establish, since certificates are
+public.
+
+Two `403`s, and they mean different things:
+
+- the signature did not verify, or the challenge was expired or spent; or
+- **the account is not linked to a cloud login**. Ownership says *who you are*;
+  the link says *what you are entitled to*. Anyone can mint a root offline, so a
+  session on the proof alone would authenticate perfectly and authorize nothing —
+  no plan, no namespaces to scope it to. The ownership claim is recorded anyway,
+  so a keyholder who links later does not have to come back and prove again.
+
+`getAccountLoginChallenge()` and `submitAccountLogin()` are the split halves, for
+a root held somewhere this process cannot reach. Both legs are anonymous by
+necessity: obtaining a session is what the exchange does.
+
 ## Linking a Calimero account
 
 A cloud login is an email; a Calimero identity is a 32-byte account. Linking the

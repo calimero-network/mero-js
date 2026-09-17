@@ -28,6 +28,7 @@
 import {
   accountRootFromSecret,
   signAccountLink,
+  signAccountLogin,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
 import {
@@ -259,6 +260,30 @@ export interface AccountLinkProof {
   signature: string;
 }
 
+/** A single-use challenge for an account root to sign itself in with. */
+export interface AccountLoginChallenge {
+  /** Sign this verbatim. Opaque and sealed by the cloud; nonces live ~2 minutes. */
+  nonce: string;
+  /** When it stops being accepted, epoch milliseconds. */
+  expiresAtMs: number;
+}
+
+/** A proof assembled by whoever holds the root, for {@link CloudClient.submitAccountLogin}. */
+export interface AccountLoginProof {
+  /**
+   * The root that names the account, 64 hex.
+   *
+   * No `accountId` field, unlike {@link AccountLinkProof}: the cloud derives
+   * the account from this key rather than accepting one alongside it, so there
+   * is nothing a caller could state that the signature would then contradict.
+   */
+  rootPublicKey: string;
+  /** The challenge that was signed. */
+  nonce: string;
+  /** `signAccountLogin`'s output — standard base64. */
+  signature: string;
+}
+
 /** The outcome of {@link CloudClient.linkAccount}. */
 export interface CloudAccountLink {
   accountId: string;
@@ -344,6 +369,77 @@ export class CloudClient {
       expires_at: number;
       user: { email: string; name?: string; picture?: string };
     }>('POST', '/api/auth/google', { body: { id_token: idToken }, anonymous: true });
+    return this.adoptSession(body);
+  }
+
+  /**
+   * Sign in as a Calimero account, proving it with its root key.
+   *
+   * The password-free counterpart to {@link signInWithGoogle}: no Google, no
+   * password, no server-held secret — the cloud mints a challenge, the account
+   * root signs it, and the session that comes back is the same MDMA session
+   * token every other cloud route already accepts.
+   *
+   * Doing this **once** is what makes an account's later device proofs mean
+   * something. A routing read shows that the caller holds a device the root
+   * certified, but certificates are public, so it can never show that anyone
+   * held the root; the cloud records this claim and from then on knows the
+   * account behind those reads was claimed by its owner. The claim is recorded
+   * even when the session is refused.
+   *
+   * @param rootSecret the account root's signing secret, 64 hex. It never
+   *   leaves this process — only a signature over the cloud's nonce travels.
+   *
+   * A `403` means either the signature did not verify, or the account is not
+   * linked to a cloud login: ownership alone says who you are, and the link
+   * says what you are entitled to. Anyone can mint a root offline, so a session
+   * on the proof alone would authenticate perfectly and authorize nothing. The
+   * ownership claim is recorded either way, so linking later needs no re-proof.
+   */
+  async signInWithAccount(rootSecret: string): Promise<CloudSession> {
+    const root = await accountRootFromSecret(rootSecret);
+    const { nonce } = await this.getAccountLoginChallenge();
+    return this.submitAccountLogin({
+      rootPublicKey: root.publicKey,
+      nonce,
+      signature: await signAccountLogin({ rootSecret, nonce }),
+    });
+  }
+
+  /**
+   * Mint a challenge for an account root to sign.
+   *
+   * Public, and deliberately so: the caller has no session — obtaining one is
+   * what this exchange does. The nonce is not a capability, it is the thing a
+   * capability gets demonstrated against, and demonstrating it needs the root.
+   *
+   * Split out of {@link signInWithAccount} for the case that call cannot serve:
+   * a root held by a hardware key, a desktop app or an air-gapped machine,
+   * which signs without the secret ever reaching this process.
+   */
+  async getAccountLoginChallenge(): Promise<AccountLoginChallenge> {
+    const body = await this.request<{ nonce: string; expires_at_ms: number }>(
+      'GET',
+      '/api/auth/account/challenge',
+      { anonymous: true },
+    );
+    return { nonce: body.nonce, expiresAtMs: body.expires_at_ms };
+  }
+
+  /** Post a proof assembled elsewhere. The other half of {@link getAccountLoginChallenge}. */
+  async submitAccountLogin(proof: AccountLoginProof): Promise<CloudSession> {
+    const body = await this.request<{
+      session_token: string;
+      expires_at: number;
+      user: { email: string; name?: string; picture?: string };
+    }>('POST', '/api/auth/account', {
+      body: {
+        root_public_key: proof.rootPublicKey,
+        nonce: proof.nonce,
+        signature: proof.signature,
+      },
+      anonymous: true,
+    });
     return this.adoptSession(body);
   }
 
