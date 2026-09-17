@@ -1,3 +1,9 @@
+## [19.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.7.2...mero-js-v19.8.0) (2026-09-17)
+
+### Features
+
+* **cloud:** prove an account on the routing read ([#156](https://github.com/calimero-network/mero-js/issues/156)) ([1778c75](https://github.com/calimero-network/mero-js/commit/1778c757df5b37e40b29789a56b2b6d2995a9712)), closes [mdma#248](https://github.com/calimero-network/mdma/issues/248)
+
 ## [19.7.2](https://github.com/calimero-network/mero-js/compare/mero-js-v19.7.1...mero-js-v19.7.2) (2026-09-17)
 
 ## [19.7.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.7.0...mero-js-v19.7.1) (2026-09-17)
