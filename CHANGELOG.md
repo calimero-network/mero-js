@@ -1,3 +1,9 @@
+## [19.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.9.0...mero-js-v19.10.0) (2026-09-17)
+
+### Features
+
+* **cloud:** link an account with a grant, for apps that hold no session ([#158](https://github.com/calimero-network/mero-js/issues/158)) ([d330ffc](https://github.com/calimero-network/mero-js/commit/d330ffcb8e4a83761af8c5bcf120bc2d920578bb))
+
 ## [19.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.8.1...mero-js-v19.9.0) (2026-09-17)
 
 ### Features
