@@ -1,3 +1,9 @@
+## [19.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.8.1...mero-js-v19.9.0) (2026-09-17)
+
+### Features
+
+* **cloud:** sign in as an account with its root key ([#157](https://github.com/calimero-network/mero-js/issues/157)) ([3743d6a](https://github.com/calimero-network/mero-js/commit/3743d6a8b88f0c246cb30d42ea94e1e800c75319))
+
 ## [19.8.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.8.0...mero-js-v19.8.1) (2026-09-17)
 
 ## [19.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.7.2...mero-js-v19.8.0) (2026-09-17)
