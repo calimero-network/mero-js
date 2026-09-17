@@ -1,3 +1,9 @@
+## [19.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.6.0...mero-js-v19.7.0) (2026-09-17)
+
+### Features
+
+* **cloud, admin:** namespace routing without a cloud account, and one call to open a namespace to relays ([#154](https://github.com/calimero-network/mero-js/issues/154)) ([e4f7623](https://github.com/calimero-network/mero-js/commit/e4f76237124454b2d174cae573d766b7a22a29ad))
+
 ## [19.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.5.0...mero-js-v19.6.0) (2026-09-17)
 
 ### Features
