@@ -6,6 +6,11 @@ export type {
   CloudRelay,
   CloudMachine,
   CloudMachineNamespace,
+  CloudLinkedAccount,
+  CloudLinkedAccounts,
+  CloudAccountLink,
+  AccountLinkChallenge,
+  AccountLinkProof,
   EnableHAOptions,
   DisableHAOptions,
 } from './cloud-client.js';

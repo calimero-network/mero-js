@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CloudClient } from './cloud-client.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { signAccountLink } from '../account/index.js';
 
 const EXECUTOR = '4d'.repeat(32);
 const NS = '01'.repeat(32);
@@ -368,5 +369,180 @@ describe('CloudClient machines and setup', () => {
     ]);
     // The claim already established ownership; these carry no proof.
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({});
+  });
+});
+
+describe('CloudClient account linking', () => {
+  const ROOT_SECRET = '42'.repeat(32);
+  const ACCOUNT =
+    'a71c3dd073939d81f972525e9788c6b958818e33f30674ef43b4184eef40aa50';
+  const ROOT_PUBLIC_KEY =
+    '2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12';
+
+  it('fetches a challenge, signs it with the root, and posts the proof', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { nonce: 'challenge-1', expires_at_ms: 1_700_000_300_000 } },
+      { body: { account_id: ACCOUNT, linked_at: '2026-01-01T00:00:00', already_linked: false } },
+    ]);
+    const cloud = new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+    const link = await cloud.linkAccount(ROOT_SECRET);
+
+    expect(link).toEqual({
+      accountId: ACCOUNT,
+      linkedAt: '2026-01-01T00:00:00',
+      alreadyLinked: false,
+    });
+    expect(calls[0].url).toBe(
+      'https://cloud.example/api/cloud/me/accounts/challenge',
+    );
+    expect(calls[1].url).toBe('https://cloud.example/api/cloud/me/accounts');
+
+    const posted = JSON.parse(String(calls[1].init?.body));
+    // The account and root key are derived here rather than taken from the
+    // caller: mdma refuses a proof whose `account_id` is not the account the
+    // signing root names, so deriving both from one secret is what makes the
+    // two agree by construction.
+    expect(posted.account_id).toBe(ACCOUNT);
+    expect(posted.root_public_key).toBe(ROOT_PUBLIC_KEY);
+    expect(posted.nonce).toBe('challenge-1');
+    expect(posted.signature).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
+    // The signature is over the cloud's challenge, not some other string: the
+    // whole point of the round trip is that it cannot be precomputed.
+    expect(posted.signature).toBe(
+      await signAccountLink({ rootSecret: ROOT_SECRET, nonce: 'challenge-1' }),
+    );
+  });
+
+  it('reports an idempotent re-link as success, not failure', async () => {
+    const { fetch } = scriptedFetch([
+      { body: { nonce: 'challenge-2' } },
+      { body: { account_id: ACCOUNT, linked_at: null, already_linked: true } },
+    ]);
+    const cloud = new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+    expect((await cloud.linkAccount(ROOT_SECRET)).alreadyLinked).toBe(true);
+  });
+
+  it('never sends the root secret', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { nonce: 'challenge-3' } },
+      { body: { account_id: ACCOUNT, already_linked: false } },
+    ]);
+    const cloud = new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+    await cloud.linkAccount(ROOT_SECRET);
+
+    for (const call of calls) {
+      expect(JSON.stringify(call)).not.toContain(ROOT_SECRET);
+    }
+  });
+
+  it('lists linked accounts with the plan limit', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          accounts: [
+            { account_id: ACCOUNT, linked_at: '2026-01-01T00:00:00', has_recovery_envelope: true },
+          ],
+          limit: 3,
+        },
+      },
+    ]);
+    const cloud = new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+    expect(await cloud.getMyAccounts()).toEqual({
+      accounts: [
+        {
+          accountId: ACCOUNT,
+          linkedAt: '2026-01-01T00:00:00',
+          hasRecoveryEnvelope: true,
+        },
+      ],
+      limit: 3,
+    });
+  });
+
+  it('reads an absent plan limit as unlimited', async () => {
+    const { fetch } = scriptedFetch([{ body: { accounts: [] } }]);
+    const cloud = new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+    expect(await cloud.getMyAccounts()).toEqual({ accounts: [], limit: null });
+  });
+});
+
+describe('CloudClient account linking for an external signer', () => {
+  const ACCOUNT =
+    'a71c3dd073939d81f972525e9788c6b958818e33f30674ef43b4184eef40aa50';
+  const ROOT_PUBLIC_KEY =
+    '2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12';
+
+  const signedIn = (fetch: typeof fetch) =>
+    new CloudClient({
+      cloudBaseUrl: 'https://cloud.example',
+      sessionToken: 'stored-token',
+      fetch,
+    });
+
+  it('hands back a challenge for a root this process cannot reach', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { nonce: 'challenge-9', expires_at_ms: 1_700_000_300_000 } },
+    ]);
+
+    expect(await signedIn(fetch).getAccountLinkChallenge()).toEqual({
+      nonce: 'challenge-9',
+      expiresAtMs: 1_700_000_300_000,
+    });
+    expect(calls[0].url).toBe(
+      'https://cloud.example/api/cloud/me/accounts/challenge',
+    );
+  });
+
+  it('reads a missing expiry as null rather than NaN', async () => {
+    const { fetch } = scriptedFetch([{ body: { nonce: 'challenge-10' } }]);
+    expect(
+      (await signedIn(fetch).getAccountLinkChallenge()).expiresAtMs,
+    ).toBeNull();
+  });
+
+  it('posts a proof assembled elsewhere verbatim', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { account_id: ACCOUNT, linked_at: null, already_linked: false } },
+    ]);
+
+    const result = await signedIn(fetch).submitAccountLink({
+      accountId: ACCOUNT,
+      rootPublicKey: ROOT_PUBLIC_KEY,
+      nonce: 'challenge-11',
+      signature: 'c2lnbmF0dXJl',
+    });
+
+    expect(result.accountId).toBe(ACCOUNT);
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      account_id: ACCOUNT,
+      root_public_key: ROOT_PUBLIC_KEY,
+      nonce: 'challenge-11',
+      signature: 'c2lnbmF0dXJl',
+    });
   });
 });

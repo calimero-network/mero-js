@@ -53,6 +53,18 @@ export * from './relay/index.js';
 
 // Warrant signing — mint the author's consent for a relay to run one intent
 export { signWarrant, intentHash } from './warrant/index.js';
+// Account roots — mint one with a recovery phrase, or prove you hold one
+export {
+  generateAccountRoot,
+  accountRootFromPhrase,
+  accountRootFromSecret,
+  signAccountLink,
+} from './account/index.js';
+export type {
+  AccountRoot,
+  RecoverableAccountRoot,
+  AccountLinkInput,
+} from './account/index.js';
 export {
   signDeviceCert,
   mintDeviceId,

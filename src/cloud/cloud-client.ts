@@ -25,6 +25,10 @@
  * to involve it.
  */
 
+import {
+  accountRootFromSecret,
+  signAccountLink,
+} from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
 
 /** Where the hosted cloud lives when a caller names no other. */
@@ -137,6 +141,57 @@ export interface CloudMachine {
   canExecute: boolean;
   /** Only the caller's own namespaces, even on a machine shared with others. */
   namespaces: CloudMachineNamespace[];
+}
+
+/** A Calimero account linked to this cloud login. */
+export interface CloudLinkedAccount {
+  /** The account id, 64 hex. */
+  accountId: string;
+  linkedAt?: string | null;
+  /**
+   * Whether a recovery envelope has been stored for this account, so a UI can
+   * say "recoverable" without fetching the blob.
+   */
+  hasRecoveryEnvelope: boolean;
+}
+
+/** What {@link CloudClient.getMyAccounts} reports. */
+export interface CloudLinkedAccounts {
+  accounts: CloudLinkedAccount[];
+  /** How many the caller's plan allows. `null` means no limit. */
+  limit: number | null;
+}
+
+/** A single-use challenge to sign with an account root. */
+export interface AccountLinkChallenge {
+  /** Sign this verbatim — it is an opaque sealed string, not a decodable id. */
+  nonce: string;
+  /** When it stops being accepted, epoch milliseconds. */
+  expiresAtMs: number | null;
+}
+
+/** A proof assembled by whoever holds the root, for {@link CloudClient.submitAccountLink}. */
+export interface AccountLinkProof {
+  /** The account being claimed, 64 hex. */
+  accountId: string;
+  /** The root that names it, 64 hex. */
+  rootPublicKey: string;
+  /** The challenge that was signed. */
+  nonce: string;
+  /** `signAccountLink`'s output — standard base64. */
+  signature: string;
+}
+
+/** The outcome of {@link CloudClient.linkAccount}. */
+export interface CloudAccountLink {
+  accountId: string;
+  linkedAt?: string | null;
+  /**
+   * True when this account was already linked to this same login, which the
+   * cloud treats as a 200 no-op rather than an error. A caller re-running
+   * onboarding gets success, not a confusing failure.
+   */
+  alreadyLinked: boolean;
 }
 
 export interface EnableHAOptions {
@@ -435,6 +490,103 @@ export class CloudClient {
   }
 
   /** Record a freshly-issued session and tell the app to persist it. */
+  /**
+   * Link a Calimero account to this cloud login, proving possession of its root.
+   *
+   * Two hops, folded into one call because they are useless apart: fetch a
+   * single-use challenge, then sign it with the account root and post the proof.
+   * The secret never leaves this process — only a signature over a nonce the
+   * cloud minted does.
+   *
+   * This is the binding the cloud bills against. A relay does not need it to run
+   * an intent; the cloud needs it to know whose plan a hosted node is spending,
+   * and to sign that account back in later.
+   *
+   * @param rootSecret the account root's signing secret, 64 hex — from
+   *   {@link generateAccountRoot}, from a restored recovery phrase, or from a
+   *   desktop app or hardware key that already holds one.
+   *
+   * Idempotent for the same login. An account already linked to a *different*
+   * cloud login is a `409`; a replayed or expired challenge is a `403`; and
+   * exceeding the plan's account limit is a `402`.
+   */
+  async linkAccount(rootSecret: string): Promise<CloudAccountLink> {
+    const root = await accountRootFromSecret(rootSecret);
+    const { nonce } = await this.getAccountLinkChallenge();
+    return this.submitAccountLink({
+      accountId: root.accountId,
+      rootPublicKey: root.publicKey,
+      nonce,
+      signature: await signAccountLink({ rootSecret, nonce }),
+    });
+  }
+
+  /**
+   * Mint a single-use challenge for an account root to sign.
+   *
+   * The split half of {@link linkAccount}, for the case that call cannot serve:
+   * a root held by a desktop app, a hardware key or an air-gapped machine, which
+   * signs without the secret ever reaching this process. Fetch the challenge
+   * here, have the holder sign it, then hand the proof to
+   * {@link submitAccountLink}.
+   *
+   * Bound to the signed-in login and short-lived, so it is not a standing
+   * capability if it leaks — but it IS single-use, so a challenge fetched and
+   * abandoned is spent.
+   */
+  async getAccountLinkChallenge(): Promise<AccountLinkChallenge> {
+    const body = await this.request<{
+      nonce: string;
+      expires_at_ms?: number | null;
+    }>('GET', '/api/cloud/me/accounts/challenge');
+    return { nonce: body.nonce, expiresAtMs: body.expires_at_ms ?? null };
+  }
+
+  /**
+   * Post a proof assembled elsewhere. The other half of
+   * {@link getAccountLinkChallenge}.
+   *
+   * `accountId` must be the account `rootPublicKey` names — the cloud refuses a
+   * valid signature by a key that names a different account, or a caller could
+   * prove one root and link somebody else's account. Derive both from the same
+   * key rather than letting a user type either.
+   */
+  async submitAccountLink(proof: AccountLinkProof): Promise<CloudAccountLink> {
+    const body = await this.request<Record<string, unknown>>(
+      'POST',
+      '/api/cloud/me/accounts',
+      {
+        body: {
+          account_id: proof.accountId,
+          root_public_key: proof.rootPublicKey,
+          nonce: proof.nonce,
+          signature: proof.signature,
+        },
+      },
+    );
+    return {
+      accountId: String(body.account_id ?? proof.accountId),
+      linkedAt: (body.linked_at as string | null | undefined) ?? null,
+      alreadyLinked: body.already_linked === true,
+    };
+  }
+
+  /** The accounts linked to this login, and how many the plan allows. */
+  async getMyAccounts(): Promise<CloudLinkedAccounts> {
+    const body = await this.request<{
+      accounts?: Array<Record<string, unknown>>;
+      limit?: number | null;
+    }>('GET', '/api/cloud/me/accounts');
+    return {
+      accounts: (body.accounts ?? []).map((row) => ({
+        accountId: String(row.account_id ?? ''),
+        linkedAt: (row.linked_at as string | null | undefined) ?? null,
+        hasRecoveryEnvelope: row.has_recovery_envelope === true,
+      })),
+      limit: body.limit ?? null,
+    };
+  }
+
   private adoptSession(body: {
     session_token: string;
     expires_at: number;

@@ -168,11 +168,19 @@ somebody owns, not nodeless namespace creation.
    The keyholder generates its own identity offline first — no node, no network:
 
    ```typescript
-   import { accountForRoot, mintDeviceId, signDeviceCert } from '@calimero-network/mero-js';
+   import {
+     generateAccountRoot,
+     mintDeviceId,
+     signDeviceCert,
+   } from '@calimero-network/mero-js';
 
-   // `rootSecret` is the account root's signing secret — kept offline, and the
-   // only thing that can certify a device into this account.
-   const account = await accountForRoot(rootSecret);
+   // The account root: kept offline, and the only thing that can certify a
+   // device into this account. `phrase` is 24 words — show it once and have the
+   // holder write it down, because nothing else can restore this account.
+   // A keyholder that already has a root (a desktop app, a hardware key) skips
+   // this and uses `accountForRoot(rootSecret)` instead. See
+   // [Account roots](/reference/account-roots/).
+   const { secret: rootSecret, accountId: account, phrase } = await generateAccountRoot();
    const device = await mintDeviceId(account, crypto.getRandomValues(new Uint8Array(16)));
    const authorProof = await signDeviceCert({
      rootSecret,
