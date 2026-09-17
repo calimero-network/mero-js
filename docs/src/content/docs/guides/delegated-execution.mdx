@@ -110,10 +110,25 @@ somebody owns, not nodeless namespace creation.
    // [{ peerId, relayUrl, executorAccount, canExecute: false, namespaces: [...] }]
    ```
 
-   `authorshipReady: false` is expected here. That is step 5.
+   `authorshipReady` should already be `true` on a namespace created by a recent
+   merod — see step 5. If it is `false`, step 5 is the fix.
 
-5. **Owner grants the relay authorship.** This is the step that is missed most
-   often, because everything up to it looks finished.
+5. **Grant the relay authorship — usually already done.**
+
+   A **namespace is created carrying `CAN_AUTHOR_ON_BEHALF` in its
+   default-capability mask**, and core copies that mask into a non-admin
+   member's capability row at admission. So a relay assigned to a namespace
+   created by a merod with that default lands able to relay, and there is
+   nothing to do here.
+
+   You still land on this step in three cases:
+
+   - the namespace predates that default;
+   - the relay was admitted **before** the mask was set on it — the mask is
+     copied at admission, not read live;
+   - the node is the **owner's own**, which never receives the default at all:
+     core seeds it for non-admin roles only, and the capability is not implied
+     by admin.
 
    ```bash
    meroctl --node node1 group members set-capabilities <NAMESPACE_ID> <EXECUTOR_ACCOUNT> \
@@ -126,8 +141,9 @@ somebody owns, not nodeless namespace creation.
    ```
 
    `CAN_AUTHOR_ON_BEHALF` is implied by nothing — not membership, not admin, and
-   it is not propagated by the subgroup cascade — so every namespace starts
-   authorship-closed.
+   it is not propagated by the subgroup cascade. The namespace default is the
+   only thing that grants it without an explicit op, and a `Restricted` subgroup
+   does not inherit it.
 
    `grantAuthorship` reads the relay's current mask and adds the one bit, because
    both the CLI flag form and `setMemberCapabilities` **replace** the mask rather
@@ -144,7 +160,9 @@ somebody owns, not nodeless namespace creation.
    would need one admin-signed op per admission.
 
    The group's **default-capability mask** removes that: set it once and every
-   non-admin member admitted afterwards inherits it, with no per-node op.
+   non-admin member admitted afterwards inherits it, with no per-node op. A
+   namespace created by a recent merod already carries it, so this is how you
+   open one that does not — or close one that does.
 
    ```typescript
    // once, on the owner's node — applies to every node admitted after it
