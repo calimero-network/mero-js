@@ -30,6 +30,11 @@ import {
   signAccountLink,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
+import {
+  routingProofHeaders,
+  type RoutingChallenge,
+  type RoutingCredential,
+} from './routing-proof.js';
 
 /** Where the hosted cloud lives when a caller names no other. */
 const DEFAULT_CLOUD_BASE_URL = 'https://cloud.calimero.network';
@@ -55,6 +60,20 @@ export interface CloudClientConfig {
   fetch?: typeof fetch;
   /** Per-request timeout. Defaults to 10s, as the node clients do. */
   timeoutMs?: number;
+  /**
+   * The device credential to prove an account with on the routing read.
+   *
+   * Nothing to do with {@link sessionToken}: a cloud session says who is signed
+   * in, this says which account holds the key. A joiner has the second and
+   * cannot have the first — see `routing-proof.ts` for why that is not an
+   * oversight.
+   *
+   * Omitting it leaves {@link CloudClient.getNamespaceRouting} anonymous, which
+   * the cloud still answers while `require_routing_proof` is off. Supply it and
+   * the read is attributed; the cloud verifies a supplied proof either way, so
+   * a wrong one surfaces immediately rather than on the day the flag flips.
+   */
+  routingCredential?: RoutingCredential;
 }
 
 /** Who is signed in, and until when. */
@@ -274,6 +293,7 @@ export class CloudClient {
   private readonly onSession?: CloudClientConfig['onSession'];
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly routingCredential?: RoutingCredential;
 
   constructor(config: CloudClientConfig = {}) {
     this.baseUrl = (config.cloudBaseUrl || DEFAULT_CLOUD_BASE_URL).replace(/\/+$/, '');
@@ -286,6 +306,7 @@ export class CloudClient {
       ? (input: RequestInfo | URL, init?: RequestInit) => injected(input, init)
       : (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init);
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.routingCredential = config.routingCredential;
 
     if (config.sessionToken) {
       // Expiry unknown until the server tells us; 0 means "do not reason about
@@ -442,6 +463,7 @@ export class CloudClient {
       writable?: unknown;
     }>('GET', `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/admitters`, {
       anonymous: true,
+      headers: await this.routingProof(namespaceId),
     });
     return {
       namespaceId: String(body.namespace_id ?? namespaceId),
@@ -459,6 +481,49 @@ export class CloudClient {
       servable: body.servable === true,
       writable: body.writable === true,
     };
+  }
+
+  /**
+   * Ask the cloud for a challenge to prove an account against.
+   *
+   * Public and unauthenticated on purpose, and safe to be: the nonce is sealed
+   * and bound to this one namespace, so it is not a capability — it is the
+   * thing a capability gets demonstrated against. A caller with no credential
+   * gains nothing by holding one.
+   *
+   * {@link getNamespaceRouting} calls this for you when the client was
+   * constructed with a `routingCredential`. Call it directly only to sign a
+   * challenge somewhere this client cannot reach the key.
+   */
+  async getRoutingChallenge(namespaceId: string): Promise<RoutingChallenge> {
+    const body = await this.request<{
+      namespace_id?: unknown;
+      nonce?: unknown;
+      expires_at_ms?: unknown;
+    }>('GET', `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/challenge`, {
+      anonymous: true,
+    });
+    return {
+      namespaceId: String(body.namespace_id ?? namespaceId),
+      nonce: String(body.nonce ?? ''),
+      expiresAtMs: Number(body.expires_at_ms ?? 0),
+    };
+  }
+
+  /**
+   * The proof headers for one routing read, or nothing when no credential was
+   * configured.
+   *
+   * A challenge per read rather than a cached one: they expire in about two
+   * minutes and are single-namespace, so caching would trade one cheap request
+   * for a class of expiry bug that only shows up on a slow client.
+   */
+  private async routingProof(
+    namespaceId: string,
+  ): Promise<Record<string, string> | undefined> {
+    if (!this.routingCredential) return undefined;
+    const challenge = await this.getRoutingChallenge(namespaceId);
+    return routingProofHeaders(challenge, this.routingCredential);
   }
 
   /**
@@ -744,7 +809,13 @@ export class CloudClient {
   private async request<T>(
     method: string,
     path: string,
-    options: { body?: unknown; anonymous?: boolean; parse?: 'json' | 'none' } = {},
+    options: {
+      body?: unknown;
+      anonymous?: boolean;
+      parse?: 'json' | 'none';
+      /** Extra request headers. Never overrides `Authorization` — see below. */
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<T> {
     if (!options.anonymous && !this.session) {
       throw new Error(
@@ -752,7 +823,13 @@ export class CloudClient {
       );
     }
 
-    const headers: Record<string, string> = { Accept: 'application/json' };
+    // Caller headers go in FIRST, so the lines below win on any collision: a
+    // per-call header must never be able to replace the session's
+    // `Authorization` or change how the body is parsed.
+    const headers: Record<string, string> = {
+      ...options.headers,
+      Accept: 'application/json',
+    };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
     if (!options.anonymous && this.session) {
       headers.Authorization = `Bearer ${this.session.sessionToken}`;
