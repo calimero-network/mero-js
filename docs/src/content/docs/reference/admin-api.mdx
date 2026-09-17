@@ -132,7 +132,8 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 A device belongs to an account rather than to a namespace, so these read and
 change the account this node speaks for. `revokeAccountDevice` takes a namespace
 only to say where to publish from — it withdraws the device everywhere and
-reports each namespace back.
+reports each namespace back. `relinkAccountDevice` only ever adds applications;
+`rescopeAccountDevice` replaces the scope outright, which is how it is narrowed.
 
 Every account also has one hidden account namespace.
 The holder's `getNodeIdentity().accountNamespaceId` names it.
@@ -144,6 +145,7 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `initAccountPairing(request): Promise<AccountPairInitResponseData>` | `POST /account/pair-init` |
 | `completeAccountPairing(request): Promise<AccountPairCompleteResponseData>` | `POST /account/pair-complete` |
 | `relinkAccountDevice(deviceId, request?): Promise<RelinkDeviceResponseData>` | `POST /account/devices/{deviceId}/relink` |
+| `rescopeAccountDevice(deviceId, request): Promise<RescopeDeviceResponseData>` | `PUT /account/devices/{deviceId}/scope` |
 | `listAccountDevices(): Promise<AccountDeviceEntry[]>` | `GET /account/devices` |
 | `listAccountApplications(): Promise<AccountApplicationEntry[]>` | `GET /account/applications` |
 | `revokeAccountDevice(namespaceId, request): Promise<RevokeAccountDeviceResponseData>` | `POST /namespaces/{namespaceId}/account/revoke` |
