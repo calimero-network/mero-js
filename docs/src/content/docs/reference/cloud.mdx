@@ -46,9 +46,18 @@ class CloudClient {
     onSession?: (s: CloudSession | null) => void;       // persist a new / refreshed session
     fetch?: typeof fetch;                               // for tests and non-browser runtimes
     timeoutMs?: number;                                 // default 10000
+    routingCredential?: {                               // prove an account on the routing read
+      credential: string;                               //   AccountProof<DeviceCert>, hex
+      deviceSecret: string;                             //   the certified device key, hex
+    };
   });
 }
 ```
+
+`routingCredential` has nothing to do with `sessionToken`. A session says who is
+signed in; this says which account holds the key, and a joiner has the second and
+cannot have the first. See
+[`getNamespaceRouting`](#getnamespaceroutingnamespaceid-promisecloudnamespacerouting).
 
 ## Signing in
 
@@ -217,6 +226,49 @@ back to the per-context routing read.
 An empty `nodes` array is a state, not an error: a namespace with no fleet
 assignment has no cloud node, and the joiner must use one of the invitation's
 other admitters — another admin's node, or a self-hosted peer.
+
+### Proving an account for this read
+
+The read takes no session, but it is not staying anonymous: a 32-byte namespace
+id is not guessable and not secret either, and anonymous discovery maps which
+nodes serve a namespace, their URLs and their liveness to anyone who learns one.
+
+It cannot be gated on a cloud login, for the reason above. So the caller proves
+possession of the credential it already holds — construct the client with
+`routingCredential` and this method fetches a sealed, namespace-bound challenge,
+signs it with the **device** key, and sends
+`X-Calimero-Credential` / `X-Calimero-Nonce` / `X-Calimero-Signature`:
+
+```typescript
+const cloud = new CloudClient({
+  routingCredential: { credential, deviceSecret },  // from signDeviceCert()
+});
+const routing = await cloud.getNamespaceRouting(namespaceId);
+```
+
+The **device** signs, not the root — the opposite of
+[`linkAccount`](#linking-a-calimero-account), and deliberately. That one exists
+for the device-loss case so only the root will do; this runs on every routing
+read from a browser that discards the root after certifying its device.
+
+The certificate alone would not do: it travels in the clear inside every
+device-link op, so anyone who has seen one can replay it. Only the challenge
+signature binds the presenter to the device.
+
+**What this establishes:** the caller holds a device key certified by some
+account root, and which account that is. **Not** that the account was invited,
+nor that it is a member — the cloud cannot check either, because membership is
+governance state on the nodes, and anyone can mint a root offline. It buys
+attribution and ends anonymous bulk discovery; authorization stays at the node,
+on the signed op.
+
+Omit `routingCredential` and the read stays anonymous, which the cloud still
+answers today. A supplied proof is verified either way, so a client that builds
+one wrong finds out immediately rather than when the requirement turns on.
+
+Low-level pieces, for a caller whose key is somewhere this client cannot reach:
+`getRoutingChallenge(namespaceId)`, `signRoutingChallenge(nonce, deviceSecret)`
+and `routingProofHeaders(challenge, credential)`.
 
 ## `findAdmitter(namespaceId, admitters?): Promise<CloudNamespaceNode | null>`
 

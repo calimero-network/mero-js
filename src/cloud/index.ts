@@ -18,3 +18,9 @@ export type {
 } from './cloud-client.js';
 export { connectCloud } from './connect.js';
 export type { ConnectCloudOptions, CloudConnection } from './connect.js';
+export { signRoutingChallenge, routingProofHeaders } from './routing-proof.js';
+export type {
+  RoutingCredential,
+  RoutingChallenge,
+  RoutingProofHeaders,
+} from './routing-proof.js';
