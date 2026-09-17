@@ -1,4 +1,5 @@
 import { HttpClient, withRetry } from '../http-client/index.js';
+import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
   AdminAuthStatus,
@@ -1107,6 +1108,92 @@ export class AdminApiClient {
     request: SetDefaultCapabilitiesRequest,
   ): Promise<void> {
     await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-capabilities`, request);
+  }
+
+  /**
+   * Make every member admitted to `groupId` from now on able to relay a
+   * delegated write, without a per-node governance op each time.
+   *
+   * `CAN_AUTHOR_ON_BEHALF` is implied by nothing — not membership, not admin —
+   * so every group is authorship-closed and each fleet relay otherwise needs an
+   * admin to grant it individually, at the moment the relay is assigned and the
+   * admin is not watching. Setting it in the group's DEFAULT mask is core's own
+   * answer to that: `add_member` seeds a non-admin's capability row from the
+   * default, so an attested node admitted afterwards lands open.
+   *
+   * Call it on the NAMESPACE (the root group). A grant resolves through the
+   * membership anchor, so one at the root reaches every Open subgroup beneath
+   * it, which is where contexts actually live; a `Restricted` subgroup is a
+   * membership boundary and needs its own call.
+   *
+   * ### Two things this does not do
+   *
+   * **It is not retroactive.** The default is copied into a member's row when
+   * that member is admitted, so nodes already admitted keep the row they got.
+   * Use {@link grantAuthorship} for those — or call this at namespace creation,
+   * which is the only point that needs no backfill at all.
+   *
+   * **It does not reach admins.** Core seeds the default only for non-admin
+   * roles, and `CAN_AUTHOR_ON_BEHALF` is deliberately not implied by admin. An
+   * admin's own node therefore stays closed and needs {@link grantAuthorship}.
+   *
+   * ### What it widens
+   *
+   * Every future non-admin member of the group, not only attested TEE nodes, so
+   * any of them may be named as a warrant's `executor`. The bound worth knowing
+   * before deciding: an executor cannot FORGE. A delegated write is authorized
+   * by the author's own warrant — signed by their device key, committed to one
+   * context, method and exact arguments, with its nonce checked unspent — so a
+   * holder can only spend a warrant it was deliberately handed. What it does
+   * gain is the arguments in cleartext and the choice of when, or whether, to
+   * publish.
+   *
+   * Read-modify-write rather than a blind set: core seeds a new group's default
+   * with `CAN_JOIN_OPEN_SUBGROUPS`, and overwriting that would quietly stop
+   * every later member inheriting into Open subgroups.
+   *
+   * Returns the resulting mask and whether an op was published — it is a no-op
+   * when the bit is already set, so it is safe to call on every startup.
+   */
+  async openToDelegatedExecution(
+    groupId: string,
+  ): Promise<{ changed: boolean; defaultCapabilities: number }> {
+    const current = await this.getDefaultCapabilities(groupId);
+    if (hasCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
+      return { changed: false, defaultCapabilities: current };
+    }
+    const next = withCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF);
+    await this.setDefaultCapabilities(groupId, { defaultCapabilities: next });
+    return { changed: true, defaultCapabilities: next };
+  }
+
+  /**
+   * Grant `account` the authorship bit on `groupId`, leaving its other
+   * capabilities alone.
+   *
+   * The per-member counterpart to {@link openToDelegatedExecution}, and what
+   * closes the gap that method cannot: a relay admitted BEFORE the default was
+   * set, and an admin's own node, which never receives the default at all.
+   *
+   * `account` is the member's ACCOUNT id (64 hex) as `listGroupMembers` returns
+   * it — for a fleet relay, the `account` the cloud reports for that node. Not
+   * the signing key that added them; both are 64 hex, so nothing but the source
+   * tells them apart.
+   *
+   * Read-modify-write, so it adds the bit rather than replacing the member's
+   * mask. A no-op when the member already holds it.
+   */
+  async grantAuthorship(
+    groupId: string,
+    account: string,
+  ): Promise<{ changed: boolean; capabilities: number }> {
+    const { capabilities } = await this.getMemberCapabilities(groupId, account);
+    if (hasCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
+      return { changed: false, capabilities };
+    }
+    const next = withCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF);
+    await this.setMemberCapabilities(groupId, account, { capabilities: next });
+    return { changed: true, capabilities: next };
   }
 
   async setSubgroupVisibility(

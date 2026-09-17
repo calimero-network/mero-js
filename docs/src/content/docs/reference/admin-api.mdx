@@ -173,6 +173,8 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `setMemberCapabilities(groupId, identity, request): Promise<void>` | `PUT /groups/{groupId}/members/{identity}/capabilities` |
 | `getDefaultCapabilities(groupId): Promise<number>` | via `getGroupInfo` |
 | `setDefaultCapabilities(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/default-capabilities` |
+| `openToDelegatedExecution(groupId): Promise<{ changed, defaultCapabilities }>` | read-modify-write over the two above |
+| `grantAuthorship(groupId, account): Promise<{ changed, capabilities }>` | read-modify-write over the two member-capability routes |
 | `getSubgroupVisibility(groupId): Promise<string>` | via `getGroupInfo` |
 | `setSubgroupVisibility(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/subgroup-visibility` |
 | `getTeeAdmissionPolicy(groupId): Promise<GetTeeAdmissionPolicyResponseData>` | `GET /groups/{groupId}/settings/tee-admission-policy` |
