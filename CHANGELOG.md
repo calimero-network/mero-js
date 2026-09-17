@@ -1,3 +1,5 @@
+## [19.7.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.7.0...mero-js-v19.7.1) (2026-09-17)
+
 ## [19.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.6.0...mero-js-v19.7.0) (2026-09-17)
 
 ### Features
