@@ -101,6 +101,64 @@ export interface CloudRelay {
   confirmedAt?: string | null;
 }
 
+/**
+ * One node serving a namespace, as a caller with no cloud account sees it.
+ *
+ * The public counterpart to {@link CloudRelay}: same fleet rows, but keyed on a
+ * namespace id anyone holding an invitation already has, and answering both
+ * things a keyholder needs from a node rather than one of them.
+ */
+export interface CloudNamespaceNode {
+  peerId: string;
+  /**
+   * The node's own account id, hex.
+   *
+   * Intersect this against the invitation's signed `admitters` list before
+   * using the node. That list is a MINT-TIME SNAPSHOT, so a node assigned after
+   * an invitation was created is live, healthy, listed here, and still refused
+   * with 403 — the cloud cannot know which invitation you hold.
+   */
+  account: string | null;
+  /** Base URL, or `null` when the cloud knows none yet. */
+  relayUrl: string | null;
+  /** Ready-made admission URL, so a caller never rebuilds the path. */
+  admitUrl: string | null;
+  /** `'assigned'` (admitted pending confirm) or `'active'`. */
+  status: string;
+  /** Whether the node's heartbeat for this namespace is recent. */
+  fresh: boolean;
+  /**
+   * Whether a signed join can be presented here now.
+   *
+   * Deliberately independent of {@link CloudNamespaceNode.authorshipReady}:
+   * relaying a join the joiner already signed is not authoring on anyone's
+   * behalf, so a node with no grant admits perfectly well.
+   */
+  canAdmit: boolean;
+  /** Whether the node holds `CAN_AUTHOR_ON_BEHALF` on the namespace root group. */
+  authorshipReady: boolean;
+  /**
+   * Whether a delegated write can be posted here now — a URL, an account, a
+   * fresh heartbeat and the grant.
+   *
+   * Namespace-level. A context in a RESTRICTED SUBGROUP is governed by that
+   * subgroup, so per-context routing remains the exact answer if a write is
+   * refused despite this being true.
+   */
+  canExecute: boolean;
+}
+
+/** What {@link CloudClient.getNamespaceRouting} reports. */
+export interface CloudNamespaceRouting {
+  namespaceId: string;
+  /** Usable nodes first, then a stable order, so a polling caller sees no shuffle. */
+  nodes: CloudNamespaceNode[];
+  /** Whether any listed node can take a join now. */
+  servable: boolean;
+  /** Whether any listed node can take a delegated write now. */
+  writable: boolean;
+}
+
 /** One namespace of the caller's that a machine is serving. */
 export interface CloudMachineNamespace {
   namespaceId: string;
@@ -354,6 +412,80 @@ export class CloudClient {
     return (
       relays.find((r) => r.authorshipReady && r.relayUrl !== null && r.executorAccount !== null) ??
       null
+    );
+  }
+
+  /**
+   * Where to reach a namespace without owning it: one read, both verbs.
+   *
+   * **Anonymous.** A joiner is by construction not the namespace owner and holds
+   * no cloud session — needing one is exactly what this path exists to avoid.
+   * Discovery is not authorization: merod refuses an `/admit` call unless the
+   * relaying node's account is on the invitation's signed `admitters` list, and
+   * refuses an intent unless the warrant is genuinely the member's, so naming a
+   * node grants the caller nothing it did not already have.
+   *
+   * A keyholder resolves a namespace to a node ONCE and then admits, reads and
+   * posts intents against that same node, which is why admission and writability
+   * are answered together rather than across two endpoints — the per-context
+   * read needs a context id a joiner does not yet have.
+   *
+   * An empty `nodes` list is a state, not an error: a namespace with no fleet
+   * assignment has no cloud node, and the joiner must use one of the
+   * invitation's other admitters — another admin's node, or a self-hosted peer.
+   */
+  async getNamespaceRouting(namespaceId: string): Promise<CloudNamespaceRouting> {
+    const body = await this.request<{
+      namespace_id?: unknown;
+      admitters?: Array<Record<string, unknown>>;
+      servable?: unknown;
+      writable?: unknown;
+    }>('GET', `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/admitters`, {
+      anonymous: true,
+    });
+    return {
+      namespaceId: String(body.namespace_id ?? namespaceId),
+      nodes: (body.admitters ?? []).map((row) => ({
+        peerId: String(row.peer_id ?? ''),
+        account: (row.account as string | null | undefined) ?? null,
+        relayUrl: (row.relay_url as string | null | undefined) ?? null,
+        admitUrl: (row.admit_url as string | null | undefined) ?? null,
+        status: String(row.status ?? ''),
+        fresh: row.fresh === true,
+        canAdmit: row.can_admit === true,
+        authorshipReady: row.authorship_ready === true,
+        canExecute: row.can_execute === true,
+      })),
+      servable: body.servable === true,
+      writable: body.writable === true,
+    };
+  }
+
+  /**
+   * The node to send a signed join to, chosen from those an invitation names.
+   *
+   * Pass the invitation's `admitters` and the intersection is done here, because
+   * skipping it is the failure this method exists to prevent: the cloud lists
+   * every node assigned to the namespace, while `admitters` is a snapshot signed
+   * when the invitation was minted. A node added afterwards looks perfect in
+   * every field here and answers 403.
+   *
+   * Omit `admitters` only for an invitation that names none — an empty list on
+   * the wire authorises any node to admit.
+   */
+  async findAdmitter(
+    namespaceId: string,
+    admitters?: readonly string[],
+  ): Promise<CloudNamespaceNode | null> {
+    const { nodes } = await this.getNamespaceRouting(namespaceId);
+    const allowed =
+      admitters && admitters.length > 0 ? new Set(admitters.map((a) => a.toLowerCase())) : null;
+    return (
+      nodes.find(
+        (n) =>
+          n.canAdmit &&
+          (allowed === null || (n.account !== null && allowed.has(n.account.toLowerCase()))),
+      ) ?? null
     );
   }
 

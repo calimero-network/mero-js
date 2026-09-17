@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
 import type { SignedGroupOpenInvitation } from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
+import { CAPABILITIES } from '../capabilities.js';
 
 // A signed invitation exactly as merod emits it: the signed core primitive is
 // snake_case, with two unsigned bootstrap fields alongside the signature. Cast
@@ -1289,6 +1290,109 @@ describe('AdminApiClient', () => {
       await client.setDefaultCapabilities('g-1', { defaultCapabilities: 3 });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities')).toEqual({
         defaultCapabilities: 3,
+      });
+    });
+
+    /**
+     * Opening a namespace to a relay fleet: one op instead of one per node.
+     *
+     * The bit is implied by nothing, so every group is authorship-closed and a
+     * relay otherwise needs an admin to grant it individually — at the moment
+     * the relay is assigned and the admin is not watching. Core seeds a
+     * non-admin's row from the group default at admission, so putting it in the
+     * default is what makes an attested node land open.
+     */
+    describe('openToDelegatedExecution', () => {
+      function groupInfo(defaultCapabilities: number) {
+        return {
+          data: {
+            groupId: 'g-1',
+            appKey: 'key',
+            targetApplicationId: 'app-1',
+            upgradePolicy: 'manual',
+            memberCount: 1,
+            contextCount: 0,
+            defaultCapabilities,
+            subgroupVisibility: 'open',
+          },
+        };
+      }
+
+      it('adds the bit and keeps what the group already had', async () => {
+        // The mask a group is CREATED with. Blindly setting the authorship bit
+        // would drop it, and every later member would silently stop inheriting
+        // into Open subgroups — where the contexts actually are.
+        mock.setMockResponse('GET', '/admin-api/groups/g-1', groupInfo(CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS));
+        mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/default-capabilities', {});
+
+        const result = await client.openToDelegatedExecution('g-1');
+
+        expect(result).toEqual({
+          changed: true,
+          defaultCapabilities: CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
+        });
+        expect(
+          mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities'),
+        ).toEqual({
+          defaultCapabilities:
+            CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
+        });
+      });
+
+      it('publishes nothing when the bit is already set', async () => {
+        mock.setMockResponse(
+          'GET',
+          '/admin-api/groups/g-1',
+          groupInfo(CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
+        );
+
+        const result = await client.openToDelegatedExecution('g-1');
+
+        // Safe to call on every startup: a governance op per boot would grow the
+        // DAG for no change, and `changed` is what lets a caller say so.
+        expect(result.changed).toBe(false);
+        expect(
+          mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities'),
+        ).toBeUndefined();
+      });
+    });
+
+    /**
+     * The gap the default cannot close.
+     *
+     * The mask is copied into a member's row AT ADMISSION, so a relay admitted
+     * before it was set keeps the row it got — and an admin's own node never
+     * receives the default at all, since core seeds it for non-admin roles only.
+     */
+    describe('grantAuthorship', () => {
+      it('adds the bit to the member without clearing the rest', async () => {
+        mock.setMockResponse('GET', '/admin-api/groups/g-1/members/acc-1/capabilities', {
+          data: { capabilities: CAPABILITIES.CAN_CREATE_CONTEXT | CAPABILITIES.CAN_INVITE_MEMBERS },
+        });
+        mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities', {});
+
+        const result = await client.grantAuthorship('g-1', 'acc-1');
+
+        expect(result.changed).toBe(true);
+        expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities')).toEqual({
+          capabilities:
+            CAPABILITIES.CAN_CREATE_CONTEXT |
+            CAPABILITIES.CAN_INVITE_MEMBERS |
+            CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
+        });
+      });
+
+      it('publishes nothing when the member already holds it', async () => {
+        mock.setMockResponse('GET', '/admin-api/groups/g-1/members/acc-1/capabilities', {
+          data: { capabilities: CAPABILITIES.CAN_AUTHOR_ON_BEHALF },
+        });
+
+        const result = await client.grantAuthorship('g-1', 'acc-1');
+
+        expect(result.changed).toBe(false);
+        expect(
+          mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities'),
+        ).toBeUndefined();
       });
     });
 

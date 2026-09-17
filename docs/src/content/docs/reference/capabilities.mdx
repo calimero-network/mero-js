@@ -56,15 +56,53 @@ refused before anything executes. Granting it is the step that makes a namespace
 writable by keyholders who run no node:
 
 ```typescript
-const current = await sdk.admin.getMemberCapabilities(groupId, relayAccount);
-await sdk.admin.setMemberCapabilities(groupId, relayAccount, {
-  capabilities: withCap(current.capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
-});
+await sdk.admin.grantAuthorship(groupId, relayAccount);
 ```
 
 Note the subject is the relay's **account**, not its signing key — which is what
 lets the relay rotate keys without the grant, or any warrant already issued
 against it, needing to be reissued.
+
+`grantAuthorship` is read-modify-write, and that is the point: `setMemberCapabilities`
+**replaces** the mask, so adding this bit by hand means re-passing every flag the
+member already holds, and forgetting one revokes it silently. It is a no-op when
+the member already has the grant.
+
+### Granting it once, for a whole fleet
+
+A namespace that keeps admitting TEE nodes would otherwise need one admin-signed
+op per admission — published at the moment a node is assigned and the admin is
+not watching. Core seeds a **non-admin** member's capability row from the group's
+default mask at admission, so putting the bit there is what makes an attested node
+land open:
+
+```typescript
+await sdk.admin.openToDelegatedExecution(namespaceId);
+```
+
+```bash
+meroctl --node node1 group settings set-default-capabilities <NAMESPACE_ID> \
+  --can-join-open-subgroups --can-author-on-behalf
+```
+
+Set it on the **namespace** (the root group): a grant resolves through the
+membership anchor, so one at the root reaches every Open subgroup beneath it,
+where contexts actually live. A `Restricted` subgroup is a membership boundary
+and needs its own.
+
+Three limits, none of which the API can paper over:
+
+- **Not retroactive.** The mask is copied at admission, so members already in the
+  group keep what they have — use `grantAuthorship` for those. Calling this at
+  namespace creation is the only point that needs no backfill.
+- **Never reaches admins.** Core seeds the default for non-admin roles only, and
+  the capability is not implied by admin, so an admin's own node stays closed.
+- **Reaches every non-admin member**, not only attested TEE nodes. What that does
+  *not* allow: a holder cannot **forge**. The write is authorized by the author's
+  own warrant — signed by their device key, committed to one context, method and
+  the exact arguments, nonce checked unspent — so a holder can only spend a warrant
+  it was deliberately handed. It does gain the arguments in cleartext and the
+  choice of when, or whether, to publish.
 
 ## Helpers
 

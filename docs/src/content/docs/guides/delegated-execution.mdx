@@ -110,10 +110,25 @@ somebody owns, not nodeless namespace creation.
    // [{ peerId, relayUrl, executorAccount, canExecute: false, namespaces: [...] }]
    ```
 
-   `authorshipReady: false` is expected here. That is step 5.
+   `authorshipReady` should already be `true` on a namespace created by a recent
+   merod — see step 5. If it is `false`, step 5 is the fix.
 
-5. **Owner grants the relay authorship.** This is the step that is missed most
-   often, because everything up to it looks finished.
+5. **Grant the relay authorship — usually already done.**
+
+   A **namespace is created carrying `CAN_AUTHOR_ON_BEHALF` in its
+   default-capability mask**, and core copies that mask into a non-admin
+   member's capability row at admission. So a relay assigned to a namespace
+   created by a merod with that default lands able to relay, and there is
+   nothing to do here.
+
+   You still land on this step in three cases:
+
+   - the namespace predates that default;
+   - the relay was admitted **before** the mask was set on it — the mask is
+     copied at admission, not read live;
+   - the node is the **owner's own**, which never receives the default at all:
+     core seeds it for non-admin roles only, and the capability is not implied
+     by admin.
 
    ```bash
    meroctl --node node1 group members set-capabilities <NAMESPACE_ID> <EXECUTOR_ACCOUNT> \
@@ -122,16 +137,19 @@ somebody owns, not nodeless namespace creation.
 
    ```typescript
    // or from the SDK, on the owner's node
-   const current = await owner.admin.getMemberCapabilities(namespaceId, executorAccount);
-   await owner.admin.setMemberCapabilities(namespaceId, executorAccount, {
-     capabilities: withCap(current.capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
-   });
+   await owner.admin.grantAuthorship(namespaceId, executorAccount);
    ```
 
    `CAN_AUTHOR_ON_BEHALF` is implied by nothing — not membership, not admin, and
-   it is not propagated by the subgroup cascade — so every namespace starts
-   authorship-closed. The mask is **replaced**, not merged: re-pass any flag the
-   relay already holds.
+   it is not propagated by the subgroup cascade. The namespace default is the
+   only thing that grants it without an explicit op, and a `Restricted` subgroup
+   does not inherit it.
+
+   `grantAuthorship` reads the relay's current mask and adds the one bit, because
+   both the CLI flag form and `setMemberCapabilities` **replace** the mask rather
+   than merging into it — so doing this by hand means re-passing every flag the
+   relay already holds, and forgetting one revokes it silently. It is a no-op when
+   the relay already has the grant, so it is safe to run on every startup.
 
    Within a second the relay notices and re-reports, and
    `getNamespaceRelays` flips to `authorshipReady: true`.
@@ -142,21 +160,41 @@ somebody owns, not nodeless namespace creation.
    would need one admin-signed op per admission.
 
    The group's **default-capability mask** removes that: set it once and every
-   non-admin member admitted afterwards inherits it, with no per-node op.
+   non-admin member admitted afterwards inherits it, with no per-node op. A
+   namespace created by a recent merod already carries it, so this is how you
+   open one that does not — or close one that does.
 
    ```typescript
    // once, on the owner's node — applies to every node admitted after it
-   const current = await owner.admin.getDefaultCapabilities(namespaceId);
-   await owner.admin.setDefaultCapabilities(namespaceId, {
-     defaultCapabilities: withCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
-   });
+   await owner.admin.openToDelegatedExecution(namespaceId);
    ```
 
-   Two things to know. It is **not retroactive** — nodes already admitted keep
-   whatever mask they have, so grant those individually as above. And it applies
-   to every non-admin member, not only TEE nodes, so it is a statement about the
-   namespace's posture rather than about one machine: set it on a namespace whose
-   members you are willing to have relay, and use the per-relay grant otherwise.
+   ```bash
+   # or from the CLI. Pass every flag you mean to keep: this REPLACES the mask,
+   # and a group is created with --can-join-open-subgroups already set.
+   meroctl --node node1 group settings set-default-capabilities <NAMESPACE_ID> \
+     --can-join-open-subgroups --can-author-on-behalf
+   ```
+
+   Best done **at namespace creation**, which is the only point that needs no
+   backfill at all.
+
+   Three things to know. It is **not retroactive** — the mask is copied into a
+   member's row when that member is admitted, so nodes already admitted keep what
+   they have and need `grantAuthorship` as above. It **does not reach admins**,
+   because core seeds the default for non-admin roles only and the capability is
+   not implied by admin — so the owner's own node stays closed and is the one
+   member this does not cover. And it applies to every non-admin member, not only
+   TEE nodes, so it is a statement about the namespace's posture rather than about
+   one machine: set it on a namespace whose members you are willing to have relay,
+   and use the per-relay grant otherwise.
+
+   What that widening does *not* allow is worth being precise about: a member
+   holding the bit cannot **forge**. A delegated write is authorized by the
+   author's own warrant — signed by their device key, committed to one context,
+   one method and the exact arguments, with its nonce checked unspent — so the
+   holder can only spend a warrant it was deliberately handed. What it gains is
+   the arguments in cleartext and the choice of when, or whether, to publish.
 
    Pinned by `a_groups_default_capabilities_reach_an_admitted_tee_node` in
    core's `governance-store`, which asserts it through the same

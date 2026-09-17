@@ -546,3 +546,157 @@ describe('CloudClient account linking for an external signer', () => {
     });
   });
 });
+
+/**
+ * The read a joiner makes before it has anything else.
+ *
+ * It holds an invitation and a namespace id, no cloud account, and no context
+ * id — so this is the only cloud read available to it, and it has to answer
+ * both where to admit and whether that same node will take a write.
+ */
+describe('CloudClient namespace routing', () => {
+  const NODE_ACCOUNT = '5a'.repeat(32);
+  const OTHER_ACCOUNT = '99'.repeat(32);
+  const ROUTING_URL = `https://cloud.example/api/cloud/namespaces/${NS}/admitters`;
+
+  function anonymous(fetchImpl: typeof fetch) {
+    return new CloudClient({ cloudBaseUrl: 'https://cloud.example', fetch: fetchImpl });
+  }
+
+  function row(overrides: Record<string, unknown> = {}) {
+    return {
+      peer_id: '12D3KooWadmitter',
+      account: NODE_ACCOUNT,
+      relay_url: 'https://relay.example',
+      admit_url: `https://relay.example/admin-api/namespaces/${NS}/admit`,
+      status: 'active',
+      fresh: true,
+      can_admit: true,
+      authorship_ready: true,
+      can_execute: true,
+      ...overrides,
+    };
+  }
+
+  it('reads without a session, and answers both verbs at once', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { namespace_id: NS, admitters: [row()], servable: true, writable: true } },
+    ]);
+
+    const routing = await anonymous(fetch).getNamespaceRouting(NS);
+
+    expect(calls[0].url).toBe(ROUTING_URL);
+    // The point of the read: no Authorization header, because a joiner has no
+    // cloud account and needing one is what this path exists to avoid.
+    expect((calls[0].init?.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(routing.servable).toBe(true);
+    expect(routing.writable).toBe(true);
+    expect(routing.nodes).toEqual([
+      {
+        peerId: '12D3KooWadmitter',
+        account: NODE_ACCOUNT,
+        relayUrl: 'https://relay.example',
+        admitUrl: `https://relay.example/admin-api/namespaces/${NS}/admit`,
+        status: 'active',
+        fresh: true,
+        canAdmit: true,
+        authorshipReady: true,
+        canExecute: true,
+      },
+    ]);
+  });
+
+  it('keeps admission usable on a node with no authorship grant', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          namespace_id: NS,
+          admitters: [row({ authorship_ready: false, can_execute: false })],
+          servable: true,
+          writable: false,
+        },
+      },
+    ]);
+
+    const routing = await anonymous(fetch).getNamespaceRouting(NS);
+
+    // Relaying a join the joiner already signed is not authoring on anyone's
+    // behalf, so the grant is irrelevant to admission. Conflating the two would
+    // strand a joiner at the one moment it has no other way in.
+    expect(routing.nodes[0].canAdmit).toBe(true);
+    expect(routing.nodes[0].canExecute).toBe(false);
+    expect(routing.servable).toBe(true);
+    expect(routing.writable).toBe(false);
+  });
+
+  it('picks only a node the invitation actually named', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          admitters: [
+            row({ peer_id: 'unnamed', account: OTHER_ACCOUNT }),
+            row({ peer_id: 'named' }),
+          ],
+          servable: true,
+        },
+      },
+    ]);
+
+    const chosen = await anonymous(fetch).findAdmitter(NS, [NODE_ACCOUNT]);
+
+    // `admitters` is a mint-time snapshot: the cloud lists every node assigned
+    // to the namespace, and one added after the invitation was signed looks
+    // perfect in every field here and answers 403. Intersecting is the whole
+    // reason this helper takes the list.
+    expect(chosen?.peerId).toBe('named');
+  });
+
+  it('returns null rather than a node that would be refused', async () => {
+    const { fetch } = scriptedFetch([
+      { body: { admitters: [row({ account: OTHER_ACCOUNT })], servable: true } },
+    ]);
+
+    expect(await anonymous(fetch).findAdmitter(NS, [NODE_ACCOUNT])).toBeNull();
+  });
+
+  it('accepts any listed node when the invitation names none', async () => {
+    const { fetch } = scriptedFetch([
+      { body: { admitters: [row({ account: OTHER_ACCOUNT })], servable: true } },
+    ]);
+
+    // An empty `admitters` list on the wire authorises any node to admit, so
+    // filtering on it would refuse every node for an invitation that is open
+    // by design.
+    expect((await anonymous(fetch).findAdmitter(NS))?.account).toBe(OTHER_ACCOUNT);
+  });
+
+  it('skips a node that cannot take a join now', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          admitters: [
+            row({ peer_id: 'stale', fresh: false, can_admit: false }),
+            row({ peer_id: 'live' }),
+          ],
+          servable: true,
+        },
+      },
+    ]);
+
+    expect((await anonymous(fetch).findAdmitter(NS, [NODE_ACCOUNT]))?.peerId).toBe('live');
+  });
+
+  it('treats a namespace with no cloud node as a state, not an error', async () => {
+    const { fetch } = scriptedFetch([
+      { body: { namespace_id: NS, admitters: [], servable: false, writable: false } },
+    ]);
+
+    const routing = await anonymous(fetch).getNamespaceRouting(NS);
+
+    // The joiner must fall back to another admitter the invitation names — a
+    // self-hosted peer, or another admin's node. Throwing here would look like
+    // a broken cloud rather than a namespace nobody hosts.
+    expect(routing.nodes).toEqual([]);
+    expect(routing.servable).toBe(false);
+  });
+});

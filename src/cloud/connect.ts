@@ -204,11 +204,18 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
   }
   const waitingOnGrant = relays.filter((r) => !r.authorshipReady);
   if (waitingOnGrant.length === relays.length) {
+    // Name the call, not just the capability. The grant is a governance op only
+    // a namespace admin can publish, so this message is read by someone who has
+    // to go ask for it — and "grant CAN_AUTHOR_ON_BEHALF" alone leaves them
+    // relaying a constant to an admin who then has to work out the command.
+    // `openToDelegatedExecution` is the durable half (every relay assigned from
+    // then on lands open), `grantAuthorship` the one for relays already here.
     return (
       `every relay on namespace ${namespace.namespaceId} is waiting for the authorship grant: ` +
       `an admin of the namespace must grant CAN_AUTHOR_ON_BEHALF to ${
         waitingOnGrant.map((r) => r.executorAccount ?? r.peerId).join(', ') || 'the relay account'
-      }`
+      } — with AdminClient.grantAuthorship(namespaceId, account) for these relays, and ` +
+      `AdminClient.openToDelegatedExecution(namespaceId) so relays assigned later need no further op`
     );
   }
   return `namespace ${namespace.namespaceId} has ${relays.length} relay(s), but none reported both a URL and an executor account yet — retry shortly`;
