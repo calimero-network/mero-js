@@ -1,3 +1,9 @@
+## [19.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.5.0...mero-js-v19.6.0) (2026-09-17)
+
+### Features
+
+* **account:** mint an account root with a recovery phrase, and link it to the cloud ([#153](https://github.com/calimero-network/mero-js/issues/153)) ([903eab1](https://github.com/calimero-network/mero-js/commit/903eab18accfc8b33c564fde10a5c88c898c4f54))
+
 ## [19.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.4.0...mero-js-v19.5.0) (2026-09-16)
 
 ### Features
