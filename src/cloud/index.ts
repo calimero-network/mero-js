@@ -4,6 +4,7 @@ export type {
   CloudSession,
   CloudNamespace,
   CloudRelay,
+  CloudAccountNamespace,
   CloudNamespaceNode,
   CloudNamespaceRouting,
   CloudMachine,
@@ -25,6 +26,7 @@ export type { ConnectCloudOptions, CloudConnection } from './connect.js';
 export { signRoutingChallenge, routingProofHeaders } from './routing-proof.js';
 export type {
   RoutingCredential,
+  DiscoveryChallenge,
   RoutingChallenge,
   RoutingProofHeaders,
 } from './routing-proof.js';

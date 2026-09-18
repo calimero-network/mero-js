@@ -33,6 +33,7 @@ import {
 import { HTTPError } from '../http-client/web-client.js';
 import {
   routingProofHeaders,
+  type DiscoveryChallenge,
   type RoutingChallenge,
   type RoutingCredential,
 } from './routing-proof.js';
@@ -128,6 +129,20 @@ export interface CloudRelay {
  * namespace id anyone holding an invitation already has, and answering both
  * things a keyholder needs from a node rather than one of them.
  */
+/**
+ * One namespace an account is known to belong to.
+ *
+ * `updatedAt` is not decoration: the list over-reports, because an account that
+ * leaves a namespace stops being written about and its entry lingers. A caller
+ * that shows these to a person should let staleness show rather than presenting
+ * every row as current membership.
+ */
+export interface CloudAccountNamespace {
+  namespaceId: string;
+  /** ISO 8601, or null when the cloud recorded none. */
+  updatedAt: string | null;
+}
+
 export interface CloudNamespaceNode {
   peerId: string;
   /**
@@ -638,6 +653,78 @@ export class CloudClient {
     if (!this.routingCredential) return undefined;
     const challenge = await this.getRoutingChallenge(namespaceId);
     return routingProofHeaders(challenge, this.routingCredential);
+  }
+
+  /**
+   * Ask the cloud for a challenge bound to one ACCOUNT.
+   *
+   * Public and unauthenticated like {@link getRoutingChallenge}, and safe for
+   * the same reason: an account id is `H(genesis(root_pk))` and travels in the
+   * clear in every device-link op, so naming one here reveals nothing and
+   * authorises nothing. MDMA re-derives the account from the certificate and
+   * refuses a mismatch.
+   */
+  async getAccountNamespacesChallenge(accountId: string): Promise<DiscoveryChallenge> {
+    const body = await this.request<{
+      account_id?: unknown;
+      nonce?: unknown;
+      expires_at_ms?: unknown;
+    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/challenge`, {
+      anonymous: true,
+    });
+    return {
+      accountId: String(body.account_id ?? accountId),
+      nonce: String(body.nonce ?? ''),
+      expiresAtMs: Number(body.expires_at_ms ?? 0),
+    };
+  }
+
+  /**
+   * Which namespaces this account is known to belong to.
+   *
+   * The discovery half of routing, and the read that makes a fresh device
+   * useful: it can already resolve a namespace it can *name*
+   * ({@link getNamespaceRouting}), but namespaces are separate keypairs and a
+   * new device holds none of that governance state, so without this it must be
+   * handed ids out of band.
+   *
+   * Proven with the **device certificate**, not a cloud session. A cloud
+   * session needs the account linked and a root-signed login, which is right
+   * for billing and wrong for a read a page makes on every load. So this needs
+   * a `routingCredential` and throws without one rather than returning an empty
+   * list — "you did not configure a credential" and "this account has no
+   * namespaces" are different answers and must not look alike.
+   *
+   * Three limits MDMA documents on the route, restated because callers have to
+   * design around them:
+   *
+   * - **It over-reports.** An account that left a namespace stops being written
+   *   about and its row lingers, so treat `updatedAt` as the freshness signal
+   *   rather than assuming every entry is current.
+   * - **It covers one cloud's fleet.** A namespace served by no node this cloud
+   *   assigned has no entry here at all.
+   * - **Any holder of a valid certificate for the account can read it**, and
+   *   certificates do not expire — revocation is what ends that access.
+   */
+  async getAccountNamespaces(accountId: string): Promise<CloudAccountNamespace[]> {
+    if (!this.routingCredential) {
+      throw new Error(
+        'getAccountNamespaces needs a routingCredential: construct the client with the ' +
+          "device certificate and its signing secret, since this read is proven by the device, not by a session.",
+      );
+    }
+    const challenge = await this.getAccountNamespacesChallenge(accountId);
+    const body = await this.request<{
+      account_id?: unknown;
+      namespaces?: Array<Record<string, unknown>>;
+    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/namespaces`, {
+      anonymous: true,
+      headers: await routingProofHeaders(challenge, this.routingCredential),
+    });
+    return (body.namespaces ?? []).map((row) => ({
+      namespaceId: String(row.namespace_id ?? ''),
+      updatedAt: (row.updated_at as string | null | undefined) ?? null,
+    }));
   }
 
   /**

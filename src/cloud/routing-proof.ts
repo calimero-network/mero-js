@@ -80,6 +80,26 @@ export interface RoutingChallenge {
 }
 
 /**
+ * A challenge bound to an ACCOUNT rather than a namespace, for asking which
+ * namespaces that account has.
+ *
+ * Separate from {@link RoutingChallenge} because the binding is the security
+ * property, not a field name: MDMA seals the account into the nonce, so one
+ * collected for your account cannot be aimed at someone else's. The two are
+ * signed identically, and the server tells them apart by the sealed payload —
+ * so a routing nonce presented to the discovery route is refused, and vice
+ * versa. Keeping the TypeScript types distinct is what stops a caller passing
+ * the wrong one and learning about it as a 403.
+ */
+export interface DiscoveryChallenge {
+  accountId: string;
+  /** Opaque and sealed — the client neither parses nor constructs this. */
+  nonce: string;
+  /** Epoch **milliseconds**, as MDMA reports it. Nonces live about two minutes. */
+  expiresAtMs: number;
+}
+
+/**
  * The three header values a proven routing read carries.
  *
  * Intersected with `Record<string, string>` rather than declared as a plain
@@ -127,9 +147,13 @@ export async function signRoutingChallenge(
  * Separated from the request so a caller that fetches its own challenge — a
  * test, or a client batching several reads against one nonce — can use the same
  * encoding rather than a second spelling of it.
+ *
+ * Takes either challenge kind: only the nonce is signed, and both are signed
+ * over the same domain, so one encoder serves both. What separates them is what
+ * MDMA sealed inside, which is checked server-side.
  */
 export async function routingProofHeaders(
-  challenge: RoutingChallenge,
+  challenge: RoutingChallenge | DiscoveryChallenge,
   credential: RoutingCredential,
 ): Promise<RoutingProofHeaders> {
   return {
