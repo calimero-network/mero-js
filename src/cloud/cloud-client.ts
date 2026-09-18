@@ -33,6 +33,7 @@ import {
 import { HTTPError } from '../http-client/web-client.js';
 import {
   routingProofHeaders,
+  type DiscoveryChallenge,
   type RoutingChallenge,
   type RoutingCredential,
 } from './routing-proof.js';
@@ -128,6 +129,21 @@ export interface CloudRelay {
  * namespace id anyone holding an invitation already has, and answering both
  * things a keyholder needs from a node rather than one of them.
  */
+/**
+ * One relay that serves an account, as the bootstrap read reports it.
+ *
+ * `fresh` and a null `relayUrl` are reported rather than filtered, because
+ * "your relay is down", "we have no address for it" and "you have no relay"
+ * need different actions from a caller and an empty list erases the
+ * distinction. A caller looking for somewhere to talk to wants
+ * `fresh && relayUrl`; one diagnosing wants the rest.
+ */
+export interface CloudAccountRelay {
+  peerId: string;
+  relayUrl: string | null;
+  fresh: boolean;
+}
+
 export interface CloudNamespaceNode {
   peerId: string;
   /**
@@ -638,6 +654,71 @@ export class CloudClient {
     if (!this.routingCredential) return undefined;
     const challenge = await this.getRoutingChallenge(namespaceId);
     return routingProofHeaders(challenge, this.routingCredential);
+  }
+
+  /**
+   * Ask the cloud for a challenge bound to one ACCOUNT.
+   *
+   * Public and unauthenticated like {@link getRoutingChallenge}: an account id
+   * is `H(genesis(root_pk))` and travels in the clear in every device-link op,
+   * so naming one here reveals nothing and authorises nothing. MDMA re-derives
+   * the account from the certificate and refuses a mismatch.
+   */
+  async getAccountRelaysChallenge(accountId: string): Promise<DiscoveryChallenge> {
+    const body = await this.request<{
+      account_id?: unknown;
+      nonce?: unknown;
+      expires_at_ms?: unknown;
+    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/challenge`, {
+      anonymous: true,
+    });
+    return {
+      accountId: String(body.account_id ?? accountId),
+      nonce: String(body.nonce ?? ''),
+      expiresAtMs: Number(body.expires_at_ms ?? 0),
+    };
+  }
+
+  /**
+   * Which relays serve this account — the bootstrap, and nothing more.
+   *
+   * A device holding a certificate can resolve a namespace it can *name*
+   * ({@link getNamespaceRouting}) and can ask a node it can *reach* what its
+   * account belongs to. It starts with neither. This closes that one gap.
+   *
+   * **It does not return namespaces, deliberately.** The node answers that from
+   * the governance DAG, scoped to the calling account: log in at one of these
+   * relays with an account proof and read its namespace listing. A cloud-side
+   * copy would be a second source of truth built from rows that linger for an
+   * account which left a namespace.
+   *
+   * So the sequence is: this → log in at a relay → ask it what you are in.
+   *
+   * Proven with the **device certificate**, not a cloud session, so it needs a
+   * `routingCredential` and throws without one rather than returning an empty
+   * list — "you configured no credential" and "you have no relays" are
+   * different answers and must not look alike.
+   */
+  async getAccountRelays(accountId: string): Promise<CloudAccountRelay[]> {
+    if (!this.routingCredential) {
+      throw new Error(
+        'getAccountRelays needs a routingCredential: construct the client with the device ' +
+          'certificate and its signing secret, since this read is proven by the device, not by a session.',
+      );
+    }
+    const challenge = await this.getAccountRelaysChallenge(accountId);
+    const body = await this.request<{
+      account_id?: unknown;
+      relays?: Array<Record<string, unknown>>;
+    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/relays`, {
+      anonymous: true,
+      headers: await routingProofHeaders(challenge, this.routingCredential),
+    });
+    return (body.relays ?? []).map((row) => ({
+      peerId: String(row.peer_id ?? ''),
+      relayUrl: (row.relay_url as string | null | undefined) ?? null,
+      fresh: row.fresh === true,
+    }));
   }
 
   /**
