@@ -636,6 +636,19 @@ export interface NodeIdentity {
    * a root nor has paired with the id; absent on an old node.
    */
   accountNamespaceId?: string | null;
+  /**
+   * The account that withdrew this node's device, absent on a node no
+   * revocation has reached.
+   */
+  revokedFrom?: RevokedFromEntry;
+}
+
+/** Which account withdrew this node's device, and which device it was. */
+export interface RevokedFromEntry {
+  /** The account the device spoke for, 64 hex characters. */
+  accountId: string;
+  /** The device that was withdrawn, 64 hex characters. */
+  deviceId: string;
 }
 
 /**
@@ -1054,6 +1067,35 @@ export interface AccountDeviceEntry {
    * hex characters each. Empty for a certified device not yet bound anywhere.
    */
   namespaces: string[];
+  /**
+   * The replicated name the account gave this device, absent while it has
+   * none. Every device of the account reads the same one.
+   */
+  label?: string;
+}
+
+/**
+ * Name a device of this account, for a listing to render.
+ *
+ * Run on the node holding the account root to name any device; a paired node
+ * is accepted only for that device's own id.
+ */
+export interface LabelDeviceRequest {
+  /** Trimmed, non-empty, bounded and free of control characters. */
+  label: string;
+}
+
+/**
+ * The name that was published, and the epoch that orders it against a rename
+ * another device of the account made at the same time.
+ */
+export interface LabelDeviceResponseData {
+  /** The account the device speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was named, 64 hex characters. */
+  deviceId: string;
+  label: string;
+  labelEpoch: number;
 }
 
 /**

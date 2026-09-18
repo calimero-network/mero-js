@@ -146,6 +146,7 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `completeAccountPairing(request): Promise<AccountPairCompleteResponseData>` | `POST /account/pair-complete` |
 | `relinkAccountDevice(deviceId, request?): Promise<RelinkDeviceResponseData>` | `POST /account/devices/{deviceId}/relink` |
 | `rescopeAccountDevice(deviceId, request): Promise<RescopeDeviceResponseData>` | `PUT /account/devices/{deviceId}/scope` |
+| `labelAccountDevice(deviceId, request): Promise<LabelDeviceResponseData>` | `PUT /account/devices/{deviceId}/label` |
 | `listAccountDevices(): Promise<AccountDeviceEntry[]>` | `GET /account/devices` |
 | `listAccountApplications(): Promise<AccountApplicationEntry[]>` | `GET /account/applications` |
 | `revokeAccountDevice(namespaceId, request): Promise<RevokeAccountDeviceResponseData>` | `POST /namespaces/{namespaceId}/account/revoke` |
