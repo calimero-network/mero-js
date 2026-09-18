@@ -1139,26 +1139,6 @@ describe('AdminApiClient', () => {
       expect(await client.listAccountApplications()).toEqual(applications);
     });
 
-    it('listAccountApplications passes package, version and followed through', async () => {
-      const applications = [
-        {
-          applicationId: 'a'.repeat(64),
-          namespaces: ['5'.repeat(64)],
-          package: 'my-app',
-          version: '1.2.3',
-          followed: false,
-        },
-        { applicationId: 'b'.repeat(64), namespaces: ['6'.repeat(64)] },
-      ];
-      mock.setMockResponse('GET', '/admin-api/account/applications', { applications });
-      const result = await client.listAccountApplications();
-      expect(result[0]).toEqual(applications[0]);
-      // Absent on the wire stays absent, not coerced to a default.
-      expect(result[1].package).toBeUndefined();
-      expect(result[1].version).toBeUndefined();
-      expect(result[1].followed).toBeUndefined();
-    });
-
     it('revokeAccountDevice names the namespace in the path and the device in the body', async () => {
       const revoked = {
         accountId: PAIR_INIT.accountId,

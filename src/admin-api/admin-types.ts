@@ -1069,16 +1069,6 @@ export interface AccountApplicationEntry {
   applicationId: string;
   /** Ids of the namespaces targeting it, 64 hex characters each. */
   namespaces: string[];
-  /** Where the application is published. Absent until a namespace has learned it. */
-  package?: string;
-  /** See {@link AccountApplicationEntry.package}. */
-  version?: string;
-  /**
-   * Whether THIS device takes part in any of the namespaces above. Optional
-   * because an older node omits it; `false` means the account uses the
-   * application but this device's scope leaves it out.
-   */
-  followed?: boolean;
 }
 
 /** Withdraw a device from an account, terminally. */
