@@ -1,3 +1,9 @@
+## [19.12.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.11.0...mero-js-v19.12.0) (2026-09-18)
+
+### Features
+
+* **admin-api:** name a device, and surface what revoked this node ([#161](https://github.com/calimero-network/mero-js/issues/161)) ([c030838](https://github.com/calimero-network/mero-js/commit/c030838bae3062c617c2e8405c6c4e7f1f4023cc))
+
 ## [19.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.10.0...mero-js-v19.11.0) (2026-09-18)
 
 ### Features
