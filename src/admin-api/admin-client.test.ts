@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
-import type { SignedGroupOpenInvitation } from './admin-types.js';
+import type { RescopeDeviceResponseData, SignedGroupOpenInvitation } from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
 import { CAPABILITIES } from '../capabilities.js';
 
@@ -1077,6 +1077,41 @@ describe('AdminApiClient', () => {
       });
       await client.relinkAccountDevice(PAIR_INIT.deviceId);
       expect(mock.getRequestBody('POST', `/admin-api/account/devices/${PAIR_INIT.deviceId}/relink`)).toEqual({});
+    });
+
+    it('rescopeAccountDevice puts an `all` scope and unwraps data', async () => {
+      const rescoped: RescopeDeviceResponseData = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        applications: [],
+        descoped: [],
+        linkedIn: [{ namespaceId: '5'.repeat(64), keyDelivered: true }],
+        skipped: [],
+      };
+      const path = `/admin-api/account/devices/${PAIR_INIT.deviceId}/scope`;
+      mock.setMockResponse('PUT', path, { data: rescoped });
+      const result = await client.rescopeAccountDevice(PAIR_INIT.deviceId, { scope: 'all' });
+      expect(mock.getRequestBody('PUT', path)).toEqual({ scope: 'all' });
+      expect(result).toEqual(rescoped);
+    });
+
+    it('rescopeAccountDevice puts an `only` scope verbatim', async () => {
+      const appId = 'a'.repeat(64);
+      const rescoped: RescopeDeviceResponseData = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        applications: [appId],
+        descoped: [{ namespaceId: '5'.repeat(64), keyRotated: false }],
+        linkedIn: [],
+        skipped: [{ namespaceId: '6'.repeat(64), reason: 'alreadyBound' }],
+      };
+      const path = `/admin-api/account/devices/${PAIR_INIT.deviceId}/scope`;
+      mock.setMockResponse('PUT', path, { data: rescoped });
+      const result = await client.rescopeAccountDevice(PAIR_INIT.deviceId, {
+        scope: { only: [appId] },
+      });
+      expect(mock.getRequestBody('PUT', path)).toEqual({ scope: { only: [appId] } });
+      expect(result).toEqual(rescoped);
     });
 
     it('listAccountDevices reads the top-level `devices` wrapper, not `data`', async () => {

@@ -66,6 +66,8 @@ import type {
   AccountPairCompleteResponseData,
   RelinkDeviceRequest,
   RelinkDeviceResponseData,
+  RescopeDeviceRequest,
+  RescopeDeviceResponseData,
   AccountDeviceEntry,
   AccountApplicationEntry,
   RevokeAccountDeviceRequest,
@@ -936,6 +938,25 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: RelinkDeviceResponseData }>(
         `/admin-api/account/devices/${deviceId}/relink`,
         request ?? {},
+      ),
+    );
+  }
+
+  /**
+   * Replace a device's scope outright, in one root-signed op.
+   *
+   * {@link relinkAccountDevice} only ever adds applications; this is how a
+   * scope is narrowed - or an `all` device is given a fixed list instead. The
+   * device need not be online.
+   */
+  async rescopeAccountDevice(
+    deviceId: string,
+    request: RescopeDeviceRequest,
+  ): Promise<RescopeDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.put<{ data: RescopeDeviceResponseData }>(
+        `/admin-api/account/devices/${encodeURIComponent(deviceId)}/scope`,
+        request,
       ),
     );
   }

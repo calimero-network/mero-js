@@ -937,6 +937,25 @@ export interface RelinkDeviceRequest {
   applications?: string[];
 }
 
+/**
+ * The scope to hold: every application, or only the ones named.
+ *
+ * A tagged shape rather than a list whose emptiness means everything - `all`
+ * and `only: []` differ by a whole order of magnitude in what they grant, and
+ * an empty `only` is refused rather than treated as `all`.
+ */
+export type DeviceScope = 'all' | { only: string[] };
+
+/**
+ * Replace a device's scope outright, in one root-signed op.
+ *
+ * {@link relinkAccountDevice} only ever adds applications; this is how a
+ * scope is narrowed, or an `all` device is given a fixed list instead.
+ */
+export interface RescopeDeviceRequest {
+  scope: DeviceScope;
+}
+
 /** One namespace the relink published the device's link into. */
 export interface RelinkOutcomeEntry {
   /** The namespace id, 64 hex characters. */
@@ -960,6 +979,33 @@ export interface RelinkSkipEntry {
    * string because a node may report a reason newer than this SDK.
    */
   reason: string;
+}
+
+/** One namespace a scope replacement no longer reaches. */
+export interface RescopeDescopeEntry {
+  /** The namespace id, 64 hex characters. */
+  namespaceId: string;
+  /**
+   * Whether the scope key was rotated. `false` means the device stopped writing
+   * there but still holds the key it had, until an admin rotates.
+   */
+  keyRotated: boolean;
+}
+
+/** The scope a device now holds, and what each namespace did about it. */
+export interface RescopeDeviceResponseData {
+  /** The account the device speaks for, 64 hex characters. */
+  accountId: string;
+  /** The device that was rescoped, 64 hex characters. */
+  deviceId: string;
+  /** The scope after the request, 64 hex each. Empty means every application. */
+  applications: string[];
+  /** Namespaces the new scope no longer reaches. */
+  descoped: RescopeDescopeEntry[];
+  /** Namespaces the device was linked into by this call. */
+  linkedIn: RelinkOutcomeEntry[];
+  /** Namespaces nothing was published into, and why. */
+  skipped: RelinkSkipEntry[];
 }
 
 /** What the relink repaired, and what it left alone. */
