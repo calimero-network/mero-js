@@ -1,3 +1,9 @@
+## [19.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.10.0...mero-js-v19.11.0) (2026-09-18)
+
+### Features
+
+* **admin-api:** replace a device's scope ([#160](https://github.com/calimero-network/mero-js/issues/160)) ([5be5f1f](https://github.com/calimero-network/mero-js/commit/5be5f1f4fb3f14443fa614b419377b44bc75fda3))
+
 ## [19.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.9.0...mero-js-v19.10.0) (2026-09-17)
 
 ### Features
