@@ -68,6 +68,8 @@ import type {
   RelinkDeviceResponseData,
   RescopeDeviceRequest,
   RescopeDeviceResponseData,
+  LabelDeviceRequest,
+  LabelDeviceResponseData,
   AccountDeviceEntry,
   AccountApplicationEntry,
   RevokeAccountDeviceRequest,
@@ -956,6 +958,24 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.put<{ data: RescopeDeviceResponseData }>(
         `/admin-api/account/devices/${encodeURIComponent(deviceId)}/scope`,
+        request,
+      ),
+    );
+  }
+
+  /**
+   * Name a device of this account, for a listing to render.
+   *
+   * Run on the node holding the account root to name any device; a paired
+   * node is accepted only for that device's own id.
+   */
+  async labelAccountDevice(
+    deviceId: string,
+    request: LabelDeviceRequest,
+  ): Promise<LabelDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.put<{ data: LabelDeviceResponseData }>(
+        `/admin-api/account/devices/${encodeURIComponent(deviceId)}/label`,
         request,
       ),
     );

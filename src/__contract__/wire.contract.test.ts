@@ -205,6 +205,7 @@ const SPECS: Spec[] = [
       nodeId('holdsAccountRoot'),
       nodeId('deviceCertified'),
       nodeId('accountNamespaceId'),
+      nodeId('revokedFrom'),
     ],
   },
   {
@@ -225,7 +226,7 @@ const SPECS: Spec[] = [
       deviceEntry('applications'),
       deviceEntry('namespaces'),
     ],
-    optional: [],
+    optional: [deviceEntry('label')],
   },
 ];
 

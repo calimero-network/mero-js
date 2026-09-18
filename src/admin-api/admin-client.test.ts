@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
-import type { RescopeDeviceResponseData, SignedGroupOpenInvitation } from './admin-types.js';
+import type {
+  LabelDeviceResponseData,
+  RescopeDeviceResponseData,
+  SignedGroupOpenInvitation,
+} from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
 import { CAPABILITIES } from '../capabilities.js';
 
@@ -1112,6 +1116,20 @@ describe('AdminApiClient', () => {
       });
       expect(mock.getRequestBody('PUT', path)).toEqual({ scope: { only: [appId] } });
       expect(result).toEqual(rescoped);
+    });
+
+    it('labelAccountDevice puts a label and unwraps data', async () => {
+      const labeled: LabelDeviceResponseData = {
+        accountId: PAIR_INIT.accountId,
+        deviceId: PAIR_INIT.deviceId,
+        label: 'my laptop',
+        labelEpoch: 1,
+      };
+      const path = `/admin-api/account/devices/${PAIR_INIT.deviceId}/label`;
+      mock.setMockResponse('PUT', path, { data: labeled });
+      const result = await client.labelAccountDevice(PAIR_INIT.deviceId, { label: 'my laptop' });
+      expect(mock.getRequestBody('PUT', path)).toEqual({ label: 'my laptop' });
+      expect(result).toEqual(labeled);
     });
 
     it('listAccountDevices reads the top-level `devices` wrapper, not `data`', async () => {
