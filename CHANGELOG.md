@@ -1,3 +1,9 @@
+## [19.13.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.12.0...mero-js-v19.13.0) (2026-09-18)
+
+### Features
+
+* **cloud:** find the relays that serve an account, with a device certificate ([#163](https://github.com/calimero-network/mero-js/issues/163)) ([6451505](https://github.com/calimero-network/mero-js/commit/64515059b69dd81c5a466dca6c41d1fead7844f4))
+
 ## [19.12.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.11.0...mero-js-v19.12.0) (2026-09-18)
 
 ### Features
