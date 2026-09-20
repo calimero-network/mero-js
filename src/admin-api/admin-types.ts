@@ -927,6 +927,74 @@ export interface AccountPairCompleteResponseData {
 }
 
 /**
+ * A domain an outside verifier defined, which the account root may sign under.
+ *
+ * A name from a closed set, never the domain bytes. The node prepends the bytes
+ * itself: "sign these bytes with the account root" would be a signing oracle
+ * over the one key that can certify a device, which is account takeover. A node
+ * refuses any name it does not know.
+ *
+ * Typed as a union plus `(string & {})` so a node newer than this SDK can be
+ * reached without a cast, while the known names still autocomplete.
+ */
+export type ExternalSigningDomain =
+  | 'mdma.account-link'
+  | 'mdma.account-login'
+  | 'mdma.account-recovery'
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  | (string & {});
+
+/**
+ * Ask this node's account root to sign a payload an outside verifier specified.
+ *
+ * The verifier owns the format; the node supplies only the domain. For the cloud
+ * this is how a challenge it sealed and issued gets signed by a root that
+ * deliberately never leaves the node holding it.
+ */
+export interface AccountSignWithRootRequest {
+  /** Which verifier's domain to sign under. */
+  domain: ExternalSigningDomain;
+  /**
+   * The bytes to sign after the domain, hex-encoded.
+   *
+   * Hex rather than text because the field is bytes. For the cloud's challenge —
+   * an ASCII string — that is the UTF-8 of it, hex-encoded; {@link hexEncodeUtf8}
+   * does exactly that and exists so each caller does not re-derive it.
+   */
+  payload: string;
+}
+
+/**
+ * Hex-encode a string's UTF-8 bytes, for {@link AccountSignWithRootRequest.payload}.
+ *
+ * Exists so each caller does not write the same loop. Every verifier this is
+ * used with issues its challenge as text, and the node takes bytes — getting
+ * that conversion subtly wrong (UTF-16 code units, a stray newline from a shell)
+ * produces a signature over the wrong message, which fails at the verifier with
+ * nothing local to point at.
+ */
+export function hexEncodeUtf8(text: string): string {
+  return Array.from(new TextEncoder().encode(text), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+/** What the node signed, and the key to check it against. */
+export interface AccountSignWithRootResponseData {
+  /** The account root's public key, 64 hex characters. */
+  rootPublicKey: string;
+  /**
+   * The signature over `domain ‖ payload`, **base64**.
+   *
+   * Base64 rather than hex because that is what the consuming verifiers decode;
+   * re-encoding it on the way out is a step that fails silently at the far end.
+   */
+  signature: string;
+  /** The account the signing key belongs to, 64 hex characters. */
+  accountId: string;
+}
+
+/**
  * Repair or widen the reach of a device this account already certified.
  *
  * Pairing is a snapshot: it bound the device wherever this node took part at the

@@ -22,6 +22,8 @@ import { join } from 'path';
 import type {
   AccountDeviceEntry,
   AccountPairInitRequest,
+  AccountSignWithRootRequest,
+  AccountSignWithRootResponseData,
   CreateContextRequest,
   CreateContextResponseData,
   GroupUpgradeStatus,
@@ -74,6 +76,8 @@ const mReport = key<MemberMigrationReport>();
 const nodeId = key<NodeIdentity>();
 const pairInitReq = key<AccountPairInitRequest>();
 const deviceEntry = key<AccountDeviceEntry>();
+const signRootReq = key<AccountSignWithRootRequest>();
+const signRootRes = key<AccountSignWithRootResponseData>();
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
 // unexported inline type whose index signature makes `key<T>()` accept any
@@ -213,6 +217,26 @@ const SPECS: Spec[] = [
     file: 'account/pair_init.req.json',
     required: [pairInitReq('accountRootPublicKey')],
     optional: [pairInitReq('namespaces'), pairInitReq('accountNamespace')],
+  },
+  // The cross-repo pair the cloud exchange rests on. `signature` is base64 and
+  // `rootPublicKey` is hex, and a swap between the two encodings verifies
+  // nowhere while looking entirely reasonable in both repos.
+  {
+    type: 'AccountSignWithRootRequest',
+    file: 'account/sign_with_root.req.json',
+    required: [signRootReq('domain'), signRootReq('payload')],
+    optional: [],
+  },
+  {
+    type: 'AccountSignWithRootResponseData',
+    file: 'account/sign_with_root.res.json',
+    path: 'data',
+    required: [
+      signRootRes('rootPublicKey'),
+      signRootRes('signature'),
+      signRootRes('accountId'),
+    ],
+    optional: [],
   },
   {
     type: 'AccountDeviceEntry',

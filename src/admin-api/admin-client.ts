@@ -64,6 +64,8 @@ import type {
   AccountPairInitResponseData,
   AccountPairCompleteRequest,
   AccountPairCompleteResponseData,
+  AccountSignWithRootRequest,
+  AccountSignWithRootResponseData,
   RelinkDeviceRequest,
   RelinkDeviceResponseData,
   RescopeDeviceRequest,
@@ -958,6 +960,46 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.put<{ data: RescopeDeviceResponseData }>(
         `/admin-api/account/devices/${encodeURIComponent(deviceId)}/scope`,
+        request,
+      ),
+    );
+  }
+
+  /**
+   * Sign a payload an outside verifier specified, with this account's root.
+   *
+   * The counterpart to a verifier that issued a challenge and will check the
+   * signature against the account id it derives — the cloud's account link and
+   * login exchanges being the ones this exists for. The root never leaves the
+   * node, so this is the only way a client can produce that signature.
+   *
+   * `domain` is a NAME from a closed set the node knows, never the domain bytes.
+   * That is the security property rather than an encoding preference: signing
+   * caller-supplied bytes under a caller-supplied prefix would be an oracle over
+   * the one key that can certify a device. A node refuses a name it does not
+   * know, and refuses one whose bytes could be extended into a credential of its
+   * own.
+   *
+   * What comes back proves possession of the root and nothing else. Whether the
+   * payload is a challenge anyone issued, whether it is fresh, and whether the
+   * holder may link this account are the verifier's to decide — it issued the
+   * challenge and knows who to.
+   *
+   * ```ts
+   * const { nonce } = await cloud.getAccountLoginChallenge();
+   * const { rootPublicKey, signature } = await admin.signWithAccountRoot({
+   *   domain: 'mdma.account-login',
+   *   payload: hexEncodeUtf8(nonce),
+   * });
+   * await cloud.submitAccountLogin({ rootPublicKey, nonce, signature });
+   * ```
+   */
+  async signWithAccountRoot(
+    request: AccountSignWithRootRequest,
+  ): Promise<AccountSignWithRootResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccountSignWithRootResponseData }>(
+        '/admin-api/account/sign-with-root',
         request,
       ),
     );
