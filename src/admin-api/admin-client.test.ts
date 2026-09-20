@@ -5,6 +5,7 @@ import type {
   RescopeDeviceResponseData,
   SignedGroupOpenInvitation,
 } from './admin-types.js';
+import { hexEncodeUtf8 } from './admin-types.js';
 import { HttpClient } from '../http-client/index.js';
 import { CAPABILITIES } from '../capabilities.js';
 
@@ -1006,6 +1007,42 @@ describe('AdminApiClient', () => {
       expect(
         mock.getRequestBody('POST', '/admin-api/account/pair-init'),
       ).not.toHaveProperty('accountNamespace');
+    });
+
+    it('signWithAccountRoot posts the domain name and hex payload verbatim', async () => {
+      const signed = {
+        rootPublicKey: 'f'.repeat(64),
+        signature: 'c2lnbmF0dXJl',
+        accountId: 'a'.repeat(64),
+      };
+      mock.setMockResponse('POST', '/admin-api/account/sign-with-root', { data: signed });
+
+      const request = {
+        domain: 'mdma.account-login' as const,
+        payload: '6e6f6e6365',
+      };
+      const result = await client.signWithAccountRoot(request);
+
+      // Verbatim, both fields. The domain is a NAME the node maps to bytes — an
+      // SDK that "helpfully" expanded it would be supplying the prefix itself,
+      // which is the oracle the closed set exists to prevent. The payload is
+      // bytes the verifier will re-derive, so re-encoding it here fails at the
+      // far end with nothing local to point at.
+      expect(
+        mock.getRequestBody('POST', '/admin-api/account/sign-with-root'),
+      ).toEqual(request);
+      expect(result).toEqual(signed);
+    });
+
+    it('hexEncodeUtf8 encodes a challenge the way the node expects', () => {
+      // The conversion between a verifier's text challenge and the node's bytes.
+      // Non-ASCII included because UTF-16 code units and UTF-8 bytes diverge
+      // there, and that divergence is a signature over the wrong message.
+      expect(hexEncodeUtf8('nonce')).toBe('6e6f6e6365');
+      expect(hexEncodeUtf8('')).toBe('');
+      expect(hexEncodeUtf8('é')).toBe('c3a9');
+      // A sealed challenge is base64url with a dot — the shape actually sent.
+      expect(hexEncodeUtf8('ab.cd')).toBe('61622e6364');
     });
 
     it('completeAccountPairing sends the whole pair-init payload plus the scope', async () => {
