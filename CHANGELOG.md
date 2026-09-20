@@ -1,3 +1,9 @@
+## [19.14.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.13.1...mero-js-v19.14.0) (2026-09-20)
+
+### Features
+
+* **admin:** sign a verifier's payload with the account root ([#164](https://github.com/calimero-network/mero-js/issues/164)) ([5812286](https://github.com/calimero-network/mero-js/commit/5812286db1a68fef66e57c4e5ce4b9f60ba1f256))
+
 ## [19.13.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.13.0...mero-js-v19.13.1) (2026-09-18)
 
 ## [19.13.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.12.0...mero-js-v19.13.0) (2026-09-18)
