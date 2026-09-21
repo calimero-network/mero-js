@@ -34,6 +34,7 @@
 import { HTTPError } from '../http-client/web-client.js';
 import { derivePublicKey, hex } from '../crypto/internal.js';
 import { signLoginStatement, type Audience } from './login.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 /** Seconds a statement stays valid unless told otherwise. */
 const DEFAULT_TTL_SECONDS = 300;
@@ -71,8 +72,18 @@ export interface LoginConfig {
    * module note.
    */
   node: string;
-  /** The device's ed25519 signing secret, hex (32 bytes). Never sent. */
-  deviceSecret: string;
+  /**
+   * The device's ed25519 signing secret, hex (32 bytes). Never sent.
+   *
+   * Mutually exclusive with {@link LoginConfig.signer}, and the weaker of the
+   * two in a browser — see {@link Signer}.
+   */
+  deviceSecret?: string;
+  /**
+   * The device's signer — use instead of {@link LoginConfig.deviceSecret} when
+   * the key cannot be exported to hex.
+   */
+  signer?: Signer;
   /**
    * The device's account proof, hex — the credential certifying that this
    * device belongs to its account.
@@ -189,7 +200,9 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     sessionKey: session.publicKey,
     issuedAt,
     expiresAt: issuedAt + (config.ttlSeconds ?? DEFAULT_TTL_SECONDS),
-    deviceSecret: config.deviceSecret,
+    // Resolved once and handed on, so a config carrying a secret and a config
+    // carrying a `CryptoKey` take exactly the same path from here down.
+    signer: await resolveSigner(config.deviceSecret, config.signer, 'deviceSecret'),
   });
 
   // `timestamp` is required and the request refuses unknown fields, so a body
