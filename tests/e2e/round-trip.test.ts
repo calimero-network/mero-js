@@ -167,18 +167,33 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
 
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
+    // The all-zero 48-byte measurement `create_mock_quote` reports for every
+    // register. A mock fleet names it explicitly: `acceptMock` decides whether a
+    // mock quote is entertained at all, not whether its measurements are
+    // checked -- admission puts every quote through the allowlists either way.
+    const ZERO_MEASUREMENT = '0'.repeat(96);
+    // `allowedRtmr3` is required. MRTD measures the virtual firmware, so it is
+    // identical across every image profile of a release and constant across
+    // most releases; RTMR3 is the only measurement that says which image ran.
+    // This policy previously left every list empty, which round-tripped but
+    // could never have admitted anyone -- admission has always refused an empty
+    // `allowedMrtd`.
     const policy = {
-      allowedMrtd: [],
+      allowedMrtd: [ZERO_MEASUREMENT],
       allowedRtmr0: [],
       allowedRtmr1: [],
       allowedRtmr2: [],
-      allowedRtmr3: [],
+      allowedRtmr3: [ZERO_MEASUREMENT],
       allowedTcbStatuses: [],
       acceptMock: true,
     };
     await mero.admin.setTeeAdmissionPolicy(groupId, policy as never);
     const got = await mero.admin.getTeeAdmissionPolicy(groupId);
     expect(got.acceptMock).toBe(true);
+    // Read the measurements back too. Asserting only `acceptMock` let a policy
+    // round-trip while saying nothing about which images it admits.
+    expect(got.allowedMrtd).toEqual([ZERO_MEASUREMENT]);
+    expect(got.allowedRtmr3).toEqual([ZERO_MEASUREMENT]);
   });
 
   // POST /admin-api/groups requires applicationId (not just a name).
