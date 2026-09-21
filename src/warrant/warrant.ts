@@ -30,14 +30,13 @@
 
 import {
   concat,
-  derivePublicKey,
   domainHash,
   fromHex,
   hex,
-  importSigningKey,
   u32le,
   u64le,
 } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 const SIGN_DOMAIN = new TextEncoder().encode('calimero.warrant.v2');
 const INTENT_DOMAIN = new TextEncoder().encode('calimero.warrant.intent.v1');
@@ -127,8 +126,20 @@ export interface WarrantInput {
    *
    * Never sent anywhere. It signs locally and only the signature travels, which
    * is the whole reason a warrant can be minted by something holding no node.
+   *
+   * Mutually exclusive with {@link WarrantInput.signer}. Prefer `signer` in a
+   * browser: a secret that exists as a string is readable by anything on the
+   * origin, and a key held as a non-extractable `CryptoKey` is not.
    */
-  deviceSecret: string;
+  deviceSecret?: string;
+  /**
+   * The author device's signer — use instead of {@link WarrantInput.deviceSecret}
+   * when the key cannot be exported to hex.
+   *
+   * `signerFromCryptoKey(privateKey, publicKey)` wraps a WebCrypto key generated
+   * with `extractable: false`, which can sign and can never be read back.
+   */
+  signer?: Signer;
 }
 
 
@@ -171,8 +182,12 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
   const accountHeads = citedHeads(input.accountHeads, 'accountHeads');
   const governanceFloor = citedHeads(input.governanceFloor, 'governanceFloor');
 
-  const key = await importSigningKey(input.deviceSecret);
-  const publicKey = await derivePublicKey(input.deviceSecret);
+  const signer = await resolveSigner(
+    input.deviceSecret,
+    input.signer,
+    'deviceSecret',
+  );
+  const publicKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
 
   const method = new TextEncoder().encode(input.method);
   const commitment = await intentHash(input.method, input.argsJson);
@@ -200,9 +215,7 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
     notAfter,
   ]);
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, key, preimage),
-  );
+  const signature = await signer.sign(preimage);
 
   // Borsh: a `String` is a u32 length then its UTF-8 bytes; a `Vec<[u8; 32]>` is
   // a u32 count then the elements. u32 HERE; u64 in the preimage above.

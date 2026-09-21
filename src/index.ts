@@ -52,6 +52,11 @@ export * from './cloud/index.js';
 export * from './relay/index.js';
 
 // Warrant signing — mint the author's consent for a relay to run one intent
+// Who signs — pass a `Signer` anywhere a `deviceSecret`/`rootSecret` is taken,
+// so a key that cannot be exported to hex can still be used.
+export { signerFromSecret, signerFromCryptoKey } from './signer/index.js';
+export type { Signer } from './signer/index.js';
+
 export { signWarrant, intentHash } from './warrant/index.js';
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {

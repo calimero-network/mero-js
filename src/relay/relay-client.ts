@@ -29,6 +29,7 @@
  */
 
 import { signWarrant } from '../warrant/warrant.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 import { HTTPError } from '../http-client/web-client.js';
 import type { NonceSource } from './nonce-source.js';
 
@@ -66,8 +67,18 @@ export interface RelayClientConfig {
    *
    * Never transmitted. It signs in this process and only the signature leaves,
    * which is the whole reason a keyholder can author without a node.
+   *
+   * Mutually exclusive with {@link RelayClientConfig.signer}. A browser should
+   * prefer the signer: a secret that exists as a string can be read by anything
+   * on the origin, and a warrant-signing key held as a non-extractable
+   * `CryptoKey` cannot.
    */
-  deviceSecret: string;
+  deviceSecret?: string;
+  /**
+   * The author device's signer — use instead of
+   * {@link RelayClientConfig.deviceSecret} when the key cannot be exported.
+   */
+  signer?: Signer;
   /** Where nonces come from. See {@link NonceSource} — a reset replays. */
   nonces: NonceSource;
   /**
@@ -184,7 +195,11 @@ export class RelayClient {
       argsJson,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.config.deviceSecret,
+      signer: await resolveSigner(
+        this.config.deviceSecret,
+        this.config.signer,
+        'deviceSecret',
+      ),
     });
 
     const body = await this.json<{ data: { rootHash: string; returns: T | null } }>(
