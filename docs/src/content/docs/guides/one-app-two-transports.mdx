@@ -1,0 +1,135 @@
+---
+title: One app, two transports
+description: The same application code running against a node you own and a relay you do not — what works today, what does not, and how to tell which you got.
+sidebar:
+  order: 10
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+An application should not have to be rewritten because it moved from a node you
+run to a relay you do not. Pick the transport once, at construction; everything
+after that is the same code.
+
+This guide is the proof rather than the promise: the module below was run
+unmodified against both, and the measured output is included.
+
+## The application
+
+Nothing here knows which transport it got. That is the whole test — if a line in
+`runApp` had to ask, the claim would be false.
+
+```js
+export async function runApp(client, contextId, label) {
+  const key = 'greeting';
+  const value = `written over the ${label} transport`;
+
+  await client.rpc.execute({ contextId, method: 'set', argsJson: { key, value } });
+  const read = await client.rpc.execute({ contextId, method: 'get', argsJson: { key } });
+  const size = await client.rpc.execute({ contextId, method: 'len', argsJson: {} });
+
+  return { wrote: value, read, size, canSubscribe: client.canSubscribe };
+}
+```
+
+## The two constructions
+
+A node you own is a base URL, and that is the whole story:
+
+```js
+const client = createMeroClient({ baseUrl: 'http://localhost:4401' });
+```
+
+A relay you do not own needs an account, a device that account certified, a
+warrant per write, and — for events — the relay node's signing key:
+
+```js
+const client = createMeroClient({
+  transport: 'relay',
+  relay: {
+    relayUrl: RELAY_URL,
+    authorAccount,          // the account the writes are attributed to
+    authorProof,            // hex AccountProof<DeviceCert> for this device
+    deviceSecret,           // or `signer`, for a non-extractable key
+    nonces,
+  },
+  observe: { nodeKey },     // omit and `canSubscribe` is false
+});
+```
+
+## What it printed
+
+```
+RESULT owned: {"wrote":"…owned transport","read":"…owned transport","size":1,"canSubscribe":true}
+RESULT relay: {"wrote":"…relay transport","read":"…relay transport","size":1,"canSubscribe":true}
+```
+
+Writes, reads and subscribability all behave the same. The relay run authored
+through a warrant signed locally; the resulting state is attributed to the
+account, not to the relay.
+
+## Reads need the app to have been built recently
+
+A delegated read is served only for a method the module declares read-only, and
+the declaration is **derived from the receiver** — `&self` is read-only,
+`&mut self` is mutating. An app author annotates nothing.
+
+The catch is that the declaration lives in the compiled module. A bundle built
+before that derivation existed carries no intents at all, and every read against
+it is refused:
+
+```
+409 method 'get' is not declared read-only; a session authorizes reads only
+```
+
+That is a stale `.mpk`, not a permission problem — `401` and `403` mean what they
+usually mean, and `409` means rebuild. Check with:
+
+```
+python3 -c "import json;d=json.load(open('res/abi.json'));print([(m['name'],m.get('intent')) for m in d['methods']][:5])"
+```
+
+A current build reports `('get', 'read_only')` and `('set', 'mutating')`.
+
+## What does not work yet
+
+<Aside type="caution" title="An app that browses contexts still needs its own node">
+The application above is **handed** its context id. One that lists namespaces or
+contexts to let a user pick — `getContexts`, `getContext`, `listNamespaces` —
+gets `403` on the relay transport.
+
+Those calls sit on the admin surface for historical reasons, but they are not
+admin operations: they are an app asking what it is looking at. A
+transport-independent read API for them is designed and not yet built. Until it
+lands, a relay-transport app must be told which context it is working in.
+</Aside>
+
+`client.admin` throws on the relay transport, and the message distinguishes the
+two cases behind it: the **mutations** (`createNamespace`,
+`setMemberCapabilities`, …) are operator actions on somebody else's machine and
+will never be served to a keyholder; the **reads** are pending the API above.
+
+## Nonce recovery has a deployment caveat
+
+`createRecoveringNonceSource` lets a client that lost its local storage ask the
+node where its nonce sequence stands, instead of guessing and burning attempts
+on refusals. It reads the warrant-nonce route — which is admin-gated, so on a
+relay with auth enabled the lookup itself fails:
+
+```
+401 Unauthorized
+```
+
+A client whose local counter survived is unaffected. A browser that cleared its
+storage is stuck, on precisely the deployment where recovery is the point. Track
+[core #4018](https://github.com/calimero-network/core/issues/4018).
+
+Until then, a relay-transport client should hold its own counter and persist it.
+
+## Telling which you got
+
+`client.transport` is `'node'` or `'relay'`, and `client.canSubscribe` says
+whether events are available — false on a relay transport constructed without a
+node key. Read them rather than inferring from whether a call threw; an app that
+guesses the transport from a failure will guess wrong the first time something
+else fails.
