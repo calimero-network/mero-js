@@ -1,6 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { connectCloud } from './connect.js';
 import { createMemoryNonceSource } from '../relay/nonce-source.js';
+import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
+
+const PKCS8_ED25519_PREFIX = new Uint8Array([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+  0x22, 0x04, 0x20,
+]);
+
+/** The same seed as a key that signs and can never be exported. */
+async function unexportableKey(secretHex: string): Promise<CryptoKey> {
+  const pkcs8 = new Uint8Array(PKCS8_ED25519_PREFIX.length + 32);
+  pkcs8.set(PKCS8_ED25519_PREFIX, 0);
+  pkcs8.set(
+    Uint8Array.from(secretHex.match(/../g) as string[], (b) => parseInt(b, 16)),
+    PKCS8_ED25519_PREFIX.length,
+  );
+  return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+}
 
 const NS = '01'.repeat(32);
 const OTHER_NS = '02'.repeat(32);
@@ -205,6 +222,54 @@ describe('connectCloud', () => {
     expect(sentWarrant.slice(0, 32 * 2)).toBe(CONTEXT);
     expect(sentWarrant.slice(32 * 2, 64 * 2)).toBe(AUTHOR);
     expect(sentWarrant.slice(96 * 2, 128 * 2)).toBe(EXECUTOR);
+  });
+
+  /**
+   * The case this one-call path was built for and could not serve: a browser
+   * wallet whose device key is a non-extractable `CryptoKey`, so there is no
+   * hex secret to pass and the caller had to assemble the `RelayClient` itself.
+   */
+  it('signs with a device key that has no hex form', async () => {
+    const signer = await signerFromCryptoKey(
+      await unexportableKey(DEVICE_SECRET),
+      (await signerFromSecret(DEVICE_SECRET)).publicKey,
+    );
+
+    let sentWarrant = '';
+    const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/cloud/me/namespaces')) return jsonResponse([namespaceRow(NS)]);
+      if (url.endsWith(`/api/cloud/me/namespaces/${NS}/relays`)) {
+        return jsonResponse({ relays: [readyRelay] });
+      }
+      sentWarrant = (JSON.parse(String(init?.body)) as { warrant: string }).warrant;
+      return jsonResponse({ data: { rootHash: 'r', returns: null } });
+    }) as unknown as typeof fetch;
+
+    const connection = await connectCloud(
+      options({ fetch: impl, deviceSecret: undefined, signer }),
+    );
+    await connection.execute(CONTEXT, 'set', {});
+
+    // The device key the warrant names is the signer's, so the relay verifies
+    // against the key that actually signed.
+    expect(sentWarrant.slice(64 * 2, 96 * 2)).toBe(signer.publicKey);
+  });
+
+  it('refuses a secret and a signer at once, which may name different keys', async () => {
+    await expect(
+      connectCloud(options({ signer: await signerFromSecret('12'.repeat(32)) })),
+    ).rejects.toThrow(/either deviceSecret or signer, not both/);
+  });
+
+  it('refuses neither, rather than connecting with nothing to sign with', async () => {
+    // Before the sign-in: a session minted for a connection that was never
+    // going to be built is a credential issued for nothing.
+    const { fetch, calls } = routedFetch({});
+    await expect(
+      connectCloud(options({ fetch, deviceSecret: undefined })),
+    ).rejects.toThrow(/deviceSecret or signer is required/);
+    expect(calls).toEqual([]);
   });
 
   it('does not need a GET on the relay, because the cloud already answered it', async () => {
