@@ -9,6 +9,32 @@ import { AuthRevokedError, HTTPError } from '../http-client/index.js';
  */
 const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
 
+/**
+ * Statuses a terminal `x-auth-error` can arrive on.
+ *
+ * Measured against merod 0.11.0-rc.41: a revoked token family answers
+ * `GET /sse` and `POST /sse/subscription` with **403**, `x-auth-error:
+ * token_revoked` and `content-length: 0` — `token_expired` is the 401.
+ * Keying the check on 401 alone made the branch below unreachable for the one
+ * reason a stream actually sees, so a dead token family surfaced as a bare
+ * `HTTPError(403)` and reconnected on a timer forever.
+ */
+const TERMINAL_AUTH_STATUSES = new Set([401, 403]);
+
+/**
+ * Whether a failed response means the whole token family is gone, so the caller
+ * must re-authenticate and the client must stop reconnecting.
+ *
+ * The body carries nothing on this path (`content-length: 0`), so the header is
+ * the only evidence there is.
+ */
+function isTerminalAuthFailure(response: { status: number; headers: Headers }): string | null {
+  const authError = response.headers.get('x-auth-error');
+  if (!authError) return null;
+  if (!TERMINAL_AUTH_STATUSES.has(response.status)) return null;
+  return TERMINAL_AUTH_ERRORS.has(authError) ? authError : null;
+}
+
 export type { GroupMembershipEventData, GroupMigrationEventData };
 
 export interface SseEventData {
@@ -163,16 +189,12 @@ export class SseClient {
         // 401 as fatal — logs the user out on a routine reconnect after the
         // access token ages out, discarding a refresh token that was still
         // good. The distinction is in the header; surface it.
-        const authError = response.headers.get('x-auth-error');
+        const terminal = isTerminalAuthFailure(response);
         const bodyText = await response.text().catch(() => undefined);
 
-        if (
-          response.status === 401 &&
-          authError &&
-          TERMINAL_AUTH_ERRORS.has(authError)
-        ) {
+        if (terminal) {
           throw new AuthRevokedError(
-            authError,
+            terminal,
             response.status,
             response.statusText,
             url,
@@ -204,6 +226,10 @@ export class SseClient {
       if (this.closed) return;
       const error = err instanceof Error ? err : new Error(String(err));
       this.emit('error', error);
+      // Reconnecting against a revoked token family is a timer that never
+      // succeeds: every attempt re-sends the same dead credential. The caller
+      // has to re-authenticate, and an AuthRevokedError is how it is told.
+      if (error instanceof AuthRevokedError) return;
       this.scheduleReconnect();
     }
   }
@@ -363,7 +389,33 @@ export class SseClient {
         }),
       });
       if (!response.ok) {
-        this.emit('error', new Error(`SSE ${method} failed: ${response.status}`));
+        // The subscribe path used to report only the status. On the one failure
+        // that matters it is the whole of what the caller got: a revoked family
+        // answers 403 with an empty body, so a bare `SSE subscribe failed: 403`
+        // discarded the only evidence of what went wrong — and a 403 here reads
+        // identically to the unrelated "not the session owner" refusal, which
+        // does carry a body.
+        const terminal = isTerminalAuthFailure(response);
+        const bodyText = await response.text().catch(() => undefined);
+        this.emit(
+          'error',
+          terminal
+            ? new AuthRevokedError(
+                terminal,
+                response.status,
+                response.statusText,
+                `${this.baseUrl}/sse/subscription`,
+                response.headers,
+                bodyText,
+              )
+            : new HTTPError(
+                response.status,
+                response.statusText,
+                `${this.baseUrl}/sse/subscription`,
+                response.headers,
+                bodyText,
+              ),
+        );
       }
     } catch (err) {
       this.emit('error', err instanceof Error ? err : new Error(`SSE ${method} failed`));

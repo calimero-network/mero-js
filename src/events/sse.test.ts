@@ -463,6 +463,79 @@ describe('SseClient connect failures carry the auth reason', () => {
     expect((err as HTTPError).headers.get('x-auth-error')).toBe('token_expired');
   });
 
+  // MEASURED against merod 0.11.0-rc.41 (build 88e323b), 2026-09-22: a revoked
+  // token family answers `GET /sse` with
+  //     HTTP/1.1 403 Forbidden
+  //     x-auth-error: token_revoked
+  //     content-length: 0
+  // `token_expired` is the 401. Keying the terminal check on 401 alone made it
+  // unreachable for the only terminal reason a stream ever sees.
+  it('treats a 403 token_revoked as terminal, which is how core sends it', async () => {
+    respond(403, 'Forbidden', 'token_revoked');
+    const client = make();
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.connect();
+    client.close();
+
+    expect(err).toBeInstanceOf(AuthRevokedError);
+    expect((err as AuthRevokedError).reason).toBe('token_revoked');
+  });
+
+  // Reconnecting against a dead credential is a timer that never succeeds.
+  it('stops reconnecting once the token family is gone', async () => {
+    respond(403, 'Forbidden', 'token_revoked');
+    const client = make();
+    client.on('error', () => {});
+    await client.connect();
+
+    const callsAfterConnect = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    // Past the 100ms reconnect delay this client was configured with.
+    await new Promise((r) => setTimeout(r, 250));
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+      callsAfterConnect,
+    );
+    client.close();
+  });
+
+  // A 403 with no `x-auth-error` is the *other* 403 on this path — core's
+  // "Forbidden: not the session owner" — and it is not terminal.
+  it('leaves a 403 without an auth header recoverable', async () => {
+    respond(403, 'Forbidden');
+    const client = make();
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.connect();
+    client.close();
+
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).not.toBeInstanceOf(AuthRevokedError);
+    expect((err as HTTPError).status).toBe(403);
+  });
+
+  // The subscribe path reported only the status, so the reason — the only thing
+  // core sends, since the body is empty — never reached the app.
+  it('carries the auth reason off the subscribe call too', async () => {
+    respond(403, 'Forbidden', 'token_revoked');
+    const client = make();
+    // `subscribe` only reaches the wire once a session exists.
+    (client as any).sessionId = 'sess-1';
+    let err: unknown;
+    client.on('error', (e: unknown) => {
+      err = e;
+    });
+    await client.subscribe(['ctx-1']);
+    client.close();
+
+    expect(err).toBeInstanceOf(AuthRevokedError);
+    expect((err as AuthRevokedError).reason).toBe('token_revoked');
+    expect((err as AuthRevokedError).status).toBe(403);
+  });
+
   it('throws HTTPError for a non-auth failure', async () => {
     respond(503, 'Service Unavailable');
     const client = make();
