@@ -79,7 +79,13 @@ export interface RelayClientConfig {
    * {@link RelayClientConfig.deviceSecret} when the key cannot be exported.
    */
   signer?: Signer;
-  /** Where nonces come from. See {@link NonceSource} — a reset replays. */
+  /**
+   * Where nonces come from. See {@link NonceSource} — a reset replays.
+   *
+   * A client whose storage may be cleared between sessions should wrap its
+   * counter in `createRecoveringNonceSource`, which asks the node where the
+   * sequence actually stands before the first mint instead of restarting at 1.
+   */
   nonces: NonceSource;
   /**
    * Seconds a minted warrant stays valid. Defaults to 300.
