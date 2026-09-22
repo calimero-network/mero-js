@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { connectCloud } from './connect.js';
+import { connectCloud, connectCloudWithAccount } from './connect.js';
 import { createMemoryNonceSource } from '../relay/nonce-source.js';
 import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
+import { accountRootFromSecret } from '../account/index.js';
 
 const PKCS8_ED25519_PREFIX = new Uint8Array([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
@@ -300,6 +301,116 @@ describe('connectCloud', () => {
       canAuthorOnBehalf: true,
       groupId: GROUP,
     });
+  });
+});
+
+/**
+ * The other door into the same connection: an account root, no Google login.
+ *
+ * What earns a test is the joining-up — that the session the root opened is the
+ * one the rest of the flow uses, and that the author defaults to the account
+ * that root derives. Namespace choice and the no-relay diagnostics are
+ * `connectCloud`'s and tested above; a second copy here would only pin that
+ * they were duplicated.
+ */
+describe('connectCloudWithAccount', () => {
+  const ROOT_SECRET = '5b'.repeat(32);
+
+  function accountFetch() {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.endsWith('/api/auth/account/challenge')) {
+        return jsonResponse({ nonce: 'login-nonce', expires_at_ms: 1 });
+      }
+      if (url.endsWith('/api/auth/account')) {
+        return jsonResponse({
+          session_token: 'session-from-root',
+          expires_at: 1893456000,
+          user: { email: 'owner@example.com' },
+        });
+      }
+      if (url.endsWith('/api/cloud/me/namespaces')) return jsonResponse([namespaceRow(NS)]);
+      if (url.endsWith(`/api/cloud/me/namespaces/${NS}/relays`)) {
+        return jsonResponse({ relays: [readyRelay] });
+      }
+      return jsonResponse({ data: { rootHash: 'r', returns: null } });
+    }) as unknown as typeof fetch;
+    return { fetch: impl, calls };
+  }
+
+  function accountOptions(over: Record<string, unknown> = {}) {
+    return {
+      cloudBaseUrl: 'https://cloud.example',
+      root: ROOT_SECRET,
+      authorProof: 'aa',
+      deviceSecret: DEVICE_SECRET,
+      nonces: createMemoryNonceSource(1),
+      ...over,
+    };
+  }
+
+  it('signs in with the root and carries that session into the relay lookup', async () => {
+    const { fetch, calls } = accountFetch();
+    const connection = await connectCloudWithAccount(accountOptions({ fetch }));
+
+    expect(calls.map((c) => c.url)).toEqual([
+      'https://cloud.example/api/auth/account/challenge',
+      'https://cloud.example/api/auth/account',
+      'https://cloud.example/api/cloud/me/namespaces',
+      `https://cloud.example/api/cloud/me/namespaces/${NS}/relays`,
+    ]);
+    expect(connection.cloud.getSession()?.sessionToken).toBe('session-from-root');
+    expect(connection.namespaceId).toBe(NS);
+  });
+
+  it('writes as the account the root derives, without being told', async () => {
+    const { fetch, calls } = accountFetch();
+    const connection = await connectCloudWithAccount(accountOptions({ fetch }));
+    await connection.execute(CONTEXT, 'set', {});
+
+    const intent = calls.find((c) => c.url.includes('/intents'));
+    const warrant = (JSON.parse(String(intent?.init?.body)) as { warrant: string }).warrant;
+    // context (32) ‖ author account (32) ‖ author device key (32) ‖ executor (32)
+    const root = await accountRootFromSecret(ROOT_SECRET);
+    expect(warrant.slice(32 * 2, 64 * 2)).toBe(root.accountId);
+  });
+
+  it('lets an explicit authorAccount override the signing root', async () => {
+    const { fetch, calls } = accountFetch();
+    const connection = await connectCloudWithAccount(
+      accountOptions({ fetch, authorAccount: AUTHOR }),
+    );
+    await connection.execute(CONTEXT, 'set', {});
+
+    const intent = calls.find((c) => c.url.includes('/intents'));
+    const warrant = (JSON.parse(String(intent?.init?.body)) as { warrant: string }).warrant;
+    expect(warrant.slice(32 * 2, 64 * 2)).toBe(AUTHOR);
+  });
+
+  it('reports the session it minted, so a caller can persist it', async () => {
+    const seen: string[] = [];
+    const { fetch } = accountFetch();
+    await connectCloudWithAccount(
+      accountOptions({
+        fetch,
+        onSession: (s: { sessionToken: string } | null) => {
+          if (s) seen.push(s.sessionToken);
+        },
+      }),
+    );
+    expect(seen).toContain('session-from-root');
+  });
+
+  it('still needs a device key of its own — the root is not one', async () => {
+    // The root signs the login; the device signs the warrants. A root used as a
+    // device key would put the account key into every intent.
+    const { fetch, calls } = accountFetch();
+    await expect(
+      connectCloudWithAccount(accountOptions({ fetch, deviceSecret: undefined })),
+    ).rejects.toThrow(/deviceSecret or signer is required/);
+    expect(calls).toEqual([]);
   });
 });
 

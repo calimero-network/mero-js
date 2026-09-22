@@ -21,8 +21,12 @@ export type {
   EnableHAOptions,
   DisableHAOptions,
 } from './cloud-client.js';
-export { connectCloud } from './connect.js';
-export type { ConnectCloudOptions, CloudConnection } from './connect.js';
+export { connectCloud, connectCloudWithAccount } from './connect.js';
+export type {
+  ConnectCloudOptions,
+  ConnectCloudWithAccountOptions,
+  CloudConnection,
+} from './connect.js';
 export { signRoutingChallenge, routingProofHeaders } from './routing-proof.js';
 export type {
   RoutingCredential,
