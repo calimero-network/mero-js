@@ -56,6 +56,7 @@ export {
   beginDeviceEnrolment,
   readEnrolmentCallback,
   completeDeviceEnrolment,
+  callbackIsForeign,
 } from './enrol-redirect.js';
 export type {
   DeviceEnrolmentOptions,
