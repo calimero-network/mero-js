@@ -30,3 +30,17 @@ export type {
   RoutingChallenge,
   RoutingProofHeaders,
 } from './routing-proof.js';
+
+// Linking an account to a cloud login from a browser — the redirect half the
+// cloud's consent screen expects an app to implement.
+export {
+  cloudLinkUrl,
+  beginCloudLink,
+  readCloudLinkCallback,
+  completeCloudLink,
+} from './link-redirect.js';
+export type {
+  BeginCloudLinkOptions,
+  CloudLinkCallback,
+  CompleteCloudLinkOptions,
+} from './link-redirect.js';
