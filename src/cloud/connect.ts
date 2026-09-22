@@ -33,7 +33,7 @@ import type { CloudClientConfig, CloudNamespace, CloudRelay } from './cloud-clie
 import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
 import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay/nonce-source.js';
-import { derivePublicKey, hex } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -49,8 +49,24 @@ export interface ConnectCloudOptions {
   authorAccount: string;
   /** The author's `AccountProof<DeviceCert>`, hex-encoded borsh. */
   authorProof: string;
-  /** The author device's ed25519 signing secret, hex. Never transmitted. */
-  deviceSecret: string;
+  /**
+   * The author device's ed25519 signing secret, hex. Never transmitted.
+   *
+   * Mutually exclusive with {@link ConnectCloudOptions.signer}, and the weaker
+   * of the two in a browser — a secret that exists as a string can be read by
+   * anything on the origin.
+   */
+  deviceSecret?: string;
+  /**
+   * The author device's signer — use instead of
+   * {@link ConnectCloudOptions.deviceSecret}.
+   *
+   * A browser wallet holds its device key as a non-extractable `CryptoKey`,
+   * which has no hex form to pass. Without this, that wallet — the case this
+   * whole path was built for — had to hand-assemble the `RelayClient` the
+   * one-call path exists to build.
+   */
+  signer?: Signer;
 
   /**
    * Which namespace to write in.
@@ -109,6 +125,11 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     throw new Error('connectCloud needs either a sessionToken or a googleIdToken');
   }
 
+  // Resolved before the first network call: a missing or duplicated key is the
+  // caller's mistake to fix, and finding out after signing in leaves a session
+  // minted for a connection that was never going to be built.
+  const signer = await resolveSigner(options.deviceSecret, options.signer, 'deviceSecret');
+
   const cloud = new CloudClient({
     cloudBaseUrl: options.cloudBaseUrl,
     sessionToken: options.sessionToken,
@@ -144,8 +165,8 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     executorAccount: relayInfo.executorAccount as string,
     authorAccount: options.authorAccount,
     authorProof: options.authorProof,
-    deviceSecret: options.deviceSecret,
-    nonces: options.nonces ?? (await defaultNonceSource(options.deviceSecret)),
+    signer,
+    nonces: options.nonces ?? defaultNonceSource(signer.publicKey),
     ttlSeconds: options.ttlSeconds,
     fetch: options.fetch,
     timeoutMs: options.timeoutMs,
@@ -224,16 +245,18 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
 /**
  * A persisted nonce source keyed by the author's device public key.
  *
- * The key is the *public* key, derived locally: a per-device key is required
- * (two devices of one account are independent replicas) and the secret must
- * never end up in a storage key an extension or another script can enumerate.
+ * The key is the *public* key: a per-device key is required (two devices of one
+ * account are independent replicas) and the secret must never end up in a
+ * storage key an extension or another script can enumerate. The signer names
+ * its own public key, which is also the only form available when the private
+ * half cannot be exported.
  *
  * Falls back to memory where there is no `localStorage` — Node, a worker, an
  * edge runtime. Those are processes that own their whole sequence, which is
  * exactly the case a memory counter is correct for.
  */
-async function defaultNonceSource(deviceSecret: string): Promise<NonceSource> {
-  const key = `mero-js:warrant-nonce:${hex(await derivePublicKey(deviceSecret))}`;
+function defaultNonceSource(devicePublicKey: string): NonceSource {
+  const key = `mero-js:warrant-nonce:${devicePublicKey}`;
   try {
     return createLocalStorageNonceSource(key);
   } catch {

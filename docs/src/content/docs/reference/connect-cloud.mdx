@@ -59,7 +59,8 @@ interface ConnectCloudOptions {
 
   authorAccount: string;        // hex — whose writes these will be
   authorProof: string;          // hex borsh AccountProof<DeviceCert>
-  deviceSecret: string;         // hex ed25519 seed; never transmitted
+  deviceSecret?: string;        // hex ed25519 seed; never transmitted
+  signer?: Signer;              // instead of deviceSecret, for a key with no hex form
 
   namespaceId?: string;         // required only when the account owns several
   nonces?: NonceSource;         // defaults to localStorage, keyed by device public key
@@ -68,6 +69,12 @@ interface ConnectCloudOptions {
   timeoutMs?: number;
 }
 ```
+
+Pass `deviceSecret` **or** `signer`, never both — they could name different
+keys, and nothing downstream could tell which one signed. A browser should
+prefer the signer: a device key held as a non-extractable `CryptoKey` has no hex
+form to pass, and a secret that exists as a string can be read by anything on
+the origin.
 
 `namespaceId` is optional **only** when the account owns exactly one namespace.
 With several there is no defensible default: guessing would land a write in
