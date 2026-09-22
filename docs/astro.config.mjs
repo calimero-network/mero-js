@@ -78,6 +78,7 @@ export default defineConfig({
             'reference/admin-api',
             'reference/auth-api',
             'reference/rpc',
+            'reference/transport',
             'reference/events',
             'reference/cloud',
             'reference/account-roots',
