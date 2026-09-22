@@ -17,6 +17,8 @@ import { describe, expect, it } from 'vitest';
 
 import { signWarrant } from '../warrant/warrant.js';
 import { signLoginStatement } from '../login/login.js';
+import { signMemberJoinOp } from '../namespace-op/namespace-op.js';
+import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
 import { resolveSigner, signerFromCryptoKey, signerFromSecret } from './signer.js';
 
 const SECRET = '07'.repeat(32);
@@ -139,6 +141,46 @@ describe('a CryptoKey signs exactly what the same secret signs', () => {
     });
 
     expect(fromKey).toBe(fromSecret);
+  });
+});
+
+/** Shaped, not meaningful — the encoder cares about widths and order. */
+const INVITATION = {
+  invitation: {
+    inviter_identity: Array.from({ length: 32 }, () => 1),
+    group_id: Array.from({ length: 32 }, () => 2),
+    expiration_timestamp: 1_900_000_000,
+    secret_salt: Array.from({ length: 32 }, () => 3),
+    invited_role: 1,
+    admitters: [],
+  },
+  inviter_signature: 'deadbeef',
+  admitter_addrs: [],
+} as unknown as SignedGroupOpenInvitation;
+
+const JOIN_TERMS = {
+  namespaceId: '11'.repeat(32),
+  member: '22'.repeat(32),
+  invitation: INVITATION,
+  // Shaped like a credential; this op's encoding does not parse it.
+  credential: 'ab'.repeat(120),
+  nonce: 7,
+  joinedAt: 1_700_000_000,
+};
+
+describe('a CryptoKey signs exactly what the same secret signs (continued)', () => {
+  it('for a member-join op — the one governance op a keyholder signs itself', async () => {
+    const fromSecret = await signMemberJoinOp({ ...JOIN_TERMS, deviceSecret: SECRET });
+    const fromKey = await signMemberJoinOp({
+      ...JOIN_TERMS,
+      signer: await signerFromCryptoKey(await unexportable(), PUBLIC_KEY),
+    });
+
+    expect(fromKey).toBe(fromSecret);
+    // The op carries the signer's public half, which every peer compares with
+    // the credential's `sign_pk` before applying the join. If the signer path
+    // named a different key the op would be refused, not merely different.
+    expect(fromKey).toContain(PUBLIC_KEY);
   });
 });
 
