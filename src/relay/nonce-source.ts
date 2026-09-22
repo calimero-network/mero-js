@@ -139,6 +139,37 @@ export interface WarrantNonceLookup {
   getWarrantNonce(contextId: string, authorDeviceKey: string): Promise<WarrantNonceState>;
 }
 
+/**
+ * A lookup a delegated client can actually use.
+ *
+ * {@link WarrantNonceLookup} names the device key because the admin route takes
+ * it in the path. The delegated route does not: it reads the key from the
+ * certificate it verifies, so the only way to ask is to present that
+ * certificate. This adapter bridges the two — it satisfies the interface, and
+ * ignores the device key argument because the credential already determines it.
+ *
+ * That the argument is ignored is not an oversight to tidy away. The whole
+ * point of the delegated route is that the device key is not caller-supplied:
+ * a key passed alongside the proof would be a second spelling of a fact the
+ * signature already fixes, and two spellings can differ. The adapter therefore
+ * has nothing to check it against, and pretending otherwise would invent a
+ * comparison the protocol deliberately does not make.
+ *
+ * Use with {@link createRecoveringNonceSource} exactly as an `AdminApiClient`
+ * would be used — on a relay, this is the form that works.
+ */
+export function authorNonceLookup(options: {
+  /** Anything that can reach the node's admin path; an `AdminApiClient` does. */
+  client: { getWarrantNonceAsAuthor(contextId: string, authorProof: string): Promise<WarrantNonceState> };
+  /** Hex borsh `AccountProof<DeviceCert>` — the same one the relay client sends. */
+  authorProof: string;
+}): WarrantNonceLookup {
+  return {
+    getWarrantNonce: (contextId: string, _authorDeviceKey: string) =>
+      options.client.getWarrantNonceAsAuthor(contextId, options.authorProof),
+  };
+}
+
 /** Thrown when every node asked says this device has spent `u64::MAX` here. */
 export class WarrantNonceExhaustedError extends Error {
   name = 'WarrantNonceExhaustedError';
