@@ -14,15 +14,8 @@
  * op, which is what the e2e does.
  */
 import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
-import {
-  concat,
-  derivePublicKey,
-  fromHex,
-  hex,
-  importSigningKey,
-  u32le,
-  u64le,
-} from '../crypto/internal.js';
+import { concat, fromHex, hex, u32le, u64le } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 /** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
 export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 8;
@@ -152,8 +145,19 @@ export interface SignMemberJoinInput {
    * when applying the join and refuses otherwise.
    */
   readonly credential: string;
-  /** The device signing secret, 64 hex. Must match the credential's `sign_pk`. */
-  readonly deviceSecret: string;
+  /**
+   * The device signing secret, 64 hex. Must match the credential's `sign_pk`.
+   *
+   * Mutually exclusive with {@link SignMemberJoinInput.signer}. A browser should
+   * prefer the signer: joining is the one governance op a keyholder signs for
+   * itself, and it should not need the key in a form script can read.
+   */
+  readonly deviceSecret?: string;
+  /**
+   * The joiner's signer — use instead of
+   * {@link SignMemberJoinInput.deviceSecret} when the key cannot be exported.
+   */
+  readonly signer?: Signer;
   /**
    * Heads this op is written against. Empty means "signed against an empty head"
    * — which is NOT the same as genesis, and a node with a non-empty head will
@@ -210,22 +214,23 @@ export async function signMemberJoinOp(input: SignMemberJoinInput): Promise<stri
 
   const op = concat(new Uint8Array([NAMESPACE_OP_ROOT]), rootOp);
 
-  const key = await importSigningKey(input.deviceSecret);
-  const signer = await derivePublicKey(input.deviceSecret);
+  const signingKey = await resolveSigner(input.deviceSecret, input.signer, 'deviceSecret');
+  // Named apart from the signer itself: this is the public half the op carries
+  // as its `signer` field, which every peer compares with the credential's
+  // `sign_pk` before applying the join.
+  const signerPublicKey = fromHex(signingKey.publicKey, 'signer.publicKey', 32);
 
   const signable = concat(
     new Uint8Array([SIGNED_NAMESPACE_OP_SCHEMA_VERSION]),
     fromHex(input.namespaceId, 'namespaceId', 32),
     u32le(parents.length),
     ...parents.map((p, i) => fromHex(p, `parentOpHashes[${i}]`, 32)),
-    signer,
+    signerPublicKey,
     u64le(input.nonce),
     op,
   );
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign('Ed25519', key, concat(NAMESPACE_SIGN_DOMAIN, signable)),
-  );
+  const signature = await signingKey.sign(concat(NAMESPACE_SIGN_DOMAIN, signable));
 
   // The signed struct repeats the signable fields, then the signature, then the
   // admitter endorsement. The domain is a signing prefix only and is never part

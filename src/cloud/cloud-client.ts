@@ -26,11 +26,14 @@
  */
 
 import {
-  accountRootFromSecret,
+  resolveRoot,
+  resolveRootPair,
   signAccountLink,
   signAccountLogin,
+  type RootSource,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
+import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
   type DiscoveryChallenge,
@@ -421,8 +424,10 @@ export class CloudClient {
    * account behind those reads was claimed by its owner. The claim is recorded
    * even when the session is refused.
    *
-   * @param rootSecret the account root's signing secret, 64 hex. It never
-   *   leaves this process — only a signature over the cloud's nonce travels.
+   * @param root the account root: its 64-hex secret, or a `Signer` over a root
+   *   this process may use and cannot read — the form a phrase-held root in a
+   *   browser takes. Either way nothing but a signature over the cloud's nonce
+   *   travels.
    *
    * A `403` means either the signature did not verify, or the account is not
    * linked to a cloud login: ownership alone says who you are, and the link
@@ -430,13 +435,13 @@ export class CloudClient {
    * on the proof alone would authenticate perfectly and authorize nothing. The
    * ownership claim is recorded either way, so linking later needs no re-proof.
    */
-  async signInWithAccount(rootSecret: string): Promise<CloudSession> {
-    const root = await accountRootFromSecret(rootSecret);
+  async signInWithAccount(root: RootSource): Promise<CloudSession> {
+    const { signer, publicKey } = await resolveRoot(root);
     const { nonce } = await this.getAccountLoginChallenge();
     return this.submitAccountLogin({
-      rootPublicKey: root.publicKey,
+      rootPublicKey: publicKey,
       nonce,
-      signature: await signAccountLogin({ rootSecret, nonce }),
+      signature: await signAccountLogin({ signer, nonce }),
     });
   }
 
@@ -894,22 +899,23 @@ export class CloudClient {
    * an intent; the cloud needs it to know whose plan a hosted node is spending,
    * and to sign that account back in later.
    *
-   * @param rootSecret the account root's signing secret, 64 hex — from
-   *   {@link generateAccountRoot}, from a restored recovery phrase, or from a
-   *   desktop app or hardware key that already holds one.
+   * @param root the account root: its 64-hex secret — from
+   *   {@link generateAccountRoot}, a restored recovery phrase, or a desktop app
+   *   or hardware key that already holds one — or a `Signer` over a root this
+   *   process cannot read, which is what a phrase-held browser root is.
    *
    * Idempotent for the same login. An account already linked to a *different*
    * cloud login is a `409`; a replayed or expired challenge is a `403`; and
    * exceeding the plan's account limit is a `402`.
    */
-  async linkAccount(rootSecret: string): Promise<CloudAccountLink> {
-    const root = await accountRootFromSecret(rootSecret);
+  async linkAccount(root: RootSource): Promise<CloudAccountLink> {
+    const { signer, publicKey, accountId } = await resolveRoot(root);
     const { nonce } = await this.getAccountLinkChallenge();
     return this.submitAccountLink({
-      accountId: root.accountId,
-      rootPublicKey: root.publicKey,
+      accountId,
+      rootPublicKey: publicKey,
       nonce,
-      signature: await signAccountLink({ rootSecret, nonce }),
+      signature: await signAccountLink({ signer, nonce }),
     });
   }
 
@@ -1046,18 +1052,26 @@ export class CloudClient {
   async linkAccountWithGrant(options: {
     grant: string;
     /** The root of the account the grant names, 64 hex. */
-    rootSecret: string;
+    rootSecret?: string;
+    /**
+     * The root's signer — use instead of `rootSecret` when the root is a key
+     * this process may use and cannot read.
+     */
+    signer?: Signer;
   }): Promise<CloudAccountLink> {
-    const root = await accountRootFromSecret(options.rootSecret);
+    const { signer, publicKey, accountId } = await resolveRootPair(
+      options.rootSecret,
+      options.signer,
+    );
     const body = await this.request<Record<string, unknown>>(
       'POST',
       '/api/cloud/accounts/link',
       {
         body: {
           grant: options.grant,
-          root_public_key: root.publicKey,
+          root_public_key: publicKey,
           signature: await signAccountLink({
-            rootSecret: options.rootSecret,
+            signer,
             nonce: options.grant,
           }),
         },
@@ -1065,7 +1079,7 @@ export class CloudClient {
       },
     );
     return {
-      accountId: String(body.account_id ?? root.accountId),
+      accountId: String(body.account_id ?? accountId),
       linkedAt: (body.linked_at as string | null | undefined) ?? null,
       alreadyLinked: body.already_linked === true,
     };
