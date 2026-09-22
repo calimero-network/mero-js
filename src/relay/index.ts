@@ -4,6 +4,7 @@ export {
   createMemoryNonceSource,
   createLocalStorageNonceSource,
   createRecoveringNonceSource,
+  authorNonceLookup,
   WarrantNonceExhaustedError,
 } from './nonce-source.js';
 export type {

@@ -1341,6 +1341,53 @@ export class AdminApiClient {
     return parseWarrantNonce(raw);
   }
 
+  /**
+   * The same answer, asked for the way a delegated client has to ask.
+   *
+   * {@link getWarrantNonce} is on the protected admin router, so a keyholder
+   * writing through a relay — the client this whole facility exists for — is
+   * refused it: measured `403` for a session carrying exactly
+   * `context:intent`, `context:query`, `context:subscribe`. That client has no
+   * admin credential and cannot be given one without defeating the point of the
+   * delegated surface.
+   *
+   * What it does have is the credential proving the device is its own, which it
+   * already sends on every write. Presenting it here makes the request
+   * self-scoped: you learn a device's position only by proving, at call time,
+   * that the device is yours. So there is no oracle to protect against, and no
+   * reason for an admin gate.
+   *
+   * The device key is NOT a parameter. It is read from the verified
+   * certificate server-side, which is the only reading that cannot disagree
+   * with the signature — a key supplied alongside would be a second spelling of
+   * the same fact, and two spellings can differ.
+   *
+   * Returns the identical shape {@link getWarrantNonce} returns, so a caller can
+   * swap one for the other without touching what it does with the answer.
+   *
+   * @param authorProof hex-encoded borsh `AccountProof<DeviceCert>` — the same
+   *        value passed as `authorProof` to the relay client.
+   */
+  async getWarrantNonceAsAuthor(
+    contextId: string,
+    authorProof: string,
+  ): Promise<WarrantNonceState> {
+    const path = `/admin-api/contexts/${encodeURIComponent(contextId)}/warrant-nonce`;
+    // Text, not JSON, for the reason given in `getWarrantNonce`: `JSON.parse`
+    // rounds a u64 past 2^53 into a nonce that looks ordinary and is refused
+    // for ever.
+    let raw: string;
+    try {
+      raw = await this.httpClient.post<string>(path, { authorProof }, { parse: 'text' });
+    } catch (error) {
+      if (error instanceof HTTPError && error.status === 404) {
+        throw new WarrantNonceRouteUnavailableError(path, error);
+      }
+      throw error;
+    }
+    return parseWarrantNonce(raw);
+  }
+
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${groupId}/contexts`));
   }
