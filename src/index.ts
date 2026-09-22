@@ -67,6 +67,12 @@ export {
   accountRootSignerFromPhrase,
   signAccountLink,
   signAccountLogin,
+  // The two forms a root may be held in, and what resolves either. Exported
+  // because `RootSource` is already the parameter type of every cloud entry
+  // point that takes a root — a consumer writing a wrapper around one could
+  // name it in a signature only by re-declaring it.
+  resolveRoot,
+  resolveRootPair,
 } from './account/index.js';
 export type {
   AccountRoot,
@@ -75,6 +81,8 @@ export type {
   NewAccountRootSigner,
   AccountLinkInput,
   AccountLoginInput,
+  RootSource,
+  ResolvedRoot,
 } from './account/index.js';
 export {
   signDeviceCert,
