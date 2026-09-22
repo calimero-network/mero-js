@@ -129,6 +129,34 @@ meroctl --node node1 group members set-capabilities <GROUP_ID> <EXECUTOR_ACCOUNT
   --can-author-on-behalf
 ```
 
+## Signing in with an account root
+
+`connectCloudWithAccount` is the same connection reached by the other door: no
+Google login anywhere in it, just the account root proving the account is yours.
+
+```typescript
+import { connectCloudWithAccount } from '@calimero-network/mero-js';
+
+const connection = await connectCloudWithAccount({
+  root,                 // a 64-hex root secret, or a Signer over one
+  authorProof,
+  signer: deviceSigner, // or deviceSecret
+});
+```
+
+The root opens the session; the **device** still signs the warrants, which is
+why a device key is required alongside it — a root used as a device key would
+put the account key into every intent.
+
+`authorAccount` defaults to the account the root derives, and that default is
+the point: it is the only account that root can open a session as, so naming
+another would have the cloud answer with this root's namespaces while every
+warrant claimed somebody else's authorship. Pass it explicitly only when the
+device certificate was issued by a different root.
+
+Everything after the session is `connectCloud`, unchanged — same namespace
+choice, same messages, same relay.
+
 ## Where the intent goes
 
 Straight to the relay. The cloud is the **directory** — it is handed an address

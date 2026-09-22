@@ -19,6 +19,12 @@
  * function is that missing answer, which is why the login step it replaces is
  * the *node URL prompt* rather than the authentication.
  *
+ * `connectCloudWithAccount(...)` is the same connection reached by the other
+ * door: the caller holds an account root and signs in as the account itself,
+ * with no Google login anywhere in it. Identical from there on, deliberately —
+ * which login proved who you are changes nothing about how a relay is found or
+ * how a write is authorised.
+ *
  * # What it does not do
  *
  * It does not read state. A relay writes on the author's behalf; reads still
@@ -34,6 +40,7 @@ import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
 import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay/nonce-source.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
+import { resolveRoot, type RootSource } from '../account/account.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -180,6 +187,75 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     relayInfo,
     execute: (contextId, method, argsJson) => relay.execute(contextId, method, argsJson),
   };
+}
+
+/** What {@link connectCloudWithAccount} needs on top of a root. */
+export interface ConnectCloudWithAccountOptions
+  extends Omit<ConnectCloudOptions, 'sessionToken' | 'googleIdToken' | 'authorAccount'> {
+  /**
+   * The account root — a 64-hex secret, or a `Signer` over a key that cannot be
+   * exported. The whole credential: no Google login is involved.
+   */
+  root: RootSource;
+  /**
+   * Whose writes these are, hex. Defaults to the account the root derives,
+   * which is the only account it can open a session as.
+   *
+   * Worth passing only when the device certificate was issued by a *different*
+   * root than the one signing in — which core accepts and nothing here needs to
+   * forbid, but which is rare enough that defaulting to the signing root is the
+   * safer shape.
+   */
+  authorAccount?: string;
+}
+
+/**
+ * The same connection, opened with an account root instead of a cloud session.
+ *
+ * The two sign-in paths end in the same place, and until now only one of them
+ * ended in a usable client: a caller signing in with a root had to open the
+ * session, read the relays and assemble a {@link RelayClient} by hand, which is
+ * three chances to pair the wrong author with the wrong executor.
+ *
+ * It is one call rather than one function: the session is minted here and
+ * everything after it is {@link connectCloud}, unchanged. Duplicating the
+ * namespace choice and the three no-relay diagnostics would mean two copies of
+ * the messages that tell a user what to go and do.
+ *
+ * The author defaults to the account the root derives. That is not a
+ * convenience — passing an account the root does not own is the mistake this
+ * shape removes, since the cloud would answer with that root's namespaces while
+ * every warrant claimed somebody else's authorship.
+ */
+export async function connectCloudWithAccount(
+  options: ConnectCloudWithAccountOptions,
+): Promise<CloudConnection> {
+  const { root, authorAccount, ...rest } = options;
+  // Both keys resolved before the sign-in, for the reason `connectCloud` gives:
+  // a session minted for a connection that cannot be built is a credential
+  // issued for nothing.
+  const signer = await resolveSigner(rest.deviceSecret, rest.signer, 'deviceSecret');
+  const resolved = await resolveRoot(root);
+
+  const cloud = new CloudClient({
+    cloudBaseUrl: options.cloudBaseUrl,
+    // Reported here as well as on the connection's own client: this is where
+    // the session is first minted, and a caller persisting it would otherwise
+    // only hear about the rolling refreshes of a token it never saw.
+    onSession: options.onSession,
+    fetch: options.fetch,
+    timeoutMs: options.timeoutMs,
+  });
+  const session = await cloud.signInWithAccount(resolved.signer);
+
+  return connectCloud({
+    ...rest,
+    // Already resolved above, and passing both forms on would be refused.
+    deviceSecret: undefined,
+    signer,
+    sessionToken: session.sessionToken,
+    authorAccount: authorAccount ?? resolved.accountId,
+  });
 }
 
 /** The one namespace to write in, or an error naming the actual ambiguity. */
