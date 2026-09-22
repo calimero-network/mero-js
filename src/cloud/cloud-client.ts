@@ -41,8 +41,19 @@ import {
   type RoutingCredential,
 } from './routing-proof.js';
 
-/** Where the hosted cloud lives when a caller names no other. */
-const DEFAULT_CLOUD_BASE_URL = 'https://cloud.calimero.network';
+/**
+ * The hosted cloud's **API** when a caller names no other.
+ *
+ * `manager.cloud.calimero.network`, not `cloud.calimero.network`: the latter
+ * serves the React app, which answers an API call with 405 and an HTML body.
+ * Every method on this client is an API call, so the bare `new CloudClient()`
+ * used to fail at the first request with a parse error rather than at
+ * construction — and the URL it was talking to looked right in the message.
+ *
+ * The web origin still exists in this package: the consent screen in
+ * `link-redirect.ts` is a page a person visits, and that one is the app.
+ */
+const DEFAULT_CLOUD_BASE_URL = 'https://manager.cloud.calimero.network';
 
 export interface CloudClientConfig {
   cloudBaseUrl?: string;

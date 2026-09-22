@@ -4,7 +4,8 @@
  * `CLOUD_URL` is the **manager** host, not the web one:
  * `https://manager.cloud.calimero.network`. `cloud.calimero.network` serves the
  * React app, so an API call there returns 405 and an HTML body — which is how
- * this test first failed, and why the SDK's own default base URL is wrong.
+ * this test first failed, and why the SDK's own default base URL now names the
+ * manager host.
  *
  * This is the hop that makes delegated execution billable: namespace-scoped
  * reads authenticate as an *account*, and the link is what lets a plan be
@@ -29,7 +30,7 @@
  * session, with no Google and no stored token. That is the property the design
  * rests on: the account is the credential, not the login.
  *
- *     CLOUD_URL=https://cloud.calimero.network \
+ *     CLOUD_URL=https://manager.cloud.calimero.network \
  *     GRANT=<one-time grant>   # or CLOUD_SESSION=<token> \
  *     LIVE_ROOT_SECRET=<64 hex>  # or LIVE_ROOT_PHRASE='<24 words>' \
  *     npx vitest run src/__live__/account-link.live.test.ts

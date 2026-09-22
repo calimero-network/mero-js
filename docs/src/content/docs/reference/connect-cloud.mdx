@@ -52,7 +52,7 @@ await connection.execute(contextId, 'set', { key: 'k', value: 'v' });
 
 ```typescript
 interface ConnectCloudOptions {
-  cloudBaseUrl?: string;        // default 'https://cloud.calimero.network'
+  cloudBaseUrl?: string;        // default 'https://manager.cloud.calimero.network'
   sessionToken?: string;        // a stored MDMA session — provide this or googleIdToken
   googleIdToken?: string;       // a Google ID token to exchange — provide this or sessionToken
   onSession?: (s) => void;      // persist a new / rolling-refreshed session

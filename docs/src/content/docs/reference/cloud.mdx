@@ -41,7 +41,7 @@ await sdk.cloud.getMyNamespaces();
 ```typescript
 class CloudClient {
   constructor(config?: {
-    cloudBaseUrl?: string;                              // default 'https://cloud.calimero.network'
+    cloudBaseUrl?: string;                              // default 'https://manager.cloud.calimero.network'
     sessionToken?: string;                              // a stored session, to skip re-signing in
     onSession?: (s: CloudSession | null) => void;       // persist a new / refreshed session
     fetch?: typeof fetch;                               // for tests and non-browser runtimes
