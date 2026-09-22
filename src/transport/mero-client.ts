@@ -232,9 +232,43 @@ export class MeroClient {
     return this.rpcTransport.client;
   }
 
-  /** Admin API. Node transport only — a relay serves no admin surface to a keyholder. */
+  /**
+   * Admin API. Node transport only.
+   *
+   * Two different things live behind this accessor today, and only one of them
+   * is genuinely unavailable through a relay.
+   *
+   * The **mutations** — `createNamespace`, `setMemberCapabilities`,
+   * `upgradeGroup` and the rest — are operator actions on somebody else's
+   * machine. A keyholder does not get those, and should not; admin is for
+   * admins.
+   *
+   * The **reads** are a different matter. `getContext`, `getContexts`,
+   * `getApplication`, `listNamespaces`, `getBlob` are an app asking what it is
+   * looking at, not an operator administering anything. They sit under
+   * `/admin-api/` for historical reasons, and a delegated session is refused
+   * them (measured: `403`, while the same session reads context state through
+   * `POST /contexts/{ctx}/query` and writes through `/intents` quite happily).
+   *
+   * So this is the one place where "the same code runs on both transports"
+   * does not hold yet, and it is a missing surface rather than a missing
+   * permission. A transport-independent read API is designed but not built; the
+   * throw below is deliberate until it exists, because the alternative — quietly
+   * reaching for a node the caller did not choose — is worse than a clear stop.
+   */
   get admin(): AdminApiClient {
-    return this.node.admin;
+    if (!this.nodeClient) {
+      throw new Error(
+        'this client was constructed with the relay transport, which serves no admin ' +
+          'surface to a keyholder. Mutations (createNamespace, setMemberCapabilities, …) ' +
+          'are operator actions and will never be available here. The READS ' +
+          '(getContext, getContexts, getApplication, listNamespaces, getBlob) are not ' +
+          'admin operations and should be — they are pending a transport-independent ' +
+          'read API. Until then: context STATE reads work via execute/query on this ' +
+          'client, and events work once a relay node key is supplied.',
+      );
+    }
+    return this.nodeClient.admin;
   }
 
   /** Auth API. Node transport only — a relay issues no node credential. */

@@ -500,3 +500,37 @@ describe('one call site that both writes and observes', () => {
     relayed.close();
   });
 });
+
+describe('the admin surface on the relay transport', () => {
+  /**
+   * The refusal has to distinguish two things a caller will conflate: the
+   * mutations are gone for good, the reads are pending a surface that does not
+   * exist yet. A message that says only "no admin here" sends someone looking
+   * for a permission to grant, and there isn't one.
+   */
+  it('names the reads as pending rather than forbidden', () => {
+    const client = createMeroClient({
+      transport: 'relay',
+      relay: new RelayClient({
+        relayUrl: 'http://relay.example',
+        authorAccount: 'aa'.repeat(32),
+        authorProof: 'bb'.repeat(32),
+        deviceSecret: 'cc'.repeat(32),
+        nonces: createMemoryNonceSource(),
+      }),
+    });
+
+    let message = '';
+    try {
+      void client.admin;
+    } catch (e) {
+      message = (e as Error).message;
+    }
+
+    expect(message).toContain('operator actions');
+    expect(message).toMatch(/getContext|getContexts/);
+    expect(message).toContain('transport-independent');
+    // and it must not suggest the caller is one grant away from fixing it
+    expect(message).not.toMatch(/permission denied|grant .* admin/i);
+  });
+});
