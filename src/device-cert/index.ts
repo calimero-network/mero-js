@@ -4,6 +4,7 @@ export {
   mintDeviceId,
   deviceCertPayload,
   accountForRoot,
+  accountForRootPublicKey,
   accountProofBytes,
 } from './device-cert.js';
 export type { DeviceCertInput } from './device-cert.js';

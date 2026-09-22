@@ -14,10 +14,27 @@ import { describe, it, expect } from 'vitest';
 
 import {
   accountForRoot,
+  accountForRootPublicKey,
   deviceCertPayload,
   mintDeviceId,
   signDeviceCert,
 } from './device-cert.js';
+import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
+
+const PKCS8_ED25519_PREFIX = new Uint8Array([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+  0x22, 0x04, 0x20,
+]);
+
+/** The same seed as a key that signs and can never be exported. */
+async function unexportable(seedByte: number): Promise<CryptoKey> {
+  const pkcs8 = new Uint8Array(PKCS8_ED25519_PREFIX.length + 32);
+  pkcs8.set(PKCS8_ED25519_PREFIX, 0);
+  pkcs8.set(new Uint8Array(32).fill(seedByte), PKCS8_ED25519_PREFIX.length);
+  return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, [
+    'sign',
+  ]);
+}
 
 const ACCOUNT = '11'.repeat(32);
 const DEVICE = '33'.repeat(32);
@@ -132,5 +149,65 @@ describe('device certificate', () => {
     const b = await signDeviceCert({ ...common, rootSecret: '78'.repeat(32) });
 
     expect(a).not.toBe(b);
+  });
+});
+
+/**
+ * The property that makes a phrase-held root usable at all: a root kept as a
+ * key this page cannot read must certify **the same bytes** as the same root
+ * loaded as hex.
+ *
+ * If it did not, a browser moving its root out of script memory would start
+ * issuing credentials core refuses — and the refusal arrives at a node as
+ * "unverifiable credential", nowhere near the key that caused it.
+ */
+describe('a root held as a CryptoKey', () => {
+  const COMMON = {
+    device: DEVICE,
+    signPublicKey: SIGN_PK,
+    kemPublicKey: KEM_PK,
+    deviceEpoch: 7,
+  };
+
+  it('certifies a device byte for byte as the same secret does', async () => {
+    const secret = '77'.repeat(32);
+    const fromSecret = await signDeviceCert({ ...COMMON, rootSecret: secret });
+    const fromKey = await signDeviceCert({
+      ...COMMON,
+      signer: await signerFromCryptoKey(
+        await unexportable(0x77),
+        (await signerFromSecret(secret)).publicKey,
+      ),
+    });
+
+    // Ed25519 is deterministic, so identical output means an identical preimage
+    // — including the account id the certificate names.
+    expect(fromKey).toBe(fromSecret);
+    expect(fromKey.length / 2).toBe(237);
+  });
+
+  it('names the same account the secret names', async () => {
+    const secret = '77'.repeat(32);
+    const signer = await signerFromSecret(secret);
+
+    await expect(accountForRootPublicKey(signer.publicKey)).resolves.toBe(
+      await accountForRoot(secret),
+    );
+  });
+
+  it('refuses a secret and a signer at once, which could name different roots', async () => {
+    await expect(
+      signDeviceCert({
+        ...COMMON,
+        rootSecret: '77'.repeat(32),
+        signer: await signerFromSecret('78'.repeat(32)),
+      }),
+    ).rejects.toThrow(/either rootSecret or signer, not both/);
+  });
+
+  it('refuses neither, rather than certifying under some default', async () => {
+    await expect(signDeviceCert({ ...COMMON })).rejects.toThrow(
+      /rootSecret or signer is required/,
+    );
   });
 });

@@ -21,9 +21,9 @@ import {
   domainHash,
   fromHex,
   hex,
-  importSigningKey,
   u32le,
 } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 const CERT_DOMAIN = new TextEncoder().encode('calimero.device.cert.v1');
 const ACCOUNT_ID_DOMAIN = new TextEncoder().encode('calimero.account.genesis.v1');
@@ -44,8 +44,25 @@ const ACCOUNT_GENESIS_VERSION = 2;
 
 /** What a root certifies about one device. */
 export interface DeviceCertInput {
-  /** The account root's signing secret, 64 hex. Signs the certificate. */
-  rootSecret: string;
+  /**
+   * The account root's signing secret, 64 hex. Signs the certificate.
+   *
+   * Mutually exclusive with {@link DeviceCertInput.signer}, and the weaker of
+   * the two in a browser: this is the one key in the system with nothing above
+   * it to revoke it, so a page that can read it can take the account for good.
+   * Prefer `signer` anywhere the root is held rather than loaded.
+   */
+  rootSecret?: string;
+  /**
+   * The account root's signer — use instead of {@link DeviceCertInput.rootSecret}
+   * when the root is a key this page may use and cannot read.
+   *
+   * This is what lets the certifying page keep its root as a non-extractable
+   * `CryptoKey`: {@link accountRootSignerFromPhrase} hands one back, and script
+   * injected into the page can then mint certificates only while the page is
+   * open, rather than walking off with the account.
+   */
+  signer?: Signer;
   /** The device being certified, 64 hex — see {@link mintDeviceId}. */
   device: string;
   /** The key that device signs with, 64 hex. */
@@ -167,12 +184,11 @@ export function accountProofBytes(input: {
  * than accepting a value it would then have to ignore.
  */
 export async function signDeviceCert(input: DeviceCertInput): Promise<string> {
-  const rootPublicKey = await derivePublicKey(input.rootSecret);
-  const account = hex(
-    await domainHash(ACCOUNT_ID_DOMAIN, [
-      concat(new Uint8Array([ACCOUNT_GENESIS_VERSION]), rootPublicKey),
-    ]),
-  );
+  const signer = await resolveSigner(input.rootSecret, input.signer, 'rootSecret');
+  // The signer names its own key, so the account is read off it rather than
+  // derived from material this function may not have.
+  const rootPublicKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
+  const account = await accountForRootPublicKey(signer.publicKey);
 
   const keyEpoch = 0;
   const payload = await deviceCertPayload({
@@ -184,10 +200,7 @@ export async function signDeviceCert(input: DeviceCertInput): Promise<string> {
     deviceEpoch: input.deviceEpoch,
   });
 
-  const key = await importSigningKey(input.rootSecret);
-  const signature = new Uint8Array(
-    await crypto.subtle.sign('Ed25519', key, payload),
-  );
+  const signature = await signer.sign(payload);
 
   const credential = accountProofBytes({
     rootPublicKey,
@@ -205,10 +218,27 @@ export async function signDeviceCert(input: DeviceCertInput): Promise<string> {
 
 /** The account this root owns — the content address of its genesis. */
 export async function accountForRoot(rootSecret: string): Promise<string> {
-  const rootPublicKey = await derivePublicKey(rootSecret);
+  return accountForRootPublicKey(hex(await derivePublicKey(rootSecret)));
+}
+
+/**
+ * The same account id, from the root's **public** half.
+ *
+ * The form a root that cannot be exported needs. It is also the honest shape of
+ * the derivation: an account id is a function of the public key, and asking for
+ * the secret only ever meant "let me derive the public key first".
+ *
+ * @param rootPublicKey the root's ed25519 public key, 64 hex
+ */
+export async function accountForRootPublicKey(
+  rootPublicKey: string,
+): Promise<string> {
   return hex(
     await domainHash(ACCOUNT_ID_DOMAIN, [
-      concat(new Uint8Array([ACCOUNT_GENESIS_VERSION]), rootPublicKey),
+      concat(
+        new Uint8Array([ACCOUNT_GENESIS_VERSION]),
+        fromHex(rootPublicKey, 'rootPublicKey', 32),
+      ),
     ]),
   );
 }
