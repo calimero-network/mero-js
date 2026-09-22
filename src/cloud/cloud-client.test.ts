@@ -31,6 +31,15 @@ const SESSION_BODY = {
 };
 
 describe('CloudClient sign-in', () => {
+  it('defaults to the manager API, not the host that serves the web app', async () => {
+    // `cloud.calimero.network` is the React app: it answers an API call with
+    // 405 and an HTML body, so the bare client failed at the first request
+    // with a parse error while the URL in the message looked perfectly right.
+    const { fetch, calls } = scriptedFetch([{ body: SESSION_BODY }]);
+    await new CloudClient({ fetch }).signInWithGoogle('google-id-token');
+    expect(calls[0].url).toBe('https://manager.cloud.calimero.network/api/auth/google');
+  });
+
   it('exchanges a Google ID token for a session and keeps it', async () => {
     const { fetch, calls } = scriptedFetch([{ body: SESSION_BODY }]);
     const cloud = new CloudClient({ cloudBaseUrl: 'https://cloud.example/', fetch });
