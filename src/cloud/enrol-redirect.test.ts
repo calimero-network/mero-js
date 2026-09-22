@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  callbackIsForeign,
   completeDeviceEnrolment,
   deviceEnrolmentUrl,
   readEnrolmentCallback,
@@ -259,5 +260,28 @@ describe('completeDeviceEnrolment', () => {
     ).rejects.toThrow(/did not make/);
     expect(verify).not.toHaveBeenCalled();
     verify.mockRestore();
+  });
+});
+
+describe('callbackIsForeign', () => {
+  it('is false when the credential comes back to the page that asked', () => {
+    expect(callbackIsForeign('https://app.example/cb', 'https://app.example')).toBe(false);
+  });
+
+  it('is true when it comes back somewhere else', () => {
+    expect(callbackIsForeign('https://elsewhere.example/cb', 'https://app.example')).toBe(true);
+  });
+
+  it('treats a different port or scheme as foreign, because the origin is', () => {
+    expect(callbackIsForeign('https://app.example:8443/cb', 'https://app.example')).toBe(true);
+    expect(callbackIsForeign('http://localhost:3000/cb', 'http://localhost:3001')).toBe(true);
+  });
+
+  it('says nothing rather than guessing when there is no page origin', () => {
+    expect(callbackIsForeign('https://app.example/cb', undefined)).toBe(false);
+  });
+
+  it('does not throw on an unparseable callback — assertSafeReturnTo owns that', () => {
+    expect(callbackIsForeign('not a url', 'https://app.example')).toBe(false);
   });
 });

@@ -107,6 +107,7 @@ export function deviceEnrolmentUrl(options: DeviceEnrolmentOptions): string {
   assertHex(options.devicePublicKey, 'devicePublicKey');
   assertHex(options.kemPublicKey, 'kemPublicKey');
   assertSafeReturnTo(options.returnTo);
+  warnOnForeignCallback(options.returnTo);
 
   const url = new URL(options.walletUrl);
   url.searchParams.set(DEVICE_PARAM, options.devicePublicKey);
@@ -299,6 +300,43 @@ function normaliseHex(value: string): string {
  * claims it is not something this SDK can check, so it is refused here rather
  * than accepted on trust.
  */
+/**
+ * Is the credential coming back to somewhere other than the page that asked?
+ *
+ * Normally an app enrols its own device key and gets the answer back on its own
+ * origin, so the two match. They can legitimately differ — a callback page on a
+ * sibling host, an app mid-migration — which is why this is not refused.
+ *
+ * But it is the shape an abuse would also take: send someone to the real wallet
+ * and have the credential delivered elsewhere. Nothing here can tell the two
+ * apart, and a client-side check constrains nobody who did not call this
+ * function anyway. What it is good for is the honest case — surfacing the
+ * mismatch to whoever is building the app, and giving a wallet the same fact to
+ * put in front of the person approving.
+ *
+ * Exported so a wallet can render it, rather than each caller re-deriving it.
+ */
+export function callbackIsForeign(returnTo: string, pageOrigin?: string): boolean {
+  const here =
+    pageOrigin ?? (typeof window === 'undefined' ? undefined : window.location.origin);
+  if (!here) return false;
+  try {
+    return new URL(returnTo).origin !== here;
+  } catch {
+    return false;
+  }
+}
+
+function warnOnForeignCallback(returnTo: string): void {
+  if (!callbackIsForeign(returnTo)) return;
+  // A warning, not a throw: see `callbackIsForeign` for why this is a smell
+  // rather than a verdict.
+  console.warn(
+    `[calimero] enrolling a device but sending the credential to ${new URL(returnTo).origin}, ` +
+      `which is not this page's origin. Legitimate when deliberate; worth a second look otherwise.`,
+  );
+}
+
 function assertSafeReturnTo(returnTo: string): void {
   let url: URL;
   try {
