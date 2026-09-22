@@ -100,6 +100,35 @@ export async function importSigningKey(secretHex: string): Promise<CryptoKey> {
 }
 
 /**
+ * Check an ed25519 signature against a public key, both raw.
+ *
+ * The one primitive here that consumes rather than produces a signature: a page
+ * handed a credential by another origin has to check it before it acts on it,
+ * and "the node will reject it later" is not the same safeguard — by then the
+ * page has already stored an account it does not control.
+ *
+ * `raw` import is the public-key counterpart of the PKCS#8 import above and is
+ * available on exactly the runtimes that can sign, so a runtime that got this
+ * far will not fail here for lack of support.
+ *
+ * @param publicKey 64 hex, the key the signature must verify against
+ */
+export async function verifySignature(
+  publicKey: string,
+  signature: Uint8Array,
+  payload: Uint8Array,
+): Promise<boolean> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    fromHex(publicKey, 'publicKey', 32),
+    { name: 'Ed25519' },
+    false,
+    ['verify'],
+  );
+  return crypto.subtle.verify({ name: 'Ed25519' }, key, signature, payload);
+}
+
+/**
  * The public half of an ed25519 seed.
  *
  * Derived rather than taken as an argument, for the reason core does the same: a

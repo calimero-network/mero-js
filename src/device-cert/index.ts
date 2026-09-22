@@ -6,5 +6,7 @@ export {
   accountForRoot,
   accountForRootPublicKey,
   accountProofBytes,
+  parseDeviceCredential,
+  verifyDeviceCredential,
 } from './device-cert.js';
-export type { DeviceCertInput } from './device-cert.js';
+export type { DeviceCertInput, DeviceCredential } from './device-cert.js';

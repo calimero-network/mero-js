@@ -44,3 +44,18 @@ export type {
   CloudLinkCallback,
   CompleteCloudLinkOptions,
 } from './link-redirect.js';
+
+// Getting this app's device key certified by a wallet on another origin — the
+// redirect that keeps the account root out of the app's reach.
+export {
+  deviceEnrolmentUrl,
+  beginDeviceEnrolment,
+  readEnrolmentCallback,
+  completeDeviceEnrolment,
+} from './enrol-redirect.js';
+export type {
+  DeviceEnrolmentOptions,
+  DeviceEnrolmentCallback,
+  CompleteDeviceEnrolmentOptions,
+  EnrolledDevice,
+} from './enrol-redirect.js';
