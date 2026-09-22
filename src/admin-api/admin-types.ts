@@ -1856,3 +1856,114 @@ export interface AdmitJoinResponseData {
    */
   readonly published: boolean;
 }
+
+// ---- Warrant-nonce discovery ----
+
+/**
+ * Where one author device stands in its warrant-nonce sequence on one node.
+ *
+ * # Why `bigint` and not `number`
+ *
+ * A nonce is a `u64` on the node. `JSON.parse` turns every number into an IEEE
+ * double, so any value past 2^53 arrives already rounded - and it rounds
+ * silently, producing a nonce that looks ordinary and is refused forever. The
+ * exhaustion rule this endpoint exists to report (`u64::MAX` spent -> no next
+ * nonce) lives precisely in the range a `number` cannot hold, so representing it
+ * as one would lose the very case the type is meant to make visible.
+ *
+ * `bigint` over a decimal `string` because callers do arithmetic with these:
+ * the documented recovery rule is `max(ownNext, nextNonce)`, and
+ * {@link NonceSource} already emits `bigint`. A string would make every caller
+ * convert first, and the ones that forget would compare `"10" < "9"`.
+ *
+ * The digits are recovered from the raw response text rather than from a parsed
+ * `number`, so nothing is routed through a double on the way in.
+ *
+ * # Why a union on `kind`
+ *
+ * `nextNonce` is absent in exactly one case, and a client that reads it as
+ * `undefined` and falls back to a guess burns nonces for real. Splitting the two
+ * cases makes the compiler ask which one this is before `nextNonce` can be read
+ * at all.
+ *
+ * The discriminant is a string rather than an `exhausted: boolean` because this
+ * package compiles with `strictNullChecks` off, and TypeScript declines to
+ * narrow a union on a boolean-literal discriminant in that mode. A flag that
+ * silently fails to narrow would be worse than no flag: it would read as a
+ * guard and admit `nextNonce` on both arms.
+ */
+export type WarrantNonceState = WarrantNonceOpen | WarrantNonceExhausted;
+
+/** Fields both arms carry, whatever the sequence's state. */
+interface WarrantNonceCommon {
+  /** The context asked about, echoed - read it to reject a cached answer. */
+  readonly contextId: string;
+  /**
+   * The author device asked about, echoed. This is the device's SIGNING KEY,
+   * not its `deviceId` and not the account: two devices of one account hold two
+   * independent sequences, and a re-keyed device starts a fresh one.
+   *
+   * Echoed as the node spelled it, which is the spelling that was asked for -
+   * the route accepts base58 or hex and does not normalise between them.
+   */
+  readonly authorDeviceKey: string;
+  /**
+   * Whether this node has admitted any warrant from this device here.
+   *
+   * `false` is the ordinary state of a device that has not written yet - a fresh
+   * sequence, not an error and not a row worth retrying for.
+   */
+  readonly seen: boolean;
+  /**
+   * The highest nonce this node has accepted from this device here, absent when
+   * `seen` is `false`.
+   *
+   * Reported for auditability. Do NOT compute a nonce from it: the `+ 1` is the
+   * node's arithmetic, already done in {@link WarrantNonceOpen.nextNonce}, and
+   * doing it again here is how a client reintroduces the overflow this endpoint
+   * avoids.
+   */
+  readonly highWaterNonce?: bigint;
+  /**
+   * How far below `highWaterNonce` a late warrant may still be accepted.
+   *
+   * Constant (64 today), and useful for sizing an in-flight window: a warrant
+   * minted but not yet executed is refused once this many later ones have landed
+   * ahead of it. It is NOT an input to a nonce - which parts of the window below
+   * the mark are already spent is deliberately not reported.
+   */
+  readonly windowWidth: bigint;
+}
+
+/** The sequence has room: {@link nextNonce} is the number to mint at. */
+export interface WarrantNonceOpen extends WarrantNonceCommon {
+  readonly kind: 'open';
+  /**
+   * The smallest nonce this node is guaranteed to accept. **The only actionable
+   * value here.**
+   *
+   * `0` on a fresh sequence (`seen: false`), which is a real answer, not a
+   * missing one.
+   *
+   * A client that still holds its own counter must mint at
+   * `max(ownNext, nextNonce)`, never at `nextNonce` alone: nonce state folds per
+   * peer, so this node can be BEHIND a client whose warrants it has not applied
+   * yet, and never ahead of the truth. An author spread across relays asks each
+   * and takes the highest answer.
+   */
+  readonly nextNonce: bigint;
+}
+
+/**
+ * `u64::MAX` is spent here: there is no next nonce and this device cannot write
+ * to this context again. It must re-key - a new signing key starts a fresh
+ * sequence.
+ *
+ * The node reports this by omitting `nextNonce` rather than by wrapping to `0`,
+ * because a wrapped `0` would look like a valid answer and be refused forever.
+ */
+export interface WarrantNonceExhausted extends WarrantNonceCommon {
+  readonly kind: 'exhausted';
+  readonly seen: true;
+  readonly highWaterNonce: bigint;
+}
