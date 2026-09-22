@@ -1,6 +1,11 @@
 /**
  * Linking a Calimero account to a cloud login, end to end against a real cloud.
  *
+ * `CLOUD_URL` is the **manager** host, not the web one:
+ * `https://manager.cloud.calimero.network`. `cloud.calimero.network` serves the
+ * React app, so an API call there returns 405 and an HTML body — which is how
+ * this test first failed, and why the SDK's own default base URL is wrong.
+ *
  * This is the hop that makes delegated execution billable: namespace-scoped
  * reads authenticate as an *account*, and the link is what lets a plan be
  * enforced against one and a bill attributed to someone. It is also what lets a
@@ -163,9 +168,16 @@ liveGrant('linking with a one-time grant', () => {
    */
   it('refuses the same grant a second time', async () => {
     const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
-    await expect(
-      anonymous.linkAccountWithGrant({ grant: GRANT!, signer: root.signer }),
-    ).rejects.toThrow();
+    const replayed = await anonymous
+      .linkAccountWithGrant({ grant: GRANT!, signer: root.signer })
+      .then(() => null, (e: { status?: number }) => e);
+
+    expect(replayed).not.toBeNull();
+    // The STATUS matters, not merely that it threw. An earlier version asserted
+    // `.rejects.toThrow()` and went green against a 405 from the wrong host —
+    // a test that passes when the API is not even there is worse than none.
+    // 403 is a spent or bad grant; 409 is the account already bound elsewhere.
+    expect([403, 409]).toContain((replayed as { status?: number }).status);
   }, 60_000);
 
   it('signs in with the account alone, once linked', async () => {
