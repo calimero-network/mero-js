@@ -76,6 +76,8 @@ import type {
   AccountApplicationEntry,
   RevokeAccountDeviceRequest,
   RevokeAccountDeviceResponseData,
+  MemberDevicesEntry,
+  ListMemberDevicesOptions,
   GroupInfoResponseData,
   CreateGroupRequest,
   CreateGroupResponseData,
@@ -1073,6 +1075,13 @@ export class AdminApiClient {
    * `namespaceId` names where to publish from, not the extent of the revocation:
    * a device belongs to the account, so every namespace holding a binding for it
    * is withdrawn from and reported back.
+   *
+   * **Revocation is forward-only.** It withdraws the device's authority from
+   * here on and does NOT retract past authorship: ops the device already signed
+   * keep verifying and stay in the DAG, because the certificate that authorised
+   * them was valid when the signature was made. Nothing in this system can
+   * un-author what a device wrote, so a UI built on this call must not offer
+   * that - "this device can no longer act" is the only claim it supports.
    */
   async revokeAccountDevice(
     namespaceId: string,
@@ -1133,6 +1142,47 @@ export class AdminApiClient {
       );
     }
     return response;
+  }
+
+  /**
+   * Account -> devices for the members of a group, as its live bindings record
+   * them.
+   *
+   * The join between a group member listing, which names accounts, and a
+   * context's identities, which name bare signing keys - both 64 hex, and
+   * nothing but the source tells them apart. Batch rather than per-account
+   * because the key -> account direction gets asked about arbitrary authors,
+   * which a per-account route would answer in N calls.
+   *
+   * What comes back is **caller-scoped by the node**: an admin of the group sees
+   * every member's devices, a plain member only its own entry. A single-entry
+   * answer is therefore a statement about this caller's role, not about the
+   * group's size.
+   *
+   * Only live bindings appear, so a revoked device is absent here - use
+   * {@link listAccountDevices} for the account's own devices, which keeps a
+   * revoked one with `revoked: true`. Absence here never means the device never
+   * acted: revocation is forward-only and its past ops remain in the DAG.
+   *
+   * Wrapped in `members` on the wire rather than `data`, unwrapped here for the
+   * same reason {@link listAccountDevices} unwraps `devices`.
+   */
+  async listGroupMemberDevices(
+    groupId: string,
+    options?: ListMemberDevicesOptions,
+  ): Promise<MemberDevicesEntry[]> {
+    // Both params are optional on the node, which clamps `limit` to its own
+    // maximum; sending them only when asked keeps the node's defaults authoritative
+    // rather than freezing today's values into this client.
+    const params = new URLSearchParams();
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const base = `/admin-api/groups/${encodeURIComponent(groupId)}/member-devices`;
+    const response = await this.httpClient.get<{ members: MemberDevicesEntry[] }>(
+      query ? `${base}?${query}` : base,
+    );
+    return response.members;
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {

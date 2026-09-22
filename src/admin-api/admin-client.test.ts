@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
 import type {
+  AccountDeviceEntry,
   LabelDeviceResponseData,
+  MemberDevicesEntry,
   RescopeDeviceResponseData,
   SignedGroupOpenInvitation,
 } from './admin-types.js';
@@ -1233,6 +1235,70 @@ describe('AdminApiClient', () => {
 
       await client.revokeAccountDevice('5'.repeat(64), { deviceId: 'dv-1', proof: 'ab12' });
       expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: 'dv-1', proof: 'ab12' });
+    });
+
+    it('listAccountDevices keeps a revoked device in the list', async () => {
+      // The node deliberately reports a revoked device as revoked rather than
+      // hiding it, so the account holder can see a device they withdrew instead
+      // of watching the row vanish. The client must pass that through untouched:
+      // filtering here would make "revoked" and "never existed" the same answer.
+      const active: AccountDeviceEntry = {
+        deviceId: 'a'.repeat(64),
+        signingKey: 'b'.repeat(64),
+        isSelf: true,
+        revoked: false,
+        applications: ['c'.repeat(64)],
+        namespaces: ['5'.repeat(64)],
+        label: 'this laptop',
+      };
+      const withdrawn: AccountDeviceEntry = {
+        deviceId: 'd'.repeat(64),
+        signingKey: 'e'.repeat(64),
+        isSelf: false,
+        revoked: true,
+        applications: [],
+        // A revoked device holds no live binding, so its namespaces are empty
+        // while its registry row - id, key, scope, name - stays behind.
+        namespaces: [],
+        label: 'old phone',
+      };
+      mock.setMockResponse('GET', '/admin-api/account/devices', {
+        devices: [active, withdrawn],
+      });
+
+      const result = await client.listAccountDevices();
+
+      expect(result).toHaveLength(2);
+      expect(result.map((d) => d.deviceId)).toContain(withdrawn.deviceId);
+      // Active vs revoked is answerable from this one response - no second call.
+      expect(result.filter((d) => !d.revoked)).toEqual([active]);
+      // The name survives revocation beside the row it names, so a listing can
+      // still say WHICH device was withdrawn.
+      expect(result[1].label).toBe('old phone');
+    });
+
+    it('listGroupMemberDevices unwraps `members` and passes paging through', async () => {
+      const members: MemberDevicesEntry[] = [
+        {
+          account: '1'.repeat(64),
+          devices: [{ deviceId: 'a'.repeat(64), signingKey: 'b'.repeat(64) }],
+        },
+      ];
+      const path = `/admin-api/groups/${'9'.repeat(64)}/member-devices?offset=10&limit=5`;
+      mock.setMockResponse('GET', path, { members });
+
+      expect(
+        await client.listGroupMemberDevices('9'.repeat(64), { offset: 10, limit: 5 }),
+      ).toEqual(members);
+    });
+
+    it('listGroupMemberDevices sends no query string when paging is not asked for', async () => {
+      // An absent param leaves the node's own default and clamp in charge;
+      // sending `offset=undefined` would freeze today's values into this client.
+      const path = `/admin-api/groups/${'9'.repeat(64)}/member-devices`;
+      mock.setMockResponse('GET', path, { members: [] });
+
+      expect(await client.listGroupMemberDevices('9'.repeat(64))).toEqual([]);
     });
   });
 

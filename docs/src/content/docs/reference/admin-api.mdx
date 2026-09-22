@@ -135,6 +135,19 @@ only to say where to publish from — it withdraws the device everywhere and
 reports each namespace back. `relinkAccountDevice` only ever adds applications;
 `rescopeAccountDevice` replaces the scope outright, which is how it is narrowed.
 
+`listAccountDevices` is the listing a settings UI renders: it reports every
+device the account has, revoked ones included and marked `revoked: true`, with
+the applications each may speak for — so an active device and a withdrawn one
+are told apart without a second call. Do not filter revoked devices out by
+default; the node deliberately reports them rather than hiding them.
+
+Revocation is **forward-only**. It withdraws a device's authority from here on
+and does not retract past authorship — ops the device already signed keep
+verifying and stay in the DAG. No UI built on `revokeAccountDevice` should imply
+otherwise. A per-namespace `keyRotated: false` in the answer is a further
+narrowing still: the device stopped writing there but can keep reading until an
+admin rotates.
+
 Every account also has one hidden account namespace.
 The holder's `getNodeIdentity().accountNamespaceId` names it.
 A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey, accountNamespace, namespaces: [] })` makes the device follow the account's namespaces on its own.
@@ -161,6 +174,7 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `getGroupInfo(groupId): Promise<GroupInfoResponseData>` | `GET /groups/{groupId}` |
 | `deleteGroup(groupId): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
+| `listGroupMemberDevices(groupId, options?): Promise<MemberDevicesEntry[]>` | `GET /groups/{groupId}/member-devices` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
 | `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |
