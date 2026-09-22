@@ -17,7 +17,9 @@ import {
   accountForRootPublicKey,
   deviceCertPayload,
   mintDeviceId,
+  parseDeviceCredential,
   signDeviceCert,
+  verifyDeviceCredential,
 } from './device-cert.js';
 import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
 
@@ -209,5 +211,73 @@ describe('a root held as a CryptoKey', () => {
     await expect(signDeviceCert({ ...COMMON })).rejects.toThrow(
       /rootSecret or signer is required/,
     );
+  });
+});
+
+/**
+ * The decoder exists so a page handed a credential by another origin can check
+ * it before acting on it. What earns a test is therefore the refusals: every
+ * one of them is a credential a caller must not store, and the round trip is
+ * only here to prove the offsets are read back where they were written.
+ */
+describe('reading a credential back', () => {
+  const SECRET = '77'.repeat(32);
+
+  async function credential(): Promise<string> {
+    return signDeviceCert({
+      rootSecret: SECRET,
+      device: DEVICE,
+      signPublicKey: SIGN_PK,
+      kemPublicKey: KEM_PK,
+      deviceEpoch: 7,
+    });
+  }
+
+  it('reads back exactly what was signed', async () => {
+    const parsed = parseDeviceCredential(await credential());
+    expect(parsed).toMatchObject({
+      rootPublicKey: (await signerFromSecret(SECRET)).publicKey,
+      account: await accountForRoot(SECRET),
+      device: DEVICE,
+      signPublicKey: SIGN_PK,
+      kemPublicKey: KEM_PK,
+      keyEpoch: 0,
+      deviceEpoch: 7,
+    });
+    expect(parsed.signature).toHaveLength(128);
+  });
+
+  it('verifies a credential its root really signed', async () => {
+    await expect(verifyDeviceCredential(await credential())).resolves.toMatchObject({
+      device: DEVICE,
+    });
+  });
+
+  it('refuses a credential re-pointed at another account', async () => {
+    // The account field is inside the signed payload, so this also fails the
+    // signature check — but it is caught first, and by the check whose message
+    // says which two accounts disagreed.
+    const hexed = await credential();
+    const tampered = hexed.slice(0, 74) + 'ff'.repeat(32) + hexed.slice(138);
+    await expect(verifyDeviceCredential(tampered)).rejects.toThrow(
+      /re-pointed at another account/,
+    );
+  });
+
+  it('refuses a genesis version that names a different account', async () => {
+    const hexed = await credential();
+    const tampered = '01' + hexed.slice(2);
+    expect(() => parseDeviceCredential(tampered)).toThrow(/genesis version 1/);
+  });
+
+  it('refuses a handoff chain rather than ignoring who was entitled to sign', async () => {
+    const hexed = await credential();
+    const tampered = hexed.slice(0, 66) + '01000000' + hexed.slice(74);
+    expect(() => parseDeviceCredential(tampered)).toThrow(/root chain/);
+  });
+
+  it('refuses anything that is not a whole credential', async () => {
+    const truncated = (await credential()).slice(0, 200);
+    expect(() => parseDeviceCredential(truncated)).toThrow(/474 hex characters/);
   });
 });

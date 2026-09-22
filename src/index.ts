@@ -82,8 +82,10 @@ export {
   deviceCertPayload,
   accountForRoot,
   accountForRootPublicKey,
+  parseDeviceCredential,
+  verifyDeviceCredential,
 } from './device-cert/index.js';
-export type { DeviceCertInput } from './device-cert/index.js';
+export type { DeviceCertInput, DeviceCredential } from './device-cert/index.js';
 export {
   signMemberJoinOp,
   encodeSignedInvitation,
