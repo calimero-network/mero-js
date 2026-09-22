@@ -1,3 +1,9 @@
+## [19.14.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.14.0...mero-js-v19.14.1) (2026-09-22)
+
+### Bug Fixes
+
+* **events:** a revoked token family arrives on SSE as 403, and the check only ever looked at 401 ([#166](https://github.com/calimero-network/mero-js/issues/166)) ([938c3e4](https://github.com/calimero-network/mero-js/commit/938c3e40690caa2c7d98cbd10f335f5f778bc25a))
+
 ## [19.14.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.13.1...mero-js-v19.14.0) (2026-09-20)
 
 ### Features
