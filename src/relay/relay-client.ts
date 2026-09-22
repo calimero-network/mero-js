@@ -161,6 +161,46 @@ export class RelayClient {
   }
 
   /**
+   * The relay's origin, trailing slash stripped.
+   *
+   * Exposed because a relay **is a node**: the same origin that answers the
+   * intents routes also answers `/auth/challenge`, `/auth/token`, `/sse` and
+   * `/ws`. Anything building an observing session over this relay needs the
+   * URL, and asking the caller to pass it a second time is how the two drift.
+   */
+  get relayUrl(): string {
+    return this.baseUrl;
+  }
+
+  /** The author's account, hex — whose consent every warrant here carries. */
+  get authorAccount(): string {
+    return this.config.authorAccount;
+  }
+
+  /**
+   * The author's `AccountProof<DeviceCert>`, hex.
+   *
+   * The same credential `login()` wants, which is why it is readable: a caller
+   * that already handed it to this client should not have to hand an identical
+   * copy to the login as well, where the two could disagree.
+   */
+  get authorProof(): string {
+    return this.config.authorProof;
+  }
+
+  /**
+   * The author device's signer.
+   *
+   * A {@link Signer} and never the secret: this returns something that can
+   * *sign*, so no caller of a `RelayClient` gains the ability to read a key
+   * that was passed in as `deviceSecret`. That asymmetry is the point — the
+   * login needs a signature, not key material.
+   */
+  async authorSigner(): Promise<Signer> {
+    return resolveSigner(this.config.deviceSecret, this.config.signer, 'deviceSecret');
+  }
+
+  /**
    * Ask the relay what it can do in `contextId`.
    *
    * Cheap and unauthenticated on a relay that serves delegated execution

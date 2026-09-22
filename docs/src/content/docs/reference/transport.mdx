@@ -42,6 +42,7 @@ accidentally pick the relay.
 ```typescript
 interface ExecuteTransport {
   readonly kind: 'node' | 'relay';
+  /** Whether this client can subscribe *as configured*. See below. */
   readonly canSubscribe: boolean;
   execute<T>(params: ExecuteParams): Promise<T>;
   executeWithMetadata<T>(params: ExecuteParams): Promise<ExecuteResult<T>>;
@@ -68,18 +69,53 @@ resolves a null `output` to `null`, so normalizing the relay's `null` to
 `undefined` would make the two disagree in the exact case this adapter exists to
 make agree.
 
-## What the relay transport cannot do
+## Events, on both transports
 
-<Aside type="caution" title="A relay-transport client can write, and cannot observe.">
-  A relay serves exactly two routes to a caller with no node credential — `GET`
-  and `POST /admin-api/contexts/:id/intents`. There is no `/sse`, no `/ws`, no
-  admin API and no credential with which to ask for one.
+A relay **is a node**. The same origin that answers the intents routes also
+answers `/auth/challenge`, `/auth/token`, `/sse` and `/ws`, and a keyholder
+holding an `AccountProof<DeviceCert>` can `login()` to it: the
+`account_proof` provider grants exactly `context:intent`,
+`context:query`, `context:subscribe`. Subscribe is in that default grant — not
+something extra to ask for.
+
+So `client.events` and `client.ws` are the same call on both transports, given
+**one** input: the relay node's device signing key.
+
+```typescript
+const client = createMeroClient({
+  transport: 'relay',
+  relay: connection.relay,
+  // learned out of band — from the relay's operator, or a certificate you
+  // already trust
+  observe: { nodeKey },
+});
+
+client.events.on('event', onEvent);   // identical to the node client
+```
+
+Everything else the login needs is defaulted from the `RelayClient` you already
+configured: its URL, the author's account proof, and its device signer. A second
+copy of those would just be two things that can disagree.
+
+<Aside type="caution" title="The node key is supplied, never discovered.">
+  It is deliberately not read out of the challenge response: a value learned
+  from the party you are about to authenticate to lets whoever answered choose
+  what your device signs a statement about. `peerId` is **not** a substitute —
+  it is a libp2p identity, a different key.
 </Aside>
 
-So `events`, `ws`, `ephemeral`, `admin`, `auth`, `node` and `cloud` **throw** on
-a relay client, naming what is missing. They do not fall back to some node: an
-app observing a node it never chose, under a credential it never granted, finds
-out only when the two disagree.
+### When no key is available
+
+For a cloud-hosted relay the cloud does not publish the node key yet
+(**mdma #312**), so `CloudRelay.nodeKey` is `null` and:
+
+- `client.canSubscribe` is `false` — it is a fact about this client, not a
+  constant about the transport;
+- `client.events` and `client.ws` **throw**, naming the missing key and #312.
+
+Nothing is stubbed and nothing falls back to "some node": an app observing a
+node it never chose, under a credential it never granted, finds out only when
+the two disagree.
 
 Branch on the capability instead of on the failure:
 
@@ -89,10 +125,25 @@ if (client.canSubscribe) {
 }
 ```
 
-Reads have the same shape of gap. `connectCloud` is explicit that it does not
-read state — a relay-transport app reads from a node it can query, or from its
-own projection of events it received. Closing that is a protocol question, not
-a client one.
+Pass `relayNodeKey` to `connectCloud` if you know the key today. When #312
+lands, `connectCloud` picks it up from the relay row and unchanged callers start
+observing — the call site does not change either way.
+
+## What the relay transport still cannot do
+
+`ephemeral`, `admin`, `auth`, `node` and `cloud` **throw** on a relay client,
+naming what is missing.
+
+- `admin` / `auth` want the `admin` scope, which the `account_proof` provider
+  does not grant and a keyholder should never ask for.
+- `ephemeral` publishing resolves the author from an *owned context identity on
+  the node*, which a delegated session is not known to have. Presence still
+  arrives on `client.events` like any other context event, so the read half is
+  available by filtering there.
+
+Reads have the same shape of gap as before. `connectCloud` is explicit that it
+does not read state — a relay-transport app reads from a node it can query, or
+from its own projection of the events it now receives.
 
 ## `connectCloud`
 
@@ -106,3 +157,8 @@ await connection.client.rpc.execute({ contextId, method: 'set', argsJson });
 
 `connection.relay` and `connection.execute` are unchanged and remain the direct
 path for a caller that wants the `IntentResult` in hand.
+
+`connectCloud` always configures `observe` on that client, with whatever node
+key is known: yours if you passed `relayNodeKey`, otherwise the relay row's —
+`null` until mdma #312. One code path, so the hosted case starts observing the
+day the field appears.

@@ -28,11 +28,20 @@ export type { MigrateMyEntriesSummary } from './rpc/index.js';
 export type { ExecuteParams } from './rpc/index.js';
 
 // Transport — one client, two write paths, chosen at construction (node by default)
-export { MeroClient, createMeroClient, RelayTransport } from './transport/index.js';
+export {
+  MeroClient,
+  createMeroClient,
+  RelayTransport,
+  // A relay is a node: given its signing key, a relay-transport client
+  // subscribes over the same `/sse` and `/ws` a node client uses.
+  RelayObserver,
+  defaultAudience,
+} from './transport/index.js';
 export type {
   MeroClientConfig,
   NodeTransportConfig,
   RelayTransportConfig,
+  RelayObserveConfig,
   ExecuteTransport,
   ExecuteResult,
   TransportKind,

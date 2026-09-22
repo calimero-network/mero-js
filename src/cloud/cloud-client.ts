@@ -128,6 +128,26 @@ export interface CloudRelay {
   relayUrl: string | null;
   /** The account a warrant for this relay must name as its `executor`, hex. */
   executorAccount: string | null;
+  /**
+   * The relay node's ed25519 **device signing key**, hex — or `null`, which is
+   * what it is today.
+   *
+   * A relay is an ordinary node, so it can be logged in to and subscribed to;
+   * the login statement has to be signed against this key, supplied separately
+   * rather than read from the node being authenticated. The cloud does not
+   * publish it yet (mdma #312), so this is `null` on every row and the hosted
+   * path reports `canSubscribe === false`.
+   *
+   * It is parsed rather than omitted so the hosted path needs no API change
+   * when the field lands: `connectCloud` already passes it through, and the
+   * same call site starts observing. `peerId` is **not** a fallback — it is a
+   * libp2p identity, a different key, and signing a statement about it would
+   * authenticate nothing.
+   *
+   * Both plausible spellings are accepted because mdma #312 has not fixed one;
+   * if it lands under a third name, this mapping is the single line to change.
+   */
+  nodeKey: string | null;
   /** `'assigned'` (admitted pending confirm) or `'active'`. */
   status: string;
   /** Whether this relay holds `CAN_AUTHOR_ON_BEHALF` on the namespace. */
@@ -558,6 +578,10 @@ export class CloudClient {
       peerId: String(row.peer_id ?? ''),
       relayUrl: (row.relay_url as string | null | undefined) ?? null,
       executorAccount: (row.executor_account as string | null | undefined) ?? null,
+      nodeKey:
+        (row.node_key as string | null | undefined) ??
+        (row.node_public_key as string | null | undefined) ??
+        null,
       status: String(row.status ?? ''),
       authorshipReady: row.authorship_ready === true,
       lastSeenAt: (row.last_seen_at as string | null | undefined) ?? null,
