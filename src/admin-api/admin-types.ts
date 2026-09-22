@@ -1121,6 +1121,21 @@ export interface AccountDeviceEntry {
   signingKey: string;
   /** Set only on the device this node itself presents. */
   isSelf: boolean;
+  /**
+   * Whether this device has been withdrawn from the account.
+   *
+   * A revoked device stays in the listing rather than vanishing from it, so a
+   * settings UI can render "revoked" as a state of a known device instead of
+   * silently losing the row. Never filter on this by default: a device that
+   * disappeared and a device that was withdrawn are different facts, and only
+   * the second one is a fact the account holder took an action to create.
+   *
+   * Revocation is **forward-only**. It withdraws the device's authority to
+   * write from here on; it does not retract, unsign or rewrite anything the
+   * device already authored, and ops it signed before the revocation stay valid
+   * and stay in the DAG. `revoked: true` therefore means "may not act any more",
+   * never "never acted" - do not build UI that implies the past was undone.
+   */
   revoked: boolean;
   /**
    * Applications this device may speak for, 64 hex each. **Empty means every
@@ -1181,7 +1196,15 @@ export interface AccountApplicationEntry {
   namespaces: string[];
 }
 
-/** Withdraw a device from an account, terminally. */
+/**
+ * Withdraw a device from an account, terminally.
+ *
+ * Terminal in one direction only: revocation is **forward-only**. It stops the
+ * device acting from here on and does not retract past authorship - every op it
+ * already signed keeps verifying and stays in the DAG, because the certificate
+ * that authorised it was valid when the signature was made. There is no
+ * "un-author" in this system, so no revocation UI should promise one.
+ */
 export interface RevokeAccountDeviceRequest {
   /** The device to withdraw, 64 hex. */
   deviceId: string;
@@ -1239,6 +1262,39 @@ export interface RevokeAccountDeviceResponseData {
    * revocation is a state the caller has to be able to see.
    */
   revokedIn: RevocationOutcome[];
+}
+
+/** One device of one member account, as the group's live bindings record it. */
+export interface MemberDeviceEntry {
+  /** The device id, 64 hex - the form {@link RevokeAccountDeviceRequest.deviceId} takes. */
+  deviceId: string;
+  /**
+   * The key this device's signatures carry, 64 hex. This is the join column
+   * against the identities a context reports, which name bare signing keys and
+   * nothing else.
+   */
+  signingKey: string;
+}
+
+/** One member account of a group, with the devices currently bound for it. */
+export interface MemberDevicesEntry {
+  /** The member's account id, 64 hex - the same id a group member listing names. */
+  account: string;
+  /**
+   * Devices holding a live binding for this account. Only live ones: a revoked
+   * device is gone from here, unlike {@link AccountDeviceEntry} which keeps it
+   * with `revoked: true`. So this answers "who may act now", never "who ever
+   * did" - a past author may well be absent.
+   */
+  devices: MemberDeviceEntry[];
+}
+
+/** Paging for a member-device listing. Both are optional; the node defaults them. */
+export interface ListMemberDevicesOptions {
+  /** How many entries to skip. */
+  offset?: number;
+  /** How many entries to return. The node clamps this to its own maximum. */
+  limit?: number;
 }
 
 // ---- Groups ----
