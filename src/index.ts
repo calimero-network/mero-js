@@ -27,6 +27,17 @@ export { RpcClient, RpcError } from './rpc/index.js';
 export type { MigrateMyEntriesSummary } from './rpc/index.js';
 export type { ExecuteParams } from './rpc/index.js';
 
+// Transport — one client, two write paths, chosen at construction (node by default)
+export { MeroClient, createMeroClient, RelayTransport } from './transport/index.js';
+export type {
+  MeroClientConfig,
+  NodeTransportConfig,
+  RelayTransportConfig,
+  ExecuteTransport,
+  ExecuteResult,
+  TransportKind,
+} from './transport/index.js';
+
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from './events/index.js';
 export type {

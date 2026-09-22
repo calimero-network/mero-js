@@ -41,6 +41,7 @@ import type { IntentResult, NonceSource } from '../relay/index.js';
 import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay/nonce-source.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
+import { MeroClient } from '../transport/mero-client.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -116,6 +117,19 @@ export interface CloudConnection {
     method: string,
     argsJson?: unknown,
   ): Promise<IntentResult<T>>;
+  /**
+   * The same connection behind the transport-neutral surface.
+   *
+   * `client.rpc.execute({ contextId, method, argsJson })` is the call a
+   * node-backed app already writes, so an app reaching the cloud this way keeps
+   * every call site it has — signing in *is* the transport decision, and it
+   * happens here, once. `relay` and `execute` above are unchanged and remain
+   * the direct path for a caller that wants `IntentResult` in hand.
+   *
+   * It cannot subscribe (`client.canSubscribe === false`): see
+   * {@link MeroClient}.
+   */
+  client: MeroClient;
 }
 
 /**
@@ -186,6 +200,10 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     namespace,
     relayInfo,
     execute: (contextId, method, argsJson) => relay.execute(contextId, method, argsJson),
+    // Built from the same `relay`, not a second one: one nonce sequence, one
+    // warrant signer. Two clients over one relay would hand out the same nonce
+    // twice and have the network refuse the loser as a replay.
+    client: new MeroClient({ transport: 'relay', relay }),
   };
 }
 

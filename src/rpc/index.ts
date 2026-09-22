@@ -75,6 +75,17 @@ export async function jsonRpcCall<T>(
 export class RpcClient {
   private httpClient: HttpClient;
 
+  /**
+   * Which write path this is. Present so `RpcClient` satisfies
+   * `ExecuteTransport` as-is — the transport abstraction adopted *this* class's
+   * `execute` shape as the canonical one, so the node side is the interface
+   * rather than an adapter onto it.
+   */
+  readonly kind = 'node' as const;
+
+  /** A node serves `/sse` and `/ws` to the credential it issued. */
+  readonly canSubscribe = true;
+
   constructor(opts: { httpClient: HttpClient }) {
     this.httpClient = opts.httpClient;
   }
@@ -91,6 +102,20 @@ export class RpcClient {
     }
 
     return result as T;
+  }
+
+  /**
+   * The same call, in the shape the transport abstraction shares with the
+   * relay.
+   *
+   * `rootHash` is left absent rather than synthesized: JSON-RPC `execute` does
+   * not report the context's scope root, and inventing a value — or a `''` —
+   * would make "the node does not tell us" indistinguishable from an answer.
+   */
+  async executeWithMetadata<T = unknown>(
+    params: ExecuteParams,
+  ): Promise<{ returns: T; transport: 'node' }> {
+    return { returns: await this.execute<T>(params), transport: 'node' };
   }
 
   /**

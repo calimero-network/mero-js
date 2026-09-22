@@ -302,6 +302,38 @@ describe('connectCloud', () => {
       groupId: GROUP,
     });
   });
+
+  /**
+   * Signing in *is* the transport decision, so the connection has to hand back
+   * something an app can use without rewriting its call sites — otherwise the
+   * one-call cloud path ends in a client only cloud-aware code can drive.
+   */
+  it('exposes the same connection behind the transport-neutral client', async () => {
+    const { fetch } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: { relays: [readyRelay] },
+      [`/admin-api/contexts/${CONTEXT}/intents`]: {
+        data: { rootHash: 'root-1', returns: 'ok' },
+      },
+    });
+
+    const connection = await connectCloud(options({ fetch }));
+
+    expect(connection.client.transport).toBe('relay');
+    // One relay, so one nonce sequence: a second client would hand out numbers
+    // the first has already spent.
+    expect(connection.client.relay).toBe(connection.relay);
+    // The node-shaped call, unwrapped — not an `IntentResult`.
+    await expect(
+      connection.client.rpc.execute<string>({
+        contextId: CONTEXT,
+        method: 'set',
+        argsJson: { key: 'k' },
+      }),
+    ).resolves.toBe('ok');
+    // Stated up front, not discovered by a failing subscribe.
+    expect(connection.client.canSubscribe).toBe(false);
+  });
 });
 
 /**
