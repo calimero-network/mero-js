@@ -63,12 +63,16 @@ export {
   generateAccountRoot,
   accountRootFromPhrase,
   accountRootFromSecret,
+  createAccountRootSigner,
+  accountRootSignerFromPhrase,
   signAccountLink,
   signAccountLogin,
 } from './account/index.js';
 export type {
   AccountRoot,
   RecoverableAccountRoot,
+  AccountRootSigner,
+  NewAccountRootSigner,
   AccountLinkInput,
   AccountLoginInput,
 } from './account/index.js';
@@ -77,6 +81,7 @@ export {
   mintDeviceId,
   deviceCertPayload,
   accountForRoot,
+  accountForRootPublicKey,
 } from './device-cert/index.js';
 export type { DeviceCertInput } from './device-cert/index.js';
 export {
