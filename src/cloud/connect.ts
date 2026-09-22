@@ -42,6 +42,8 @@ import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay
 import { resolveSigner, type Signer } from '../signer/signer.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
 import { MeroClient } from '../transport/mero-client.js';
+import type { RelayObserveConfig } from '../transport/relay-observer.js';
+import type { Audience } from '../login/index.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -98,6 +100,26 @@ export interface ConnectCloudOptions {
   ttlSeconds?: number;
   fetch?: typeof fetch;
   timeoutMs?: number;
+
+  /**
+   * The chosen relay node's device signing key, hex — if you know it.
+   *
+   * Supplying it makes `connection.client` able to *observe* as well as write:
+   * a relay is an ordinary node, and a keyholder with an account proof can log
+   * in to it and subscribe. The key has to come from somewhere the caller
+   * already trusts, which today means out of band, because the cloud does not
+   * publish it (mdma #312).
+   *
+   * Left unset, the key the cloud reported is used — `null` for now, which
+   * means `connection.client.canSubscribe === false` and nothing is guessed.
+   * When #312 lands, unchanged callers start observing.
+   */
+  relayNodeKey?: string;
+  /**
+   * The audience the observing session is bound to. Defaults to this runtime's
+   * own origin (or `cli`). See {@link RelayObserveConfig.audience}.
+   */
+  observeAudience?: Audience;
 }
 
 /** A signed-in cloud session with a relay ready to write through. */
@@ -126,8 +148,12 @@ export interface CloudConnection {
    * happens here, once. `relay` and `execute` above are unchanged and remain
    * the direct path for a caller that wants `IntentResult` in hand.
    *
-   * It cannot subscribe (`client.canSubscribe === false`): see
-   * {@link MeroClient}.
+   * Whether it can also *observe* depends on one input: the relay node's
+   * device signing key. A relay is an ordinary node and serves `/sse` and
+   * `/ws`, but a login statement must be signed against a key learned out of
+   * band. Pass {@link ConnectCloudOptions.relayNodeKey} if you have it; the
+   * cloud does not publish it yet (mdma #312), so by default
+   * `client.canSubscribe === false` and `client.events` throws saying so.
    */
   client: MeroClient;
 }
@@ -203,7 +229,21 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     // Built from the same `relay`, not a second one: one nonce sequence, one
     // warrant signer. Two clients over one relay would hand out the same nonce
     // twice and have the network refuse the loser as a replay.
-    client: new MeroClient({ transport: 'relay', relay }),
+    //
+    // `observe` is always passed, with whatever key is known — the caller's if
+    // they had one, otherwise the cloud's, which is `null` until mdma #312. One
+    // code path rather than two, so the hosted case starts observing the day
+    // the field appears, without a line changing here or at the call site.
+    client: new MeroClient({
+      transport: 'relay',
+      relay,
+      observe: {
+        nodeKey: options.relayNodeKey ?? relayInfo.nodeKey,
+        audience: options.observeAudience,
+        fetch: options.fetch,
+        timeoutMs: options.timeoutMs,
+      } satisfies RelayObserveConfig,
+    }),
   };
 }
 

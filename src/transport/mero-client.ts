@@ -21,12 +21,24 @@
  * in front. No `transport` field means `'node'`, so nothing an existing app
  * does can accidentally select the relay.
  *
+ * # Events work on both transports, given one input
+ *
+ * A relay is an ordinary node, so it serves `/sse` and `/ws` to a credential it
+ * issued, and a keyholder can obtain one by logging in with its account proof.
+ * `client.events` and `client.ws` are therefore the same call on both
+ * transports — provided the caller supplies the relay node's device signing
+ * key, which must be learned out of band and is the one thing that cannot be
+ * inferred. See `./relay-observer.ts` for why, and mdma #312 for the hosted
+ * case. Without it, {@link MeroClient.canSubscribe} is `false` and the
+ * accessors throw naming exactly that.
+ *
  * # What is deliberately NOT unified
  *
- * Reads, admin and events. A relay serves exactly two routes to a caller with
- * no credential — `GET` and `POST /admin-api/contexts/:id/intents` — and a node
- * serves the whole admin API, JSON-RPC queries, `/sse` and `/ws` to a
- * credential it issued. There is no relay counterpart to adapt.
+ * Reads and admin. A relay serves exactly two routes to a caller with no
+ * credential — `GET` and `POST /admin-api/contexts/:id/intents` — and while a
+ * session obtained by logging in carries `context:query`, `sdk.admin` wants
+ * `admin`, which the `account_proof` provider does not grant and a keyholder
+ * should never ask for.
  *
  * So those accessors throw on a relay client, with a message naming what is
  * missing, rather than returning something that quietly connects somewhere
@@ -41,6 +53,8 @@ import type { MeroJsConfig } from '../mero-js.js';
 import { RelayClient } from '../relay/relay-client.js';
 import type { RelayClientConfig } from '../relay/relay-client.js';
 import { RelayTransport } from './relay-transport.js';
+import { RelayObserver, defaultAudience } from './relay-observer.js';
+import type { RelayObserveConfig } from './relay-observer.js';
 import type { ExecuteTransport, TransportKind } from './types.js';
 import type { AdminApiClient } from '../admin-api/index.js';
 import type { AuthApiClient } from '../auth-api/index.js';
@@ -48,6 +62,7 @@ import type { SseClient } from '../events/sse.js';
 import type { WsClient } from '../events/ws.js';
 import type { EphemeralClient } from '../ephemeral/index.js';
 import type { CloudClient } from '../cloud/cloud-client.js';
+import type { Signer } from '../signer/signer.js';
 
 /** The node transport: everything `createMeroJs` takes, plus an explicit opt-in. */
 export interface NodeTransportConfig extends MeroJsConfig {
@@ -71,6 +86,20 @@ export interface RelayTransportConfig {
    * would have that caller take the client apart to put it back together.
    */
   relay: RelayClient | RelayClientConfig;
+  /**
+   * How this client observes the relay node, if it can.
+   *
+   * Omit it — or pass it with no `nodeKey` — and the client writes but does not
+   * observe: `canSubscribe` is `false` and `events`/`ws` throw naming the
+   * missing key. Supply `{ nodeKey }` and `client.events` is the very same
+   * `SseClient` a node client hands out.
+   *
+   * The shape takes a nullable key on purpose, so the hosted path is one code
+   * path rather than two: `connectCloud` always passes this object, with
+   * whatever key the cloud reported, and starts working the day mdma #312
+   * publishes one. Nothing here ever fills the key in.
+   */
+  observe?: RelayObserveConfig;
 }
 
 export type MeroClientConfig = NodeTransportConfig | RelayTransportConfig;
@@ -82,6 +111,51 @@ function relayHasNo(surface: string, why: string): Error {
       'Construct a node client (createMeroClient({ baseUrl })) for that surface — ' +
       'nothing here will silently connect to a node you did not choose.',
   );
+}
+
+/**
+ * The one thing a relay client can be missing, named precisely.
+ *
+ * Deliberately not the same message as {@link relayHasNo}: this is not "the
+ * relay transport has no such surface". The relay has the surface — it serves
+ * `/sse` and `/ws`, and the `account_proof` provider grants
+ * `context:subscribe`. What is missing is a single 32-byte value, and a caller
+ * who can obtain it needs to be told that, not told to go and build a node
+ * client.
+ */
+function missingNodeKey(surface: string): Error {
+  return new Error(
+    `this relay-transport client cannot open ${surface}: it was given no relay node key. ` +
+      'A relay is an ordinary node and does serve /sse and /ws — but the login statement must be ' +
+      "signed against the node's device signing key, learned out of band (never read from the node, " +
+      'and never derived from its peerId). Pass it as `observe: { nodeKey }`. ' +
+      'For a cloud-hosted relay the cloud does not publish it yet — see mdma #312.',
+  );
+}
+
+/**
+ * Resolve an observe config against the relay client that will do the writing.
+ *
+ * Returns `null` for "no key, so no observation" — the single place that
+ * decision is made, so `canSubscribe`, `events` and `ws` cannot disagree about
+ * it. The signer and proof default to the relay's own: the same device that
+ * authors is the device that observes, and taking a second copy from the caller
+ * is how the two come to name different keys.
+ */
+function buildObserver(relay: RelayClient, observe?: RelayObserveConfig): RelayObserver | null {
+  const nodeKey = observe?.nodeKey;
+  if (!nodeKey) return null;
+  return new RelayObserver({
+    nodeUrl: observe?.nodeUrl ?? relay.relayUrl,
+    nodeKey,
+    accountProof: observe?.accountProof ?? relay.authorProof,
+    audience: observe?.audience ?? defaultAudience(),
+    signer: observe?.signer ? async () => observe.signer as Signer : () => relay.authorSigner(),
+    clientName: observe?.clientName,
+    ttlSeconds: observe?.ttlSeconds,
+    fetch: observe?.fetch,
+    timeoutMs: observe?.timeoutMs,
+  });
 }
 
 /**
@@ -97,6 +171,8 @@ export class MeroClient {
 
   private readonly nodeClient: MeroJs | null;
   private readonly rpcTransport: ExecuteTransport;
+  /** The relay's event session, or `null` on a node client / with no node key. */
+  private readonly relayObserver: RelayObserver | null = null;
 
   constructor(config: MeroClientConfig) {
     if (config.transport === 'relay') {
@@ -104,7 +180,8 @@ export class MeroClient {
       this.nodeClient = null;
       const relay =
         config.relay instanceof RelayClient ? config.relay : new RelayClient(config.relay);
-      this.rpcTransport = new RelayTransport(relay);
+      this.relayObserver = buildObserver(relay, config.observe);
+      this.rpcTransport = new RelayTransport(relay, this.relayObserver);
       return;
     }
 
@@ -129,11 +206,11 @@ export class MeroClient {
   }
 
   /**
-   * Whether this client can observe events at all.
+   * Whether `events` / `ws` will work on this client.
    *
-   * `false` on the relay transport. An app that needs to see other people's
-   * writes has to hold a node connection for that; see the module note on why
-   * this does not fall back to one.
+   * Always `true` on the node transport. On the relay transport it says whether
+   * a node key was supplied — the relay can be observed, but only by a caller
+   * who can name the key the login statement is signed against.
    */
   get canSubscribe(): boolean {
     return this.rpcTransport.canSubscribe;
@@ -166,39 +243,49 @@ export class MeroClient {
   }
 
   /**
-   * SSE events. Node transport only.
+   * SSE events — on **both** transports.
    *
-   * This is the parity gap, stated plainly rather than papered over: a relay
-   * exposes no event stream and no credential with which to ask for one, so a
-   * relay-transport app can write and cannot observe.
+   * On a relay client this is an `SseClient` against the relay node, fed by a
+   * session minted with the author's account proof. The session is minted
+   * lazily, on the first token the stream asks for, so reading this getter
+   * performs no network call.
+   *
+   * Throws only when the relay client was given no node key: the one input
+   * that cannot be inferred. See {@link missingNodeKey}.
    */
   get events(): SseClient {
-    if (!this.nodeClient) {
-      throw relayHasNo(
-        'event stream',
-        'a relay serves only the intents routes — it has no /sse, no /ws, and issues no credential for either',
-      );
-    }
-    return this.nodeClient.events;
+    if (this.nodeClient) return this.nodeClient.events;
+    if (this.relayObserver) return this.relayObserver.events;
+    throw missingNodeKey('SSE events');
   }
 
-  /** WebSocket events. Node transport only. @experimental — prefer `events`. */
+  /** WebSocket events, on both transports. @experimental — prefer `events`. */
   get ws(): WsClient {
-    if (!this.nodeClient) {
-      throw relayHasNo(
-        'event stream',
-        'a relay serves only the intents routes — it has no /sse, no /ws, and issues no credential for either',
-      );
-    }
-    return this.nodeClient.ws;
+    if (this.nodeClient) return this.nodeClient.ws;
+    if (this.relayObserver) return this.relayObserver.ws;
+    throw missingNodeKey('WebSocket events');
   }
 
-  /** Ephemeral presence. Node transport only — it reads over SSE and writes over JSON-RPC. */
+  /**
+   * Ephemeral presence. Node transport only.
+   *
+   * Not extended to the relay even though a logged-in session could reach both
+   * halves of it mechanically. Publishing resolves the author from an *owned
+   * context identity on the node*, and whether a delegated session has one has
+   * not been established — a presence client that silently published nothing,
+   * or published as the wrong identity, is worse than one that says it is not
+   * available. The read half is not lost: presence arrives on `client.events`
+   * like any other context event, and can be filtered there.
+   *
+   * The rejected alternative was to expose it over the relay session and let
+   * `set` fail at the node. That trades a clear construction-time answer for a
+   * runtime failure inside a UI that has already rendered.
+   */
   get ephemeral(): EphemeralClient {
     if (!this.nodeClient) {
       throw relayHasNo(
         'ephemeral presence',
-        'publishing resolves the author from an owned context identity on the node, and reading is a filter over the node event stream',
+        'publishing resolves the author from an owned context identity on the node, which a delegated session is not known to have — read presence off `client.events` instead',
       );
     }
     return this.nodeClient.ephemeral;
@@ -229,6 +316,9 @@ export class MeroClient {
    */
   close(): void {
     this.nodeClient?.close();
+    // The observer, not the relay: a relay client holds nothing open. Tearing
+    // down on unmount must not have to know which transport it got.
+    this.relayObserver?.close();
   }
 }
 
@@ -240,9 +330,16 @@ export class MeroClient {
  * const client = createMeroClient({ baseUrl: 'http://localhost:2428' });
  *
  * // the same call sites, through a relay
- * const client = createMeroClient({ transport: 'relay', relay: connection.relay });
+ * const client = createMeroClient({
+ *   transport: 'relay',
+ *   relay: connection.relay,
+ *   // the relay node's signing key, learned out of band — without it the
+ *   // client writes but does not observe
+ *   observe: { nodeKey },
+ * });
  *
  * await client.rpc.execute({ contextId, method: 'set', argsJson: { key, value } });
+ * if (client.canSubscribe) client.events.on('event', onEvent);
  * ```
  */
 export function createMeroClient(config: MeroClientConfig): MeroClient {

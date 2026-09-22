@@ -26,17 +26,39 @@
 import type { ExecuteParams, MigrateMyEntriesSummary } from '../rpc/index.js';
 import type { RelayClient } from '../relay/relay-client.js';
 import type { ExecuteResult, ExecuteTransport, TransportKind } from './types.js';
+import type { RelayObserver } from './relay-observer.js';
 
 export class RelayTransport implements ExecuteTransport {
   readonly kind: TransportKind = 'relay';
 
-  /**
-   * A relay serves intents and nothing else — no `/sse`, no `/ws`, and no
-   * credential with which to ask for one. See the note in `./types.ts`.
-   */
-  readonly canSubscribe = false;
+  constructor(
+    private readonly relay: RelayClient,
+    /**
+     * How this transport observes, or `null` when nobody supplied the relay
+     * node's signing key. Held here rather than on `MeroClient` so that
+     * {@link RelayTransport.canSubscribe} — which an app may read off
+     * `client.rpc` — answers about the thing it is actually asked about.
+     */
+    private readonly observer: RelayObserver | null = null,
+  ) {}
 
-  constructor(private readonly relay: RelayClient) {}
+  /**
+   * Whether this relay can be observed — a fact, not a constant.
+   *
+   * A relay IS a node: it serves `/auth/challenge`, `/auth/token`, `/sse` and
+   * `/ws`, and the `account_proof` provider grants `context:subscribe` by
+   * default. What decides the answer is therefore not the transport but whether
+   * a caller supplied the node's device signing key, which cannot be inferred
+   * from the node or from its `peerId`. See `./relay-observer.ts`.
+   */
+  get canSubscribe(): boolean {
+    return this.observer !== null;
+  }
+
+  /** The event session, or `null` when no node key was supplied. */
+  get events(): RelayObserver | null {
+    return this.observer;
+  }
 
   /** The underlying client, for `describe()` and anything else relay-specific. */
   get client(): RelayClient {
@@ -75,7 +97,10 @@ export class RelayTransport implements ExecuteTransport {
    * `ExecuteTransport` is an interface, not a base class.
    */
   async migrateMyEntries(contextId: string): Promise<MigrateMyEntriesSummary> {
-    return this.execute<MigrateMyEntriesSummary>({ contextId, method: 'migrate_my_entries' });
+    return this.execute<MigrateMyEntriesSummary>({
+      contextId,
+      method: 'migrate_my_entries',
+    });
   }
 
   /** Read-only count of the caller's entries still below the target schema. */

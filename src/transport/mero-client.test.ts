@@ -12,6 +12,7 @@ import { createMeroClient, MeroClient } from './mero-client.js';
 import { RelayTransport } from './relay-transport.js';
 import { RelayClient } from '../relay/relay-client.js';
 import { createMemoryNonceSource } from '../relay/nonce-source.js';
+import { MemoryTokenStore } from '../token-store/index.js';
 import type { ExecuteTransport } from './types.js';
 
 const CONTEXT = '01'.repeat(32);
@@ -248,24 +249,50 @@ describe('transport selection', () => {
   });
 });
 
-describe('what a relay-transport client cannot do', () => {
+describe('a relay client with no node key', () => {
   const client = (): MeroClient =>
     createMeroClient({ transport: 'relay', relay: relayClient(fakeRelayFetch(null).fetch) });
 
   it('reports that it cannot subscribe, before anything is attempted', () => {
     expect(client().canSubscribe).toBe(false);
+    expect(client().rpc.canSubscribe).toBe(false);
   });
 
-  it.each(['events', 'ws', 'ephemeral', 'admin', 'auth', 'node', 'cloud'] as const)(
-    'throws from `%s` rather than falling back to some other node',
+  it('reports the same when `observe` is present but carries no key', () => {
+    // The hosted shape today: `connectCloud` always passes `observe`, with the
+    // key the cloud reported — which is null until mdma #312.
+    const c = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(fakeRelayFetch(null).fetch),
+      observe: { nodeKey: null },
+    });
+    expect(c.canSubscribe).toBe(false);
+  });
+
+  it.each(['events', 'ws'] as const)(
+    'throws from `%s` naming the missing key and mdma #312, not a phantom gap',
+    (surface) => {
+      expect(() => client()[surface]).toThrow(/no relay node key/);
+      expect(() => client()[surface]).toThrow(/mdma #312/);
+    },
+  );
+
+  it('does not claim the relay has no event routes — it has them', () => {
+    // The previous message said a relay "has no /sse, no /ws". That was wrong:
+    // a relay is an ordinary node. Only the key is missing.
+    expect(() => client().events).toThrow(/does serve \/sse and \/ws/);
+  });
+
+  it('refuses to substitute peerId for the node key', () => {
+    expect(() => client().events).toThrow(/never derived from its peerId/);
+  });
+
+  it.each(['ephemeral', 'admin', 'auth', 'node', 'cloud'] as const)(
+    'still throws from `%s` rather than falling back to some other node',
     (surface) => {
       expect(() => client()[surface]).toThrow(/relay transport/);
     },
   );
-
-  it('explains the event gap in terms of what the relay actually serves', () => {
-    expect(() => client().events).toThrow(/no \/sse, no \/ws/);
-  });
 
   it('closes without error, so teardown need not know the transport', () => {
     expect(() => client().close()).not.toThrow();
@@ -275,5 +302,201 @@ describe('what a relay-transport client cannot do', () => {
     expect(() => createMeroClient({ baseUrl: 'http://node.example' }).relay).toThrow(
       /node transport/,
     );
+  });
+});
+
+/**
+ * A fake relay origin answering the two login calls, then the write.
+ *
+ * Deliberately a real `login()` handshake rather than a stubbed token: the
+ * thing being proved is that a relay origin serves `/auth/challenge` and
+ * `/auth/token` to an account proof, which is what makes "a relay can be
+ * observed" true.
+ */
+function fakeRelayNodeFetch(): { fetch: typeof fetch; paths: string[]; bodies: unknown[] } {
+  const paths: string[] = [];
+  const bodies: unknown[] = [];
+  const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    paths.push(url.pathname);
+    if (init?.body) bodies.push(JSON.parse(String(init.body)));
+    if (url.pathname === '/auth/challenge') {
+      return Response.json({ data: { challenge: '11'.repeat(32) } });
+    }
+    if (url.pathname === '/auth/token') {
+      return Response.json({ data: { access_token: 'sess-token', refresh_token: 'refresh-1' } });
+    }
+    return Response.json({ data: { rootHash: 'ff'.repeat(32), returns: null } });
+  }) as unknown as typeof fetch;
+  return { fetch: impl, paths, bodies };
+}
+
+/** A WebSocket stand-in that records its URL and can push one frame back. */
+class FakeWebSocket {
+  static last: FakeWebSocket | null = null;
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  sent: string[] = [];
+  constructor(readonly url: string) {
+    FakeWebSocket.last = this;
+    // Opened asynchronously, like the real thing: `connect()` has to have
+    // returned before anyone sees `onopen`.
+    setTimeout(() => this.onopen?.(), 0);
+  }
+  send(data: string): void {
+    this.sent.push(data);
+  }
+  close(): void {}
+}
+
+/** The observing config a caller who knows the key writes. */
+const OBSERVE = { nodeKey: 'cd'.repeat(32), audience: { kind: 'cli' } } as const;
+
+describe('a relay client given the node key', () => {
+  it('reports that it can subscribe', () => {
+    const client = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(fakeRelayNodeFetch().fetch),
+      observe: { ...OBSERVE },
+    });
+    expect(client.canSubscribe).toBe(true);
+    expect(client.rpc.canSubscribe).toBe(true);
+    expect(client.transport).toBe('relay');
+  });
+
+  it('hands out the same SseClient class a node client does', () => {
+    const relayed = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(fakeRelayNodeFetch().fetch),
+      observe: { ...OBSERVE },
+    });
+    vi.stubGlobal('fetch', fakeNodeFetch(null).fetch);
+    const noded = createMeroClient({ baseUrl: 'http://node.example' });
+    expect(relayed.events.constructor).toBe(noded.events.constructor);
+  });
+
+  it('logs in with the account proof and subscribes with the session it got', async () => {
+    const node = fakeRelayNodeFetch();
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const client = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(node.fetch),
+      observe: { ...OBSERVE, fetch: node.fetch },
+    });
+
+    const seen: unknown[] = [];
+    client.ws.on('event', (e) => seen.push(e));
+    await client.ws.connect();
+    await client.ws.subscribe([CONTEXT]);
+
+    // The handshake actually happened, in order, against the relay's origin.
+    expect(node.paths).toEqual(['/auth/challenge', '/auth/token']);
+    const tokenBody = node.bodies[0] as {
+      auth_method: string;
+      provider_data: { account_proof: string };
+      permissions?: unknown;
+    };
+    expect(tokenBody.auth_method).toBe('account_proof');
+    // Defaulted from the relay client rather than taken a second time.
+    expect(tokenBody.provider_data.account_proof).toBe('aa');
+    // Never asked for: the provider's own grant already includes
+    // context:subscribe, and asking widens what a device key can mint.
+    expect(tokenBody.permissions).toBeUndefined();
+    // ...and the session it minted is what the stream presents.
+    expect(FakeWebSocket.last?.url).toContain('token=sess-token');
+
+    // A StateMutation arriving on that stream reaches the app's handler.
+    FakeWebSocket.last?.onmessage?.({
+      data: JSON.stringify({
+        result: { contextId: CONTEXT, type: 'StateMutation', data: { newRoot: 'ff'.repeat(32) } },
+      }),
+    });
+    expect(seen).toEqual([
+      { contextId: CONTEXT, type: 'StateMutation', data: { newRoot: 'ff'.repeat(32) } },
+    ]);
+
+    client.close();
+  });
+
+  it('mints one session even when both event surfaces ask at once', async () => {
+    const node = fakeRelayNodeFetch();
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const client = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(node.fetch),
+      observe: { ...OBSERVE, fetch: node.fetch },
+    });
+    await Promise.all([client.ws.connect(), client.ws.connect()]);
+    expect(node.paths.filter((p) => p === '/auth/token')).toHaveLength(1);
+    client.close();
+  });
+
+  it('is the same object each time, so handlers are not registered twice', () => {
+    const client = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(fakeRelayNodeFetch().fetch),
+      observe: { ...OBSERVE },
+    });
+    expect(client.events).toBe(client.events);
+    expect(client.ws).toBe(client.ws);
+  });
+});
+
+describe('one call site that both writes and observes', () => {
+  /**
+   * The requirement in one function: an app written once, naming no transport,
+   * that both writes and subscribes. If either transport ever needs a special
+   * case here, this is the test that fails.
+   */
+  async function appCodeThatObserves(client: MeroClient): Promise<unknown[]> {
+    const seen: unknown[] = [];
+    client.ws.on('event', (e) => seen.push(e));
+    await client.ws.connect();
+    await client.ws.subscribe([CONTEXT]);
+    await client.rpc.execute({ contextId: CONTEXT, method: 'set', argsJson: { key: 'k' } });
+    // The node echoes the write back on the stream this client subscribed to.
+    // Driven from the fake here rather than from inside a transport-specific
+    // helper: the app does not know, and must not need to know, which one it
+    // is on.
+    FakeWebSocket.last?.onmessage?.({
+      data: JSON.stringify({
+        result: { contextId: CONTEXT, type: 'StateMutation', data: { newRoot: 'ff'.repeat(32) } },
+      }),
+    });
+    return seen;
+  }
+
+  /** What both transports must produce: the write's own mutation, once. */
+  const expected = [
+    { contextId: CONTEXT, type: 'StateMutation', data: { newRoot: 'ff'.repeat(32) } },
+  ];
+
+  it('runs unchanged against a node client and a keyed relay client', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+
+    vi.stubGlobal('fetch', fakeNodeFetch(null).fetch);
+    // A node client holds a credential it was issued; a relay client mints one
+    // by logging in. Different provenance, same surface from here on — which is
+    // the whole claim under test.
+    const store = new MemoryTokenStore();
+    store.setTokens({
+      access_token: 'node-token',
+      refresh_token: 'r',
+      expires_at: Date.now() + 3_600_000,
+    });
+    const noded = createMeroClient({ baseUrl: 'http://node.example', tokenStore: store });
+    await expect(appCodeThatObserves(noded)).resolves.toEqual(expected);
+    noded.close();
+
+    const node = fakeRelayNodeFetch();
+    const relayed = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(node.fetch),
+      observe: { ...OBSERVE, fetch: node.fetch },
+    });
+    await expect(appCodeThatObserves(relayed)).resolves.toEqual(expected);
+    relayed.close();
   });
 });

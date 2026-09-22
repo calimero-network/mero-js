@@ -16,17 +16,18 @@
  * shipped code uses the node shape, so any other choice would be a breaking
  * change dressed up as an abstraction.
  *
- * # What is NOT on this interface, and why that is the honest answer
+ * # Why subscription is not a method on this interface
  *
- * Subscription is not here. A node serves `/sse` and `/ws` to a credential it
- * issued; a relay serves exactly two routes without one — `GET` and `POST
- * /admin-api/contexts/:id/intents` — and nothing else. There is no relay event
- * stream to adapt, so putting `subscribe` on this interface would force every
- * relay implementation to either throw from a method the type promises or
- * quietly open a connection to some *other* node, which is worse: the app would
- * observe a node it never chose. See {@link ExecuteTransport.canSubscribe} —
- * the capability is reported as data so an app can branch on it, rather than
- * discovered by a method that fails.
+ * Not because a relay cannot be observed — it can; a relay is an ordinary node
+ * and a keyholder can log in to it (see `./relay-observer.ts`). It is because
+ * `RpcClient` satisfies this interface *as it already ships*, and `RpcClient`
+ * has never had a `subscribe`. Adding one would change the canonical shape,
+ * which is the single thing this work must not do.
+ *
+ * Observation therefore lives on `MeroClient` — `client.events`, `client.ws` —
+ * where it lives for a node client, and is the same call on both transports.
+ * {@link ExecuteTransport.canSubscribe} reports whether it will work, so an app
+ * can branch on data rather than on a thrown error.
  */
 
 import type { ExecuteParams, MigrateMyEntriesSummary } from '../rpc/index.js';
@@ -74,11 +75,18 @@ export interface ExecuteTransport {
   readonly kind: TransportKind;
 
   /**
-   * Whether this transport can observe events at all.
+   * Whether this transport can observe events **as configured**.
    *
-   * Reported rather than attempted: `false` means the transport has no event
-   * stream, and an app that needs one has to get it from a node connection it
-   * chose for itself. Nothing here will silently pick one.
+   * Always `true` on the node transport, which holds a credential on the node
+   * it is pointed at. On the relay transport it depends on whether the caller
+   * supplied the relay node's device signing key: the relay serves `/sse` and
+   * `/ws` like any node, but a login statement must be signed against a key
+   * learned out of band, and that key cannot be read from the node or derived
+   * from its `peerId`.
+   *
+   * Reported rather than attempted, so an app branches before it subscribes.
+   * `false` never means "try anyway and we'll connect to something else" —
+   * nothing here will silently pick a node the app did not choose.
    */
   readonly canSubscribe: boolean;
 
