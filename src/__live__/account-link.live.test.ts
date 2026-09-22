@@ -8,25 +8,29 @@
  * belongs to — the cloud login survives the device, which is the case the link
  * exists to serve.
  *
- * ## Why this needs a session you cannot mint here
+ * ## Two ways to link, and they are not equivalent
  *
- * `POST /api/cloud/me/accounts` binds an account to *this caller's* login, and
- * the challenge is HMAC-sealed to the caller's email so a nonce minted for one
- * login cannot link an account under another. So the first half needs a cloud
- * session, which comes from Google and cannot be obtained headlessly. Paste one
- * in `CLOUD_SESSION` and this runs; otherwise it skips.
+ * `POST /api/cloud/me/accounts` binds an account to *this caller's* login: the
+ * challenge is HMAC-sealed to the caller's email, so a nonce minted for one
+ * login cannot link an account under another. It needs a cloud session, which
+ * comes from Google and cannot be minted headlessly — set `CLOUD_SESSION`.
  *
- * The second half is the interesting one and needs no Google at all: once
- * linked, the root alone can open a session. That is the property the whole
- * design rests on — the account is the credential, not the login.
+ * `POST /api/cloud/accounts/link` spends a single-use **grant** and is
+ * anonymous. That is the path a wallet page should use: a session token handed
+ * to a page is a credential for everything that login can do, whereas a grant
+ * is a credential for exactly one link. Set `GRANT` instead.
+ *
+ * Either way the third check is the point — once linked, the ROOT ALONE opens a
+ * session, with no Google and no stored token. That is the property the design
+ * rests on: the account is the credential, not the login.
  *
  *     CLOUD_URL=https://cloud.calimero.network \
- *     CLOUD_SESSION=<token> \
- *     LIVE_ROOT_SECRET=<64 hex> \
+ *     GRANT=<one-time grant>   # or CLOUD_SESSION=<token> \
+ *     LIVE_ROOT_SECRET=<64 hex>  # or LIVE_ROOT_PHRASE='<24 words>' \
  *     npx vitest run src/__live__/account-link.live.test.ts
  *
- * `LIVE_ROOT_PHRASE` works instead of the secret, so a phrase-held root can be
- * linked without ever writing its bytes into an environment variable.
+ * A phrase is preferred over a secret: it derives a signer, so the root's bytes
+ * never pass through an environment variable or a shell history.
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 
@@ -36,22 +40,39 @@ import { resolveRoot, type ResolvedRoot } from '../account/account.js';
 
 const CLOUD = process.env.CLOUD_URL;
 const SESSION = process.env.CLOUD_SESSION;
+/**
+ * A single-use link grant, minted by the cloud for a signed-in user and carried
+ * back through a redirect.
+ *
+ * The better of the two paths, and the one a wallet page would actually use:
+ * it is spent **anonymously**, so the page linking an account never needs the
+ * user's cloud session at all — only a token scoped to this one link. A session
+ * token handed to a page is a credential for everything that login can do; a
+ * grant is a credential for exactly one thing.
+ */
+const GRANT = process.env.GRANT;
 const ROOT_SECRET = process.env.LIVE_ROOT_SECRET;
 const ROOT_PHRASE = process.env.LIVE_ROOT_PHRASE;
 
 const haveRoot = Boolean(ROOT_SECRET || ROOT_PHRASE);
 const live = CLOUD && SESSION && haveRoot ? describe : describe.skip;
+const liveGrant = CLOUD && GRANT && haveRoot ? describe : describe.skip;
+
+/** Shared by both suites: a root from whichever form was supplied. */
+async function rootFromEnv(): Promise<ResolvedRoot> {
+  // A phrase never becomes a string the shell logged: it derives a signer, and
+  // only the signer is handed on.
+  return ROOT_PHRASE
+    ? resolveRoot((await accountRootSignerFromPhrase(ROOT_PHRASE)).signer)
+    : resolveRoot(ROOT_SECRET!);
+}
 
 live('linking an account to a cloud login', () => {
   let root: ResolvedRoot;
   let client: CloudClient;
 
   beforeAll(async () => {
-    // A phrase never becomes a string the shell logged: it derives a signer,
-    // and only the signer is handed on.
-    root = ROOT_PHRASE
-      ? await resolveRoot((await accountRootSignerFromPhrase(ROOT_PHRASE)).signer)
-      : await resolveRoot(ROOT_SECRET!);
+    root = await rootFromEnv();
 
     client = new CloudClient({ cloudBaseUrl: CLOUD, sessionToken: SESSION });
     console.log('account under test:', root.accountId);
@@ -107,5 +128,50 @@ live('linking an account to a cloud login', () => {
       console.log(`relays for ${ns.namespaceId.slice(0, 12)}…:`, JSON.stringify(relays, null, 1));
     }
     expect(Array.isArray(namespaces)).toBe(true);
+  }, 60_000);
+});
+
+liveGrant('linking with a one-time grant', () => {
+  let root: ResolvedRoot;
+
+  beforeAll(async () => {
+    root = await rootFromEnv();
+    console.log('account under test:', root.accountId);
+  });
+
+  /**
+   * No session anywhere in this test, deliberately.
+   *
+   * The client is constructed without one and the call is anonymous — which is
+   * the whole point of the grant. If this passes, a wallet page can link an
+   * account while holding nothing but a single-use token it was handed.
+   */
+  it('links the account, with no cloud session at all', async () => {
+    const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
+    const link = await anonymous.linkAccountWithGrant({ grant: GRANT!, signer: root.signer });
+
+    expect(link.accountId).toBe(root.accountId);
+    console.log('linked:', { linkedAt: link.linkedAt, alreadyLinked: link.alreadyLinked });
+  }, 60_000);
+
+  /**
+   * A grant is single-use, and spending it twice must be refused.
+   *
+   * Worth asserting rather than assuming: a grant that could be replayed would
+   * let anyone who saw it in a redirect URL link their own account to somebody
+   * else's login.
+   */
+  it('refuses the same grant a second time', async () => {
+    const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
+    await expect(
+      anonymous.linkAccountWithGrant({ grant: GRANT!, signer: root.signer }),
+    ).rejects.toThrow();
+  }, 60_000);
+
+  it('signs in with the account alone, once linked', async () => {
+    const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
+    const session = await anonymous.signInWithAccount(root.signer);
+    expect(session.sessionToken).toMatch(/^ey/);
+    console.log('account session for:', session.user?.email ?? '(no email on session)');
   }, 60_000);
 });
