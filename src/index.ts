@@ -2,33 +2,36 @@
 // This will contain the pure JavaScript SDK without React dependencies
 
 // Main SDK class
-export { MeroJs, createMeroJs } from './mero-js.js';
-export type { MeroJsConfig, TokenData } from './mero-js.js';
+export { MeroJs, createMeroJs } from "./mero-js.js";
+export type { MeroJsConfig, TokenData } from "./mero-js.js";
 
 // HTTP client module (Web Standards based)
-export * from './http-client/index.js';
+export * from "./http-client/index.js";
 
 // Auth API client
-export * from './auth-api/index.js';
+export * from "./auth-api/index.js";
 
 // Admin API client
-export * from './admin-api/index.js';
+export * from "./admin-api/index.js";
 
 // Auth utilities
-export { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
-export type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
+export { parseAuthCallback, buildAuthLoginUrl } from "./auth/index.js";
+export type { AuthCallbackResult, AuthLoginOptions } from "./auth/index.js";
 
 // Token store
-export { MemoryTokenStore, LocalStorageTokenStore } from './token-store/index.js';
-export type { TokenStore } from './token-store/index.js';
+export {
+  MemoryTokenStore,
+  LocalStorageTokenStore,
+} from "./token-store/index.js";
+export type { TokenStore } from "./token-store/index.js";
 
 // RPC client
-export { RpcClient, RpcError } from './rpc/index.js';
-export type { MigrateMyEntriesSummary } from './rpc/index.js';
-export type { ExecuteParams } from './rpc/index.js';
+export { RpcClient, RpcError } from "./rpc/index.js";
+export type { MigrateMyEntriesSummary } from "./rpc/index.js";
+export type { ExecuteParams } from "./rpc/index.js";
 
 // Events (SSE / WebSocket)
-export { SseClient, WsClient } from './events/index.js';
+export { SseClient, WsClient } from "./events/index.js";
 export type {
   SseEventData,
   WsEventData,
@@ -39,20 +42,20 @@ export type {
   MigrationProgressData,
   CascadeProgressData,
   MigrationCompletedData,
-} from './events/index.js';
+} from "./events/index.js";
 
 // Ephemeral presence (cursors / typing / online)
-export { EphemeralClient, jsonCodec } from './ephemeral/index.js';
-export type { Codec, EphemeralEntry } from './ephemeral/index.js';
+export { EphemeralClient, jsonCodec } from "./ephemeral/index.js";
+export type { Codec, EphemeralEntry } from "./ephemeral/index.js";
 
 // Cloud client — namespaces, relays, HA, and the cloud sign-in path
-export * from './cloud/index.js';
+export * from "./cloud/index.js";
 
 // Relay client — write through delegated execution, holding only a signing key
-export * from './relay/index.js';
+export * from "./relay/index.js";
 
 // Warrant signing — mint the author's consent for a relay to run one intent
-export { signWarrant, intentHash } from './warrant/index.js';
+export { signWarrant, intentHash } from "./warrant/index.js";
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {
   generateAccountRoot,
@@ -60,40 +63,42 @@ export {
   accountRootFromSecret,
   signAccountLink,
   signAccountLogin,
-} from './account/index.js';
+} from "./account/index.js";
 export type {
   AccountRoot,
   RecoverableAccountRoot,
   AccountLinkInput,
   AccountLoginInput,
-} from './account/index.js';
+} from "./account/index.js";
 export {
   signDeviceCert,
   mintDeviceId,
   deviceCertPayload,
   accountForRoot,
-} from './device-cert/index.js';
-export type { DeviceCertInput } from './device-cert/index.js';
+} from "./device-cert/index.js";
+export type { DeviceCertInput } from "./device-cert/index.js";
 export {
   signMemberJoinOp,
   encodeSignedInvitation,
   SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
-} from './namespace-op/index.js';
-export type { SignMemberJoinInput } from './namespace-op/index.js';
-export type { WarrantInput } from './warrant/index.js';
+} from "./namespace-op/index.js";
+export type { SignMemberJoinInput } from "./namespace-op/index.js";
+export type { WarrantInput } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
-export { signLoginStatement } from './login/index.js';
-export type { Audience, LoginStatementInput } from './login/index.js';
-export { login, generateSessionKey } from './login/index.js';
+export { requestBodyHash, signRequest } from "./request/index.js";
+export type { RequestSigInput } from "./request/index.js";
+export { signLoginStatement } from "./login/index.js";
+export type { Audience, LoginStatementInput } from "./login/index.js";
+export { login, generateSessionKey } from "./login/index.js";
 export type {
   LoginConfig,
   DelegatedSession,
   SessionKeyPair,
-} from './login/index.js';
+} from "./login/index.js";
 
 // Member capability bitmask constants & helpers
-export * from './capabilities.js';
+export * from "./capabilities.js";
 
 // Utilities
 export {
@@ -102,5 +107,5 @@ export {
   nodeEndpoint,
   probeNodeHealth,
   discoverLocalNodes,
-} from './nodeDiscovery.js';
-export type { DiscoverLocalNodesOptions } from './nodeDiscovery.js';
+} from "./nodeDiscovery.js";
+export type { DiscoverLocalNodesOptions } from "./nodeDiscovery.js";
