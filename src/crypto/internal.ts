@@ -41,6 +41,28 @@ export function fromHex(value: string, label: string, expectedBytes: number): Ui
   return bytes;
 }
 
+/**
+ * Decode hex of an unknown length.
+ *
+ * The sized {@link fromHex} is the right default — every key and digest here
+ * has a fixed width, and checking it catches a truncated paste at the edge
+ * rather than deep inside a signature check. This one exists for the already-
+ * encoded structures whose length is genuinely variable: a device certificate,
+ * a login statement, a request signature. It still rejects odd-length and
+ * non-hex input, so the only check it gives up is the one that cannot apply.
+ */
+export function fromHexUnsized(value: string, label: string): Uint8Array {
+  const clean = value.trim();
+  if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length % 2 !== 0) {
+    throw new Error(`${label} must be an even number of hex characters`);
+  }
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 export function u64le(value: number | bigint): Uint8Array {
   const out = new Uint8Array(8);
   new DataView(out.buffer).setBigUint64(0, BigInt(value), true);

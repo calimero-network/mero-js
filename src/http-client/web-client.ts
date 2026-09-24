@@ -113,6 +113,23 @@ function headersToRecord(headers: Headers): Record<string, string> {
 }
 
 // Web Standards HTTP client implementation
+/**
+ * The path a node will verify a request signature against.
+ *
+ * `new URL` drops the query and keeps any prefix the base URL contributed,
+ * which is exactly what reaches the server. The fallback covers a `url` that is
+ * already relative — it cannot be parsed, and signing the whole string with its
+ * query attached would be worse than signing the part before the `?`.
+ */
+function pathForProof(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    const query = url.indexOf('?');
+    return query === -1 ? url : url.slice(0, query);
+  }
+}
+
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
@@ -289,6 +306,27 @@ export class WebHttpClient implements HttpClient {
     }
     if (init?.keepalive !== undefined) {
       requestInit.keepalive = init.keepalive;
+    }
+
+    // Signed here rather than in `buildHeaders`, which sees neither the method
+    // nor the body — and a proof commits to both. Signed AFTER the body is
+    // settled above, so what is hashed is what is sent.
+    //
+    // The path comes from the built URL's `pathname`, not from the `path`
+    // argument: that argument may carry a query string, and may be relative to
+    // a base URL that contributes its own prefix. The node verifies against the
+    // path it received, so the only safe source is the URL actually being
+    // fetched. A query string is deliberately not covered — core's `RequestSig`
+    // signs the path alone, and signing more here would fail every request.
+    if (this.transport.getProof) {
+      const proof = await this.transport.getProof({
+        method: requestInit.method ?? 'GET',
+        path: pathForProof(url),
+        body: requestInit.body,
+      });
+      if (proof) {
+        headersObj['X-Calimero-Proof'] = proof;
+      }
     }
 
     try {

@@ -86,7 +86,17 @@ export type { SignMemberJoinInput } from "./namespace-op/index.js";
 export type { WarrantInput } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
-export { requestBodyHash, signRequest } from "./request/index.js";
+export {
+  requestBodyHash,
+  signRequest,
+  callerProof,
+  createProofSigner,
+} from "./request/index.js";
+export type {
+  CallerProofInput,
+  ProofRequest,
+  ProofSignerOptions,
+} from "./request/index.js";
 export type { RequestSigInput } from "./request/index.js";
 export { signLoginStatement } from "./login/index.js";
 export type { Audience, LoginStatementInput } from "./login/index.js";
