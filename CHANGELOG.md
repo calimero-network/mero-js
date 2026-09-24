@@ -1,3 +1,9 @@
+## [19.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.14.1...mero-js-v19.15.0) (2026-09-24)
+
+### Features
+
+* **request:** sign one request, matching core's byte contract ([#167](https://github.com/calimero-network/mero-js/issues/167)) ([90d8f82](https://github.com/calimero-network/mero-js/commit/90d8f82c430b85d586b872d8f1bb03692ae04c70))
+
 ## [19.14.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.14.0...mero-js-v19.14.1) (2026-09-22)
 
 ### Bug Fixes
