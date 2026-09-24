@@ -1,3 +1,9 @@
+## [19.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.15.0...mero-js-v19.16.0) (2026-09-24)
+
+### Features
+
+* **request:** carry a signed proof on every request ([#168](https://github.com/calimero-network/mero-js/issues/168)) ([ae9c808](https://github.com/calimero-network/mero-js/commit/ae9c8085886eb89cb5ae562dfa485049a0acf6a9))
+
 ## [19.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.14.1...mero-js-v19.15.0) (2026-09-24)
 
 ### Features
