@@ -6,6 +6,8 @@ import type { AdminApiClient } from './admin-api/index.js';
 import type { HttpClient } from './http-client/index.js';
 import type { TokenStore } from './token-store/index.js';
 import { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
+import { createProofSigner } from './request/index.js';
+import type { ProofRequest, ProofSignerOptions } from './request/index.js';
 import type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
 import { RpcClient } from './rpc/index.js';
 import { SseClient } from './events/sse.js';
@@ -13,6 +15,24 @@ import { WsClient } from './events/ws.js';
 import { EphemeralClient } from './ephemeral/index.js';
 import { CloudClient } from './cloud/cloud-client.js';
 import type { CloudClientConfig } from './cloud/cloud-client.js';
+
+type ProofCallback = (
+  request: ProofRequest,
+) => Promise<string | undefined>;
+
+/**
+ * Accept either the keys or a ready signer.
+ *
+ * Taking a callback as well as an options object is not a convenience: it is
+ * how a caller keeps the signing key out of the SDK entirely when it lives
+ * somewhere the SDK cannot reach.
+ */
+function resolveProofSigner(
+  config: MeroJsConfig['requestProof'],
+): ProofCallback | undefined {
+  if (!config) return undefined;
+  return typeof config === 'function' ? config : createProofSigner(config);
+}
 
 export interface MeroJsConfig {
   /** Base URL for the Calimero node */
@@ -50,6 +70,42 @@ export interface MeroJsConfig {
    * instead — it returns a connection that can write without one.
    */
   cloud?: CloudClientConfig;
+  /**
+   * Sign every request with a device key, instead of or alongside a session.
+   *
+   * A session is a bearer token: obtained once, presented many times. A
+   * request-carried proof commits to one method, one path and one body, so it
+   * is minted per call and cannot be lifted onto another request. It is what
+   * lets a client talk to a relay it has no account on — nothing was ever
+   * issued to it.
+   *
+   * Pass the keys and let the SDK mint each proof:
+   *
+   * ```ts
+   * new MeroJs({
+   *   baseUrl,
+   *   requestProof: { credential, session, signerSecret },
+   * });
+   * ```
+   *
+   * …or pass your own signer, when the key must not reach the SDK at all — a
+   * hardware token, or a worker that holds it:
+   *
+   * ```ts
+   * new MeroJs({ baseUrl, requestProof: (req) => myWorker.sign(req) });
+   * ```
+   *
+   * The node only honours this when it runs with `--delegated-access`; a node
+   * that does not answers `403`, which is distinct from the `401` a bad proof
+   * gets.
+   *
+   * Applies to the request/response API. `events` (SSE) and `ws` are long-lived
+   * connections rather than requests, so a per-request signature does not
+   * describe them — they still use the session.
+   */
+  requestProof?:
+    | ProofSignerOptions
+    | ((request: ProofRequest) => Promise<string | undefined>);
 }
 
 export interface TokenData {
@@ -126,8 +182,14 @@ export class MeroJs {
     // Create HTTP client with token management
     // For Tauri, explicitly set credentials to 'omit' to avoid network errors
     const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    // One signer for the whole connection: `authClient` and `adminClient` are
+    // both built FROM this transport, so wiring it here covers every request
+    // either of them makes.
+    const getProof = resolveProofSigner(this.config.requestProof);
+
     this.httpClient = createBrowserHttpClient({
       baseUrl: this.config.baseUrl,
+      getProof,
       getAuthToken: async () => {
         const token = await this.getValidToken();
         return token?.access_token || '';
