@@ -1,3 +1,9 @@
+## [19.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.16.0...mero-js-v19.17.0) (2026-09-24)
+
+### Features
+
+* **mero-js:** let a MeroJs client sign its requests ([#169](https://github.com/calimero-network/mero-js/issues/169)) ([02b56c5](https://github.com/calimero-network/mero-js/commit/02b56c51302fbab5ecc858df0b8b03aa88e9a9a4))
+
 ## [19.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.15.0...mero-js-v19.16.0) (2026-09-24)
 
 ### Features
