@@ -30,15 +30,11 @@ export function createBrowserHttpClient(options: {
   credentials?: RequestCredentials;
   defaultAbortSignal?: AbortSignal;
 }): HttpClient {
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  // globalThis.fetch must be called directly, not through a variable, or
-  // browsers throw "Illegal invocation"; custom implementations are safe either way.
-  const isDefaultFetch = fetchImpl === globalThis.fetch;
-
   const transport: Transport = {
-    fetch: isDefaultFetch
-      ? (url: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(url, init)
-      : (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
+    // globalThis.fetch must be called as a method on globalThis, not through a
+    // variable, or browsers throw "Illegal invocation".
+    fetch: (url: RequestInfo | URL, init?: RequestInit) =>
+      options.fetch ? options.fetch(url, init) : globalThis.fetch(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     getProof: options.getProof,

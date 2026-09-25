@@ -46,7 +46,7 @@ export interface MeroJsConfig {
   timeoutMs?: number;
   /** Request credentials mode for fetch (omit, same-origin, include) */
   requestCredentials?: RequestCredentials;
-  /** Custom fetch for every request. Defaults to global `fetch`. */
+  /** Custom fetch for every HTTP request (`auth`, `admin`, `rpc`, `events`). Defaults to global `fetch`. */
   fetch?: typeof fetch;
   /** Optional token store for persistence */
   tokenStore?: TokenStore;
@@ -273,6 +273,7 @@ export class MeroJs {
     if (!this.sseClient) {
       this.sseClient = new SseClient({
         baseUrl: this.config.baseUrl,
+        fetch: this.config.fetch,
         getAuthToken: async () => {
           const token = await this.getValidToken();
           return token?.access_token || '';
