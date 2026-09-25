@@ -29,6 +29,7 @@ new MeroJs(config: MeroJsConfig)
 | `credentials` | `{ username: string; password: string }` | Optional. Used by `authenticate()` when called with no argument. |
 | `timeoutMs` | `number` | Request timeout. Default `10000`. |
 | `requestCredentials` | `RequestCredentials` | `fetch` credentials mode. Defaults to `'omit'` in Tauri. |
+| `fetch` | `typeof fetch` | Custom fetch for every request. Defaults to global `fetch`. |
 | `tokenStore` | `TokenStore` | Persist tokens across sessions. Defaults to in-memory. |
 
 ## Property accessors

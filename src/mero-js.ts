@@ -46,6 +46,8 @@ export interface MeroJsConfig {
   timeoutMs?: number;
   /** Request credentials mode for fetch (omit, same-origin, include) */
   requestCredentials?: RequestCredentials;
+  /** Custom fetch for every request. Defaults to global `fetch`. */
+  fetch?: typeof fetch;
   /** Optional token store for persistence */
   tokenStore?: TokenStore;
   /**
@@ -189,6 +191,7 @@ export class MeroJs {
 
     this.httpClient = createBrowserHttpClient({
       baseUrl: this.config.baseUrl,
+      fetch: this.config.fetch,
       getProof,
       getAuthToken: async () => {
         const token = await this.getValidToken();

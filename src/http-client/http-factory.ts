@@ -9,6 +9,7 @@ export function createHttpClient(transport: Transport): HttpClient {
 // Factory function for browser environments
 export function createBrowserHttpClient(options: {
   baseUrl: string;
+  fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
   getProof?: Transport['getProof'];
   onTokenRefresh?: (newToken: string) => Promise<void>;
@@ -29,10 +30,12 @@ export function createBrowserHttpClient(options: {
   credentials?: RequestCredentials;
   defaultAbortSignal?: AbortSignal;
 }): HttpClient {
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+
   const transport: Transport = {
     // Wrap fetch in arrow function to prevent "Illegal invocation" error
     // This preserves the correct 'this' context when fetch is called
-    fetch: (url: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(url, init),
+    fetch: (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
     getProof: options.getProof,
