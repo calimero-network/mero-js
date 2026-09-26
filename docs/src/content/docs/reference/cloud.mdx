@@ -415,6 +415,29 @@ await cloud.disableNamespaceHa(namespaceId);      // …and to stop
 `claimNamespace` is idempotent for the same account; a namespace already claimed
 by someone else is a `409`, and a replayed proof nonce a `403`.
 
+### Letting the first fleet node reach you
+
+The first fleet node placed on a namespace has nobody but your node to ask for
+admission. Without an address it can only broadcast its attestation and hope
+your node — often a laptop behind a relay — is in the gossip mesh to hear it.
+Pass your node's addresses with `enableNamespaceHa` and the fleet node dials you
+directly instead:
+
+```ts
+import { admitterAddrsFromNetworkStatus } from '@calimero-network/mero-js';
+
+const status = await sdk.admin.getNetworkStatus();
+await cloud.enableNamespaceHa(namespaceId, {
+  admitterAddrs: admitterAddrsFromNetworkStatus(status),
+});
+```
+
+`admitterAddrsFromNetworkStatus` takes the node's external addresses and makes
+each end in `/p2p/<its peer id>`, the shape a fleet node dials. They are a dial
+hint, never a grant: your node still admits by its own TEE admission policy.
+Omit `admitterAddrs` to leave what the cloud already holds; send them again when
+your relay address changes and they replace the stored ones.
+
 `disableNamespaceHa` is not merely a billing flip: each assigned node notices the
 namespace is no longer assigned to it and **self-leaves**, which makes core evict
 it and purge its local data and keys.
