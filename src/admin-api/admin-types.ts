@@ -10,6 +10,16 @@ export interface HealthStatus {
   status: string;
 }
 
+/**
+ * What `GET /admin-api/ready` reports: `ready` once the node has finished
+ * starting up and its store answers. A node that is not ready answers `503`
+ * with its lifecycle stage (or `store_unavailable`) as the status, which the
+ * client surfaces as an `HTTPError`.
+ */
+export interface ReadinessStatus {
+  status: string;
+}
+
 export interface AdminAuthStatus {
   data: { status: string };
 }
@@ -516,6 +526,26 @@ export interface PerformIntentRequest {
 }
 
 /** What a performed intent reports back. */
+/**
+ * A read of a context, run as the caller's account. Needs no warrant: a read
+ * publishes nothing, so there is no peer to convince.
+ */
+export interface QueryContextRequest {
+  /**
+   * The method to call. It must be declared read-only in the application's ABI
+   * (a `&self` method in a Rust app); anything else is refused with a `409`,
+   * because a write needs a warrant ({@link PerformIntentRequest}).
+   */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+}
+
+export interface QueryContextResponseData {
+  /** The method's own return value. */
+  returns: unknown | null;
+}
+
 export interface PerformIntentResponseData {
   /**
    * The context's scope root after the run — how a caller sees that it wrote.
@@ -1402,6 +1432,63 @@ export interface ListGroupMembersResponseData {
    * major. Switch reads to `response.members`.
    */
   data?: GroupMember[];
+}
+
+/** One device bound to a member account. */
+export interface MemberDevice {
+  /** 64 hex; the form `revokeAccountDevice` takes. */
+  deviceId: string;
+  /**
+   * The key this device's signatures carry, 64 hex. Joins against the
+   * identities a context lists.
+   */
+  signingKey: string;
+}
+
+/** A member account and the devices bound to it in the namespace. */
+export interface MemberDevicesEntry {
+  /** The member's ACCOUNT, 64 hex. */
+  account: string;
+  devices: MemberDevice[];
+}
+
+export interface ListMemberDevicesOptions {
+  offset?: number;
+  limit?: number;
+}
+
+export interface ListMemberDevicesResponseData {
+  /**
+   * Every account in the group if the calling node is an admin; only its own
+   * entry if it is a plain member.
+   */
+  members: MemberDevicesEntry[];
+}
+
+export interface SealToAccountRequest {
+  /**
+   * Hex-encoded plaintext. Small by design: the route exists to hand an account
+   * something like a list of namespace ids, and the node caps the size.
+   */
+  plaintext: string;
+}
+
+/**
+ * A payload sealed to an account's root key. Only that account's root can open
+ * it; the node that sealed it cannot.
+ */
+export interface SealedEnvelope {
+  /**
+   * The root-key epoch it was sealed under. A rotated root still opens envelopes
+   * from its own epoch, so a recipient holding several needs to know which.
+   */
+  accountRootEpoch: number;
+  /** Hex, 32 bytes: the one-shot sender key. */
+  ephemeralPublicKey: string;
+  /** Hex, 12 bytes: the AES-256-GCM nonce. */
+  nonce: string;
+  /** Hex: the ciphertext with its 16-byte tag appended. */
+  ciphertext: string;
 }
 
 export interface GroupContextEntry {

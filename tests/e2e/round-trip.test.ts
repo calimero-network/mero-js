@@ -165,6 +165,35 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
   });
 });
 
+describe('Round-trip E2E — Node and member reads', () => {
+  it('readinessCheck reports the node ready', async () => {
+    await expect(mero.admin.readinessCheck()).resolves.toEqual({ status: 'ready' });
+  });
+
+  it('listMemberDevices lists this node as a member, with its own device', async () => {
+    // The node created the namespace, so it is its one member and an admin, and
+    // the device it binds is the one it signs with.
+    const me = await mero.admin.getNodeIdentity();
+    const { members } = await mero.admin.listMemberDevices(groupId);
+    const mine = members.find((m) => m.account === me.accountId);
+    expect(mine, `node account ${me.accountId} missing from member-devices`).toBeTruthy();
+    expect(mine!.devices).toContainEqual({ deviceId: me.deviceId, signingKey: me.publicKey });
+  });
+
+  it('sealToAccount seals to a member account and returns a well-formed envelope', async () => {
+    const me = await mero.admin.getNodeIdentity();
+    const plaintext = 'deadbeef';
+    const envelope = await mero.admin.sealToAccount(groupId, me.accountId, { plaintext });
+    expect(envelope.accountRootEpoch).toBe(0);
+    expect(envelope.ephemeralPublicKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(envelope.nonce).toMatch(/^[0-9a-f]{24}$/);
+    // AES-GCM keeps the length and appends a 16-byte tag.
+    expect(envelope.ciphertext).toMatch(/^[0-9a-f]+$/);
+    expect(envelope.ciphertext.length).toBe(plaintext.length + 32);
+    expect(envelope.ciphertext.startsWith(plaintext)).toBe(false);
+  });
+});
+
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
     // The all-zero 48-byte measurement `create_mock_quote` reports for every

@@ -29,6 +29,7 @@ not paginate, so there are no limit/offset/cursor parameters.
 | Method | Endpoint |
 | --- | --- |
 | `healthCheck(): Promise<HealthStatus>` | `GET /health` |
+| `readinessCheck(): Promise<ReadinessStatus>` | `GET /ready` (throws on `503` while the node is not ready) |
 | `isAuthed(): Promise<AdminAuthStatus>` | `GET /is-authed` |
 
 ## Applications
@@ -71,6 +72,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `syncContext(contextId?): Promise<void>` | `POST /contexts/sync/{contextId?}` |
 | `resyncContext(contextId, request?): Promise<ResyncContextResponseData>` | `POST /contexts/{contextId}/resync` |
 | `inviteSpecializedNode(request): Promise<InviteSpecializedNodeResponseData>` | `POST /contexts/invite-specialized-node` |
+| `queryContext(contextId, request: QueryContextRequest): Promise<QueryContextResponseData>` | `POST /contexts/{contextId}/query` (read-only methods; needs an account session from `login`) |
 
 ### Context identity
 
@@ -161,6 +163,8 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `getGroupInfo(groupId): Promise<GroupInfoResponseData>` | `GET /groups/{groupId}` |
 | `deleteGroup(groupId): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
+| `listMemberDevices(groupId, options?): Promise<ListMemberDevicesResponseData>` | `GET /groups/{groupId}/member-devices` |
+| `sealToAccount(groupId, account, request: SealToAccountRequest): Promise<SealedEnvelope>` | `POST /groups/{groupId}/accounts/{account}/seal` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
 | `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |

@@ -100,6 +100,11 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ status: 'alive' });
     });
 
+    it('readinessCheck unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/ready', { data: { status: 'ready' } });
+      await expect(client.readinessCheck()).resolves.toEqual({ status: 'ready' });
+    });
+
     it('isAuthed returns raw response', async () => {
       mock.setMockResponse('GET', '/admin-api/is-authed', { data: { status: 'alive' } });
       const result = await client.isAuthed();
@@ -695,6 +700,19 @@ describe('AdminApiClient', () => {
         argsJson: { key: 'k', value: 'v' },
         warrant: 'aabb',
         authorProof: 'ccdd',
+      });
+    });
+
+    it('queryContext posts method and args and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/query', {
+        data: { returns: 'v' },
+      });
+      await expect(
+        client.queryContext('ctx-1', { method: 'get', argsJson: { key: 'k' } }),
+      ).resolves.toEqual({ returns: 'v' });
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/query')).toEqual({
+        method: 'get',
+        argsJson: { key: 'k' },
       });
     });
 
@@ -1317,6 +1335,41 @@ describe('AdminApiClient', () => {
       });
       const result = await client.listGroupMembers('g-1');
       expect(result.members).toEqual([]);
+    });
+
+    it('listMemberDevices returns the payload as sent (no data envelope)', async () => {
+      const members = [
+        { account: 'acc-1', devices: [{ deviceId: 'dev-1', signingKey: 'key-1' }] },
+      ];
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', { members });
+      await expect(client.listMemberDevices('g-1')).resolves.toEqual({ members });
+    });
+
+    it('listMemberDevices passes offset and limit as query params', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices?offset=5&limit=10', {
+        members: [],
+      });
+      await expect(client.listMemberDevices('g-1', { offset: 5, limit: 10 })).resolves.toEqual({
+        members: [],
+      });
+    });
+
+    it('sealToAccount posts the plaintext and unwraps the envelope', async () => {
+      const envelope = {
+        accountRootEpoch: 0,
+        ephemeralPublicKey: 'eph',
+        nonce: 'n',
+        ciphertext: 'c',
+      };
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/accounts/acc-1/seal', {
+        data: envelope,
+      });
+      await expect(
+        client.sealToAccount('g-1', 'acc-1', { plaintext: 'deadbeef' }),
+      ).resolves.toEqual(envelope);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/accounts/acc-1/seal')).toEqual({
+        plaintext: 'deadbeef',
+      });
     });
 
     it('listGroupContexts unwraps data', async () => {

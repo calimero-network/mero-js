@@ -36,6 +36,8 @@ import { join } from 'path';
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { login } from '../../src/login/index.js';
+import { MemoryTokenStore } from '../../src/token-store/index.js';
 import { signWarrant } from '../../src/warrant/index.js';
 import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
 
@@ -269,6 +271,70 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
         authorProof: device.credential,
       }),
     ).rejects.toThrow(/nonce/i);
+  }, 60_000);
+
+  /**
+   * The author reads back what the relay wrote for it, with no warrant.
+   *
+   * A read publishes nothing, so there is no peer to show consent to; what it
+   * needs is proof that *this* account may see *this* context, and a session
+   * answers that. So the author logs in with the same device certificate the
+   * intent carried, and queries as its account. The value is the one the
+   * delegated write above stored, which makes this a round trip across the two
+   * paths an account without a node has: write by warrant, read by session.
+   *
+   * Needs the node to accept device-key logins (`merod init --device-key-login`).
+   * A node started without it refuses the login with one specific 404, and only
+   * that refusal is accepted here: it is asserted, not skipped, so the file
+   * still reports every test as run. This cannot hide a missing read path:
+   * core's coverage gate requires `POST .../query` to answer under 400, and it
+   * only does on the branch below.
+   */
+  it('reads back what it wrote, as the author account, without a warrant', async () => {
+    const attempt = login({
+      nodeUrl: NODE_URL,
+      // Pinned from the node here only because this suite also administers it;
+      // a real client learns the key out of band (see LoginConfig.node).
+      node: (await mero.admin.getNodeIdentity()).publicKey,
+      deviceSecret: device.secret,
+      accountProof: device.credential,
+      audience: { kind: 'cli' },
+    });
+    const session = await attempt.catch((err: unknown) => {
+      const { status, bodyText } = err as { status?: number; bodyText?: string };
+      if (status !== 404 || !/account_proof provider is not enabled/.test(bodyText ?? '')) {
+        throw err;
+      }
+      return null;
+    });
+    if (session === null) {
+      console.warn(
+        '[delegated-intent] this node does not accept device-key logins ' +
+          '(start it with `merod init --device-key-login`); asserting that instead.',
+      );
+      await expect(attempt).rejects.toMatchObject({ status: 404 });
+      return;
+    }
+    const tokens = new MemoryTokenStore();
+    tokens.setTokens({
+      access_token: session.accessToken,
+      refresh_token: session.refreshToken,
+      expires_at: Date.now() + 3_600_000,
+    });
+    const author = new MeroJs({ baseUrl: NODE_URL, tokenStore: tokens });
+    try {
+      await expect(
+        author.admin.queryContext(contextId, { method: 'get', argsJson: { key: ARGS.key } }),
+      ).resolves.toEqual({ returns: ARGS.value });
+
+      // A session authorizes reads only. `set` is a mutating method, so the
+      // node refuses it here rather than quietly writing without a warrant.
+      await expect(
+        author.admin.queryContext(contextId, { method: 'set', argsJson: ARGS }),
+      ).rejects.toMatchObject({ status: 409 });
+    } finally {
+      author.close();
+    }
   }, 60_000);
 
   /**
