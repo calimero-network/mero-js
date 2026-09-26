@@ -154,7 +154,9 @@ admitted ones may write as the namespace's TEE authority (`TeeOnly` storage and
 ```typescript
 await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: ['<mrtd-hex>'] });
 
-// An empty list turns TEE authorship off.
+// Turn TEE authorship off. Admitted TEEs stay members; none can author.
+await sdk.admin.disableTeeAuthoringPolicy(namespaceId);
+// Equivalent: an empty allowlist applies the same op.
 await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: [] });
 ```
 

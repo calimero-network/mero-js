@@ -208,8 +208,10 @@ describe('Round-trip E2E — Groups', () => {
     await expect(
       mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [ZERO_MEASUREMENT] }),
     ).resolves.toBeUndefined();
-    // An empty allowlist is how an admin turns TEE authorship back off; leave the
-    // namespace that way so no later test runs under a TEE authority.
+    // Turn TEE authorship off both ways the node offers: the explicit DELETE,
+    // then a PUT with an empty allowlist (the same op). Either leaves the
+    // namespace with no TEE authority, so no later test runs under one.
+    await expect(mero.admin.disableTeeAuthoringPolicy(groupId)).resolves.toBeUndefined();
     await expect(
       mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [] }),
     ).resolves.toBeUndefined();
