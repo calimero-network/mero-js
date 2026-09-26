@@ -1493,7 +1493,21 @@ export interface SetSubgroupVisibilityRequest {
 // Returns empty
 export type SetSubgroupVisibilityResponseData = Record<string, never>;
 
-export interface SetTeeAdmissionPolicyRequest {
+/**
+ * The signed-release form of a TEE admission policy: admit a TEE running any
+ * mero-tee node release the mero-tee release workflow signed, if its quote
+ * matches one of `allowedProfiles` in that release's `published-mrtds.json`.
+ * Unlike the measurement lists, it does not need updating for each release.
+ */
+export interface SignedReleaseTeePolicy {
+  /** Image profiles to admit, e.g. `locked-read-only`. */
+  allowedProfiles: string[];
+  /** The oldest release admitted (`2.3.72`); any signed release when absent. */
+  minReleaseVersion?: string;
+}
+
+/** A policy that lists the measurements it admits. */
+export interface MeasurementTeeAdmissionPolicyRequest {
   allowedMrtd: string[];
   allowedRtmr0: string[];
   allowedRtmr1: string[];
@@ -1502,6 +1516,17 @@ export interface SetTeeAdmissionPolicyRequest {
   allowedTcbStatuses: string[];
   acceptMock: boolean;
 }
+
+/** A policy that admits by signed release. The node refuses measurement lists beside it. */
+export interface SignedReleaseTeeAdmissionPolicyRequest {
+  signedRelease: SignedReleaseTeePolicy;
+  allowedTcbStatuses: string[];
+  acceptMock: boolean;
+}
+
+export type SetTeeAdmissionPolicyRequest =
+  | MeasurementTeeAdmissionPolicyRequest
+  | SignedReleaseTeeAdmissionPolicyRequest;
 
 // Returns empty
 export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
@@ -1514,6 +1539,8 @@ export interface GetTeeAdmissionPolicyResponseData {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Set when the policy admits by signed release; the lists are then empty. */
+  signedRelease?: SignedReleaseTeePolicy;
 }
 
 /**
@@ -1725,6 +1752,11 @@ export interface TeeInfoResponseData {
 export interface TeeAttestRequest {
   nonce: string;
   applicationId?: string;
+  /**
+   * Bind the node's X25519 transport key into the quote; the response names it
+   * as `transportPublicKey`. See `fetchAttestedTransportKey`.
+   */
+  bindTransportKey?: boolean;
 }
 
 export interface QuoteHeader {
@@ -1767,6 +1799,8 @@ export interface Quote {
 export interface TeeAttestResponseData {
   quoteB64: string;
   quote: Quote;
+  /** Hex X25519 transport key, present only when the request set `bindTransportKey`. */
+  transportPublicKey?: string;
 }
 
 export interface TeeVerifyQuoteRequest {

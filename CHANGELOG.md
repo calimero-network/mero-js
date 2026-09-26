@@ -1,3 +1,21 @@
+## [19.23.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.22.0...mero-js-v19.23.0) (2026-09-26)
+
+### Features
+
+* **sealed:** open forward-secret sessions and stream sealed responses ([#178](https://github.com/calimero-network/mero-js/issues/178)) ([f46cc27](https://github.com/calimero-network/mero-js/commit/f46cc273beae5d97466ca1e5b90ee31e289084c6))
+
+## [19.22.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.21.0...mero-js-v19.22.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** type the signed-release TEE admission policy ([#174](https://github.com/calimero-network/mero-js/issues/174)) ([5564435](https://github.com/calimero-network/mero-js/commit/5564435199a7706eeaeb18d60007056c57aaa09f))
+
+## [19.21.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.20.0...mero-js-v19.21.0) (2026-09-26)
+
+### Features
+
+* **sealed:** seal requests to a TEE node's attested transport key ([#177](https://github.com/calimero-network/mero-js/issues/177)) ([820fdbd](https://github.com/calimero-network/mero-js/commit/820fdbd55bef290bcc61f0179d04b40a063f0f18))
+
 ## [19.20.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.19.0...mero-js-v19.20.0) (2026-09-26)
 
 ### Features
