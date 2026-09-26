@@ -1,3 +1,9 @@
+## [19.19.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.18.0...mero-js-v19.19.0) (2026-09-26)
+
+### Features
+
+* **cloud:** let enable-ha carry the owner node's admitter addresses ([#173](https://github.com/calimero-network/mero-js/issues/173)) ([3770457](https://github.com/calimero-network/mero-js/commit/3770457b0cddc1a5c728e44225ca5da338017c79))
+
 ## [19.18.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.17.0...mero-js-v19.18.0) (2026-09-26)
 
 ### Features
