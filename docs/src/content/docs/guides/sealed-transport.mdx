@@ -96,7 +96,11 @@ sealed: the node refuses a sealed upgrade with a `501`, so subscribe over SSE.
 | Error | Meaning |
 | --- | --- |
 | `StaleTransportKeyError` | The node restarted and holds a new key, and you passed a fixed key rather than an attest function. Attest again and rebuild the fetch. |
-| `SealedTransportError` | The node refused the envelope itself (`status`, `code`): `malformed`, `undecryptable`, `replayed_request`. An expired session (`unknown_session`) is handled for you. |
+| `SealedTransportError` | The node refused the envelope itself (`status`, `code`): `malformed`, `undecryptable`, `replayed_request`. An expired session (`unknown_session`) is handled for you, and so is one `busy` refusal of a handshake: the client waits the `Retry-After` the node gives and tries once more. |
+
+A node configured with `[server.sealed] required = true` refuses unsealed
+requests with `403` and code `sealed_required` (an ordinary `HTTPError`). If you
+see it, the client is not using the sealed fetch for that call.
 
 Errors from the inner request come back as ordinary responses, so the usual
 `HTTPError` handling applies. A response whose frames do not open, or that
