@@ -172,17 +172,19 @@ describe('Round-trip E2E — Groups', () => {
     // mock quote is entertained at all, not whether its measurements are
     // checked -- admission puts every quote through the allowlists either way.
     const ZERO_MEASUREMENT = '0'.repeat(96);
-    // `allowedRtmr3` is required. MRTD measures the virtual firmware, so it is
-    // identical across every image profile of a release and constant across
-    // most releases; RTMR3 is the only measurement that says which image ran.
+    // `allowedRtmr1`..`allowedRtmr3` are required. MRTD measures the virtual
+    // firmware, so it is identical across every image profile of a release and
+    // constant across most releases; RTMR3 is the only measurement that says
+    // which image ran. RTMR3 is extended from public inputs, though, so it only
+    // proves that when the kernel (RTMR1) and initrd (RTMR2) are pinned too.
     // This policy previously left every list empty, which round-tripped but
     // could never have admitted anyone -- admission has always refused an empty
     // `allowedMrtd`.
     const policy = {
       allowedMrtd: [ZERO_MEASUREMENT],
       allowedRtmr0: [],
-      allowedRtmr1: [],
-      allowedRtmr2: [],
+      allowedRtmr1: [ZERO_MEASUREMENT],
+      allowedRtmr2: [ZERO_MEASUREMENT],
       allowedRtmr3: [ZERO_MEASUREMENT],
       allowedTcbStatuses: [],
       acceptMock: true,
@@ -193,6 +195,8 @@ describe('Round-trip E2E — Groups', () => {
     // Read the measurements back too. Asserting only `acceptMock` let a policy
     // round-trip while saying nothing about which images it admits.
     expect(got.allowedMrtd).toEqual([ZERO_MEASUREMENT]);
+    expect(got.allowedRtmr1).toEqual([ZERO_MEASUREMENT]);
+    expect(got.allowedRtmr2).toEqual([ZERO_MEASUREMENT]);
     expect(got.allowedRtmr3).toEqual([ZERO_MEASUREMENT]);
   });
 
