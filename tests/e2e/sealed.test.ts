@@ -65,7 +65,11 @@ describe.skipIf(!NODE_TEE_URL)('Sealed transport E2E (mock TEE)', () => {
       },
       fetch: recordingFetch,
     });
-    sealed = new MeroJs({ baseUrl, fetch: sealedFetch });
+    // This node is fresh, and CI runs a debug merod: the first call that uses
+    // the app (creating the context) compiles its WASM, which takes seconds on
+    // a busy runner and outlasted the default 10s request timeout. Later calls
+    // take milliseconds. The limit is the suite's, not the transport's.
+    sealed = new MeroJs({ baseUrl, fetch: sealedFetch, timeoutMs: 60_000 });
     await sealed.authenticate(CREDS);
   }, 60000);
 
