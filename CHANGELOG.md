@@ -1,3 +1,9 @@
+## [19.21.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.20.0...mero-js-v19.21.0) (2026-09-26)
+
+### Features
+
+* **sealed:** seal requests to a TEE node's attested transport key ([#177](https://github.com/calimero-network/mero-js/issues/177)) ([820fdbd](https://github.com/calimero-network/mero-js/commit/820fdbd55bef290bcc61f0179d04b40a063f0f18))
+
 ## [19.20.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.19.0...mero-js-v19.20.0) (2026-09-26)
 
 ### Features
