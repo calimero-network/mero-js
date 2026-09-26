@@ -1,3 +1,9 @@
+## [19.18.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.17.0...mero-js-v19.18.0) (2026-09-26)
+
+### Features
+
+* **http-client:** support a custom fetch implementation in MeroJsConfig ([#171](https://github.com/calimero-network/mero-js/issues/171)) ([34b71e0](https://github.com/calimero-network/mero-js/commit/34b71e0053c6af94f4b6b0567dc386813562b3ac))
+
 ## [19.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.16.0...mero-js-v19.17.0) (2026-09-24)
 
 ### Features
