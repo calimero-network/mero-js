@@ -1493,7 +1493,21 @@ export interface SetSubgroupVisibilityRequest {
 // Returns empty
 export type SetSubgroupVisibilityResponseData = Record<string, never>;
 
-export interface SetTeeAdmissionPolicyRequest {
+/**
+ * The signed-release form of a TEE admission policy: admit a TEE running any
+ * mero-tee node release the mero-tee release workflow signed, if its quote
+ * matches one of `allowedProfiles` in that release's `published-mrtds.json`.
+ * Unlike the measurement lists, it does not need updating for each release.
+ */
+export interface SignedReleaseTeePolicy {
+  /** Image profiles to admit, e.g. `locked-read-only`. */
+  allowedProfiles: string[];
+  /** The oldest release admitted (`2.3.72`); any signed release when absent. */
+  minReleaseVersion?: string;
+}
+
+/** A policy that lists the measurements it admits. */
+export interface MeasurementTeeAdmissionPolicyRequest {
   allowedMrtd: string[];
   allowedRtmr0: string[];
   allowedRtmr1: string[];
@@ -1502,6 +1516,17 @@ export interface SetTeeAdmissionPolicyRequest {
   allowedTcbStatuses: string[];
   acceptMock: boolean;
 }
+
+/** A policy that admits by signed release. The node refuses measurement lists beside it. */
+export interface SignedReleaseTeeAdmissionPolicyRequest {
+  signedRelease: SignedReleaseTeePolicy;
+  allowedTcbStatuses: string[];
+  acceptMock: boolean;
+}
+
+export type SetTeeAdmissionPolicyRequest =
+  | MeasurementTeeAdmissionPolicyRequest
+  | SignedReleaseTeeAdmissionPolicyRequest;
 
 // Returns empty
 export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
@@ -1514,6 +1539,8 @@ export interface GetTeeAdmissionPolicyResponseData {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Set when the policy admits by signed release; the lists are then empty. */
+  signedRelease?: SignedReleaseTeePolicy;
 }
 
 // ---- Group / member / context metadata ----
