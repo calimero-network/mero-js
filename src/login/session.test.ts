@@ -133,4 +133,34 @@ describe('login', () => {
     const { fetchImpl } = stubNode({ tokenBody: {} });
     await expect(login(config(fetchImpl))).rejects.toThrow(/minted no session/);
   });
+
+  // Browsers throw "Illegal invocation" if fetch is invoked through an
+  // unbound reference; this fetch only succeeds when called as `this === globalThis`.
+  it('keeps the global fetch receiver on the default path', async () => {
+    const globalFetch = vi.fn(function (this: unknown) {
+      if (this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+      }
+      const payload = { challenge: CHALLENGE, access_token: 'access-tok', refresh_token: 'refresh-tok' };
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', globalFetch);
+
+    await expect(
+      login({
+        nodeUrl: 'https://node.example',
+        node: NODE,
+        deviceSecret: DEVICE_SECRET,
+        accountProof: ACCOUNT_PROOF,
+        audience: { kind: 'cli' },
+      }),
+    ).resolves.toBeDefined();
+    expect(globalFetch).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });
