@@ -1,3 +1,9 @@
+## [19.22.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.21.0...mero-js-v19.22.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** type the signed-release TEE admission policy ([#174](https://github.com/calimero-network/mero-js/issues/174)) ([5564435](https://github.com/calimero-network/mero-js/commit/5564435199a7706eeaeb18d60007056c57aaa09f))
+
 ## [19.21.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.20.0...mero-js-v19.21.0) (2026-09-26)
 
 ### Features
