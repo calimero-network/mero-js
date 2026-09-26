@@ -169,6 +169,29 @@ describe('Account devices & pairing E2E', () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it('signs with the account root under a known domain, and refuses an unknown one', async (ctx) => {
+    if (routesMissing) return ctx.skip();
+
+    // The root never leaves the node, so this is the only way a client proves
+    // possession of it. What comes back must name the same root and account the
+    // identity endpoint reports: a verifier derives the account from the key,
+    // and a mismatch would link the wrong account.
+    const signed = await mero.admin.signWithAccountRoot({
+      domain: 'mdma.account-login',
+      payload: '6e6f6e6365', // "nonce", UTF-8 then hex
+    });
+    expect(signed.rootPublicKey).toBe(identity.accountRootPublicKey);
+    expect(signed.accountId).toBe(identity.accountId);
+    // An ed25519 signature is 64 bytes, base64 on this route.
+    expect(Buffer.from(signed.signature, 'base64')).toHaveLength(64);
+
+    // The domain is a name from a closed set, never caller-chosen bytes:
+    // anything else would make the account root a signing oracle.
+    await expect(
+      mero.admin.signWithAccountRoot({ domain: 'not-a-domain', payload: '00' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it('refuses a relink of a device it never certified, as a 404', async (ctx) => {
     if (routesMissing) return ctx.skip();
 
