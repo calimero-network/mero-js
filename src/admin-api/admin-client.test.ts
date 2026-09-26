@@ -1536,6 +1536,11 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('disableTeeAuthoringPolicy sends DELETE to the policy route', async () => {
+      mock.setMockResponse('DELETE', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await expect(client.disableTeeAuthoringPolicy('g-1')).resolves.toBeUndefined();
+    });
+
   });
 
   describe('Group / member / context metadata', () => {

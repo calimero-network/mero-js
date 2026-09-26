@@ -1316,6 +1316,16 @@ export class AdminApiClient {
     await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`, request);
   }
 
+  /**
+   * Turns TEE authorship off in the namespace: every TEE loses its authority,
+   * and admitted TEEs stay members. The node applies the same op as
+   * `setTeeAuthoringPolicy(groupId, { allowedMrtd: [] })`. `groupId` must be a
+   * namespace root.
+   */
+  async disableTeeAuthoringPolicy(groupId: string): Promise<void> {
+    await this.httpClient.delete(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`);
+  }
+
   // ---- Group / member / context metadata ----
 
   async setGroupMetadata(groupId: string, request: SetGroupMetadataRequest): Promise<void> {
