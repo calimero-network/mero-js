@@ -1516,6 +1516,20 @@ export interface GetTeeAdmissionPolicyResponseData {
   acceptMock: boolean;
 }
 
+/**
+ * Which admitted TEEs may author as the group's TEE authority (the writer behind
+ * `TeeOnly` storage and `#[app::tee]` methods). A TEE whose attested MRTD is in
+ * `allowedMrtd` may author; an empty list turns TEE authorship off.
+ *
+ * Namespace-scoped: set it on the namespace root. The node refuses it on a subgroup.
+ */
+export interface SetTeeAuthoringPolicyRequest {
+  allowedMrtd: string[];
+}
+
+// Returns empty
+export type SetTeeAuthoringPolicyResponseData = Record<string, never>;
+
 // ---- Group / member / context metadata ----
 
 /**

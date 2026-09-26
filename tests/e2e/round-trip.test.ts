@@ -200,6 +200,41 @@ describe('Round-trip E2E — Groups', () => {
     expect(got.allowedRtmr3).toEqual([ZERO_MEASUREMENT]);
   });
 
+  it('TEE authoring policy: set on the namespace root, then turn it off', async () => {
+    // Core has no read-back route for this policy, so the check is that the node
+    // accepts both writes. `groupId` is the namespace root: the policy is
+    // namespace-scoped and the node refuses it on a subgroup.
+    const ZERO_MEASUREMENT = '0'.repeat(96);
+    const set = mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [ZERO_MEASUREMENT] });
+    // This suite also runs against the newest *released* merod, which predates
+    // the route (core#4059) and answers 404. Only a 404 means that; any other
+    // failure is real and fails here. Asserted rather than skipped, so the
+    // branch fails the moment a release serves the route, and the core-built
+    // run (core's sdk-e2e) takes the real assertions below.
+    const absent = await set.then(
+      () => false,
+      (err: unknown) => {
+        if ((err as { status?: number }).status !== 404) throw err;
+        return true;
+      },
+    );
+    if (absent) {
+      console.warn(
+        '[round-trip] this merod does not serve PUT .../settings/tee-authoring-policy ' +
+          '(HTTP 404); asserting its absence instead, until a release carries it.',
+      );
+      await expect(
+        mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [] }),
+      ).rejects.toMatchObject({ status: 404 });
+      return;
+    }
+    // An empty allowlist is how an admin turns TEE authorship back off; leave the
+    // namespace that way so no later test runs under a TEE authority.
+    await expect(
+      mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [] }),
+    ).resolves.toBeUndefined();
+  });
+
   // POST /admin-api/groups requires applicationId (not just a name).
   it('createGroup then getGroupInfo returns it', async () => {
     const created = await mero.admin.createGroup({
