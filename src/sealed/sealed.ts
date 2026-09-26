@@ -1,63 +1,72 @@
 /**
- * Sealed transport: requests encrypted to a TEE node's attested key.
+ * Sealed transport: requests encrypted end to end to a TEE node's attested key.
  *
  * A node speaks plain HTTP and any TLS in front of it ends outside the enclave,
  * at whatever proxy or relay the operator runs, so everything crossing that hop
  * (the bearer token, JSON-RPC arguments, results) is readable there. Sealing
- * encrypts each request to an X25519 key the node's quote commits to, so only
- * the attested TD can read it, and only the TD can produce a response the
- * client accepts.
+ * encrypts it so that only the attested TD can read it, and only the TD can
+ * produce a response the client accepts.
+ *
+ * The client opens a session with a Noise NK handshake to the X25519 transport
+ * key the node's quote commits to ({@link fetchAttestedTransportKey}). The
+ * transport key only authenticates the node: the session keys come from both
+ * sides' ephemeral keys, so once a session is gone (an hour at most) what was
+ * sent in it cannot be opened, not even with the transport key. Each request
+ * is sealed under the session; each response streams back in sealed frames, so
+ * server-sent events are sealed too. WebSockets cannot be, and the node
+ * refuses one inside the envelope with a 501.
  *
  * The node's side, and the wire format this implements byte for byte, are in
  * core's `crates/server/src/sealed.rs`:
  *
  * ```text
- * shared    = X25519(secret, peer public)            all-zero result refused
- * prk       = HKDF-SHA256-Extract(salt = transport_pk || client_pk, ikm = shared)
- * req key   = HKDF-Expand(prk, "calimero/sealed-http/v1/request",  32)
- * resp key  = HKDF-Expand(prk, "calimero/sealed-http/v1/response", 32)
- * request   = 0x01 || transport_pk || client_pk || nonce(12)
- *             || AES-256-GCM(req key, nonce, aad = the 77 bytes before it, inner request)
- * response  = 0x01 || nonce(12)
- *             || AES-256-GCM(resp key, nonce, aad = 0x01 || transport_pk || client_pk, inner response)
- * inner     = u32 BE head length || head (JSON) || body
+ * handshake   Noise_NK_25519_AESGCM_SHA256, prologue "calimero/sealed-http/v2"
+ *   request   POST /sealed/v2/handshake   0x02 || transport_pk || Noise message 1
+ *   response  0x02 || Noise message 2 (payload = session_id(16) || lifetime secs, u32 BE)
+ *   keys      (req key, resp key) = Split()
+ * exchange    POST /sealed/v2
+ *   header    0x02 || session_id(16) || request_id (u64 BE; from 1, each used once)
+ *   request   header || AES-256-GCM(req key, nonce = request_id || 0u32, aad = header, inner)
+ *   response  frames, each u32 BE length || AES-256-GCM(resp key,
+ *             nonce = request_id || frame index (u32 BE, from 0), aad = header, kind || data)
+ *             kind 0 = head (JSON), 1 = body bytes, 2 = end; no end frame = cut short
+ *   inner     u32 BE head length || head (JSON) || body
  * ```
  *
- * Use it by attesting once ({@link fetchAttestedTransportKey}) and handing
- * {@link createSealedFetch} to `MeroJsConfig.fetch`. Server-sent events and
- * WebSockets are streams and cannot be sealed; the node refuses a sealed SSE
- * request with a 501 rather than hang.
+ * Use it by handing {@link createSealedFetch} to `MeroJsConfig.fetch`.
  */
 
 import { concat, fromHex, hex } from '../crypto/internal.js';
 import type { TeeAttestRequest, TeeAttestResponseData } from '../admin-api/admin-types.js';
+import { initiate } from './noise.js';
 
+/** Where a session is opened, relative to the node's base URL. */
+export const HANDSHAKE_PATH = '/sealed/v2/handshake';
 /** Where sealed requests are posted, relative to the node's base URL. */
-export const SEALED_PATH = '/sealed/v1';
-/** Content type of both sealed bodies. */
+export const SEALED_PATH = '/sealed/v2';
+/** Content type of every sealed body. */
 export const SEALED_CONTENT_TYPE = 'application/vnd.calimero.sealed';
 
-const VERSION = 1;
-const NONCE_LEN = 12;
-const REQUEST_DOMAIN = 'calimero/sealed-http/v1/request';
-const RESPONSE_DOMAIN = 'calimero/sealed-http/v1/response';
+const VERSION = 2;
+const PROLOGUE = new TextEncoder().encode('calimero/sealed-http/v2');
+const SESSION_ID_LEN = 16;
+const HEADER_LEN = 1 + SESSION_ID_LEN + 8;
+const FRAME_HEAD = 0;
+const FRAME_DATA = 1;
+const FRAME_END = 2;
+/** Open a new session this long before the node would drop the current one. */
+const RENEW_BEFORE_MS = 60_000;
 const TRANSPORT_BINDING_DOMAIN = 'calimero.tee-attest.transport-key.v1';
-/** PKCS#8 wrapping of a raw X25519 private key (RFC 8410). */
-const PKCS8_X25519_PREFIX = new Uint8Array([
-  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04,
-  0x22, 0x04, 0x20,
-]);
+const NULL_BODY_STATUSES = [101, 204, 205, 304];
 
 const utf8 = new TextEncoder();
 
-/** The node no longer holds the key this client sealed to (it restarted). */
+/** The node no longer holds the transport key this client attested (it restarted). */
 export class StaleTransportKeyError extends Error {
   name = 'StaleTransportKeyError';
 
   constructor() {
-    super(
-      'The node no longer holds the transport key this request was sealed to; attest again for the current one',
-    );
+    super('The node no longer holds the attested transport key; attest again for the current one');
   }
 }
 
@@ -142,15 +151,21 @@ export async function fetchAttestedTransportKey(
 export interface SealedFetchOptions {
   /** The node's base URL, as given to `MeroJsConfig.baseUrl`. */
   baseUrl: string;
-  /** The node's transport key, from {@link fetchAttestedTransportKey}. */
-  transportPublicKey: Uint8Array;
+  /**
+   * The node's attested transport key, or a function that attests and returns
+   * it — typically `() => fetchAttestedTransportKey(admin, verify)`. Given a
+   * function, a restarted node is handled: the key is attested again, through
+   * your verifier, and the request retried once. Given bytes, a restart
+   * surfaces as {@link StaleTransportKeyError}.
+   */
+  transportPublicKey: Uint8Array | (() => Promise<Uint8Array>);
   /** Fetch that carries the sealed envelope. Defaults to global `fetch`. */
   fetch?: typeof fetch;
 }
 
 /**
- * A `fetch` that seals every request to the node's transport key. Pass it as
- * `MeroJsConfig.fetch`.
+ * A `fetch` that seals every request to the node's attested transport key.
+ * Pass it as `MeroJsConfig.fetch`.
  *
  * A request for any URL outside `baseUrl` is refused rather than sent in the
  * clear: falling back to plaintext would silently undo the point of sealing.
@@ -158,12 +173,44 @@ export interface SealedFetchOptions {
 export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
   const base = new URL(options.baseUrl);
   const basePath = base.pathname.replace(/\/+$/, '');
-  const sealedUrl = `${base.origin}${basePath}${SEALED_PATH}`;
-  const transportKey = options.transportPublicKey;
-  if (transportKey.length !== 32) {
-    throw new Error('transportPublicKey must be 32 bytes');
-  }
+  const nodeUrl = `${base.origin}${basePath}`;
   const baseFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  const attest =
+    typeof options.transportPublicKey === 'function' ? options.transportPublicKey : undefined;
+  let transportKey: Promise<Uint8Array> = attest
+    ? Promise.resolve().then(attest)
+    : Promise.resolve(options.transportPublicKey as Uint8Array);
+  let session: Promise<Session> | undefined;
+
+  const openSession = async (): Promise<Session> => {
+    try {
+      return await handshake(baseFetch, nodeUrl, await checkedKey(transportKey));
+    } catch (error) {
+      if (!(error instanceof StaleTransportKeyError) || !attest) throw error;
+      transportKey = Promise.resolve().then(attest);
+      return handshake(baseFetch, nodeUrl, await checkedKey(transportKey));
+    }
+  };
+  /** The session to use now, and the promise it came from, to name it if it turns out stale. */
+  const currentSession = async (): Promise<[Session, Promise<Session>]> => {
+    const pending = session ?? renew(undefined);
+    const open = await pending;
+    if (Date.now() < open.renewAt) return [open, pending];
+    const renewed = renew(pending);
+    return [await renewed, renewed];
+  };
+  // Replace the session only if it is still the one found stale, so concurrent
+  // requests that all find it stale open one new session between them.
+  const renew = (stale: Promise<Session> | undefined): Promise<Session> => {
+    if (session === stale) {
+      const opening = openSession();
+      session = opening;
+      opening.catch(() => {
+        if (session === opening) session = undefined;
+      });
+    }
+    return session as Promise<Session>;
+  };
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
@@ -173,30 +220,239 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
     }
     const headers: Array<[string, string]> = [];
     request.headers.forEach((value, name) => headers.push([name, value]));
-    const head: RequestHead = {
-      method: request.method,
-      path: url.pathname.slice(basePath.length) + url.search,
-      headers,
-      ts: Math.floor(Date.now() / 1000),
-    };
+    const head = { method: request.method, path: url.pathname.slice(basePath.length) + url.search, headers };
     const body = new Uint8Array(await request.arrayBuffer());
 
-    const exchange = await sealRequest(transportKey, head, body);
-    const response = await baseFetch(sealedUrl, {
-      method: 'POST',
-      headers: { 'content-type': SEALED_CONTENT_TYPE },
-      body: exchange.envelope,
-      signal: request.signal,
-    });
-    if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
-      throw await envelopeRefusal(response);
+    const send = async (open: Session): Promise<Response> => {
+      const { requestId, header, envelope } = await sealRequest(open, head, body);
+      const response = await baseFetch(`${nodeUrl}${SEALED_PATH}`, {
+        method: 'POST',
+        headers: { 'content-type': SEALED_CONTENT_TYPE },
+        body: envelope,
+        signal: request.signal,
+      });
+      if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
+        throw await envelopeRefusal(response);
+      }
+      return openResponse(response, open.responseKey, header, requestId);
+    };
+
+    const [open, pending] = await currentSession();
+    try {
+      return await send(open);
+    } catch (error) {
+      // The node refused the envelope before running anything in it, so the
+      // request can be sent again safely under a new session.
+      if (!(error instanceof SealedTransportError) || error.code !== 'unknown_session') throw error;
+      return send(await renew(pending));
     }
-    const opened = await exchange.open(new Uint8Array(await response.arrayBuffer()));
-    const nullBody = [101, 204, 205, 304].includes(opened.head.status);
-    return new Response(nullBody ? null : opened.body, {
-      status: opened.head.status,
-      headers: opened.head.headers,
-    });
+  };
+}
+
+async function checkedKey(key: Promise<Uint8Array>): Promise<Uint8Array> {
+  const bytes = await key;
+  if (bytes.length !== 32) throw new Error('transportPublicKey must be 32 bytes');
+  return bytes;
+}
+
+export interface Session {
+  requestKey: CryptoKey;
+  responseKey: CryptoKey;
+  nextRequestId: number;
+  renewAt: number;
+  header(requestId: number): Uint8Array;
+}
+
+async function handshake(
+  baseFetch: typeof fetch,
+  nodeUrl: string,
+  transportKey: Uint8Array,
+): Promise<Session> {
+  const noise = await initiate(transportKey, PROLOGUE);
+  const response = await baseFetch(`${nodeUrl}${HANDSHAKE_PATH}`, {
+    method: 'POST',
+    headers: { 'content-type': SEALED_CONTENT_TYPE },
+    body: concat(new Uint8Array([VERSION]), transportKey, noise.message1),
+  });
+  if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
+    throw await envelopeRefusal(response);
+  }
+  const reply = new Uint8Array(await response.arrayBuffer());
+  return sessionFrom(noise, reply);
+}
+
+/** Finish the handshake with the node's reply. Exported for the published vectors. */
+export async function sessionFrom(
+  noise: Awaited<ReturnType<typeof initiate>>,
+  reply: Uint8Array,
+): Promise<Session> {
+  if (reply[0] !== VERSION) throw new Error('The handshake reply is malformed');
+  let finished: Awaited<ReturnType<(typeof noise)['finish']>>;
+  try {
+    finished = await noise.finish(reply.slice(1));
+  } catch {
+    throw new Error('The handshake reply did not open: it did not come from the attested node');
+  }
+  const { payload, split } = finished;
+  if (payload.length !== SESSION_ID_LEN + 4) throw new Error('The handshake reply is malformed');
+  const sessionId = payload.slice(0, SESSION_ID_LEN);
+  const lifetimeSecs = new DataView(payload.buffer, payload.byteOffset).getUint32(SESSION_ID_LEN, false);
+  const [requestKey, responseKey] = await Promise.all([
+    crypto.subtle.importKey('raw', split[0], 'AES-GCM', false, ['encrypt']),
+    crypto.subtle.importKey('raw', split[1], 'AES-GCM', false, ['decrypt']),
+  ]);
+  split[0].fill(0);
+  split[1].fill(0);
+  return {
+    requestKey,
+    responseKey,
+    nextRequestId: 1,
+    renewAt: Date.now() + lifetimeSecs * 1000 - RENEW_BEFORE_MS,
+    header(requestId) {
+      const header = new Uint8Array(HEADER_LEN);
+      header[0] = VERSION;
+      header.set(sessionId, 1);
+      new DataView(header.buffer).setBigUint64(1 + SESSION_ID_LEN, BigInt(requestId), false);
+      return header;
+    },
+  };
+}
+
+/** Seal one request under the session's next request id. */
+export async function sealRequest(
+  session: Session,
+  head: RequestHead,
+  body: Uint8Array,
+): Promise<{ requestId: number; header: Uint8Array; envelope: Uint8Array }> {
+  const requestId = session.nextRequestId;
+  session.nextRequestId += 1;
+  const header = session.header(requestId);
+  const sealed = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce(requestId, 0), additionalData: header },
+    session.requestKey,
+    joinInner(head, body),
+  );
+  return { requestId, header, envelope: concat(header, new Uint8Array(sealed)) };
+}
+
+/** `request_id || index`, as the node numbers them. */
+function nonce(requestId: number, index: number): Uint8Array {
+  const bytes = new Uint8Array(12);
+  const view = new DataView(bytes.buffer);
+  view.setBigUint64(0, BigInt(requestId), false);
+  view.setUint32(8, index, false);
+  return bytes;
+}
+
+export interface RequestHead {
+  method: string;
+  path: string;
+  headers: Array<[string, string]>;
+}
+
+export interface ResponseHead {
+  status: number;
+  headers: Array<[string, string]>;
+}
+
+function joinInner(head: RequestHead, body: Uint8Array): Uint8Array {
+  const encoded = utf8.encode(JSON.stringify(head));
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, encoded.length, false);
+  return concat(len, encoded, body);
+}
+
+/**
+ * Open a sealed response as it streams: wait for its head, then hand back a
+ * `Response` whose body opens each frame as it arrives. A frame that does not
+ * open, arrives out of order, or a stream that stops before its end frame
+ * errors the body rather than passing anything unauthenticated on.
+ */
+export async function openResponse(
+  response: Response,
+  responseKey: CryptoKey,
+  header: Uint8Array,
+  requestId: number,
+): Promise<Response> {
+  if (!response.body) throw new Error('The sealed response has no body');
+  const frames = frameReader(response.body.getReader());
+  let index = 0;
+  const next = async (): Promise<{ kind: number; data: Uint8Array } | null> => {
+    const sealed = await frames.next();
+    if (!sealed) return null;
+    let plain: Uint8Array;
+    try {
+      plain = new Uint8Array(
+        await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: nonce(requestId, index), additionalData: header },
+          responseKey,
+          sealed,
+        ),
+      );
+    } catch {
+      throw new Error('A sealed response frame did not open: it was not sealed by the attested node');
+    }
+    index += 1;
+    return { kind: plain[0], data: plain.slice(1) };
+  };
+
+  const first = await next();
+  if (!first || first.kind !== FRAME_HEAD) throw new Error('The sealed response is malformed');
+  const head = JSON.parse(new TextDecoder().decode(first.data)) as ResponseHead;
+  if (NULL_BODY_STATUSES.includes(head.status)) {
+    await frames.cancel();
+    return new Response(null, { status: head.status, headers: head.headers });
+  }
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const frame = await next();
+        if (!frame) {
+          controller.error(new Error('The sealed response was cut short'));
+        } else if (frame.kind === FRAME_DATA) {
+          controller.enqueue(frame.data);
+        } else if (frame.kind === FRAME_END) {
+          controller.close();
+          await frames.cancel();
+        } else {
+          controller.error(new Error('The sealed response is malformed'));
+        }
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel() {
+      return frames.cancel();
+    },
+  });
+  return new Response(body, { status: head.status, headers: head.headers });
+}
+
+/** Split a byte stream into length-prefixed frames. */
+function frameReader(reader: ReadableStreamDefaultReader<Uint8Array>): {
+  next(): Promise<Uint8Array | null>;
+  cancel(): Promise<void>;
+} {
+  let buffer = new Uint8Array();
+  const fill = async (length: number): Promise<boolean> => {
+    while (buffer.length < length) {
+      const { done, value } = await reader.read();
+      if (done) return false;
+      buffer = concat(buffer, value);
+    }
+    return true;
+  };
+  return {
+    async next() {
+      if (!(await fill(4))) return null;
+      const length = new DataView(buffer.buffer, buffer.byteOffset).getUint32(0, false);
+      if (!(await fill(4 + length))) return null;
+      const frame = buffer.slice(4, 4 + length);
+      buffer = buffer.slice(4 + length);
+      return frame;
+    },
+    cancel: () => reader.cancel(),
   };
 }
 
@@ -213,131 +469,4 @@ async function envelopeRefusal(response: Response): Promise<Error> {
   }
   if (code === 'stale_transport_key') return new StaleTransportKeyError();
   return new SealedTransportError(response.status, code, message);
-}
-
-export interface RequestHead {
-  method: string;
-  path: string;
-  headers: Array<[string, string]>;
-  ts: number;
-}
-
-export interface ResponseHead {
-  status: number;
-  headers: Array<[string, string]>;
-}
-
-export interface SealedExchange {
-  envelope: Uint8Array;
-  open(sealed: Uint8Array): Promise<{ head: ResponseHead; body: Uint8Array }>;
-}
-
-/**
- * Seal one request, keeping what is needed to open its response.
- *
- * `fixed` pins the client's one-time secret and the nonce, for the published
- * test vectors only; leave it out.
- */
-export async function sealRequest(
-  transportKey: Uint8Array,
-  head: RequestHead,
-  body: Uint8Array,
-  fixed?: { clientSecret: Uint8Array; nonce: Uint8Array },
-): Promise<SealedExchange> {
-  const { privateKey, publicKey } = await clientKeyPair(fixed?.clientSecret);
-  const transport = await crypto.subtle.importKey('raw', transportKey, { name: 'X25519' }, false, []);
-  const shared = new Uint8Array(
-    await crypto.subtle.deriveBits({ name: 'X25519', public: transport } as EcdhKeyDeriveParams, privateKey, 256),
-  );
-  // A low-order point yields an all-zero secret that anybody can compute.
-  if (shared.every((byte) => byte === 0)) {
-    throw new Error('The transport key is a low-order point');
-  }
-  const salt = concat(transportKey, publicKey);
-  const requestKey = await exchangeKey(shared, salt, REQUEST_DOMAIN, 'encrypt');
-  const responseKey = await exchangeKey(shared, salt, RESPONSE_DOMAIN, 'decrypt');
-
-  const nonce = fixed?.nonce ?? crypto.getRandomValues(new Uint8Array(NONCE_LEN));
-  const header = concat(new Uint8Array([VERSION]), transportKey, publicKey, nonce);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce, additionalData: header },
-    requestKey,
-    joinInner(head, body),
-  );
-  const responseAad = concat(new Uint8Array([VERSION]), salt);
-
-  return {
-    envelope: concat(header, new Uint8Array(ciphertext)),
-    async open(sealed) {
-      if (sealed.length < 1 + NONCE_LEN + 16 || sealed[0] !== VERSION) {
-        throw new Error('The sealed response is malformed');
-      }
-      let plaintext: Uint8Array;
-      try {
-        plaintext = new Uint8Array(
-          await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: sealed.slice(1, 1 + NONCE_LEN), additionalData: responseAad },
-            responseKey,
-            sealed.slice(1 + NONCE_LEN),
-          ),
-        );
-      } catch {
-        throw new Error('The sealed response did not open: it was not sealed by the attested node');
-      }
-      const view = new DataView(plaintext.buffer, plaintext.byteOffset, plaintext.byteLength);
-      const len = view.getUint32(0, false);
-      const head = JSON.parse(new TextDecoder().decode(plaintext.slice(4, 4 + len))) as ResponseHead;
-      return { head, body: plaintext.slice(4 + len) };
-    },
-  };
-}
-
-function joinInner(head: RequestHead, body: Uint8Array): Uint8Array {
-  const encoded = utf8.encode(JSON.stringify(head));
-  const len = new Uint8Array(4);
-  new DataView(len.buffer).setUint32(0, encoded.length, false);
-  return concat(len, encoded, body);
-}
-
-async function exchangeKey(
-  shared: Uint8Array,
-  salt: Uint8Array,
-  domain: string,
-  usage: 'encrypt' | 'decrypt',
-): Promise<CryptoKey> {
-  const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt, info: utf8.encode(domain) },
-    ikm,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    [usage],
-  );
-}
-
-async function clientKeyPair(
-  secret?: Uint8Array,
-): Promise<{ privateKey: CryptoKey; publicKey: Uint8Array }> {
-  if (!secret) {
-    const pair = (await crypto.subtle.generateKey({ name: 'X25519' }, true, [
-      'deriveBits',
-    ])) as CryptoKeyPair;
-    const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
-    return { privateKey: pair.privateKey, publicKey };
-  }
-  const privateKey = await crypto.subtle.importKey(
-    'pkcs8',
-    concat(PKCS8_X25519_PREFIX, secret),
-    { name: 'X25519' },
-    true,
-    ['deriveBits'],
-  );
-  const jwk = await crypto.subtle.exportKey('jwk', privateKey);
-  return { privateKey, publicKey: base64UrlDecode(jwk.x as string) };
-}
-
-function base64UrlDecode(value: string): Uint8Array {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4));
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
