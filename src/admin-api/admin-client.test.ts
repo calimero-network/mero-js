@@ -1509,6 +1509,17 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
     });
 
+    it('setTeeAdmissionPolicy sends a signed-release policy', async () => {
+      const policy = {
+        signedRelease: { allowedProfiles: ['locked-read-only'], minReleaseVersion: '2.3.72' },
+        allowedTcbStatuses: ['UpToDate'],
+        acceptMock: false,
+      };
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy', {});
+      await client.setTeeAdmissionPolicy('g-1', policy);
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
+    });
+
     it('setTeeAuthoringPolicy sends the MRTD allowlist', async () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
       await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: ['abc'] });
