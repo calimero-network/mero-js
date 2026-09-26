@@ -1,3 +1,9 @@
+## [19.24.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.23.0...mero-js-v19.24.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add disableTeeAuthoringPolicy for DELETE tee-authoring-policy ([#179](https://github.com/calimero-network/mero-js/issues/179)) ([f833d1e](https://github.com/calimero-network/mero-js/commit/f833d1e954f7c99b1133744ac31c5d03332779be))
+
 ## [19.23.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.22.0...mero-js-v19.23.0) (2026-09-26)
 
 ### Features
