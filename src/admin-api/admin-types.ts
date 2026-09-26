@@ -1543,6 +1543,20 @@ export interface GetTeeAdmissionPolicyResponseData {
   signedRelease?: SignedReleaseTeePolicy;
 }
 
+/**
+ * Which admitted TEEs may author as the group's TEE authority (the writer behind
+ * `TeeOnly` storage and `#[app::tee]` methods). A TEE whose attested MRTD is in
+ * `allowedMrtd` may author; an empty list turns TEE authorship off.
+ *
+ * Namespace-scoped: set it on the namespace root. The node refuses it on a subgroup.
+ */
+export interface SetTeeAuthoringPolicyRequest {
+  allowedMrtd: string[];
+}
+
+// Returns empty
+export type SetTeeAuthoringPolicyResponseData = Record<string, never>;
+
 // ---- Group / member / context metadata ----
 
 /**
@@ -1738,6 +1752,11 @@ export interface TeeInfoResponseData {
 export interface TeeAttestRequest {
   nonce: string;
   applicationId?: string;
+  /**
+   * Bind the node's X25519 transport key into the quote; the response names it
+   * as `transportPublicKey`. See `fetchAttestedTransportKey`.
+   */
+  bindTransportKey?: boolean;
 }
 
 export interface QuoteHeader {
@@ -1780,6 +1799,8 @@ export interface Quote {
 export interface TeeAttestResponseData {
   quoteB64: string;
   quote: Quote;
+  /** Hex X25519 transport key, present only when the request set `bindTransportKey`. */
+  transportPublicKey?: string;
 }
 
 export interface TeeVerifyQuoteRequest {

@@ -1520,6 +1520,22 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
     });
 
+    it('setTeeAuthoringPolicy sends the MRTD allowlist', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: ['abc'] });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        allowedMrtd: ['abc'],
+      });
+    });
+
+    it('setTeeAuthoringPolicy sends an empty allowlist to turn authorship off', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: [] });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        allowedMrtd: [],
+      });
+    });
+
   });
 
   describe('Group / member / context metadata', () => {

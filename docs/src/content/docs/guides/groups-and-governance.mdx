@@ -145,6 +145,21 @@ await sdk.admin.setTeeAdmissionPolicy(groupId, {
 const policy = await sdk.admin.getTeeAdmissionPolicy(groupId);
 ```
 
+### TEE authoring policy
+
+Admission decides which TEEs may join; the authoring policy decides which of the
+admitted ones may write as the namespace's TEE authority (`TeeOnly` storage and
+`#[app::tee]` methods). It is namespace-scoped, so set it on the namespace root.
+
+```typescript
+await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: ['<mrtd-hex>'] });
+
+// An empty list turns TEE authorship off.
+await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: [] });
+```
+
+The node has no read-back route for this policy.
+
 Nodes can also attest and verify quotes directly:
 
 ```typescript

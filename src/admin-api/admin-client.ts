@@ -92,6 +92,7 @@ import type {
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
+  SetTeeAuthoringPolicyRequest,
   SetGroupMetadataRequest,
   SetMemberMetadataRequest,
   SetContextMetadataRequest,
@@ -1300,6 +1301,19 @@ export class AdminApiClient {
       GetTeeAdmissionPolicyResponseData & { data?: GetTeeAdmissionPolicyResponseData }
     >(`/admin-api/groups/${groupId}/settings/tee-admission-policy`);
     return response.data ?? response;
+  }
+
+  /**
+   * Sets which admitted TEEs may author as the TEE authority. Pass
+   * `{ allowedMrtd: [] }` to turn TEE authorship off. `groupId` must be a
+   * namespace root; the node refuses a subgroup. The node exposes no read-back
+   * route for this policy.
+   */
+  async setTeeAuthoringPolicy(
+    groupId: string,
+    request: SetTeeAuthoringPolicyRequest,
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`, request);
   }
 
   // ---- Group / member / context metadata ----
