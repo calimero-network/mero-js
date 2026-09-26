@@ -1,60 +1,117 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
+import { concat, fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
+import { SymmetricState, dh, initiate, x25519KeyPair, type X25519KeyPair } from './noise.js';
 import {
+  HANDSHAKE_PATH,
   SEALED_CONTENT_TYPE,
+  SEALED_PATH,
   SealedTransportError,
   StaleTransportKeyError,
   createSealedFetch,
   fetchAttestedTransportKey,
+  openResponse,
   sealRequest,
+  sessionFrom,
   transportKeyBinding,
   type RequestHead,
 } from './sealed.js';
 
 // Core's published vectors (`crates/server/src/sealed/tests.rs` and
 // `crates/tee-attestation/src/generate.rs`), repeated verbatim: the node and
-// this client are separate implementations of one wire format.
+// this client are separate implementations of one wire format, and the node's
+// half of the handshake is snow's.
 const TRANSPORT_PUBLIC_VECTOR = '0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20';
+const HANDSHAKE_REQUEST_VECTOR =
+  '020faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f207b0d47d93427f831116078' +
+  '1c7c733fd89f88970aef490d8aa0ee19a4cb8a1b1461fba335b4f3e9be8a34a61900e5b4be';
+const HANDSHAKE_RESPONSE_VECTOR =
+  '02ff2ee45601ec1b67310c7790404585ae697331eee1c1f8cf2419731c1fff3e6b7d6339b7296bdc4778248f' +
+  '57126a10ee5b7fb39b0cb104dcbfcaaaf44d0e6017379638a4';
 const SEALED_REQUEST_VECTOR =
-  '010faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20' +
-  '7b0d47d93427f8311160781c7c733fd89f88970aef490d8aa0ee19a4cb8a1b14444444444444444444444444' +
-  '42085b2ea7f498345db1128aaf8d1d7ce8c97845c231098d87138a0f61ed2b2428005101caf5f07843bb12ea5a82' +
-  '54ec07b049d4131bc1e4ad5a21f06efbb8862f297519d2601228d1301ce50306cfb30dd7f854c54f64b2848919c9' +
-  'b493dcc57ba710df763b7f5978be9a255036cf2388a9776d1f36b57575';
+  '025555555555555555555555555555555500000000000000019fa4301264a48bdf6811cfb1d7c3dad713ede5' +
+  'ea1820608358ff2779cee1605efc3d97879f24d6cf302a7877beda552ca6714ef9d5496f978fdcdde522435c' +
+  'f663e4be5f60170e8eab74161a913608fe268e5352fcd3090d62e2a12c92b06b51885d43c4d83dcfe544';
 const SEALED_RESPONSE_VECTOR =
-  '01666666666666666666666666ca7eba7d5d7435fe4ae2e3dc7e69037a8ee4' +
-  '1a3f2fdbb01cd701f9e6d3f54ad2d9ab8fd688219b29b1e405692da8af400a01fa636a8c9da9db7323ac28df6bad' +
-  '29dff31e0743f635f0030a7452d640307cf692c021b435c7c5fd5ffdb1';
+  '0000004f4873ec5a589a1e3585360440100bc00d20522fe35bac2221dcfe80341ce3069481d4794b801776f4' +
+  'a76188b81887eb83cfccd2981229af48a3820df924261b3ff12d4b29340ca07c392ed4e0ee4bed0000001cfa' +
+  '20a7633655179808da19e2fcbc81bc219262fc4f5406582834f549000000111426897864d7a92eec9261fe29' +
+  '93415592';
 const TRANSPORT_BINDING_VECTOR = '30274595433e8afc5d4035e30a2b599d93caf0d470867527f13dc6af92fa12a8';
 
+const PROLOGUE = new TextEncoder().encode('calimero/sealed-http/v2');
 const transportKey = fromHex(TRANSPORT_PUBLIC_VECTOR, 'transport', 32);
-const fixed = { clientSecret: new Uint8Array(32).fill(0x33), nonce: new Uint8Array(12).fill(0x44) };
 const vectorHead: RequestHead = {
   method: 'POST',
   path: '/jsonrpc',
   headers: [['content-type', 'application/json']],
-  ts: 1_700_000_000,
 };
 
+/** The vector session: the handshake with core's fixed client ephemeral key. */
+async function vectorSession() {
+  const noise = await initiate(transportKey, PROLOGUE, new Uint8Array(32).fill(0x33));
+  const session = await sessionFrom(noise, fromHexUnsized(HANDSHAKE_RESPONSE_VECTOR, 'response'));
+  return { noise, session };
+}
+
+function streamOf(bytes: Uint8Array): Response {
+  return new Response(bytes, { headers: { 'content-type': SEALED_CONTENT_TYPE } });
+}
+
 describe('sealed transport wire format', () => {
-  it('seals a request exactly as the node expects', async () => {
-    const exchange = await sealRequest(transportKey, vectorHead, new TextEncoder().encode('{}'), fixed);
-    expect(hex(exchange.envelope)).toBe(SEALED_REQUEST_VECTOR);
+  it('opens the handshake exactly as the node expects', async () => {
+    const { noise } = await vectorSession();
+    expect(hex(concat(new Uint8Array([2]), transportKey, noise.message1))).toBe(HANDSHAKE_REQUEST_VECTOR);
   });
 
-  it('opens a response the node sealed', async () => {
-    const exchange = await sealRequest(transportKey, vectorHead, new TextEncoder().encode('{}'), fixed);
-    const opened = await exchange.open(fromHexUnsized(SEALED_RESPONSE_VECTOR, 'response'));
-    expect(opened.head).toEqual({ status: 200, headers: [['content-type', 'application/json']] });
-    expect(new TextDecoder().decode(opened.body)).toBe('{"ok":true}');
+  it('seals a request under the session exactly as the node expects', async () => {
+    const { session } = await vectorSession();
+    const { envelope } = await sealRequest(session, vectorHead, new TextEncoder().encode('{}'));
+    expect(hex(envelope)).toBe(SEALED_REQUEST_VECTOR);
   });
 
-  it('refuses a response that anyone but the node sealed', async () => {
-    const exchange = await sealRequest(transportKey, vectorHead, new Uint8Array(), fixed);
+  it('opens the frames of a response the node sealed', async () => {
+    const { session } = await vectorSession();
+    const { header, requestId } = await sealRequest(session, vectorHead, new Uint8Array());
+    const response = await openResponse(
+      streamOf(fromHexUnsized(SEALED_RESPONSE_VECTOR, 'response')),
+      session.responseKey,
+      header,
+      requestId,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    expect(await response.text()).toBe('{"ok":true}');
+  });
+
+  it('refuses a handshake reply from anyone but the attested node', async () => {
+    const noise = await initiate(transportKey, PROLOGUE, new Uint8Array(32).fill(0x33));
+    const forged = fromHexUnsized(HANDSHAKE_RESPONSE_VECTOR, 'response');
+    forged[forged.length - 1] ^= 1;
+    await expect(sessionFrom(noise, forged)).rejects.toThrow(/did not come from the attested node/);
+  });
+
+  it('refuses a response frame that anyone but the node sealed', async () => {
+    const { session } = await vectorSession();
+    const { header, requestId } = await sealRequest(session, vectorHead, new Uint8Array());
     const forged = fromHexUnsized(SEALED_RESPONSE_VECTOR, 'response');
     forged[forged.length - 1] ^= 1;
-    await expect(exchange.open(forged)).rejects.toThrow(/did not open/);
+    const response = await openResponse(streamOf(forged), session.responseKey, header, requestId);
+    await expect(response.text()).rejects.toThrow(/did not open/);
+  });
+
+  it('notices a response cut short before its end frame', async () => {
+    const { session } = await vectorSession();
+    const { header, requestId } = await sealRequest(session, vectorHead, new Uint8Array());
+    const whole = fromHexUnsized(SEALED_RESPONSE_VECTOR, 'response');
+    const endFrame = 4 + 1 + 16;
+    const response = await openResponse(
+      streamOf(whole.slice(0, whole.length - endFrame)),
+      session.responseKey,
+      header,
+      requestId,
+    );
+    await expect(response.text()).rejects.toThrow(/cut short/);
   });
 
   it('computes the transport binding the node puts in its quote', async () => {
@@ -63,47 +120,231 @@ describe('sealed transport wire format', () => {
   });
 });
 
-describe('createSealedFetch', () => {
-  const baseUrl = 'https://tee-node.example/node';
+interface Answer {
+  status: number;
+  headers: Array<[string, string]>;
+  /** Body pieces, each sent as its own frame, `delayMs` apart. */
+  chunks: string[];
+  delayMs?: number;
+}
 
-  it('sends only an opaque envelope to the sealed endpoint', async () => {
-    const carrier = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { code: 'x', message: 'refused' } }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      }),
+/**
+ * A stand-in node: answers the Noise handshake with its transport secret and
+ * seals its answers frame by frame, as core does.
+ */
+class StandInNode {
+  static readonly baseUrl = 'https://tee-node.example/node';
+  handshakes = 0;
+  requests: Array<{ head: RequestHead; body: string }> = [];
+  private sessions = new Map<string, { requestKey: CryptoKey; responseKey: CryptoKey }>();
+
+  private constructor(
+    private transport: X25519KeyPair,
+    private answer: (head: RequestHead, body: string) => Answer,
+  ) {}
+
+  static async start(answer: (head: RequestHead, body: string) => Answer): Promise<StandInNode> {
+    return new StandInNode(await x25519KeyPair(), answer);
+  }
+
+  get transportKey(): Uint8Array {
+    return this.transport.publicKey;
+  }
+
+  async restart(): Promise<void> {
+    this.transport = await x25519KeyPair();
+    this.sessions.clear();
+  }
+
+  forgetSessions(): void {
+    this.sessions.clear();
+  }
+
+  fetch = vi.fn(async (url: string, init: RequestInit): Promise<Response> => {
+    const body = init.body as Uint8Array;
+    if (url === `${StandInNode.baseUrl}${HANDSHAKE_PATH}`) return this.handshake(body);
+    if (url === `${StandInNode.baseUrl}${SEALED_PATH}`) return this.exchange(body);
+    throw new Error(`unexpected ${url}`);
+  });
+
+  private async handshake(body: Uint8Array): Promise<Response> {
+    if (hex(body.slice(1, 33)) !== hex(this.transport.publicKey)) {
+      return refusal(409, 'stale_transport_key');
+    }
+    this.handshakes += 1;
+    const message1 = body.slice(33);
+    const state = await SymmetricState.initialize();
+    await state.mixHash(PROLOGUE);
+    await state.mixHash(this.transport.publicKey);
+    const remote = message1.slice(0, 32);
+    await state.mixHash(remote);
+    await state.mixKey(await dh(this.transport.privateKey, remote));
+    await state.decryptAndHash(message1.slice(32));
+    const ephemeral = await x25519KeyPair();
+    await state.mixHash(ephemeral.publicKey);
+    await state.mixKey(await dh(ephemeral.privateKey, remote));
+    const sessionId = crypto.getRandomValues(new Uint8Array(16));
+    const payload = concat(sessionId, new Uint8Array([0, 0, 0x0e, 0x10]));
+    const message2 = concat(ephemeral.publicKey, await state.encryptAndHash(payload));
+    const [requestKey, responseKey] = await state.split();
+    this.sessions.set(hex(sessionId), {
+      requestKey: await crypto.subtle.importKey('raw', requestKey, 'AES-GCM', false, ['decrypt']),
+      responseKey: await crypto.subtle.importKey('raw', responseKey, 'AES-GCM', false, ['encrypt']),
+    });
+    return new Response(concat(new Uint8Array([2]), message2), {
+      headers: { 'content-type': SEALED_CONTENT_TYPE },
+    });
+  }
+
+  private async exchange(envelope: Uint8Array): Promise<Response> {
+    const header = envelope.slice(0, 25);
+    const keys = this.sessions.get(hex(header.slice(1, 17)));
+    if (!keys) return refusal(409, 'unknown_session');
+    const requestId = header.slice(17, 25);
+    const iv = (index: number) => concat(requestId, new Uint8Array([0, 0, 0, index]));
+    const inner = new Uint8Array(
+      await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv(0), additionalData: header },
+        keys.requestKey,
+        envelope.slice(25),
+      ),
     );
-    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: transportKey, fetch: carrier });
+    const len = new DataView(inner.buffer).getUint32(0, false);
+    const head = JSON.parse(new TextDecoder().decode(inner.slice(4, 4 + len))) as RequestHead;
+    const body = new TextDecoder().decode(inner.slice(4 + len));
+    this.requests.push({ head, body });
+    const reply = this.answer(head, body);
 
-    await expect(
-      sealedFetch(`${baseUrl}/jsonrpc?x=1`, {
-        method: 'POST',
-        headers: { authorization: 'Bearer secret-token' },
-        body: '{"method":"secret-call"}',
-      }),
-    ).rejects.toBeInstanceOf(SealedTransportError);
+    let index = 0;
+    const frame = async (kind: number, data: Uint8Array) => {
+      const sealed = new Uint8Array(
+        await crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv(index++), additionalData: header },
+          keys.responseKey,
+          concat(new Uint8Array([kind]), data),
+        ),
+      );
+      const length = new Uint8Array(4);
+      new DataView(length.buffer).setUint32(0, sealed.length, false);
+      return concat(length, sealed);
+    };
+    const encode = (text: string) => new TextEncoder().encode(text);
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(await frame(0, encode(JSON.stringify({ status: reply.status, headers: reply.headers }))));
+        for (const chunk of reply.chunks) {
+          if (reply.delayMs) await new Promise((resolve) => setTimeout(resolve, reply.delayMs));
+          controller.enqueue(await frame(1, encode(chunk)));
+        }
+        controller.enqueue(await frame(2, new Uint8Array()));
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { 'content-type': SEALED_CONTENT_TYPE } });
+  }
+}
 
-    const [url, init] = carrier.mock.calls[0];
-    expect(url).toBe('https://tee-node.example/node/sealed/v1');
-    expect(init.method).toBe('POST');
-    expect(init.headers).toEqual({ 'content-type': SEALED_CONTENT_TYPE });
-    const wire = new TextDecoder('latin1').decode(init.body as Uint8Array);
+function refusal(status: number, code: string): Response {
+  return new Response(JSON.stringify({ error: { code, message: code } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+const ok = (body = '{}'): Answer => ({ status: 200, headers: [['content-type', 'application/json']], chunks: [body] });
+
+describe('createSealedFetch', () => {
+  const baseUrl = StandInNode.baseUrl;
+
+  it('delivers the whole request to the node and returns its answer as a Response', async () => {
+    const node = await StandInNode.start(() => ({
+      status: 201,
+      headers: [['x-answer', 'yes']],
+      chunks: ['{"result":', '42}'],
+    }));
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
+
+    const response = await sealedFetch(`${baseUrl}/jsonrpc?x=1`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer secret-token', 'content-type': 'application/json' },
+      body: '{"method":"secret-call"}',
+    });
+
+    expect(node.requests[0].head.method).toBe('POST');
+    expect(node.requests[0].head.path).toBe('/jsonrpc?x=1');
+    expect(node.requests[0].head.headers).toContainEqual(['authorization', 'Bearer secret-token']);
+    expect(node.requests[0].body).toBe('{"method":"secret-call"}');
+    expect(response.status).toBe(201);
+    expect(response.headers.get('x-answer')).toBe('yes');
+    expect(await response.json()).toEqual({ result: 42 });
+
+    const wire = node.fetch.mock.calls.map(([, init]) => new TextDecoder('latin1').decode(init.body as Uint8Array)).join('');
     expect(wire).not.toContain('secret-token');
     expect(wire).not.toContain('secret-call');
     expect(wire).not.toContain('jsonrpc');
   });
 
-  it('tells the caller to attest again when the node restarted', async () => {
-    const carrier = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { code: 'stale_transport_key', message: 'stale' } }), {
-        status: 409,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
+  it('opens one session for many requests, concurrent ones included', async () => {
+    const node = await StandInNode.start(() => ok());
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
+    await Promise.all([1, 2, 3].map(() => sealedFetch(`${baseUrl}/admin-api/health`)));
+    await sealedFetch(`${baseUrl}/admin-api/health`);
+    expect(node.handshakes).toBe(1);
+    expect(node.requests).toHaveLength(4);
+  });
+
+  it('opens a new session when the node dropped the old one, and retries', async () => {
+    const node = await StandInNode.start(() => ok('"again"'));
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
+    await sealedFetch(`${baseUrl}/admin-api/health`);
+    node.forgetSessions();
+    const response = await sealedFetch(`${baseUrl}/admin-api/health`);
+    expect(await response.json()).toBe('again');
+    expect(node.handshakes).toBe(2);
+  });
+
+  it('attests again, through the caller, when the node restarted', async () => {
+    const node = await StandInNode.start(() => ok());
+    const attest = vi.fn(async () => node.transportKey);
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: attest, fetch: node.fetch as never });
+    await sealedFetch(`${baseUrl}/admin-api/health`);
+    await node.restart();
+    const response = await sealedFetch(`${baseUrl}/admin-api/health`);
+    expect(response.status).toBe(200);
+    expect(attest).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells the caller to attest again when given a fixed key and the node restarted', async () => {
+    const node = await StandInNode.start(() => ok());
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
+    await node.restart();
+    await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toBeInstanceOf(StaleTransportKeyError);
+  });
+
+  it('passes a node refusal on as a SealedTransportError', async () => {
+    const carrier = vi.fn().mockResolvedValue(refusal(400, 'malformed'));
     const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: transportKey, fetch: carrier });
-    await expect(sealedFetch(`${baseUrl}/admin-api/contexts`)).rejects.toBeInstanceOf(
-      StaleTransportKeyError,
-    );
+    const error = await sealedFetch(`${baseUrl}/admin-api/health`).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SealedTransportError);
+    expect((error as SealedTransportError).code).toBe('malformed');
+  });
+
+  it('hands over a streamed body frame by frame, before the stream ends', async () => {
+    const node = await StandInNode.start(() => ({
+      status: 200,
+      headers: [['content-type', 'text/event-stream']],
+      chunks: ['data: one\n\n', 'data: two\n\n'],
+      delayMs: 50,
+    }));
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
+    const response = await sealedFetch(`${baseUrl}/sse`, { headers: { accept: 'text/event-stream' } });
+    expect(response.headers.get('content-type')).toBe('text/event-stream');
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe('data: one\n\n');
+    const second = await reader.read();
+    expect(new TextDecoder().decode(second.value)).toBe('data: two\n\n');
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('never sends a request outside the node in the clear', async () => {
@@ -112,86 +353,6 @@ describe('createSealedFetch', () => {
     await expect(sealedFetch('https://elsewhere.example/node/jsonrpc')).rejects.toThrow(/Refusing/);
     await expect(sealedFetch('https://tee-node.example/other/jsonrpc')).rejects.toThrow(/Refusing/);
     expect(carrier).not.toHaveBeenCalled();
-  });
-});
-
-/** A stand-in node: opens the envelope with the transport secret and answers. */
-async function standInNode(
-  envelope: Uint8Array,
-  answer: (head: RequestHead, body: string) => { status: number; headers: Array<[string, string]>; body: string },
-): Promise<Response> {
-  const pkcs8 = new Uint8Array([
-    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20,
-    ...new Uint8Array(32).fill(0x22),
-  ]);
-  const secret = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'X25519' }, false, ['deriveBits']);
-  const clientPublic = envelope.slice(33, 65);
-  const client = await crypto.subtle.importKey('raw', clientPublic, { name: 'X25519' }, false, []);
-  const shared = await crypto.subtle.deriveBits(
-    { name: 'X25519', public: client } as EcdhKeyDeriveParams,
-    secret,
-    256,
-  );
-  const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
-  const salt = envelope.slice(1, 65);
-  const key = (domain: string) =>
-    crypto.subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode(domain) },
-      ikm,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt'],
-    );
-  const inner = new Uint8Array(
-    await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: envelope.slice(65, 77), additionalData: envelope.slice(0, 77) },
-      await key('calimero/sealed-http/v1/request'),
-      envelope.slice(77),
-    ),
-  );
-  const len = new DataView(inner.buffer).getUint32(0, false);
-  const head = JSON.parse(new TextDecoder().decode(inner.slice(4, 4 + len))) as RequestHead;
-  const reply = answer(head, new TextDecoder().decode(inner.slice(4 + len)));
-  const replyHead = new TextEncoder().encode(JSON.stringify({ status: reply.status, headers: reply.headers }));
-  const replyInner = new Uint8Array([0, 0, 0, 0, ...replyHead, ...new TextEncoder().encode(reply.body)]);
-  new DataView(replyInner.buffer).setUint32(0, replyHead.length, false);
-  const nonce = new Uint8Array(12).fill(0x77);
-  const sealed = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce, additionalData: new Uint8Array([1, ...salt]) },
-    await key('calimero/sealed-http/v1/response'),
-    replyInner,
-  );
-  return new Response(new Uint8Array([1, ...nonce, ...new Uint8Array(sealed)]), {
-    headers: { 'content-type': SEALED_CONTENT_TYPE },
-  });
-}
-
-describe('createSealedFetch round trip', () => {
-  it('delivers the whole request to the node and returns its answer as a Response', async () => {
-    const baseUrl = 'https://tee-node.example/node';
-    let seen: { head: RequestHead; body: string } | undefined;
-    const carrier = vi.fn(async (_url: string, init: RequestInit) =>
-      standInNode(init.body as Uint8Array, (head, body) => {
-        seen = { head, body };
-        return { status: 201, headers: [['x-answer', 'yes']], body: '{"result":42}' };
-      }),
-    );
-    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: transportKey, fetch: carrier as never });
-
-    const response = await sealedFetch(`${baseUrl}/jsonrpc?x=1`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer secret-token', 'content-type': 'application/json' },
-      body: '{"method":"call"}',
-    });
-
-    expect(seen?.head.method).toBe('POST');
-    expect(seen?.head.path).toBe('/jsonrpc?x=1');
-    expect(seen?.head.headers).toContainEqual(['authorization', 'Bearer secret-token']);
-    expect(Math.abs((seen?.head.ts ?? 0) - Date.now() / 1000)).toBeLessThan(60);
-    expect(seen?.body).toBe('{"method":"call"}');
-    expect(response.status).toBe(201);
-    expect(response.headers.get('x-answer')).toBe('yes');
-    expect(await response.json()).toEqual({ result: 42 });
   });
 });
 
