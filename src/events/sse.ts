@@ -76,15 +76,21 @@ export class SseClient {
   private subscribedGroupIds: Set<string> = new Set();
   private closed = false;
   private listeners: SseListeners = { connect: [], event: [], error: [] };
+  private fetchImpl: typeof fetch;
 
   constructor(opts: {
     baseUrl: string;
     getAuthToken: () => Promise<string>;
     reconnectDelayMs?: number;
+    fetch?: typeof fetch;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.getAuthToken = opts.getAuthToken;
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 3000;
+    // globalThis.fetch must be called as a method on globalThis, not through a
+    // variable, or browsers throw "Illegal invocation".
+    this.fetchImpl = (url: RequestInfo | URL, init?: RequestInit) =>
+      opts.fetch ? opts.fetch(url, init) : globalThis.fetch(url, init);
   }
 
   on(event: 'connect', handler: SseConnectHandler): void;
@@ -174,7 +180,7 @@ export class SseClient {
     try {
       const token = await this.getAuthToken();
       const url = `${this.baseUrl}/sse`;
-      const response = await fetch(url, {
+      const response = await this.fetchImpl(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'text/event-stream',
@@ -376,7 +382,7 @@ export class SseClient {
       const params: { contextIds?: string[]; groupIds?: string[] } = {};
       if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
       if (ids.groupIds && ids.groupIds.length > 0) params.groupIds = ids.groupIds;
-      const response = await fetch(`${this.baseUrl}/sse/subscription`, {
+      const response = await this.fetchImpl(`${this.baseUrl}/sse/subscription`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
