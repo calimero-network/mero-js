@@ -1,3 +1,9 @@
+## [19.24.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.0...mero-js-v19.24.1) (2026-09-26)
+
+### Bug Fixes
+
+* **sealed:** bound what a proxy can make the client buffer, and retry a busy handshake ([#180](https://github.com/calimero-network/mero-js/issues/180)) ([eb9ce20](https://github.com/calimero-network/mero-js/commit/eb9ce205171491c5ecc39e94b918ebabbb4bfad6))
+
 ## [19.24.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.23.0...mero-js-v19.24.0) (2026-09-26)
 
 ### Features
