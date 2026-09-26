@@ -1,4 +1,4 @@
-export { CloudClient } from './cloud-client.js';
+export { CloudClient, admitterAddrsFromNetworkStatus } from './cloud-client.js';
 export type {
   CloudClientConfig,
   CloudSession,

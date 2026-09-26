@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CloudClient } from './cloud-client.js';
+import { CloudClient, admitterAddrsFromNetworkStatus } from './cloud-client.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { signAccountLink } from '../account/index.js';
 
@@ -369,6 +369,51 @@ describe('CloudClient machines and setup', () => {
     ]);
     // The claim already established ownership; these carry no proof.
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({});
+  });
+
+  it('sends the owner node addresses with enable-ha when given, and nothing otherwise', async () => {
+    const { fetch, calls } = scriptedFetch([{ body: {} }, { body: {} }]);
+    const cloud = signedIn(fetch);
+    const laptop = '/ip4/63.181.86.34/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWOwner';
+
+    await cloud.enableNamespaceHa(NS, { admitterAddrs: [laptop] });
+    // Omitted means "leave what the cloud holds" -- an empty body, not an
+    // empty list, which would clear it.
+    await cloud.enableNamespaceHa(NS);
+
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ admitter_addrs: [laptop] });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({});
+  });
+});
+
+describe('admitterAddrsFromNetworkStatus', () => {
+  const PEER = '12D3KooWOwner';
+
+  it('makes every external address end in this node\'s own peer id', () => {
+    const status = {
+      localPeerId: PEER,
+      listenAddrs: ['/ip4/0.0.0.0/tcp/2528'],
+      externalAddrs: [
+        '/ip4/1.2.3.4/udp/2528/quic-v1',
+        `/ip4/1.2.3.4/tcp/2528/p2p/${PEER}`,
+        // Names the RELAY's peer, so "contains /p2p/" is not complete.
+        '/ip4/9.9.9.9/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit',
+        'not-a-multiaddr',
+      ],
+    };
+    expect(admitterAddrsFromNetworkStatus(status)).toEqual([
+      `/ip4/1.2.3.4/udp/2528/quic-v1/p2p/${PEER}`,
+      `/ip4/1.2.3.4/tcp/2528/p2p/${PEER}`,
+      `/ip4/9.9.9.9/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit/p2p/${PEER}`,
+    ]);
+    // The admin API's `{ data }` wrapper reads the same.
+    expect(admitterAddrsFromNetworkStatus({ data: status })).toHaveLength(3);
+  });
+
+  it('is empty when there is nothing dialable to say', () => {
+    expect(admitterAddrsFromNetworkStatus(null)).toEqual([]);
+    expect(admitterAddrsFromNetworkStatus({ externalAddrs: ['/ip4/1.2.3.4/tcp/1'] })).toEqual([]);
+    expect(admitterAddrsFromNetworkStatus({ localPeerId: PEER, externalAddrs: [] })).toEqual([]);
   });
 });
 

@@ -812,17 +812,33 @@ export class CloudClient {
    * Ask the fleet to host a claimed namespace — the step that gets a relay
    * assigned.
    *
-   * Takes no body: {@link claimNamespace} already established ownership, and
-   * this is the separate "now host it" half. Idempotent.
+   * Carries no proof: {@link claimNamespace} already established ownership,
+   * and this is the separate "now host it" half. Idempotent.
+   *
+   * `admitterAddrs` is where the owner's own node can be dialed — take it from
+   * that node's network status with {@link admitterAddrsFromNetworkStatus}.
+   * The first fleet node placed on a namespace has nobody but the owner to ask
+   * for admission, and without these it can only broadcast and hope the
+   * owner's node — often a laptop behind a relay — hears it. They are a dial
+   * hint, not a grant: the owner's node admits by its own policy. Omit them to
+   * leave whatever the cloud already holds; pass them again when the node's
+   * relay address changes, and they replace the stored ones.
    *
    * Not to be confused with {@link enableHA}, which opens the cloud's web flow
    * in a browser tab for a user to complete by hand. This is the API call.
    */
-  async enableNamespaceHa(namespaceId: string): Promise<unknown> {
+  async enableNamespaceHa(
+    namespaceId: string,
+    options: { admitterAddrs?: readonly string[] } = {},
+  ): Promise<unknown> {
+    const body =
+      options.admitterAddrs === undefined
+        ? {}
+        : { admitter_addrs: [...options.admitterAddrs] };
     return this.request<unknown>(
       'POST',
       `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
-      { body: {} },
+      { body },
     );
   }
 
@@ -1203,4 +1219,36 @@ export class CloudClient {
     };
     void this.notifySession(this.session);
   }
+}
+
+/**
+ * The addresses a fleet node can dial to ask this node for admission, from the
+ * node's `GET /admin-api/network/status` (see `AdminApiClient`).
+ *
+ * Its `externalAddrs`, each made to end in `/p2p/<localPeerId>`: that is the
+ * shape core dials, and an external address is usually reported without it. A
+ * relay-circuit address already contains `/p2p/` — the relay's — so the test is
+ * whether it ends in this node's own id, not whether it names a peer at all.
+ * Anything that is not a multiaddr is dropped. Empty when the status names no
+ * peer id or no external address, which is an honest "not dialable yet".
+ */
+export function admitterAddrsFromNetworkStatus(status: unknown): string[] {
+  const record =
+    status && typeof status === 'object'
+      ? ((status as { data?: unknown }).data ?? status)
+      : undefined;
+  if (!record || typeof record !== 'object') return [];
+  const peerId = (record as { localPeerId?: unknown }).localPeerId;
+  const external = (record as { externalAddrs?: unknown }).externalAddrs;
+  if (typeof peerId !== 'string' || !peerId || !Array.isArray(external)) return [];
+  const suffix = `/p2p/${peerId}`;
+  const out: string[] = [];
+  for (const entry of external) {
+    if (typeof entry !== 'string') continue;
+    const addr = entry.trim();
+    if (!addr.startsWith('/')) continue;
+    const dialable = addr.endsWith(suffix) ? addr : `${addr}${suffix}`;
+    if (!out.includes(dialable)) out.push(dialable);
+  }
+  return out;
 }
