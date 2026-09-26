@@ -1725,6 +1725,11 @@ export interface TeeInfoResponseData {
 export interface TeeAttestRequest {
   nonce: string;
   applicationId?: string;
+  /**
+   * Bind the node's X25519 transport key into the quote; the response names it
+   * as `transportPublicKey`. See `fetchAttestedTransportKey`.
+   */
+  bindTransportKey?: boolean;
 }
 
 export interface QuoteHeader {
@@ -1767,6 +1772,8 @@ export interface Quote {
 export interface TeeAttestResponseData {
   quoteB64: string;
   quote: Quote;
+  /** Hex X25519 transport key, present only when the request set `bindTransportKey`. */
+  transportPublicKey?: string;
 }
 
 export interface TeeVerifyQuoteRequest {

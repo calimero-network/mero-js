@@ -51,6 +51,9 @@ export type { Codec, EphemeralEntry } from "./ephemeral/index.js";
 // Cloud client — namespaces, relays, HA, and the cloud sign-in path
 export * from "./cloud/index.js";
 
+// Sealed transport — requests encrypted to a TEE node's attested key
+export * from "./sealed/index.js";
+
 // Relay client — write through delegated execution, holding only a signing key
 export * from "./relay/index.js";
 

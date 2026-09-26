@@ -69,6 +69,7 @@ export default defineConfig({
             'guides/http-transport',
             'guides/bundling-and-runtimes',
             'guides/high-availability',
+            'guides/sealed-transport',
           ],
         },
         {
