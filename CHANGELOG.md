@@ -1,3 +1,9 @@
+## [19.23.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.22.0...mero-js-v19.23.0) (2026-09-26)
+
+### Features
+
+* **sealed:** open forward-secret sessions and stream sealed responses ([#178](https://github.com/calimero-network/mero-js/issues/178)) ([f46cc27](https://github.com/calimero-network/mero-js/commit/f46cc273beae5d97466ca1e5b90ee31e289084c6))
+
 ## [19.22.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.21.0...mero-js-v19.22.0) (2026-09-26)
 
 ### Features
