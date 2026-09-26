@@ -35,7 +35,10 @@ import type {
   ContextWithGroup,
   CreateGroupInvitationResponseData,
   GroupInvitationFromAdmin,
+  MemberDevice,
+  MemberDevicesEntry,
   Namespace,
+  SealedEnvelope,
   SignedGroupOpenInvitation,
 } from '../../src/admin-api/admin-types.js';
 
@@ -52,6 +55,9 @@ const ns = key<Namespace>();
 const invitationRes = key<CreateGroupInvitationResponseData>();
 const signed = key<SignedGroupOpenInvitation>();
 const inv = key<GroupInvitationFromAdmin>();
+const memberDevices = key<MemberDevicesEntry>();
+const memberDevice = key<MemberDevice>();
+const sealed = key<SealedEnvelope>();
 
 interface Spec {
   /** The declared type under test, for failure messages. */
@@ -78,6 +84,8 @@ let applications: Application[] = [];
 let contexts: ContextWithGroup[] = [];
 let namespaces: Namespace[] = [];
 let invitation: CreateGroupInvitationResponseData;
+let memberDeviceEntries: MemberDevicesEntry[] = [];
+let envelope: SealedEnvelope;
 
 const SPECS: Spec[] = [
   {
@@ -162,6 +170,33 @@ const SPECS: Spec[] = [
       inv('admitters'),
     ],
   },
+  {
+    type: 'MemberDevicesEntry',
+    via: 'listMemberDevices',
+    sample: () => memberDeviceEntries as unknown as Record<string, unknown>[],
+    required: [memberDevices('account'), memberDevices('devices')],
+    optional: [],
+  },
+  {
+    type: 'MemberDevice',
+    via: 'listMemberDevices',
+    sample: () =>
+      memberDeviceEntries.flatMap((m) => m.devices) as unknown as Record<string, unknown>[],
+    required: [memberDevice('deviceId'), memberDevice('signingKey')],
+    optional: [],
+  },
+  {
+    type: 'SealedEnvelope',
+    via: 'sealToAccount',
+    sample: () => [envelope as unknown as Record<string, unknown>],
+    required: [
+      sealed('accountRootEpoch'),
+      sealed('ephemeralPublicKey'),
+      sealed('nonce'),
+      sealed('ciphertext'),
+    ],
+    optional: [],
+  },
 ];
 
 describe('live wire contract (merod responses ↔ SDK types)', () => {
@@ -199,6 +234,10 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
       throw new Error('createGroupInvitation returned a recursive payload');
     }
     invitation = invited;
+
+    memberDeviceEntries = (await mero.admin.listMemberDevices(namespaceId)).members;
+    const { accountId } = await mero.admin.getNodeIdentity();
+    envelope = await mero.admin.sealToAccount(namespaceId, accountId, { plaintext: 'deadbeef' });
   }, 120000);
 
   afterAll(() => {

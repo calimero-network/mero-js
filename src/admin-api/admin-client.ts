@@ -2,6 +2,7 @@ import { HttpClient, withRetry } from '../http-client/index.js';
 import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
+  ReadinessStatus,
   AdminAuthStatus,
   InstallApplicationRequest,
   InstallApplicationResponseData,
@@ -123,6 +124,12 @@ import type {
   PerformIntentRequest,
   PerformIntentResponseData,
   IntentRelayInfo,
+  QueryContextRequest,
+  QueryContextResponseData,
+  ListMemberDevicesOptions,
+  ListMemberDevicesResponseData,
+  SealToAccountRequest,
+  SealedEnvelope,
   AdmitJoinRequest,
   AdmitJoinResponseData,
 } from './admin-types.js';
@@ -234,6 +241,15 @@ export class AdminApiClient {
 
   async healthCheck(): Promise<HealthStatus> {
     return unwrap(await this.httpClient.get<{ data: HealthStatus }>('/admin-api/health'));
+  }
+
+  /**
+   * Whether the node has finished starting and its store answers. Public, like
+   * {@link healthCheck}; unlike it, a node that is up but not ready answers
+   * `503`, which this surfaces as an `HTTPError` whose body names the stage.
+   */
+  async readinessCheck(): Promise<ReadinessStatus> {
+    return unwrap(await this.httpClient.get<{ data: ReadinessStatus }>('/admin-api/ready'));
   }
 
   async isAuthed(): Promise<AdminAuthStatus> {
@@ -743,6 +759,27 @@ export class AdminApiClient {
   }
 
   /**
+   * Read a context as the session's ACCOUNT, without minting a warrant.
+   *
+   * Needs an account-authenticated session — one from {@link login}, not the
+   * admin password login — and refuses otherwise with a `401`. The account must
+   * be a member of the group owning the context (`403` if not), and the method
+   * must be declared read-only in the app's ABI (`409` if not; a write needs
+   * {@link performIntent}).
+   */
+  async queryContext(
+    contextId: string,
+    request: QueryContextRequest,
+  ): Promise<QueryContextResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: QueryContextResponseData }>(
+        `/admin-api/contexts/${contextId}/query`,
+        request,
+      ),
+    );
+  }
+
+  /**
    * Ask what this node can do for a member in `contextId`, before they sign
    * anything.
    *
@@ -1134,6 +1171,41 @@ export class AdminApiClient {
       );
     }
     return response;
+  }
+
+  /**
+   * Member accounts in the group and the devices bound to each. An admin node
+   * sees every account; a plain member only its own. `403` if this node is not a
+   * member of the group.
+   */
+  async listMemberDevices(
+    groupId: string,
+    options: ListMemberDevicesOptions = {},
+  ): Promise<ListMemberDevicesResponseData> {
+    const params = new URLSearchParams();
+    if (options.offset !== undefined) params.set('offset', String(options.offset));
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const path = `/admin-api/groups/${groupId}/member-devices${query ? `?${query}` : ''}`;
+    return this.httpClient.get<ListMemberDevicesResponseData>(path);
+  }
+
+  /**
+   * Seal a small payload to a member account's root key. This node must be a
+   * member of the group, and `account` must be an account the group knows, so
+   * the route reaches no further than the caller already does.
+   */
+  async sealToAccount(
+    groupId: string,
+    account: string,
+    request: SealToAccountRequest,
+  ): Promise<SealedEnvelope> {
+    return unwrap(
+      await this.httpClient.post<{ data: SealedEnvelope }>(
+        `/admin-api/groups/${groupId}/accounts/${account}/seal`,
+        request,
+      ),
+    );
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {

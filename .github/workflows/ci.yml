@@ -70,9 +70,13 @@ jobs:
         run: scripts/download-released-merod.sh
 
       - name: Boot merod (embedded auth, single node)
+        # --device-key-login lets delegated-intent log in as the author ACCOUNT
+        # and read through POST /contexts/:id/query, which a password session
+        # cannot do. `cli` is the audience that test's login names.
         run: |
           ./merod --home ./e2e-node --node e2e init \
-            --server-port 4001 --swarm-port 4002 --auth-mode embedded
+            --server-port 4001 --swarm-port 4002 --auth-mode embedded \
+            --device-key-login --device-key-login-audience cli
           ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
           echo $! > merod.pid
           for i in $(seq 1 30); do
