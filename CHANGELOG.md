@@ -1,3 +1,9 @@
+## [19.20.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.19.0...mero-js-v19.20.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add setTeeAuthoringPolicy for the tee-authoring-policy route ([#175](https://github.com/calimero-network/mero-js/issues/175)) ([3156824](https://github.com/calimero-network/mero-js/commit/3156824b849e863b1e95424e5287fcd38fb5dcdd)), closes [#4059](https://github.com/calimero-network/mero-js/issues/4059) [core#4059](https://github.com/calimero-network/core/issues/4059)
+
 ## [19.19.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.18.0...mero-js-v19.19.0) (2026-09-26)
 
 ### Features
