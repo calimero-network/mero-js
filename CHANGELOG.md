@@ -1,3 +1,9 @@
+## [19.25.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.1...mero-js-v19.25.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add readinessCheck, listMemberDevices, sealToAccount, queryContext ([#181](https://github.com/calimero-network/mero-js/issues/181)) ([aabf7ce](https://github.com/calimero-network/mero-js/commit/aabf7cef93349507cff1bd149601d38db440aab8))
+
 ## [19.24.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.0...mero-js-v19.24.1) (2026-09-26)
 
 ### Bug Fixes
