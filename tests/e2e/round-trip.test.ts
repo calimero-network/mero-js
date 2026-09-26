@@ -200,6 +200,21 @@ describe('Round-trip E2E — Groups', () => {
     expect(got.allowedRtmr3).toEqual([ZERO_MEASUREMENT]);
   });
 
+  it('TEE authoring policy: set on the namespace root, then turn it off', async () => {
+    // Core has no read-back route for this policy, so the check is that the node
+    // accepts both writes. `groupId` is the namespace root: the policy is
+    // namespace-scoped and the node refuses it on a subgroup.
+    const ZERO_MEASUREMENT = '0'.repeat(96);
+    await expect(
+      mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [ZERO_MEASUREMENT] }),
+    ).resolves.toBeUndefined();
+    // An empty allowlist is how an admin turns TEE authorship back off; leave the
+    // namespace that way so no later test runs under a TEE authority.
+    await expect(
+      mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [] }),
+    ).resolves.toBeUndefined();
+  });
+
   // POST /admin-api/groups requires applicationId (not just a name).
   it('createGroup then getGroupInfo returns it', async () => {
     const created = await mero.admin.createGroup({
