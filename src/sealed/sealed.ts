@@ -54,6 +54,14 @@ const HEADER_LEN = 1 + SESSION_ID_LEN + 8;
 const FRAME_HEAD = 0;
 const FRAME_DATA = 1;
 const FRAME_END = 2;
+/**
+ * The largest frame the node sends: a kind byte, at most 64 KiB of data, a tag.
+ * Anything larger is refused before it is buffered, so a proxy cannot make the
+ * client hold an unbounded frame it has yet to authenticate.
+ */
+const MAX_FRAME_LEN = 1 + 64 * 1024 + 16;
+/** Far more than a handshake reply (69 bytes) ever is. */
+const MAX_HANDSHAKE_REPLY = 1024;
 /** Open a new session this long before the node would drop the current one. */
 const RENEW_BEFORE_MS = 60_000;
 const TRANSPORT_BINDING_DOMAIN = 'calimero.tee-attest.transport-key.v1';
@@ -78,6 +86,8 @@ export class SealedTransportError extends Error {
     public status: number,
     public code: string | undefined,
     message: string,
+    /** How long the node asked to wait before retrying (`Retry-After`), if it did. */
+    public retryAfterMs?: number,
   ) {
     super(message);
   }
@@ -268,6 +278,22 @@ async function handshake(
   nodeUrl: string,
   transportKey: Uint8Array,
 ): Promise<Session> {
+  try {
+    return await handshakeOnce(baseFetch, nodeUrl, transportKey);
+  } catch (error) {
+    // The node limits how fast sessions open. A refused handshake opened
+    // nothing, so trying once more after the pause it asks for is safe.
+    if (!(error instanceof SealedTransportError) || error.code !== 'busy') throw error;
+    await new Promise((resolve) => setTimeout(resolve, error.retryAfterMs ?? 1000));
+    return handshakeOnce(baseFetch, nodeUrl, transportKey);
+  }
+}
+
+async function handshakeOnce(
+  baseFetch: typeof fetch,
+  nodeUrl: string,
+  transportKey: Uint8Array,
+): Promise<Session> {
   const noise = await initiate(transportKey, PROLOGUE);
   const response = await baseFetch(`${nodeUrl}${HANDSHAKE_PATH}`, {
     method: 'POST',
@@ -277,7 +303,7 @@ async function handshake(
   if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
     throw await envelopeRefusal(response);
   }
-  const reply = new Uint8Array(await response.arrayBuffer());
+  const reply = await readAtMost(response, MAX_HANDSHAKE_REPLY);
   return sessionFrom(noise, reply);
 }
 
@@ -447,6 +473,10 @@ function frameReader(reader: ReadableStreamDefaultReader<Uint8Array>): {
     async next() {
       if (!(await fill(4))) return null;
       const length = new DataView(buffer.buffer, buffer.byteOffset).getUint32(0, false);
+      if (length > MAX_FRAME_LEN) {
+        await reader.cancel();
+        throw new Error('The sealed response is malformed: a frame is larger than the node sends');
+      }
       if (!(await fill(4 + length))) return null;
       const frame = buffer.slice(4, 4 + length);
       buffer = buffer.slice(4 + length);
@@ -454,6 +484,22 @@ function frameReader(reader: ReadableStreamDefaultReader<Uint8Array>): {
     },
     cancel: () => reader.cancel(),
   };
+}
+
+/** Read a body, refusing one longer than `limit` rather than buffering it. */
+async function readAtMost(response: Response, limit: number): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  let bytes = new Uint8Array();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return bytes;
+    bytes = concat(bytes, value);
+    if (bytes.length > limit) {
+      await reader.cancel();
+      throw new Error('The handshake reply is malformed: it is too long');
+    }
+  }
 }
 
 async function envelopeRefusal(response: Response): Promise<Error> {
@@ -468,5 +514,8 @@ async function envelopeRefusal(response: Response): Promise<Error> {
     // all that can honestly be reported.
   }
   if (code === 'stale_transport_key') return new StaleTransportKeyError();
-  return new SealedTransportError(response.status, code, message);
+  const retryAfter = Number(response.headers.get('retry-after'));
+  const retryAfterMs =
+    Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : undefined;
+  return new SealedTransportError(response.status, code, message, retryAfterMs);
 }

@@ -114,6 +114,23 @@ describe('sealed transport wire format', () => {
     await expect(response.text()).rejects.toThrow(/cut short/);
   });
 
+  it('refuses a frame larger than the node ever sends, before buffering it', async () => {
+    const { session } = await vectorSession();
+    const { header, requestId } = await sealRequest(session, vectorHead, new Uint8Array());
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(pulled === 1 ? new Uint8Array([0xff, 0xff, 0xff, 0xff]) : new Uint8Array(1024));
+      },
+    });
+    const response = new Response(endless, { headers: { 'content-type': SEALED_CONTENT_TYPE } });
+    await expect(openResponse(response, session.responseKey, header, requestId)).rejects.toThrow(
+      /larger than the node sends/,
+    );
+    expect(pulled).toBeLessThan(3);
+  });
+
   it('computes the transport binding the node puts in its quote', async () => {
     const binding = await transportKeyBinding(new Uint8Array(32).fill(0x11), new Uint8Array(32).fill(0x22));
     expect(hex(binding)).toBe(TRANSPORT_BINDING_VECTOR);
@@ -319,6 +336,32 @@ describe('createSealedFetch', () => {
     const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: node.fetch as never });
     await node.restart();
     await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toBeInstanceOf(StaleTransportKeyError);
+  });
+
+  it('refuses a handshake reply too long to be one', async () => {
+    const carrier = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array(4096), { headers: { 'content-type': SEALED_CONTENT_TYPE } }),
+    );
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: transportKey, fetch: carrier });
+    await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toThrow(/too long/);
+  });
+
+  it('waits and retries once when the node is too busy to open a session', async () => {
+    const node = await StandInNode.start(() => ok());
+    let refused = 0;
+    const carrier = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith(HANDSHAKE_PATH) && refused === 0) {
+        refused += 1;
+        const busy = refusal(503, 'busy');
+        busy.headers.set('retry-after', '0.01');
+        return busy;
+      }
+      return node.fetch(url, init);
+    });
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: carrier as never });
+    const response = await sealedFetch(`${baseUrl}/admin-api/health`);
+    expect(response.status).toBe(200);
+    expect(node.handshakes).toBe(1);
   });
 
   it('passes a node refusal on as a SealedTransportError', async () => {

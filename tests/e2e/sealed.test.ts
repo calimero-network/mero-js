@@ -9,6 +9,11 @@
  * that its report data commits to the transport key — the part of the chain
  * this suite is about. Against real hardware, verify the quote itself too.
  *
+ * With `NODE_TEE_SEALED_ONLY=1` the node is expected to run with
+ * `[server.sealed] required = true`: the suite then also checks that an
+ * unsealed request is refused, and everything above still works, since only
+ * attestation goes unsealed.
+ *
  * Run manually:
  *   NODE_TEE_URL=http://localhost:2438 pnpm test:e2e -- sealed
  */
@@ -23,6 +28,8 @@ import {
 import { ensureApplication, resolveCreds, runId } from './harness.js';
 
 const NODE_TEE_URL = process.env.NODE_TEE_URL;
+/** Set when that node runs with `[server.sealed] required = true`. */
+const SEALED_ONLY = process.env.NODE_TEE_SEALED_ONLY === '1';
 const CREDS = resolveCreds();
 const MOCK_QUOTE_HEADER = 'MOCK_TDX_QUOTE_V1';
 
@@ -73,6 +80,13 @@ describe.skipIf(!NODE_TEE_URL)('Sealed transport E2E (mock TEE)', () => {
     expect(attestations).toBe(1);
     expect(wire.length).toBeGreaterThan(0);
     expect(wire.every(({ url }) => url.startsWith(`${baseUrl}/sealed/v2`))).toBe(true);
+  });
+
+  it.skipIf(!SEALED_ONLY)('refuses an unsealed request when the node requires sealing', async () => {
+    const response = await fetch(`${baseUrl}/admin-api/contexts`);
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe('sealed_required');
   });
 
   it('runs JSON-RPC against a context, and streams its events back sealed', async () => {
