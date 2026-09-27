@@ -40,17 +40,15 @@ async function cover(label: string, fn: () => Promise<unknown>): Promise<void> {
 }
 
 /**
- * Exercise a route this node can only refuse, and pin the refusal: `status` is
- * what core answers now that it types the refusal. The 500 it gave before is
- * still accepted while CI also runs a merod released without it; drop it from
- * the list once a release carries the typed refusal.
+ * Exercise a route this node can only refuse, and pin the exact refusal, so a
+ * regression back to a generic 500 fails here.
  */
 async function refusedWith(fn: () => Promise<unknown>, status: number): Promise<void> {
   const err = await fn()
     .then(() => undefined)
     .catch((e: Error & { status?: number }) => e);
   expect(err, 'expected a refusal, got a success').toBeDefined();
-  expect([status, 500], `unexpected refusal: ${err?.message}`).toContain(err?.status);
+  expect(err?.status, `unexpected refusal: ${err?.message}`).toBe(status);
 }
 
 describe('Admin API E2E — Route coverage sweep', () => {
