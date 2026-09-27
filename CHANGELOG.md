@@ -1,3 +1,9 @@
+## [19.27.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.0...mero-js-v19.27.1) (2026-09-27)
+
+### Bug Fixes
+
+* **login:** keep the global fetch receiver on the default path ([#193](https://github.com/calimero-network/mero-js/issues/193)) ([fefbd07](https://github.com/calimero-network/mero-js/commit/fefbd0725e6bad0213aad6b3b25851b65edc916f))
+
 ## [19.27.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.26.0...mero-js-v19.27.0) (2026-09-27)
 
 ### Features
