@@ -1,3 +1,13 @@
+## [20.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.1...mero-js-v20.0.0) (2026-09-27)
+
+### ⚠ BREAKING CHANGES
+
+* **sealed:** trust a TEE image by all of its measurements, and build them from releases (#195)
+
+### Bug Fixes
+
+* **sealed:** trust a TEE image by all of its measurements, and build them from releases ([#195](https://github.com/calimero-network/mero-js/issues/195)) ([a631b5f](https://github.com/calimero-network/mero-js/commit/a631b5f19a50e6f092f7a41c713f73e5cad2cf8a))
+
 ## [19.27.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.0...mero-js-v19.27.1) (2026-09-27)
 
 ### Bug Fixes
