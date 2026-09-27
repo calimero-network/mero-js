@@ -133,7 +133,6 @@ function audienceLabel(audience: Audience): string {
  */
 export async function login(config: LoginConfig): Promise<DelegatedSession> {
   const baseUrl = config.nodeUrl.replace(/\/+$/, '');
-  const doFetch = config.fetch ?? globalThis.fetch;
   const timeoutMs = config.timeoutMs ?? 10_000;
 
   const request = async (path: string, init?: RequestInit): Promise<unknown> => {
@@ -141,10 +140,12 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
-      response = await doFetch(`${baseUrl}${path}`, {
-        ...init,
-        signal: controller.signal,
-      });
+      const requestInit = { ...init, signal: controller.signal };
+      // globalThis.fetch must be called as a method on globalThis, not through a
+      // variable, or browsers throw "Illegal invocation".
+      response = config.fetch
+        ? await config.fetch(`${baseUrl}${path}`, requestInit)
+        : await globalThis.fetch(`${baseUrl}${path}`, requestInit);
     } catch (err) {
       throw new HTTPError(
         0,
