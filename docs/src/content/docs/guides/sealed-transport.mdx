@@ -25,12 +25,18 @@ import {
   createQuoteVerifier,
   createSealedFetch,
   fetchAttestedTransportKey,
+  trustedMeasurementsFromReleases,
 } from '@calimero-network/mero-js';
+// The release's published-mrtds.json, shipped with the app (see below).
+import release from './trusted/mero-tee-v2.3.78.published-mrtds.json';
 
 const baseUrl = 'https://tee-node.example';
 
 // Accept the node's key only if its quote verifies, here, for an image you trust.
-const verifier = createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] });
+const verifier = createQuoteVerifier({
+  dcapVerify,
+  ...trustedMeasurementsFromReleases([release], { profile: 'locked-read-only' }),
+});
 const probe = new MeroJs({ baseUrl });
 const attest = () => fetchAttestedTransportKey(probe.admin, verifier);
 
@@ -50,8 +56,8 @@ against (`includeCollateral`), then accepts the quote only when:
 - its signatures verify against Intel's root, with collateral valid now;
 - the platform's TCB status is allowed (`UpToDate` by default), and never
   `Revoked`;
-- its MRTD is one in `allowedMrtd`, and its RTMRs are in `allowedRtmr0`–`3` when
-  you give those lists;
+- its measurements (MRTD and RTMR0–3) are, all together, those of an image in
+  `allowedMeasurements`;
 - its report data is the nonce followed by the binding to the transport key.
 
 Any failure rejects with the reason, and no key is trusted. Taking the collateral
@@ -68,12 +74,38 @@ never talk to a TEE node pay nothing for it. In a browser build it needs Node
 polyfills for `buffer`, `crypto` and `stream`; see its README for Vite and
 webpack settings.
 
-<Aside type="caution">
-`allowedMrtd` is the whole point: it names the image you trust to read your
-traffic. Take it from the node release you accept, never from the node you are
-talking to. Mock quotes (`merod --mock-tee`) never pass `createQuoteVerifier`;
-tests against a mock node pass a verifier of their own.
-</Aside>
+## Which images to trust
+
+The measurements are the whole point: they name the image you trust to read your
+traffic. Take them from the node release you accept, never from the node you are
+talking to.
+
+**An MRTD alone names no image.** On GCP the MRTD measures the platform's TD
+firmware. Every mero-tee image, every profile and every release shares it, and
+so does any other TD on the same platform, whatever it runs. The image is in
+RTMR1–3. So `createQuoteVerifier` refuses to be built from `allowedMrtd` alone.
+Give it `allowedMeasurements`, where a quote must match one image in all five
+registers, so registers of different images never combine. (`allowedMrtd` with
+all of `allowedRtmr1`–`3` still works, but checks each register on its own.)
+
+`trustedMeasurementsFromReleases(releases, { profile })` builds those options
+from mero-tee releases' `published-mrtds.json`:
+
+- **one profile** of each release: `locked-read-only` for production. A `debug`
+  image of the same release has other RTMRs and is refused;
+- **every release your nodes may run.** Each release has its own RTMRs, so during
+  a rollout pass the old release and the new one, and drop the old one once no
+  node runs it. A client that trusts only the new release refuses the nodes not
+  yet replaced;
+- **only the TCB statuses every one of them accepts**, which the release lists
+  (today `UpToDate` and `OutOfDate`: GCP's TDX hosts report `OutOfDate`).
+
+Where the file comes from is the trust decision. Shipping it with the app, taken
+from a release you verified (`cosign verify-blob` against its `.bundle.json`),
+trusts that release. Fetching it at run time trusts whoever serves it.
+
+Mock quotes (`merod --mock-tee`) never pass `createQuoteVerifier`; tests against
+a mock node pass a verifier of their own.
 
 Passing `attest` as a function, rather than a key you fetched once, lets the
 client attest again, through your verifier, when the node restarts and holds a

@@ -270,7 +270,9 @@ Pass `seal` and they are sealed to the relay's attested key instead, so only the
 TD reads them:
 
 ```typescript
-import { connectCloud, createQuoteVerifier } from '@calimero-network/mero-js';
+import { connectCloud, createQuoteVerifier, trustedMeasurementsFromReleases } from '@calimero-network/mero-js';
+// The node release's published-mrtds.json, shipped with the app.
+import release from './trusted/mero-tee-v2.3.78.published-mrtds.json';
 import { verify as dcapVerify } from '@phala/dcap-qvl';
 
 const connection = await connectCloud({
@@ -278,7 +280,10 @@ const connection = await connectCloud({
   authorAccount: account,
   authorProof,
   deviceSecret,
-  seal: createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] }),
+  seal: createQuoteVerifier({
+    dcapVerify,
+    ...trustedMeasurementsFromReleases([release], { profile: 'locked-read-only' }),
+  }),
 });
 ```
 
@@ -295,7 +300,7 @@ const connection = await connectCloud({
     { from: 0, to: 1, label: 'which relay serves my namespace?' },
     { from: 1, to: 0, label: 'relay URL + executor account' },
     { from: 0, to: 3, label: 'POST /tee/attest (unsealed): quote + transport key + collateral' },
-    { from: 0, to: 0, label: 'verify the quote in the page: Intel, TCB, MRTD, binding', color: '#a5ff11' },
+    { from: 0, to: 0, label: 'verify the quote in the page: Intel, TCB, image, binding', color: '#a5ff11' },
     { from: 0, to: 3, label: 'open a sealed session to the attested key' },
     { from: 0, to: 2, label: 'POST /sealed/v2 [warrant + args, opaque]' },
     { from: 2, to: 3, label: 'forward, cannot read it', color: '#8b949e' },
@@ -308,7 +313,9 @@ Two things change, and one does not:
 
 - **You check the relay yourself.** Without `seal`, a hosted relay is "attested"
   in the sense that the cloud checked it at registration. With it, the page
-  verifies the relay's quote against the MRTDs you pass, before anything is sent.
+  verifies the relay's quote against the release measurements you pass, before
+  anything is sent. Pass every release your relays may run: see [which images to
+  trust](/guides/sealed-transport/#which-images-to-trust).
 - **Only the TD reads the intent.** The ingress sees opaque POSTs.
 - **The warrant is still the authority.** Peers verify it exactly as before.
 
@@ -329,7 +336,7 @@ apart rather than as "could not connect".
 | `connectCloud`: "owns no namespaces" | step 2 not done | claim the namespace from the owner's node |
 | `connectCloud`: "owns N namespaces — pass namespaceId" | ambiguous | name it |
 | `connectCloud`: "no relays: enable HA" | step 3 not done | enable HA in the cloud |
-| `connectCloud`: "no relay has been assigned yet" | step 4 in flight | wait; if it persists, no attested node has capacity or the MRTD is not allowlisted |
+| `connectCloud`: "no relay has been assigned yet" | step 4 in flight | wait; if it persists, no attested node has capacity or its image is not allowlisted |
 | `connectCloud`: "waiting for the authorship grant" (names an account) | **step 5 not done** | grant `CAN_AUTHOR_ON_BEHALF` to that account |
 | `IntentRefusedError`, "author's account is not a member" | step 6 not done | add the keyholder's account to the group |
 | `IntentRefusedError`, `retryable: true`, "nonce" | warrant replayed | re-present under a fresh warrant; if it repeats, the [nonce source](/reference/relay/#nonce-sources) is restarting |
