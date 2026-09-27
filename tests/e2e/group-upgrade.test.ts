@@ -58,8 +58,9 @@ describe('Admin API E2E — Group upgrade', () => {
       const status = await mero.admin.getGroupUpgradeStatus(namespaceId);
       return status?.status === 'completed' ? status : undefined;
     }, 90000);
-    // Not `fromVersion`: core reads it from the application row, which the
-    // install above already moved to the new build, so both report `next`.
+    // The install above already moved the application row to the new build, so
+    // `fromVersion` is read from the bytecode the group ran before the upgrade.
+    expect(done.fromVersion).toBe('0.11.0-rc.49');
     expect(done.toVersion).toBe('0.11.0-rc.51');
     expect(done.initiatedAt).toBeGreaterThan(0);
 
