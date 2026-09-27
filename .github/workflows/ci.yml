@@ -85,6 +85,22 @@ jobs:
             [ "$i" = "30" ] && { echo "merod did not become healthy"; exit 1; }
           done
 
+      - name: Boot a fresh merod to pair onto the main node's account
+        # account-pairing-two-node pairs this node onto the e2e node's account,
+        # then names, rescopes and revokes it. It has to be a node that has joined
+        # nothing, and it is spent by the run. No network link to the e2e node is
+        # needed: every call the suite makes is answered by the holder.
+        run: |
+          ./merod --home ./pair-node --node pair init \
+            --server-port 4011 --swarm-port 4012 --auth-mode embedded
+          ./merod --home ./pair-node --node pair run > merod-pair.log 2>&1 &
+          echo $! > merod-pair.pid
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4011/admin-api/health >/dev/null 2>&1 && { echo "pair merod healthy"; break; }
+            sleep 2
+            [ "$i" = "30" ] && { echo "pair merod did not become healthy"; exit 1; }
+          done
+
       # The e2e harness self-provisions (installs kv-store if absent) and reads
       # NODE_URL / MERO_E2E_USER, so no manual token/install bootstrapping is needed.
       - name: Run e2e against released merod
@@ -99,6 +115,7 @@ jobs:
           # and ran ONLY in core's sdk-e2e.yml — so this repo reported green on a
           # suite it had never executed.
           MEROD_BINARY: ${{ github.workspace }}/merod
+          MERO_PAIR_NODE_URL: http://localhost:4011
         run: |
           set -o pipefail
           pnpm test:e2e 2>&1 | tee e2e.log
@@ -119,6 +136,10 @@ jobs:
           # naming the file beats the silence it replaces.
           grep -qE "delegated-intent\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
             || { echo "::error::delegated-intent suite did not run — MEROD_BINARY unset or merod unusable"; exit 1; }
+          # The same guard for the two-node pairing suite, which skips without
+          # MERO_PAIR_NODE_URL.
+          grep -qE "account-pairing-two-node\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
+            || { echo "::error::account-pairing-two-node suite did not run — MERO_PAIR_NODE_URL unset or the pair node unusable"; exit 1; }
 
       - name: Upload e2e logs
         if: always()
@@ -128,11 +149,14 @@ jobs:
           path: |
             e2e.log
             merod.log
+            merod-pair.log
           if-no-files-found: warn
 
       - name: Stop merod
         if: always()
-        run: kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
+        run: |
+          kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat merod-pair.pid 2>/dev/null)" 2>/dev/null || true
 
   multinode:
     name: Multi-node E2E (vs released merod)
