@@ -1,3 +1,13 @@
+## [21.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v20.0.0...mero-js-v21.0.0) (2026-09-27)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** remove getCertificate; test(e2e): cover upgrade retry (#196)
+
+### Code Refactoring
+
+* **admin:** remove getCertificate; test(e2e): cover upgrade retry ([#196](https://github.com/calimero-network/mero-js/issues/196)) ([19bd45f](https://github.com/calimero-network/mero-js/commit/19bd45f098e74f7f539462a37bf7ed72efba72ac))
+
 ## [20.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.1...mero-js-v20.0.0) (2026-09-27)
 
 ### ⚠ BREAKING CHANGES
