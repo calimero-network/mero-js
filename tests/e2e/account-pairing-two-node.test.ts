@@ -51,7 +51,10 @@ describe.skipIf(!PAIR_NODE_URL)('Account device management E2E (two nodes)', () 
   }
 
   beforeAll(async () => {
-    holder = new MeroJs({ baseUrl: HOLDER_URL });
+    // Revoke publishes into every namespace binding the device and rotates its
+    // keys, and each publish can wait out the governance ack timeout on CI's
+    // debug node, so one call can outlast the 10s default.
+    holder = new MeroJs({ baseUrl: HOLDER_URL, timeoutMs: 60_000 });
     await holder.authenticate(CREDS);
     fresh = new MeroJs({ baseUrl: PAIR_NODE_URL as string });
     await fresh.authenticate(CREDS);
