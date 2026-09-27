@@ -130,9 +130,18 @@ export async function initiate(
 
 export async function x25519KeyPair(secret?: Uint8Array): Promise<X25519KeyPair> {
   if (!secret) {
-    const pair = (await crypto.subtle.generateKey({ name: 'X25519' }, true, [
-      'deriveBits',
-    ])) as CryptoKeyPair;
+    let pair: CryptoKeyPair;
+    try {
+      pair = (await crypto.subtle.generateKey({ name: 'X25519' }, true, [
+        'deriveBits',
+      ])) as CryptoKeyPair;
+    } catch (error) {
+      throw new Error(
+        'Sealed transport needs WebCrypto with X25519, which this runtime lacks ' +
+          `(${(error as Error)?.name ?? 'no crypto.subtle'}). Current browsers and Node have ` +
+          'it; in React Native, install react-native-quick-crypto as the global crypto.',
+      );
+    }
     const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
     return { privateKey: pair.privateKey, publicKey };
   }

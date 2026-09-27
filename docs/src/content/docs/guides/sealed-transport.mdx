@@ -19,30 +19,20 @@ commits to; only the attested enclave can complete it, so only it can read a
 request or produce a response the client accepts.
 
 ```typescript
+import { verify as dcapVerify } from '@phala/dcap-qvl';
 import {
   MeroJs,
+  createQuoteVerifier,
   createSealedFetch,
   fetchAttestedTransportKey,
 } from '@calimero-network/mero-js';
 
 const baseUrl = 'https://tee-node.example';
 
-// Accept the node's key only if a quote you verified commits to it.
+// Accept the node's key only if its quote verifies, here, for an image you trust.
+const verifier = createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] });
 const probe = new MeroJs({ baseUrl });
-const attest = () =>
-  fetchAttestedTransportKey(probe.admin, async ({ quoteB64, nonce, reportDataSuffix }) => {
-    const result = await myOwnNode.admin.teeVerifyQuote({
-      quoteB64,
-      nonce,
-      expectedApplicationHash: reportDataSuffix,
-    });
-    return (
-      result.quoteVerified &&
-      result.nonceVerified &&
-      result.applicationHashVerified === true
-      // && result.quote measurements are ones you accept
-    );
-  });
+const attest = () => fetchAttestedTransportKey(probe.admin, verifier);
 
 // Every call from here on is sealed: login, admin, JSON-RPC and events.
 const mero = new MeroJs({
@@ -51,16 +41,53 @@ const mero = new MeroJs({
 });
 ```
 
+## Verifying the quote
+
+`createQuoteVerifier` checks the node's quote in the page, with nothing but the
+node. It asks the node for the Intel-signed collateral the quote verifies
+against (`includeCollateral`), then accepts the quote only when:
+
+- its signatures verify against Intel's root, with collateral valid now;
+- the platform's TCB status is allowed (`UpToDate` by default), and never
+  `Revoked`;
+- its MRTD is one in `allowedMrtd`, and its RTMRs are in `allowedRtmr0`–`3` when
+  you give those lists;
+- its report data is the nonce followed by the binding to the transport key.
+
+Any failure rejects with the reason, and no key is trusted. Taking the collateral
+from the node you are verifying is safe: Intel signs it, so the node can only
+choose which valid collateral to serve, not forge it. A node that predates
+`includeCollateral` sends none. Pass `fetchCollateral` to get it elsewhere, for
+example `(quote) => getCollateral(PHALA_PCCS_URL, quote)` from `@phala/dcap-qvl`.
+Without it, such a node is refused.
+
+The DCAP verification comes from [`@phala/dcap-qvl`](https://www.npmjs.com/package/@phala/dcap-qvl),
+a pure JavaScript implementation that you install and pass in as `dcapVerify`.
+It is not bundled, so mero-js keeps no runtime dependencies and applications that
+never talk to a TEE node pay nothing for it. In a browser build it needs Node
+polyfills for `buffer`, `crypto` and `stream`; see its README for Vite and
+webpack settings.
+
 <Aside type="caution">
-Verify the quote with something **other than the node being attested**: a node
-of your own, or `calimero-tee-verify`. Asking the attested node to vouch for its
-own quote proves nothing. Also check the measurements (MRTD, RTMRs) against the
-releases you accept.
+`allowedMrtd` is the whole point: it names the image you trust to read your
+traffic. Take it from the node release you accept, never from the node you are
+talking to. Mock quotes (`merod --mock-tee`) never pass `createQuoteVerifier`;
+tests against a mock node pass a verifier of their own.
 </Aside>
 
 Passing `attest` as a function, rather than a key you fetched once, lets the
 client attest again, through your verifier, when the node restarts and holds a
 new key. Given bytes instead, a restart surfaces as `StaleTransportKeyError`.
+
+## Runtimes
+
+Sealing uses WebCrypto: X25519, AES-GCM, HMAC and SHA-256. Current browsers and
+Node have all four. React Native has no WebCrypto of its own. Install
+[`react-native-quick-crypto`](https://www.npmjs.com/package/react-native-quick-crypto)
+(1.x) as the global `crypto`; its `subtle` implements the X25519 operations the
+handshake uses. We have not run mero-js on React Native in CI. A runtime without
+X25519 fails at the first handshake with an error that says so, rather than
+sending anything unsealed.
 
 ## What a proxy sees
 

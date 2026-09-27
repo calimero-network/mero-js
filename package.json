@@ -17,6 +17,7 @@
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "devDependencies": {
+    "@phala/dcap-qvl": "0.5.3",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/exec": "^7.0.0",

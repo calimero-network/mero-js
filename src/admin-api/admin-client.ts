@@ -1555,6 +1555,10 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: TeeAttestResponseData }>('/admin-api/tee/attest', request));
   }
 
+  /**
+   * @deprecated Nodes no longer serve `/admin-api/tee/verify-quote` (removed in
+   * core#3262), so this fails. Verify quotes with `createQuoteVerifier`.
+   */
   async teeVerifyQuote(request: TeeVerifyQuoteRequest): Promise<TeeVerifyQuoteResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: TeeVerifyQuoteResponseData }>('/admin-api/tee/verify-quote', request),

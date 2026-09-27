@@ -232,7 +232,7 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | --- | --- |
 | `getTeeInfo(): Promise<TeeInfoResponseData>` | `GET /tee/info` |
 | `teeAttest(request): Promise<TeeAttestResponseData>` | `POST /tee/attest` |
-| `teeVerifyQuote(request): Promise<TeeVerifyQuoteResponseData>` | `POST /tee/verify-quote` |
+| `teeVerifyQuote(request): Promise<TeeVerifyQuoteResponseData>` | `POST /tee/verify-quote`. **Deprecated:** nodes no longer serve it (core#3262); verify with `createQuoteVerifier`. |
 
 ## Network & node
 
