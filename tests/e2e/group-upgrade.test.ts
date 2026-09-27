@@ -62,6 +62,10 @@ describe('Admin API E2E — Group upgrade', () => {
     // install above already moved to the new build, so both report `next`.
     expect(done.toVersion).toBe('0.11.0-rc.51');
     expect(done.initiatedAt).toBeGreaterThan(0);
+
+    // A completed upgrade left nothing failed behind, so there is nothing to
+    // retry: 409, where a group never upgraded answers 404 (the sweep pins that).
+    await expect(mero.admin.retryGroupUpgrade(namespaceId)).rejects.toMatchObject({ status: 409 });
   }, 120000);
 });
 
