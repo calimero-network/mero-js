@@ -1,3 +1,9 @@
+## [19.27.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.26.0...mero-js-v19.27.0) (2026-09-27)
+
+### Features
+
+* **sealed:** seal delegated execution to a TEE relay end to end ([#189](https://github.com/calimero-network/mero-js/issues/189)) ([8b8c7b4](https://github.com/calimero-network/mero-js/commit/8b8c7b49b80bbd50861654cd4b75df2e5aa14cfa))
+
 ## [19.26.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.25.0...mero-js-v19.26.0) (2026-09-27)
 
 ### Features
