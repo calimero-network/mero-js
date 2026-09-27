@@ -107,6 +107,20 @@ describe('Admin API E2E — Route coverage sweep', () => {
     );
   });
 
+  // `package@version` the job published to a registry this node is configured
+  // with (core's SDK e2e serves this repo's own kv-store bundle). Without one,
+  // no install by coordinates can succeed, so the test above is all there is.
+  const REGISTRY_APP = process.env.MERO_FIXTURE_REGISTRY_APP;
+
+  it.skipIf(!REGISTRY_APP)('install-application: installs a package from the node registry', async () => {
+    const [pkg, version] = REGISTRY_APP!.split('@') as [string, string];
+    const { applicationId } = await mero.admin.installApplication({ package: pkg, version });
+    // The row records where the bundle came from: the coordinates asked for,
+    // which are also what the node checked the bundle's manifest against.
+    const { application } = await mero.admin.getApplication(applicationId);
+    expect(application).toMatchObject({ id: applicationId, package: pkg, version });
+  });
+
   it('group upgrade + cascade/migration status + abort', async () => {
     await cover('upgradeStatus', () => mero.admin.getGroupUpgradeStatus(groupId));
     await cover('cascadeStatus', () => mero.admin.getCascadeStatus(namespaceId));
