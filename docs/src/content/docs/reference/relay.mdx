@@ -181,8 +181,9 @@ node credential, because they carry their own: the warrant commits to this
 context, method and arguments, is single-use, and is refused before execution
 unless the relay holds the authorship grant.
 
-On the node that is `merod init --public-intents` (or
-`server.admin.public_intents`), and for a node behind a reverse proxy — which is
+On the node that is `merod init --delegated-access` (or
+`server.admin.delegated_access`; older nodes call it `--public-intents` /
+`public_intents`, and current ones still accept that spelling), and for a node behind a reverse proxy — which is
 every hosted one — the proxy has to exempt the same path, since it is the layer
 actually enforcing auth. Hosted TEE fleet nodes are configured that way, from a
 single setting that drives both. A self-hosted node is not, by default: a member
@@ -191,3 +192,32 @@ with their own node authors their own writes and does not need any of this.
 So a `401`/`403` from the *proxy* rather than an `IntentRefusedError` from the
 node means you are pointed at a node that is not serving as a relay — not that
 your warrant is wrong.
+
+## Sealed to a TEE relay
+
+Give the client a sealed fetch and the warrant and arguments reach only the
+relay's attested TD:
+
+```typescript
+import { RelayClient, createAttestedSealedFetch, createQuoteVerifier } from '@calimero-network/mero-js';
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+
+const relay = new RelayClient({
+  relayUrl,
+  authorAccount,
+  authorProof,
+  deviceSecret,
+  fetch: createAttestedSealedFetch({
+    baseUrl: relayUrl,
+    verify: createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] }),
+  }),
+});
+```
+
+`createAttestedSealedFetch` attests the relay (`POST /admin-api/tee/attest`, the
+one call that is never sealed), verifies the quote, and seals both
+`describe` and `execute`. `connectCloud({ seal })` does the same for the relay it
+discovers. On a relay that leaves auth to a proxy, which every hosted one does,
+only `describe`/`execute` and the public probes can be sealed: a sealed request
+for anything else comes back `403 sealed_route_unguarded`. See [what can be
+sealed, and where](/guides/sealed-transport/#what-can-be-sealed-and-where).

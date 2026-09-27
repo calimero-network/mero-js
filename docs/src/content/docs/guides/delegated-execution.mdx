@@ -5,6 +5,7 @@ sidebar:
   order: 9
 ---
 
+import SeqDiagram from '../../../components/SeqDiagram.astro';
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 Every piece of delegated execution works. Getting a first write through it
@@ -260,6 +261,63 @@ somebody owns, not nodeless namespace creation.
    ```
 
 </Steps>
+
+## Sealing the intent to the TEE
+
+A hosted relay runs `merod` inside a TDX trust domain, but TLS ends at the host's
+ingress, outside it. There the warrant and the method's arguments are plaintext.
+Pass `seal` and they are sealed to the relay's attested key instead, so only the
+TD reads them:
+
+```typescript
+import { connectCloud, createQuoteVerifier } from '@calimero-network/mero-js';
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+
+const connection = await connectCloud({
+  googleIdToken,
+  authorAccount: account,
+  authorProof,
+  deviceSecret,
+  seal: createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] }),
+});
+```
+
+<SeqDiagram
+  id="d-sealed-relay"
+  title="connectCloud with seal"
+  lanes={[
+    { label: 'Browser', color: '#f0883e' },
+    { label: 'Cloud', color: '#39d0d8' },
+    { label: 'Ingress (host)', color: '#8b949e' },
+    { label: 'Relay TD', color: '#3fb950' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'which relay serves my namespace?' },
+    { from: 1, to: 0, label: 'relay URL + executor account' },
+    { from: 0, to: 3, label: 'POST /tee/attest (unsealed): quote + transport key + collateral' },
+    { from: 0, to: 0, label: 'verify the quote in the page: Intel, TCB, MRTD, binding', color: '#a5ff11' },
+    { from: 0, to: 3, label: 'open a sealed session to the attested key' },
+    { from: 0, to: 2, label: 'POST /sealed/v2 [warrant + args, opaque]' },
+    { from: 2, to: 3, label: 'forward, cannot read it', color: '#8b949e' },
+    { from: 3, to: 3, label: 'open, verify the warrant, run as the author' },
+    { from: 3, to: 0, label: 'sealed result' },
+  ]}
+/>
+
+Two things change, and one does not:
+
+- **You check the relay yourself.** Without `seal`, a hosted relay is "attested"
+  in the sense that the cloud checked it at registration. With it, the page
+  verifies the relay's quote against the MRTDs you pass, before anything is sent.
+- **Only the TD reads the intent.** The ingress sees opaque POSTs.
+- **The warrant is still the authority.** Peers verify it exactly as before.
+
+What stays plain on a hosted relay: the attestation call, and anything that
+needs a session (login and `POST .../query` reads). Hosted relays leave auth to a
+proxy, which cannot check a request it cannot read, so the relay refuses those
+sealed with `403 sealed_route_unguarded`. [How a client reaches a
+node](https://calimero-network.github.io/core/protocol/client-paths/) compares
+this path with writing through your own node and with the TEE authority.
 
 ## Where it breaks, and what each failure means
 

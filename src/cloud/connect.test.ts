@@ -85,6 +85,31 @@ describe('connectCloud', () => {
     expect(calls.some((c) => c.includes('cloud.example') && c.includes('/intents'))).toBe(false);
   });
 
+  /**
+   * With `seal`, the relay is attested by this client and the intent never
+   * crosses in the clear: here the verifier refuses the relay's quote, so the
+   * write fails before anything but the attestation reached the relay. The
+   * cloud calls stay plain; they carry no intent.
+   */
+  it('attests and seals to the relay when asked, and sends no intent in the clear', async () => {
+    const { fetch, calls } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: { relays: [readyRelay] },
+      '/admin-api/tee/attest': {
+        data: { quoteB64: 'AA==', transportPublicKey: '11'.repeat(32) },
+      },
+    });
+
+    const connection = await connectCloud(options({ fetch, seal: async () => false }));
+    await expect(connection.execute(CONTEXT, 'set', { key: 'k' })).rejects.toMatchObject({
+      bodyText: expect.stringMatching(/did not verify/),
+    });
+
+    expect(calls).toContain('POST https://relay.example/admin-api/tee/attest');
+    expect(calls.some((c) => c.includes('/intents'))).toBe(false);
+    expect(calls.some((c) => c.includes('cloud.example/api/cloud/me/namespaces'))).toBe(true);
+  });
+
   it('exchanges a Google ID token when no session token is held', async () => {
     const { fetch, calls } = routedFetch({
       '/api/auth/google': {
