@@ -1294,13 +1294,16 @@ export interface GroupUpgradeStatus {
   initiatedBy: string;
   status: string;
   /** Contexts THIS NODE enumerated for the upgrade. Node-local; fleet progress
-   * is the `getMigrationStatus` rollup. */
+   * is the `getMigrationStatus` rollup. The counters and `completedAt` come
+   * from the upgrade propagator only: a plain group upgrade swaps each context
+   * lazily, on its next execution, and reports `completed` without any of them. */
   localContextsTotal?: number;
   localContextsSwapped?: number;
   /** Contexts whose swap failed on this node; a non-zero value is what
    * `retryGroupUpgrade` picks up. */
   localContextsFailed?: number;
-  /** Unix seconds at which THIS NODE finished its own context swaps. Not fleet
+  /** Unix seconds at which THIS NODE finished its own context swaps, when the
+   * propagator ran them (absent on a lazy upgrade, see above). Not fleet
    * convergence - that is `MigrationStatus.fleetCompletedAt`. */
   completedAt?: number;
 }
