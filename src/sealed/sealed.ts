@@ -177,6 +177,67 @@ export async function fetchAttestedTransportKey(
   return transportKey;
 }
 
+export interface AttestedSealedFetchOptions {
+  /** The node's base URL. */
+  baseUrl: string;
+  /**
+   * Decides whether the node's quote is one you trust — typically
+   * {@link createQuoteVerifier}. Asked again whenever the node restarts.
+   */
+  verify: VerifyTransportQuote;
+  /** Also require the node to run this application with this bytecode hash. */
+  applicationId?: string;
+  applicationHash?: string;
+  /** Fetch that carries the attestation and the envelopes. Defaults to global `fetch`. */
+  fetch?: typeof fetch;
+}
+
+/**
+ * {@link createSealedFetch} for a node you know only by URL: it attests the
+ * node's transport key with `verify`, over `POST /admin-api/tee/attest` (the
+ * one call that needs no credential and is never sealed), and seals everything
+ * else to it. A restarted node is attested again, through the same verifier.
+ *
+ * This is what to hand a {@link RelayClient} for a TEE relay, so the warrant
+ * and the method's arguments reach only the attested TD:
+ *
+ * ```ts
+ * const relay = new RelayClient({
+ *   relayUrl,
+ *   fetch: createAttestedSealedFetch({ baseUrl: relayUrl, verify: createQuoteVerifier(...) }),
+ *   ...
+ * });
+ * ```
+ */
+export function createAttestedSealedFetch(options: AttestedSealedFetchOptions): typeof fetch {
+  const baseFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  const attestUrl = `${options.baseUrl.replace(/\/+$/, '')}/admin-api/tee/attest`;
+  const admin = {
+    async teeAttest(request: TeeAttestRequest): Promise<TeeAttestResponseData> {
+      const response = await baseFetch(attestUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) {
+        throw new Error(`The node refused to attest: HTTP ${response.status}`);
+      }
+      const body = (await response.json()) as { data?: TeeAttestResponseData };
+      if (!body.data) throw new Error('The attestation response is malformed');
+      return body.data;
+    },
+  };
+  return createSealedFetch({
+    baseUrl: options.baseUrl,
+    transportPublicKey: () =>
+      fetchAttestedTransportKey(admin, options.verify, {
+        applicationId: options.applicationId,
+        applicationHash: options.applicationHash,
+      }),
+    fetch: baseFetch,
+  });
+}
+
 export interface SealedFetchOptions {
   /** The node's base URL, as given to `MeroJsConfig.baseUrl`. */
   baseUrl: string;
@@ -209,6 +270,10 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
   let transportKey: Promise<Uint8Array> = attest
     ? Promise.resolve().then(attest)
     : Promise.resolve(options.transportPublicKey as Uint8Array);
+  // Attesting starts now, before any request awaits it. A node that fails to
+  // attest must surface on the request that needed the key, not earlier as an
+  // unhandled rejection; the failure is still thrown to every awaiter.
+  transportKey.catch(() => undefined);
   let session: Promise<Session> | undefined;
 
   const openSession = async (): Promise<Session> => {

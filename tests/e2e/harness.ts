@@ -12,7 +12,10 @@
  *   MEROD_BINARY    if set (and NODE_BASE_URL unset), spawn this merod binary.
  *   AUTH_API_BASE_URL  legacy override for the auth base URL (default http://localhost).
  */
-import type { ChildProcess } from 'child_process';
+import { execFileSync, type ChildProcess } from 'child_process';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { fileURLToPath } from 'node:url';
 import type { MeroJs } from '../../src/mero-js.js';
 
@@ -138,3 +141,67 @@ export async function startNode(opts?: { waitMs?: number }): Promise<StartedNode
   await new Promise((resolve) => setTimeout(resolve, opts?.waitMs ?? 60000));
   return { baseUrl, stop };
 }
+
+/**
+ * The `merod` binary, for the few things only it can do offline (minting an
+ * author's device certificate). Suites that need it skip without it.
+ */
+export const MEROD_BINARY = process.env.MEROD_BINARY;
+
+/**
+ * A fixed BIP-39 phrase, so the author's ACCOUNT is deterministic.
+ *
+ * It owns nothing. It is here because this scenario needs an author whose
+ * account holds **no node at all** — the case delegated authorship exists for —
+ * and an account only exists where some root does. A node's own root would work
+ * and would need no phrase, but `sign-cert` reads it from the datastore and
+ * RocksDB's lock is exclusive, so it cannot be read while the node under test is
+ * serving this suite. `--from` opens no store, which is what makes it usable
+ * here.
+ */
+const AUTHOR_PHRASE =
+  'legal winner thank year wave sausage worth useful legal winner thank year ' +
+  'wave sausage worth useful legal winner thank year wave sausage worth title';
+
+export interface MintedDevice {
+  credential: string;
+  account: string;
+  secret: string;
+}
+
+/** Run an offline `merod account` subcommand and return its stdout. */
+export function offlineMerod(args: string[]): string {
+  return execFileSync(MEROD_BINARY as string, ['--node', 'sdk-e2e-offline', ...args], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+}
+
+/**
+ * Mint a device for the phrase's account and certify it, offline.
+ *
+ * `--generate` mints the keypair and certifies it in one step, so the secret
+ * exists only in this output and never reaches the node — which is the whole
+ * point: a node holding it could forge writes in the member's name.
+ */
+export function mintDevice(): MintedDevice {
+  const dir = mkdtempSync(join(tmpdir(), 'mero-warrant-'));
+  const phraseFile = join(dir, 'phrase');
+  writeFileSync(phraseFile, `${AUTHOR_PHRASE}\n`, { mode: 0o600 });
+
+  const out = offlineMerod(['account', 'sign-cert', '--generate', '--from', phraseFile]);
+  const lines = out.split('\n');
+
+  const credential = lines.find((l) => /^[0-9a-f]{100,}$/.test(l.trim()))?.trim();
+  const account = /^Account: +([0-9a-f]{64})$/m.exec(out)?.[1];
+  const secret = /^Secret: +([0-9a-f]{64})$/m.exec(out)?.[1];
+
+  // Named individually rather than one "parse failed": if `sign-cert` changes
+  // its output, the message should say which field went missing.
+  if (!credential) throw new Error(`sign-cert printed no credential:\n${out}`);
+  if (!account) throw new Error(`sign-cert printed no Account line:\n${out}`);
+  if (!secret) throw new Error(`sign-cert printed no Secret line:\n${out}`);
+
+  return { credential, account, secret };
+}
+

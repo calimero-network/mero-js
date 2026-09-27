@@ -21,6 +21,13 @@
  *
  * # What it does not do
  *
+ * # Sealing the relay
+ *
+ * TLS in front of a relay ends outside its TD, at the host's ingress, where
+ * the warrant and the method's arguments are readable. Pass `seal` (a quote
+ * verifier) and every call to the relay is sealed to the key its attested TD
+ * holds, so they are readable only inside it.
+ *
  * It does not read state. A relay writes on the author's behalf; reads still
  * come from a node the client can query, or from the app's own projection of
  * the events it receives. `connectCloud` is deliberately narrow about this
@@ -34,6 +41,8 @@ import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
 import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay/nonce-source.js';
 import { derivePublicKey, hex } from '../crypto/internal.js';
+import { createAttestedSealedFetch } from '../sealed/sealed.js';
+import type { VerifyTransportQuote } from '../sealed/sealed.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -72,6 +81,17 @@ export interface ConnectCloudOptions {
   nonces?: NonceSource;
   /** Seconds a minted warrant stays presentable. Defaults to 300. */
   ttlSeconds?: number;
+  /**
+   * Seal every call to the relay to its attested TEE, verified with this — for
+   * example {@link createQuoteVerifier} with the MRTDs you trust. The warrant
+   * and the method's arguments then reach only the relay's TD, not whatever
+   * terminates TLS in front of it, and the relay is one this client checked
+   * itself rather than one the cloud vouched for. Calls to the cloud are not
+   * sealed; they carry no intent.
+   *
+   * Without it, calls to the relay are plain HTTPS.
+   */
+  seal?: VerifyTransportQuote;
   fetch?: typeof fetch;
   timeoutMs?: number;
 }
@@ -147,7 +167,15 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     deviceSecret: options.deviceSecret,
     nonces: options.nonces ?? (await defaultNonceSource(options.deviceSecret)),
     ttlSeconds: options.ttlSeconds,
-    fetch: options.fetch,
+    // Only the relay is sealed: a sealed fetch is bound to one node and refuses
+    // any other URL, and the cloud calls above carry no intent.
+    fetch: options.seal
+      ? createAttestedSealedFetch({
+          baseUrl: relayInfo.relayUrl as string,
+          verify: options.seal,
+          fetch: options.fetch,
+        })
+      : options.fetch,
     timeoutMs: options.timeoutMs,
   });
 

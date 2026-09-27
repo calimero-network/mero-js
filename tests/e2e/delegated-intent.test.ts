@@ -28,9 +28,6 @@
  * Requires MEROD_BINARY. Skipped without it, so a local run against an
  * already-booted node does not fail on a missing binary.
  */
-import { execFileSync } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -39,74 +36,25 @@ import { MeroJs } from '../../src/mero-js.js';
 import { login } from '../../src/login/index.js';
 import { MemoryTokenStore } from '../../src/token-store/index.js';
 import { signWarrant } from '../../src/warrant/index.js';
-import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
+import {
+  MEROD_BINARY,
+  ensureApplication,
+  mintDevice,
+  offlineMerod,
+  resolveBaseUrl,
+  resolveCreds,
+  runId,
+  type MintedDevice,
+} from './harness.js';
 
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();
 const RUN = runId();
-const MEROD = process.env.MEROD_BINARY;
 
 /** The intent every warrant below authorises, shared so they commit alike. */
 const ARGS = { key: 'delegated', value: `from-sdk-${RUN}` };
 
-/**
- * A fixed BIP-39 phrase, so the author's ACCOUNT is deterministic.
- *
- * It owns nothing. It is here because this scenario needs an author whose
- * account holds **no node at all** — the case delegated authorship exists for —
- * and an account only exists where some root does. A node's own root would work
- * and would need no phrase, but `sign-cert` reads it from the datastore and
- * RocksDB's lock is exclusive, so it cannot be read while the node under test is
- * serving this suite. `--from` opens no store, which is what makes it usable
- * here.
- */
-const AUTHOR_PHRASE =
-  'legal winner thank year wave sausage worth useful legal winner thank year ' +
-  'wave sausage worth useful legal winner thank year wave sausage worth title';
-
-interface MintedDevice {
-  credential: string;
-  account: string;
-  secret: string;
-}
-
-/** Run an offline `merod account` subcommand and return its stdout. */
-function merod(args: string[]): string {
-  return execFileSync(MEROD as string, ['--node', 'sdk-e2e-offline', ...args], {
-    encoding: 'utf8',
-    timeout: 60_000,
-  });
-}
-
-/**
- * Mint a device for the phrase's account and certify it, offline.
- *
- * `--generate` mints the keypair and certifies it in one step, so the secret
- * exists only in this output and never reaches the node — which is the whole
- * point: a node holding it could forge writes in the member's name.
- */
-function mintDevice(): MintedDevice {
-  const dir = mkdtempSync(join(tmpdir(), 'mero-warrant-'));
-  const phraseFile = join(dir, 'phrase');
-  writeFileSync(phraseFile, `${AUTHOR_PHRASE}\n`, { mode: 0o600 });
-
-  const out = merod(['account', 'sign-cert', '--generate', '--from', phraseFile]);
-  const lines = out.split('\n');
-
-  const credential = lines.find((l) => /^[0-9a-f]{100,}$/.test(l.trim()))?.trim();
-  const account = /^Account: +([0-9a-f]{64})$/m.exec(out)?.[1];
-  const secret = /^Secret: +([0-9a-f]{64})$/m.exec(out)?.[1];
-
-  // Named individually rather than one "parse failed": if `sign-cert` changes
-  // its output, the message should say which field went missing.
-  if (!credential) throw new Error(`sign-cert printed no credential:\n${out}`);
-  if (!account) throw new Error(`sign-cert printed no Account line:\n${out}`);
-  if (!secret) throw new Error(`sign-cert printed no Secret line:\n${out}`);
-
-  return { credential, account, secret };
-}
-
-describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
+describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () => {
   let mero: MeroJs;
   let contextId: string;
   let namespaceId: string;
@@ -392,7 +340,7 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
 
   /** The same warrant as `merod` mints it, for the byte comparison. */
   function mintWarrantWithMerod(nonce: number, notAfter: number): string {
-    return merod([
+    return offlineMerod([
       'account',
       'warrant',
       '--context',

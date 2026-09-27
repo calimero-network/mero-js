@@ -4,11 +4,12 @@ export {
   SEALED_PATH,
   SealedTransportError,
   StaleTransportKeyError,
+  createAttestedSealedFetch,
   createSealedFetch,
   fetchAttestedTransportKey,
   transportKeyBinding,
 } from './sealed.js';
-export type { SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
+export type { AttestedSealedFetchOptions, SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
 export { createQuoteVerifier } from './verify.js';
 export type {
   DcapCollateral,

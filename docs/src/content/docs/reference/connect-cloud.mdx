@@ -64,6 +64,7 @@ interface ConnectCloudOptions {
   namespaceId?: string;         // required only when the account owns several
   nonces?: NonceSource;         // defaults to localStorage, keyed by device public key
   ttlSeconds?: number;          // default 300
+  seal?: VerifyTransportQuote;  // attest and seal every call to the relay (see below)
   fetch?: typeof fetch;
   timeoutMs?: number;
 }
@@ -82,6 +83,15 @@ runtime — it falls back to an in-memory counter, which is correct there becaus
 such a process owns its whole sequence. See [nonce
 sources](/reference/relay/#nonce-sources) for why a restart is the one fatal
 case.
+
+`seal` takes a quote verifier, normally `createQuoteVerifier` with the MRTDs
+you trust. With it, the relay the cloud picked is attested **by this client**,
+and every call to it is sealed to the key its TD holds: the warrant and the
+method's arguments are readable only inside the relay's TD, not at the host's
+ingress where TLS ends. The cloud calls stay plain; they carry no intent.
+Without `seal`, calls to the relay are ordinary HTTPS, and the only assurance
+about the relay is that the cloud checked it at registration. See [sealing the
+intent](/guides/delegated-execution/#sealing-the-intent-to-the-tee).
 
 ## The connection
 
