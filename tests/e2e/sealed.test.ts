@@ -86,6 +86,22 @@ describe.skipIf(!NODE_TEE_URL)('Sealed transport E2E (mock TEE)', () => {
     expect(wire.every(({ url }) => url.startsWith(`${baseUrl}/sealed/v2`))).toBe(true);
   });
 
+  it('attests for a verifier that wants collateral, which a mock quote has none of', async () => {
+    // What `createQuoteVerifier` asks for. A mock quote carries no collateral,
+    // so none comes back; against real hardware the node sends it.
+    let collateralSeen: unknown = 'not called';
+    const wantsCollateral = Object.assign(
+      async (args: Parameters<VerifyTransportQuote>[0]) => {
+        collateralSeen = args.collateral;
+        return verifyMockQuote(args);
+      },
+      { includeCollateral: true as const },
+    );
+    const key = await fetchAttestedTransportKey(plain.admin, wantsCollateral);
+    expect(key).toHaveLength(32);
+    expect(collateralSeen).toBeUndefined();
+  });
+
   it.skipIf(!SEALED_ONLY)('refuses an unsealed request when the node requires sealing', async () => {
     const response = await fetch(`${baseUrl}/admin-api/contexts`);
     expect(response.status).toBe(403);

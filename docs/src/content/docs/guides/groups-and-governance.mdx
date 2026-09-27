@@ -162,12 +162,13 @@ await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: [] });
 
 The node has no read-back route for this policy.
 
-Nodes can also attest and verify quotes directly:
+Nodes can also attest directly. Verify a quote in the client with
+`createQuoteVerifier` (see [sealed transport](/guides/sealed-transport/#verifying-the-quote)),
+not by asking a node:
 
 ```typescript
 const info = await sdk.admin.getTeeInfo();                 // { cloudProvider, osImage, mrtd }
 const attestation = await sdk.admin.teeAttest({ nonce });  // { quoteB64, quote }
-const verdict = await sdk.admin.teeVerifyQuote({ quoteB64, nonce });
 ```
 
 For cloud-managed TEE redundancy, see [high availability](/guides/high-availability/).

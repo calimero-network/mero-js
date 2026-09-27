@@ -39,6 +39,7 @@
 import { concat, fromHex, hex } from '../crypto/internal.js';
 import type { TeeAttestRequest, TeeAttestResponseData } from '../admin-api/admin-types.js';
 import { initiate } from './noise.js';
+import type { DcapCollateral } from './verify.js';
 
 /** Where a session is opened, relative to the node's base URL. */
 export const HANDSHAKE_PATH = '/sealed/v2/handshake';
@@ -112,14 +113,25 @@ export async function transportKeyBinding(
 
 export interface VerifyTransportQuote {
   /**
-   * Verify `quoteB64` with a verifier you trust — never the node being
-   * attested — and check that its report data is `nonce || reportDataSuffix`
-   * (both hex). `AdminApiClient.teeVerifyQuote` on a node of your own does both
-   * when given `expectedApplicationHash: reportDataSuffix`. Resolve true only
-   * when the quote is genuine, its measurements are ones you accept, and the
-   * report data matches.
+   * Verify `quoteB64` — never by asking the node being attested — and check
+   * that its report data is `nonce || reportDataSuffix` (both hex). Resolve
+   * true only when the quote is genuine, its measurements are ones you accept,
+   * and the report data matches. {@link createQuoteVerifier} does all of this
+   * in the page. `collateral` is what the node sent with the quote, when the
+   * verifier asked for it.
    */
-  (args: { quoteB64: string; nonce: string; reportDataSuffix: string }): Promise<boolean>;
+  (args: {
+    quoteB64: string;
+    nonce: string;
+    reportDataSuffix: string;
+    collateral?: DcapCollateral;
+  }): Promise<boolean>;
+  /**
+   * Ask the node for the collateral its quote verifies against, and pass it
+   * in as `collateral`. Off unless set, because a node that predates the field
+   * refuses the request.
+   */
+  readonly includeCollateral?: boolean;
 }
 
 /**
@@ -143,6 +155,7 @@ export async function fetchAttestedTransportKey(
     nonce,
     applicationId: options.applicationId,
     bindTransportKey: true,
+    ...(verify.includeCollateral ? { includeCollateral: true } : {}),
   });
   if (!attested.transportPublicKey) {
     throw new Error('The node did not report a transport key; it predates sealed transport');
@@ -152,7 +165,13 @@ export async function fetchAttestedTransportKey(
     ? fromHex(options.applicationHash, 'applicationHash', 32)
     : new Uint8Array(32);
   const reportDataSuffix = hex(await transportKeyBinding(inner, transportKey));
-  if (!(await verify({ quoteB64: attested.quoteB64, nonce, reportDataSuffix }))) {
+  const verified = await verify({
+    quoteB64: attested.quoteB64,
+    nonce,
+    reportDataSuffix,
+    collateral: attested.collateral,
+  });
+  if (!verified) {
     throw new Error('The attestation did not verify, so its transport key is not trusted');
   }
   return transportKey;

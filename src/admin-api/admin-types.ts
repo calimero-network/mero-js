@@ -1,3 +1,5 @@
+import type { DcapCollateral } from '../sealed/verify.js';
+
 // Admin API Types — aligned with core server routes
 // All types use camelCase to match core's #[serde(rename_all = "camelCase")]
 
@@ -1844,6 +1846,12 @@ export interface TeeAttestRequest {
    * as `transportPublicKey`. See `fetchAttestedTransportKey`.
    */
   bindTransportKey?: boolean;
+  /**
+   * Also return the Intel-signed collateral the quote is verified against, as
+   * `collateral`, so the quote can be verified with nothing but the node. See
+   * `createQuoteVerifier`. A node that predates it refuses the field.
+   */
+  includeCollateral?: boolean;
 }
 
 export interface QuoteHeader {
@@ -1888,14 +1896,25 @@ export interface TeeAttestResponseData {
   quote: Quote;
   /** Hex X25519 transport key, present only when the request set `bindTransportKey`. */
   transportPublicKey?: string;
+  /**
+   * The Intel-signed collateral the quote verifies against, present only when
+   * the request set `includeCollateral` and the quote is not a mock.
+   */
+  collateral?: DcapCollateral;
 }
 
+/**
+ * @deprecated Nodes no longer serve `/admin-api/tee/verify-quote` (removed in
+ * core#3262), so a request for it fails. Verify quotes with
+ * `createQuoteVerifier`.
+ */
 export interface TeeVerifyQuoteRequest {
   quoteB64: string;
   nonce: string;
   expectedApplicationHash?: string;
 }
 
+/** @deprecated See {@link TeeVerifyQuoteRequest}. */
 export interface TeeVerifyQuoteResponseData {
   quoteVerified: boolean;
   nonceVerified: boolean;
