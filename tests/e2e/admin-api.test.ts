@@ -31,7 +31,9 @@ describe('Admin API E2E — Namespace Model', () => {
   // ---- Setup ----
 
   beforeAll(async () => {
-    mero = new MeroJs({ baseUrl: NODE_URL });
+    // This suite runs first, so its first context is the one that compiles the
+    // application on a cold debug node, which can outlast the 10s default.
+    mero = new MeroJs({ baseUrl: NODE_URL, timeoutMs: 60_000 });
     await mero.authenticate({ username: USERNAME, password: PASSWORD });
     expect(mero.isAuthenticated()).toBe(true);
     applicationId = await ensureApplication(mero);
