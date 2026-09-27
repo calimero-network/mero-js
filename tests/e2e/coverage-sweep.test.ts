@@ -76,10 +76,7 @@ describe('Admin API E2E — Route coverage sweep', () => {
 
   // NOTE: blobs, network/usage, group+context metadata, TEE policy, and createGroup
   // are deeply asserted in round-trip.test.ts — kept out of this tolerant sweep.
-  it('node reads: certificate; context resync/sync', async () => {
-    // A node serving plain HTTP holds no certificate, so 404 is the only answer
-    // this route can give here; asserting it still catches the route moving.
-    await expect(mero.admin.getCertificate()).rejects.toMatchObject({ status: 404 });
+  it('context resync/sync', async () => {
     await cover('resync', () => mero.admin.resyncContext(contextId, { force: true }));
     await cover('syncOne', () => mero.admin.syncContext(contextId));
     await cover('syncAll', () => mero.admin.syncContext()); // no-arg → POST /contexts/sync

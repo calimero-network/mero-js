@@ -129,7 +129,7 @@ Whether that request then meets an auth check depends on the node:
 | Node | Sealable |
 | --- | --- |
 | embedded auth (`merod` checks requests itself) | everything: login, admin API, JSON-RPC, SSE, intents |
-| proxy auth (a proxy in front checks requests; every hosted TEE node) | only what `merod` serves without a credential: `.../intents` on a relay, `/admin-api/health`, `/ready`, `/is-authed`, `/certificate`, `/tee/info`, `/tee/attest` |
+| proxy auth (a proxy in front checks requests; every hosted TEE node) | only what `merod` serves without a credential: `.../intents` on a relay, `/admin-api/health`, `/ready`, `/is-authed`, `/tee/info`, `/tee/attest` |
 
 A proxy sees only `POST /sealed/v2`, never the route inside, so it cannot guard
 it. A node in proxy mode therefore refuses, inside the envelope, a sealed
