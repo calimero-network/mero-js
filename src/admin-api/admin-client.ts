@@ -1581,11 +1581,6 @@ export class AdminApiClient {
     return this.httpClient.get<unknown>('/admin-api/usage');
   }
 
-  /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
-  async getCertificate(): Promise<string> {
-    return this.httpClient.get<string>('/admin-api/certificate', { parse: 'text' });
-  }
-
   // ---- Group / context / namespace membership ----
 
   /** Create a standalone group (POST /admin-api/groups). */
