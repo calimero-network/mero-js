@@ -39,6 +39,20 @@ async function cover(label: string, fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+/**
+ * Exercise a route this node can only refuse, and pin the refusal: `status` is
+ * what core answers now that it types the refusal. The 500 it gave before is
+ * still accepted while CI also runs a merod released without it; drop it from
+ * the list once a release carries the typed refusal.
+ */
+async function refusedWith(fn: () => Promise<unknown>, status: number): Promise<void> {
+  const err = await fn()
+    .then(() => undefined)
+    .catch((e: Error & { status?: number }) => e);
+  expect(err, 'expected a refusal, got a success').toBeDefined();
+  expect([status, 500], `unexpected refusal: ${err?.message}`).toContain(err?.status);
+}
+
 describe('Admin API E2E — Route coverage sweep', () => {
   beforeAll(async () => {
     mero = new MeroJs({ baseUrl: NODE_URL });
@@ -99,12 +113,14 @@ describe('Admin API E2E — Route coverage sweep', () => {
     await cover('upgradeStatus', () => mero.admin.getGroupUpgradeStatus(groupId));
     await cover('cascadeStatus', () => mero.admin.getCascadeStatus(namespaceId));
     await cover('migrationStatus', () => mero.admin.getMigrationStatus(namespaceId));
-    // Already running this application, so core refuses with a 500; the point
-    // here is that it deserialized the body under `deny_unknown_fields`.
-    await cover('upgrade', () =>
-      mero.admin.upgradeGroup(groupId, { targetApplicationId: applicationId }),
+    // The group already runs this application: 409, once the body got past
+    // `deny_unknown_fields`.
+    await refusedWith(
+      () => mero.admin.upgradeGroup(groupId, { targetApplicationId: applicationId }),
+      409,
     );
-    await cover('upgradeRetry', () => mero.admin.retryGroupUpgrade(groupId));
+    // And it was never upgraded, so there is no upgrade to retry: 404.
+    await refusedWith(() => mero.admin.retryGroupUpgrade(groupId), 404);
     await cover('abortMigration', () => mero.admin.abortMigration(namespaceId));
   });
 
@@ -146,9 +162,9 @@ describe('Admin API E2E — Route coverage sweep', () => {
     // and leaving one that is no longer mapped is an error.
     await cover('leaveContext', () => mero.admin.leaveContext(contextId));
     await cover('detach', () => mero.admin.detachContextFromGroup(groupId, contextId));
-    // groupId here is the namespace root, which core sends to leave_namespace
-    // instead - a 500 cover() tolerates.
-    await cover('leaveGroup', () => mero.admin.leaveGroup(groupId));
+    // groupId here is the namespace root, which the group leave refuses with a
+    // 400 pointing at the namespace leave.
+    await refusedWith(() => mero.admin.leaveGroup(groupId), 400);
     // The sole owner cannot walk out of its own namespace, so this can only ever
     // be refused on this node; assert the refusal rather than swallow it.
     await expect(mero.admin.leaveNamespace(namespaceId)).rejects.toMatchObject({ status: 403 });
