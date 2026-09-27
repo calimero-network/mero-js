@@ -6,7 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { hex } from '../crypto/internal.js';
 import { fetchAttestedTransportKey, transportKeyBinding } from './sealed.js';
-import { createQuoteVerifier, type DcapCollateral, type DcapVerifiedReport } from './verify.js';
+import {
+  createQuoteVerifier,
+  trustedMeasurementsFromReleases,
+  type DcapCollateral,
+  type DcapVerifiedReport,
+  type PublishedMrtds,
+} from './verify.js';
 
 // A real TDX quote and the Intel-signed collateral for it, from dcap-qvl's own
 // samples, as core's calimero-tee-attestation tests them: the collateral is in
@@ -21,13 +27,28 @@ const QUOTE_B64 = Buffer.from(QUOTE).toString('base64');
 // The sample quote's own report data and MRTD, read once from the verified
 // report, so the tests below say what they check rather than repeat hex.
 const sample = dcapVerify(QUOTE, COLLATERAL, AT / 1000);
-const sampleTd = sample.report.data as { mrTd: Uint8Array; reportData: Uint8Array; rtMr0: Uint8Array };
+const sampleTd = sample.report.data as {
+  mrTd: Uint8Array;
+  reportData: Uint8Array;
+  rtMr0: Uint8Array;
+  rtMr1: Uint8Array;
+  rtMr2: Uint8Array;
+  rtMr3: Uint8Array;
+};
 const MRTD = hex(sampleTd.mrTd);
+// The sample's image: every register, as a release's published-mrtds.json lists it.
+const IMAGE = {
+  mrtd: MRTD,
+  rtmr0: hex(sampleTd.rtMr0),
+  rtmr1: hex(sampleTd.rtMr1),
+  rtmr2: hex(sampleTd.rtMr2),
+  rtmr3: hex(sampleTd.rtMr3),
+};
 const NONCE = hex(sampleTd.reportData.slice(0, 32));
 const SUFFIX = hex(sampleTd.reportData.slice(32));
 
 const real = (overrides: Partial<Parameters<typeof createQuoteVerifier>[0]> = {}) =>
-  createQuoteVerifier({ dcapVerify, allowedMrtd: [MRTD], now: () => AT, ...overrides });
+  createQuoteVerifier({ dcapVerify, allowedMeasurements: [IMAGE], now: () => AT, ...overrides });
 
 describe('createQuoteVerifier on a real quote', () => {
   it('accepts a genuine quote from a trusted image that commits to the binding', async () => {
@@ -46,13 +67,41 @@ describe('createQuoteVerifier on a real quote', () => {
 
   it('refuses an image it does not trust', async () => {
     await expect(
-      real({ allowedMrtd: ['ab'.repeat(48)] })({
+      real({ allowedMeasurements: [{ ...IMAGE, rtmr3: 'ab'.repeat(48) }] })({
         quoteB64: QUOTE_B64,
         nonce: NONCE,
         reportDataSuffix: SUFFIX,
         collateral: COLLATERAL,
       }),
-    ).rejects.toThrow('is not an image this verifier trusts');
+    ).rejects.toThrow('are not an image this verifier trusts');
+  });
+
+  it('never combines the registers of different images', async () => {
+    const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
+    const other = 'ab'.repeat(48);
+    // Each of the sample's registers is trusted, but each by a different image.
+    const split = real({
+      allowedMeasurements: [
+        { ...IMAGE, rtmr1: other },
+        { ...IMAGE, rtmr2: other },
+        { ...IMAGE, rtmr3: other },
+      ],
+    });
+    await expect(split(args)).rejects.toThrow('are not an image this verifier trusts');
+    await expect(real({ allowedMeasurements: [{ ...IMAGE, rtmr1: other }, IMAGE] })(args)).resolves.toBe(true);
+  });
+
+  it('accepts MRTD allowlists only together with the image registers', async () => {
+    const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
+    const lists = {
+      allowedMeasurements: undefined,
+      allowedMrtd: [MRTD],
+      allowedRtmr1: [IMAGE.rtmr1],
+      allowedRtmr2: [IMAGE.rtmr2],
+      allowedRtmr3: [IMAGE.rtmr3],
+    };
+    await expect(real(lists)(args)).resolves.toBe(true);
+    await expect(real({ ...lists, allowedMrtd: ['ab'.repeat(48)] })(args)).rejects.toThrow('MRTD');
   });
 
   it('checks an RTMR only when asked to', async () => {
@@ -97,16 +146,16 @@ describe('createQuoteVerifier on a real quote', () => {
 describe('createQuoteVerifier policy', () => {
   const report = (status: string, type = 'td10'): DcapVerifiedReport => ({
     status,
-    report: { type, data: { ...sampleTd, rtMr1: sampleTd.rtMr0, rtMr2: sampleTd.rtMr0, rtMr3: sampleTd.rtMr0 } },
+    report: { type, data: sampleTd },
   });
   const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
 
   it('accepts only up-to-date platforms by default', async () => {
-    const outOfDate = createQuoteVerifier({ dcapVerify: () => report('OutOfDate'), allowedMrtd: [MRTD] });
+    const outOfDate = createQuoteVerifier({ dcapVerify: () => report('OutOfDate'), allowedMeasurements: [IMAGE] });
     await expect(outOfDate(args)).rejects.toThrow('TCB status is OutOfDate');
     const allowed = createQuoteVerifier({
       dcapVerify: () => report('OutOfDate'),
-      allowedMrtd: [MRTD],
+      allowedMeasurements: [IMAGE],
       allowedTcbStatuses: ['UpToDate', 'OutOfDate'],
     });
     await expect(allowed(args)).resolves.toBe(true);
@@ -115,29 +164,100 @@ describe('createQuoteVerifier policy', () => {
   it('refuses a revoked platform even when told to accept it', async () => {
     const verifier = createQuoteVerifier({
       dcapVerify: () => report('Revoked'),
-      allowedMrtd: [MRTD],
+      allowedMeasurements: [IMAGE],
       allowedTcbStatuses: ['Revoked'],
     });
     await expect(verifier(args)).rejects.toThrow('Revoked');
   });
 
   it('refuses a quote that is not TDX', async () => {
-    const verifier = createQuoteVerifier({ dcapVerify: () => report('UpToDate', 'sgx'), allowedMrtd: [MRTD] });
+    const verifier = createQuoteVerifier({ dcapVerify: () => report('UpToDate', 'sgx'), allowedMeasurements: [IMAGE] });
     await expect(verifier(args)).rejects.toThrow('not a TDX one');
   });
 
   it('passes the time now, in seconds', async () => {
     const dcap = vi.fn(() => report('UpToDate'));
-    await createQuoteVerifier({ dcapVerify: dcap, allowedMrtd: [MRTD], now: () => 1_234_567_890 })(args);
+    await createQuoteVerifier({ dcapVerify: dcap, allowedMeasurements: [IMAGE], now: () => 1_234_567_890 })(args);
     expect(dcap).toHaveBeenCalledWith(QUOTE, COLLATERAL, 1_234_567);
   });
 
   it('will not be built to accept nothing, or with a measurement that is not one', () => {
-    expect(() => createQuoteVerifier({ dcapVerify, allowedMrtd: [] })).toThrow('allowedMrtd is empty');
-    expect(() => createQuoteVerifier({ dcapVerify, allowedMrtd: ['aabb'] })).toThrow('allowedMrtd');
-    expect(() => createQuoteVerifier({ dcapVerify, allowedMrtd: [MRTD], allowedRtmr2: ['zz'] })).toThrow(
-      'allowedRtmr2',
+    expect(() => createQuoteVerifier({ dcapVerify })).toThrow('No image is trusted');
+    expect(() => createQuoteVerifier({ dcapVerify, allowedMeasurements: [] })).toThrow(
+      'allowedMeasurements is empty',
     );
+    expect(() => createQuoteVerifier({ dcapVerify, allowedMeasurements: [{ ...IMAGE, rtmr2: 'aabb' }] })).toThrow(
+      'allowedMeasurements[0].rtmr2',
+    );
+    expect(() =>
+      createQuoteVerifier({ dcapVerify, allowedMeasurements: [IMAGE], allowedRtmr2: ['zz'] }),
+    ).toThrow('allowedRtmr2');
+  });
+
+  it('will not trust an MRTD alone, which names the firmware and not the image', () => {
+    expect(() => createQuoteVerifier({ dcapVerify, allowedMrtd: [MRTD] })).toThrow('does not name an image');
+    expect(() =>
+      createQuoteVerifier({ dcapVerify, allowedMrtd: [MRTD], allowedRtmr1: [IMAGE.rtmr1], allowedRtmr2: [IMAGE.rtmr2] }),
+    ).toThrow('does not name an image');
+  });
+});
+
+describe('trustedMeasurementsFromReleases', () => {
+  // The shape of a mero-tee release's published-mrtds.json, cut to what is read.
+  const release = (tag: string, rtmr3: string, statuses = ['uptodate', 'outofdate']): PublishedMrtds => ({
+    role: 'node',
+    tag,
+    profiles: {
+      'locked-read-only': { ...IMAGE, rtmr3, allowed_tcb_statuses: statuses },
+      debug: { ...IMAGE, rtmr3: 'dd'.repeat(48), allowed_tcb_statuses: statuses },
+    },
+  });
+
+  it("trusts each release's image of one profile, by all of its measurements", () => {
+    const options = trustedMeasurementsFromReleases([release('2.3.76', 'aa'.repeat(48)), release('2.3.78', IMAGE.rtmr3)], {
+      profile: 'locked-read-only',
+    });
+    expect(options.allowedMeasurements).toEqual([{ ...IMAGE, rtmr3: 'aa'.repeat(48) }, IMAGE]);
+    expect(options.allowedTcbStatuses).toEqual(['UpToDate', 'OutOfDate']);
+  });
+
+  it('builds a verifier that accepts the release image and not another profile of it', async () => {
+    const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
+    const locked = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'locked-read-only' });
+    await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...locked })(args)).resolves.toBe(true);
+    const debug = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'debug' });
+    await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...debug })(args)).rejects.toThrow(
+      'are not an image this verifier trusts',
+    );
+  });
+
+  it('accepts only the TCB statuses every release accepts', () => {
+    const options = trustedMeasurementsFromReleases(
+      [release('2.3.76', IMAGE.rtmr3, ['uptodate']), release('2.3.78', IMAGE.rtmr3)],
+      { profile: 'locked-read-only' },
+    );
+    expect(options.allowedTcbStatuses).toEqual(['UpToDate']);
+  });
+
+  it('refuses what it cannot read as a node release', () => {
+    expect(() => trustedMeasurementsFromReleases([], { profile: 'locked-read-only' })).toThrow('No release');
+    expect(() => trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'prod' })).toThrow(
+      'has no profile "prod"',
+    );
+    expect(() =>
+      trustedMeasurementsFromReleases([{ ...release('2.3.78', IMAGE.rtmr3), role: 'kms' }], {
+        profile: 'locked-read-only',
+      }),
+    ).toThrow('not of a node image');
+    expect(() =>
+      trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3, ['sometimes'])], { profile: 'locked-read-only' }),
+    ).toThrow('does not know');
+    expect(() =>
+      trustedMeasurementsFromReleases(
+        [release('2.3.76', IMAGE.rtmr3, ['uptodate']), release('2.3.78', IMAGE.rtmr3, ['outofdate'])],
+        { profile: 'locked-read-only' },
+      ),
+    ).toThrow('no TCB status in common');
   });
 });
 

@@ -199,7 +199,14 @@ Give the client a sealed fetch and the warrant and arguments reach only the
 relay's attested TD:
 
 ```typescript
-import { RelayClient, createAttestedSealedFetch, createQuoteVerifier } from '@calimero-network/mero-js';
+import {
+  RelayClient,
+  createAttestedSealedFetch,
+  createQuoteVerifier,
+  trustedMeasurementsFromReleases,
+} from '@calimero-network/mero-js';
+// The node release's published-mrtds.json, shipped with the app.
+import release from './trusted/mero-tee-v2.3.78.published-mrtds.json';
 import { verify as dcapVerify } from '@phala/dcap-qvl';
 
 const relay = new RelayClient({
@@ -209,7 +216,10 @@ const relay = new RelayClient({
   deviceSecret,
   fetch: createAttestedSealedFetch({
     baseUrl: relayUrl,
-    verify: createQuoteVerifier({ dcapVerify, allowedMrtd: [TRUSTED_MRTD] }),
+    verify: createQuoteVerifier({
+      dcapVerify,
+      ...trustedMeasurementsFromReleases([release], { profile: 'locked-read-only' }),
+    }),
   }),
 });
 ```

@@ -66,15 +66,34 @@ export type DcapVerify = (
   nowSecs: number,
 ) => DcapVerifiedReport;
 
+/**
+ * One image's measurements, all five registers, hex. A quote matches it only
+ * when every register does, so measurements of different images never combine.
+ */
+export interface TrustedMeasurements {
+  mrtd: string;
+  rtmr0: string;
+  rtmr1: string;
+  rtmr2: string;
+  rtmr3: string;
+}
+
 export interface QuoteVerifierOptions {
   /** DCAP verification: `verify` from `@phala/dcap-qvl`. */
   dcapVerify: DcapVerify;
   /**
-   * MRTDs (hex) of the images trusted. Required: the MRTD names the image a TD
-   * booted, and a quote that proves only "some genuine TD" proves nothing
-   * about which code reads the traffic.
+   * The images trusted, each by all of its measurements. The way to say which
+   * code may read the traffic: build it with {@link trustedMeasurementsFromReleases}
+   * from the `published-mrtds.json` of the releases you trust.
    */
-  allowedMrtd: string[];
+  allowedMeasurements?: TrustedMeasurements[];
+  /**
+   * MRTDs (hex) accepted. On its own this does not name an image: on GCP the
+   * MRTD measures the platform's TD firmware, which every image shares, and
+   * the image is in RTMR1–3. So a verifier needs either
+   * {@link allowedMeasurements}, or this with all of `allowedRtmr1`–`3`.
+   */
+  allowedMrtd?: string[];
   /** RTMR allowlists (hex); a register is not checked when its list is left out. */
   allowedRtmr0?: string[];
   allowedRtmr1?: string[];
@@ -100,6 +119,7 @@ export interface QuoteVerifierOptions {
 export type QuoteVerifier = VerifyTransportQuote & { readonly includeCollateral: true };
 
 const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
+const REGISTERS = ['mrtd', 'rtmr0', 'rtmr1', 'rtmr2', 'rtmr3'] as const;
 
 /**
  * A verifier that checks a TEE node's quote here, in the page, and accepts it
@@ -109,7 +129,8 @@ const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
  *   now;
  * - the platform's TCB status is one allowed (`UpToDate` by default), and
  *   never `Revoked`;
- * - the MRTD, and any RTMRs given, are ones allowed;
+ * - its measurements are those of a trusted image: one of
+ *   `allowedMeasurements` in full, and the MRTD and any RTMRs listed;
  * - its report data is the nonce followed by the binding the client computed.
  *
  * Any failure rejects with the reason; nothing is trusted from a quote that
@@ -118,7 +139,10 @@ const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
  * ```ts
  * import { verify as dcapVerify } from '@phala/dcap-qvl';
  *
- * const verifier = createQuoteVerifier({ dcapVerify, allowedMrtd: [trustedMrtd] });
+ * const verifier = createQuoteVerifier({
+ *   dcapVerify,
+ *   ...trustedMeasurementsFromReleases([publishedMrtds], { profile: 'locked-read-only' }),
+ * });
  * const fetch = createSealedFetch({
  *   baseUrl,
  *   transportPublicKey: () => fetchAttestedTransportKey(admin, verifier),
@@ -126,16 +150,31 @@ const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
  * ```
  */
 export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifier {
-  const allowedMrtd = measurements(options.allowedMrtd, 'allowedMrtd');
-  if (allowedMrtd.length === 0) {
-    throw new Error('allowedMrtd is empty, so no quote would ever be accepted');
-  }
+  const allowedMrtd = measurements(options.allowedMrtd ?? [], 'allowedMrtd');
+  const allowedImages = (options.allowedMeasurements ?? []).map((image, index) => {
+    const label = `allowedMeasurements[${index}]`;
+    return REGISTERS.map((register) => measurements([image?.[register] ?? ''], `${label}.${register}`)[0]).join();
+  });
   const allowedRtmr = [
     measurements(options.allowedRtmr0 ?? [], 'allowedRtmr0'),
     measurements(options.allowedRtmr1 ?? [], 'allowedRtmr1'),
     measurements(options.allowedRtmr2 ?? [], 'allowedRtmr2'),
     measurements(options.allowedRtmr3 ?? [], 'allowedRtmr3'),
   ];
+  if (options.allowedMeasurements !== undefined && allowedImages.length === 0) {
+    throw new Error('allowedMeasurements is empty, so no quote would ever be accepted');
+  }
+  if (allowedImages.length === 0) {
+    if (allowedMrtd.length === 0) {
+      throw new Error('No image is trusted: give allowedMeasurements, or allowedMrtd with allowedRtmr1-3');
+    }
+    if (allowedRtmr.slice(1).some((list) => list.length === 0)) {
+      throw new Error(
+        'allowedMrtd alone does not name an image: the MRTD measures the TD firmware, which ' +
+          'images share, and the image is in RTMR1-3. Give allowedMeasurements, or allowedRtmr1-3 too',
+      );
+    }
+  }
   const allowedStatuses = options.allowedTcbStatuses ?? ['UpToDate'];
   const now = options.now ?? Date.now;
 
@@ -164,8 +203,14 @@ export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifie
       throw new Error(`The platform's TCB status is ${verified.status}, which is not accepted`);
     }
     const td = tdReport(verified.report);
-    if (!allowedMrtd.includes(hex(td.mrTd))) {
-      throw new Error(`MRTD ${hex(td.mrTd)} is not an image this verifier trusts`);
+    const measured = [td.mrTd, td.rtMr0, td.rtMr1, td.rtMr2, td.rtMr3].map((register) => hex(register));
+    if (allowedImages.length > 0 && !allowedImages.includes(measured.join())) {
+      throw new Error(
+        `The measurements (MRTD ${measured[0]}, RTMR0-3 ${measured.slice(1).join(', ')}) are not an image this verifier trusts`,
+      );
+    }
+    if (allowedMrtd.length > 0 && !allowedMrtd.includes(measured[0])) {
+      throw new Error(`MRTD ${measured[0]} is not an image this verifier trusts`);
     }
     const registers = [td.rtMr0, td.rtMr1, td.rtMr2, td.rtMr3];
     registers.forEach((register, index) => {
@@ -205,4 +250,98 @@ function fromBase64(value: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/**
+ * A mero-tee node release's `published-mrtds.json`: the measurements the
+ * release workflow observed booting each profile of its image on TDX, signed
+ * with the release. Only the fields read here are typed.
+ */
+export interface PublishedMrtds {
+  role?: string;
+  tag?: string;
+  profiles: Record<
+    string,
+    {
+      mrtd: string;
+      rtmr0: string;
+      rtmr1: string;
+      rtmr2: string;
+      rtmr3: string;
+      allowed_tcb_statuses?: string[];
+    }
+  >;
+}
+
+/** TCB statuses as DCAP reports them; the release lists them in lower case. */
+const TCB_STATUSES = [
+  'UpToDate',
+  'SWHardeningNeeded',
+  'ConfigurationNeeded',
+  'ConfigurationAndSWHardeningNeeded',
+  'OutOfDate',
+  'OutOfDateConfigurationNeeded',
+];
+
+/**
+ * The {@link QuoteVerifierOptions} that trust exactly one profile of the given
+ * releases: each release's image by all of its measurements, and only the TCB
+ * statuses every one of those releases accepts.
+ *
+ * Pass every release a node you talk to may run. During a rollout that is the
+ * old one and the new one; drop the old one once no node runs it.
+ *
+ * ```ts
+ * import published from './trusted/mero-tee-v2.3.78.published-mrtds.json';
+ *
+ * const verifier = createQuoteVerifier({
+ *   dcapVerify,
+ *   ...trustedMeasurementsFromReleases([published], { profile: 'locked-read-only' }),
+ * });
+ * ```
+ *
+ * Where the file comes from is the trust decision. Shipping it with the app
+ * (checked out of a release you verified) trusts that release; fetching it at
+ * run time trusts whoever serves it.
+ */
+export function trustedMeasurementsFromReleases(
+  releases: PublishedMrtds[],
+  { profile }: { profile: string },
+): Required<Pick<QuoteVerifierOptions, 'allowedMeasurements' | 'allowedTcbStatuses'>> {
+  if (releases.length === 0) {
+    throw new Error('No release given, so no image would be trusted');
+  }
+  let statuses: string[] | undefined;
+  const allowedMeasurements = releases.map((release, index) => {
+    const name = release?.tag ?? `releases[${index}]`;
+    if (release?.role !== undefined && release.role !== 'node') {
+      throw new Error(`${name} lists the measurements of a ${release.role}, not of a node image`);
+    }
+    const image = release?.profiles?.[profile];
+    if (!image) {
+      const known = Object.keys(release?.profiles ?? {}).join(', ') || 'none';
+      throw new Error(`${name} has no profile ${JSON.stringify(profile)} (it has: ${known})`);
+    }
+    const accepted = (image.allowed_tcb_statuses ?? ['uptodate']).map((status) => tcbStatus(status, name));
+    statuses = statuses === undefined ? accepted : statuses.filter((status) => accepted.includes(status));
+    return {
+      mrtd: image.mrtd,
+      rtmr0: image.rtmr0,
+      rtmr1: image.rtmr1,
+      rtmr2: image.rtmr2,
+      rtmr3: image.rtmr3,
+    };
+  });
+  if (!statuses || statuses.length === 0) {
+    throw new Error('The releases given accept no TCB status in common');
+  }
+  return { allowedMeasurements, allowedTcbStatuses: statuses };
+}
+
+function tcbStatus(status: string, release: string): string {
+  const known = TCB_STATUSES.find((candidate) => candidate.toLowerCase() === String(status).toLowerCase());
+  if (!known) {
+    throw new Error(`${release} accepts TCB status ${JSON.stringify(status)}, which this verifier does not know`);
+  }
+  return known;
 }

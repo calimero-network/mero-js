@@ -10,11 +10,13 @@ export {
   transportKeyBinding,
 } from './sealed.js';
 export type { AttestedSealedFetchOptions, SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
-export { createQuoteVerifier } from './verify.js';
+export { createQuoteVerifier, trustedMeasurementsFromReleases } from './verify.js';
 export type {
   DcapCollateral,
   DcapVerifiedReport,
   DcapVerify,
+  PublishedMrtds,
   QuoteVerifier,
   QuoteVerifierOptions,
+  TrustedMeasurements,
 } from './verify.js';

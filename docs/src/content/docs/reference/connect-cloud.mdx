@@ -84,8 +84,9 @@ such a process owns its whole sequence. See [nonce
 sources](/reference/relay/#nonce-sources) for why a restart is the one fatal
 case.
 
-`seal` takes a quote verifier, normally `createQuoteVerifier` with the MRTDs
-you trust. With it, the relay the cloud picked is attested **by this client**,
+`seal` takes a quote verifier, normally `createQuoteVerifier` with the
+measurements of the releases you trust, from `trustedMeasurementsFromReleases`
+([which images to trust](/guides/sealed-transport/#which-images-to-trust)). With it, the relay the cloud picked is attested **by this client**,
 and every call to it is sealed to the key its TD holds: the warrant and the
 method's arguments are readable only inside the relay's TD, not at the host's
 ingress where TLS ends. The cloud calls stay plain; they carry no intent.
