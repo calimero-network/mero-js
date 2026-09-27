@@ -1,3 +1,9 @@
+## [19.26.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.25.0...mero-js-v19.26.0) (2026-09-27)
+
+### Features
+
+* **sealed:** verify a TEE node's quote in the page, and name what React Native needs ([#186](https://github.com/calimero-network/mero-js/issues/186)) ([516b000](https://github.com/calimero-network/mero-js/commit/516b00003124a0317e6d67179a6a70bd75f162cb))
+
 ## [19.25.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.1...mero-js-v19.25.0) (2026-09-26)
 
 ### Features
