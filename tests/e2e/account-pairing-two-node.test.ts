@@ -1,8 +1,8 @@
 /**
  * E2E for what an account holder does with a device it has paired: name it,
- * replace its scope, and revoke it.
+ * replace its scope, relink it, and revoke it.
  *
- * All three need a device this node CERTIFIED, and a single node certifies none
+ * All four need a device this node CERTIFIED, and a single node certifies none
  * (not even its own), so `account-pairing.test.ts` can only reach their
  * refusals. This suite pairs a second, fresh node onto the main node's account
  * and drives them for real.
@@ -122,6 +122,22 @@ describe.skipIf(!PAIR_NODE_URL)('Account device management E2E (two nodes)', () 
     const widened = await holder.admin.rescopeAccountDevice(offer.deviceId, { scope: 'all' });
     expect(widened.applications).toEqual([]);
     expect((await pairedRow()).applications).toEqual([]);
+  }, 60000);
+
+  it('relinks the paired device against the scope it already holds', async () => {
+    // No applications: a repair, which re-publishes the device's links wherever
+    // they are missing and reports the rest - the request an operator makes to
+    // heal drift. Before the revoke below, since a revoked device is refused.
+    const relinked = await holder.admin.relinkAccountDevice(offer.deviceId);
+    expect(relinked).toMatchObject({ deviceId: offer.deviceId, accountId: identity.accountId });
+    // Widened back to every application above, and the empty list says so.
+    expect(relinked.applications).toEqual([]);
+    // The namespace it was paired into is reported one way or the other.
+    const reported = [
+      ...relinked.linkedIn.map((l) => l.namespaceId),
+      ...relinked.skipped.map((s) => s.namespaceId),
+    ];
+    expect(reported).toContain(namespaceId);
   }, 60000);
 
   it('revokes the paired device, everywhere it was bound', async () => {
