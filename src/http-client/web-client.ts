@@ -54,7 +54,13 @@ export class HTTPError extends Error {
     public headers: Headers,
     public bodyText?: string, // cap at ~64KB
   ) {
-    const explanation = extractErrorMessage(bodyText);
+    // Status 0 means no response arrived: every client puts the thrown error's
+    // message in `bodyText`, as plain text. It is the only explanation there is
+    // — "The node refused to attest: HTTP 404" from a sealed fetch, or
+    // "This operation was aborted" from a timeout — so report it as is.
+    const explanation =
+      extractErrorMessage(bodyText) ??
+      (status === 0 && bodyText?.trim() ? bodyText.trim() : undefined);
     super(
       explanation
         ? `HTTP ${status} ${statusText}: ${explanation}`

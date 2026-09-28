@@ -14,16 +14,19 @@ contract, and cancellation.
 ## `HTTPError`
 
 Thrown when the server returns a non-2xx response. Network failures (offline,
-DNS, CORS) also surface as `HTTPError`, with `status: 0`.
+DNS, CORS) also surface as `HTTPError`, with `status: 0`. No response arrived,
+so the thrown error's message is kept in `bodyText` and carried into `message`
+— for example `HTTP 0 AbortError: This operation was aborted`, or
+`HTTP 0 Error: The node refused to attest: HTTP 404` from a sealed fetch.
 
 ```typescript
 class HTTPError extends Error {
   name = 'HTTPError';
   status: number;      // HTTP status (0 for network errors)
-  statusText: string;  // status text ('Network Error' when status is 0)
+  statusText: string;  // status text (when status is 0: 'Network Error' or the thrown error's name)
   url: string;         // the request URL that failed
   headers: Headers;    // response headers
-  bodyText?: string;   // raw response body if available (capped ~64KB)
+  bodyText?: string;   // raw response body if available (capped ~64KB); the thrown message when status is 0
   toJSON(): { status; statusText; url; headers; bodyText? };
 }
 ```
