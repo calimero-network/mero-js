@@ -1,3 +1,13 @@
+## [22.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.4.1...mero-js-v22.0.0) (2026-09-28)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** drop the chosen group id from CreateGroupRequest (#202)
+
+### Features
+
+* **admin:** drop the chosen group id from CreateGroupRequest ([#202](https://github.com/calimero-network/mero-js/issues/202)) ([34bbef4](https://github.com/calimero-network/mero-js/commit/34bbef4a83ebc583c8759a4914cd3f334444b246))
+
 ## [21.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v21.4.0...mero-js-v21.4.1) (2026-09-28)
 
 ### Bug Fixes
