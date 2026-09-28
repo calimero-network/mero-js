@@ -1,3 +1,9 @@
+## [21.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.3.0...mero-js-v21.4.0) (2026-09-28)
+
+### Features
+
+* **sealed:** verify signed mero-tee releases at run time; sign namespace ops at schema 10 ([#206](https://github.com/calimero-network/mero-js/issues/206)) ([7f653ae](https://github.com/calimero-network/mero-js/commit/7f653aedd2524fae879013353a63dd2a812f3e09))
+
 ## [21.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.2...mero-js-v21.3.0) (2026-09-28)
 
 ### Features
