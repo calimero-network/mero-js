@@ -114,15 +114,22 @@ Instead, the client can take the release the node runs, from anywhere, and
 check its signature itself. Every mero-tee node release is signed by its release
 workflow with cosign keyless, and publishes `published-mrtds.json` with the
 cosign bundle: a Fulcio certificate issued to that workflow run, and a Rekor log
-entry. Two servers hand both out, as `{"data": {"version", "publishedMrtds", "bundle"}}`:
+entry.
 
-- the node itself, `GET /admin-api/tee/release`: the release it runs;
-- the cloud's mirror, `GET https://cloud.calimero.network/api/tee/node-releases/{version}`.
+Which release the node runs, it says itself: its `GET /admin-api/tee/info`
+names its image, and a released image's name ends in its version
+(`merotee-ubuntu-questing-25-10-locked-read-only-2-3-87` is 2.3.87). The file
+and bundle for that version come from a mirror, as
+`{"data": {"version", "publishedMrtds", "bundle"}}`; the public one is the
+cloud's, `GET https://cloud.calimero.network/api/tee/node-releases/{version}`.
 
-Neither is trusted, and the release is public, so it is fetched in the clear,
-before the session it decides on exists. `createSignedReleaseSealedFetch` gets
-the release from the relay, verifies it, builds the quote verifier from it,
-attests and seals:
+Neither is trusted. A node naming the wrong release only fails: its quote must
+match the release it named. A mirror serving a file that is not signed is
+refused, and one that serves nothing only stops the client connecting. The
+release is public, so it is fetched in the clear, before the session it decides
+on exists. `createSignedReleaseSealedFetch` reads the version from the relay,
+gets that release, verifies it, builds the quote verifier from it, attests and
+seals:
 
 ```typescript
 import { verify as dcapVerify } from '@phala/dcap-qvl';
@@ -139,15 +146,18 @@ const relay = new RelayClient({
     profile: 'locked-read-only',
     // Required: the oldest release you accept.
     minReleaseVersion: '2.3.87',
-    // Optional: take the release from the cloud's mirror instead of the relay.
-    // releaseSource: cloudNodeReleaseUrl('https://cloud.calimero.network', '2.3.87'),
+    // Optional: another mirror than DEFAULT_RELEASE_MIRROR, the cloud's.
+    // releaseSource: 'https://releases.example.com',
   }),
 });
 ```
 
-`releaseSource` is a URL, or a function `({ baseUrl, fetch }) => Promise<SignedNodeRelease>`
-called each time the node is attested. The pieces are there to use on their own:
-`fetchNodeRelease(url)` fetches a release, `verifySignedNodeRelease(file, bundle)`
+`releaseSource` is a mirror's base URL, or a function
+`({ baseUrl, version, fetch }) => Promise<SignedNodeRelease>`, for example
+returning a file bundled with the app, called each time the node is attested.
+The pieces are there to use on their own: `fetchNodeReleaseVersion(baseUrl)`
+reads the release a node names, `fetchNodeRelease(url)` fetches a release,
+`verifySignedNodeRelease(file, bundle)`
 verifies one and returns it parsed, `trustSignedRelease({ release, profile, minReleaseVersion })`
 returns the options for `createQuoteVerifier`, and `createSignedReleaseVerifier`
 is a quote verifier that does all of it at each attestation.

@@ -237,10 +237,11 @@ sealed, and where](/guides/sealed-transport/#what-can-be-sealed-and-where).
 ### Trusting the relay's signed release
 
 Shipping `published-mrtds.json` pins the app to the releases it was built with.
-`createSignedReleaseSealedFetch` instead takes the release the relay runs from
-the relay itself (`GET /admin-api/tee/release`, which answers
-`{"data": {"version", "publishedMrtds", "bundle"}}`), verifies its Sigstore
-signature in the client, and trusts that release's measurements only:
+`createSignedReleaseSealedFetch` instead reads the release the relay runs from
+its `GET /admin-api/tee/info`, fetches that release's file and bundle from the
+cloud's mirror (`https://cloud.calimero.network/api/tee/node-releases/{version}`,
+answering `{"data": {"version", "publishedMrtds", "bundle"}}`), verifies its
+Sigstore signature in the client, and trusts that release's measurements only:
 
 ```typescript
 import { RelayClient, createSignedReleaseSealedFetch } from '@calimero-network/mero-js';
@@ -265,9 +266,8 @@ by mero-tee's node release workflow (checked against the Sigstore trust root
 embedded in mero-js), be no older than `minReleaseVersion`, and its quote must
 then match that release exactly. So the relay chooses only which signed release,
 at or above your floor, it presents. The floor is required because old releases
-stay validly signed forever. `releaseSource` takes the release from elsewhere,
-such as the cloud's mirror at
-`https://cloud.calimero.network/api/tee/node-releases/{version}`
-(`cloudNodeReleaseUrl`); it is verified the same way. See
+stay validly signed forever. The mirror is not trusted either: `releaseSource`
+names another mirror's base URL, or a function returning the release, such as a
+file bundled with the app, and whatever it returns is verified the same way. See
 [trusting a signed release at run time](/guides/sealed-transport/#trusting-a-signed-release-at-run-time).
 Bundling the release file, as above, still works for offline use.

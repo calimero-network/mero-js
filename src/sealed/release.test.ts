@@ -6,12 +6,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { hex } from '../crypto/internal.js';
 import {
+  DEFAULT_RELEASE_MIRROR,
   NODE_RELEASE_SIGNER,
   cloudNodeReleaseUrl,
   createSignedReleaseSealedFetch,
   createSignedReleaseVerifier,
   fetchNodeRelease,
-  nodeReleaseUrl,
+  fetchNodeReleaseVersion,
+  nodeReleaseVersionFromImage,
   trustSignedRelease,
   verifySignedNodeRelease,
   type SignedNodeRelease,
@@ -317,28 +319,55 @@ describe('trustSignedRelease', () => {
   });
 });
 
+const json = (body: unknown) =>
+  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
 describe('fetching a release', () => {
   const serving = (body: unknown, status = 200) =>
     vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
 
-  it('unwraps data from the node and the cloud, which are only fetched', async () => {
+  it('unwraps data from a mirror, which is only fetched', async () => {
     const fetch = serving({ data: signed('2.3.87') });
-    await expect(fetchNodeRelease(nodeReleaseUrl('https://relay.example/'), { fetch })).resolves.toEqual(
-      signed('2.3.87'),
-    );
-    expect(fetch).toHaveBeenCalledWith('https://relay.example/admin-api/tee/release', expect.anything());
-    expect(cloudNodeReleaseUrl('https://cloud.example/', '2.3.87')).toBe(
-      'https://cloud.example/api/tee/node-releases/2.3.87',
-    );
+    const url = cloudNodeReleaseUrl('https://cloud.example/', '2.3.87');
+    expect(url).toBe('https://cloud.example/api/tee/node-releases/2.3.87');
+    await expect(fetchNodeRelease(url, { fetch })).resolves.toEqual(signed('2.3.87'));
+    expect(fetch).toHaveBeenCalledWith(url, expect.anything());
     expect(() => cloudNodeReleaseUrl('https://cloud.example', '../admin')).toThrow('not a release version');
+    expect(DEFAULT_RELEASE_MIRROR).toBe('https://cloud.calimero.network');
   });
 
   it('refuses what is not a release', async () => {
-    const url = 'https://relay.example/admin-api/tee/release';
+    const url = 'https://cloud.example/api/tee/node-releases/2.3.87';
     await expect(fetchNodeRelease(url, { fetch: serving({ data: {} }) })).rejects.toThrow(
       'did not answer with a signed node release',
     );
     await expect(fetchNodeRelease(url, { fetch: serving({}, 404) })).rejects.toThrow('HTTP 404');
+  });
+});
+
+const RELEASED_IMAGE = 'merotee-ubuntu-questing-25-10-locked-read-only-2-3-87';
+
+describe('the release a node names', () => {
+  it('reads it from the image name of a released image', async () => {
+    expect(nodeReleaseVersionFromImage(RELEASED_IMAGE)).toBe('2.3.87');
+    expect(nodeReleaseVersionFromImage('merotee-ubuntu-questing-25-10-debug-read-only-2-3-100')).toBe('2.3.100');
+    const fetch = vi.fn(async () => json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } }));
+    await expect(fetchNodeReleaseVersion('https://relay.example/', { fetch })).resolves.toBe('2.3.87');
+    expect(fetch).toHaveBeenCalledWith('https://relay.example/admin-api/tee/info', expect.anything());
+  });
+
+  it('refuses an image that is not a released mero-tee node image', async () => {
+    for (const name of [
+      'unknown',
+      'ubuntu-2404-tdx-v20250115',
+      `${RELEASED_IMAGE}-d412-1`,
+      `${RELEASED_IMAGE}x`,
+    ]) {
+      expect(() => nodeReleaseVersionFromImage(name)).toThrow('not the image of a mero-tee node release');
+    }
+    await expect(
+      fetchNodeReleaseVersion('https://relay.example', { fetch: vi.fn(async () => json({ data: {} })) }),
+    ).rejects.toThrow("did not name the node's image");
   });
 });
 
@@ -375,15 +404,13 @@ describe('createSignedReleaseVerifier', () => {
   });
 });
 
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
-
 describe('createSignedReleaseSealedFetch', () => {
   const RELAY = 'https://relay.example';
   const CLOUD = 'https://cloud.example';
   /**
-   * A relay and a cloud mirror: each serves `{data: SignedNodeRelease}`, and
-   * the relay attests with the real sample quote, bound to the transport key.
+   * A relay that names release 2.3.87 in its `/tee/info` and attests with the
+   * real sample quote, bound to the transport key; and two mirrors serving
+   * `{data: SignedNodeRelease}` for that release.
    */
   const network = () => {
     const transportKey = new Uint8Array(32).fill(0x44);
@@ -391,7 +418,10 @@ describe('createSignedReleaseSealedFetch', () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       requests.push(url);
-      if (url === `${RELAY}/admin-api/tee/release` || url === `${CLOUD}/api/tee/node-releases/2.3.87`) {
+      if (url === `${RELAY}/admin-api/tee/info`) {
+        return json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } });
+      }
+      if ([DEFAULT_RELEASE_MIRROR, CLOUD].some((mirror) => url === `${mirror}/api/tee/node-releases/2.3.87`)) {
         return json({ data: signed('2.3.87') });
       }
       if (url === `${RELAY}/admin-api/tee/attest`) {
@@ -406,30 +436,31 @@ describe('createSignedReleaseSealedFetch', () => {
   };
   const options = { baseUrl: RELAY, dcapVerify, profile: 'locked-read-only', minReleaseVersion: '2.3.86', now: () => AT };
 
-  it("gets the relay's own release, verifies it, attests, and refuses a quote not of that image", async () => {
+  it('gets the release the relay names from the public mirror, and refuses a quote not of it', async () => {
     const { fetch, requests } = network();
     const sealed = createSignedReleaseSealedFetch({ ...options, fetch });
     await expect(sealed(`${RELAY}/admin-api/health`)).rejects.toThrow('are not an image this verifier trusts');
-    expect(requests).toEqual([`${RELAY}/admin-api/tee/attest`, `${RELAY}/admin-api/tee/release`]);
+    expect(requests).toEqual([
+      `${RELAY}/admin-api/tee/attest`,
+      `${RELAY}/admin-api/tee/info`,
+      `${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`,
+    ]);
   });
 
-  it('takes the release from the cloud mirror instead, by URL or by function', async () => {
+  it('takes the release from another mirror, or from a function, given the version', async () => {
     const byUrl = network();
-    const url = cloudNodeReleaseUrl(CLOUD, '2.3.87');
     await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch: byUrl.fetch, releaseSource: url })(`${RELAY}/x`),
+      createSignedReleaseSealedFetch({ ...options, fetch: byUrl.fetch, releaseSource: CLOUD })(`${RELAY}/x`),
     ).rejects.toThrow('are not an image this verifier trusts');
-    expect(byUrl.requests).toContain(url);
-    expect(byUrl.requests).not.toContain(`${RELAY}/admin-api/tee/release`);
+    expect(byUrl.requests).toContain(`${CLOUD}/api/tee/node-releases/2.3.87`);
+    expect(byUrl.requests).not.toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
 
     const byFunction = network();
-    const releaseSource = vi.fn(async ({ fetch }: { baseUrl: string; fetch: typeof globalThis.fetch }) =>
-      fetchNodeRelease(url, { fetch }),
-    );
+    const releaseSource = vi.fn(async ({ version }: { version: string }) => signed(version));
     await expect(
       createSignedReleaseSealedFetch({ ...options, fetch: byFunction.fetch, releaseSource })(`${RELAY}/x`),
     ).rejects.toThrow('are not an image this verifier trusts');
-    expect(releaseSource).toHaveBeenCalledWith({ baseUrl: RELAY, fetch: byFunction.fetch });
+    expect(releaseSource).toHaveBeenCalledWith({ baseUrl: RELAY, version: '2.3.87', fetch: byFunction.fetch });
   });
 
   it('refuses a relay that serves a release below the minimum, before trusting its quote', async () => {

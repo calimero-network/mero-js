@@ -21,13 +21,14 @@ export type {
   TrustedMeasurements,
 } from './verify.js';
 export {
-  NODE_RELEASE_PATH,
+  DEFAULT_RELEASE_MIRROR,
   NODE_RELEASE_SIGNER,
   cloudNodeReleaseUrl,
   createSignedReleaseSealedFetch,
   createSignedReleaseVerifier,
   fetchNodeRelease,
-  nodeReleaseUrl,
+  fetchNodeReleaseVersion,
+  nodeReleaseVersionFromImage,
   trustSignedRelease,
   verifySignedNodeRelease,
 } from './release.js';
