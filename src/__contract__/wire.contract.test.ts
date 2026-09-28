@@ -31,6 +31,9 @@ import type {
   MemberMigrationStatusEntry,
   MigrationStatus,
   MigrationStatusRollup,
+  Namespace,
+  NamespaceFounding,
+  NamespaceLegacyFounding,
   NodeIdentity,
   ReparentGroupRequest,
   ReparentGroupResponseData,
@@ -78,6 +81,26 @@ const pairInitReq = key<AccountPairInitRequest>();
 const deviceEntry = key<AccountDeviceEntry>();
 const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
+const namespace = key<Namespace>();
+const founding = key<NamespaceFounding>();
+const legacyFounding = key<NamespaceLegacyFounding>();
+
+const NAMESPACE_REQUIRED = [
+  namespace('namespaceId'),
+  namespace('appKey'),
+  namespace('targetApplicationId'),
+  namespace('createdAt'),
+  namespace('memberCount'),
+  namespace('contextCount'),
+  namespace('subgroupCount'),
+];
+const NAMESPACE_OPTIONAL = [
+  namespace('upgradePolicy'),
+  namespace('name'),
+  namespace('appVersion'),
+  namespace('founding'),
+  namespace('legacyFounding'),
+];
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
 // unexported inline type whose index signature makes `key<T>()` accept any
@@ -251,6 +274,41 @@ const SPECS: Spec[] = [
       deviceEntry('namespaces'),
     ],
     optional: [deviceEntry('label')],
+  },
+  // A namespace founded before ids were derived carries `legacyFounding`; a
+  // derived one carries `founding`. Siblings, never nested: the founder a plain
+  // genesis names proves nothing about the id, so it must not appear where a
+  // derived-id check looks.
+  {
+    type: 'Namespace',
+    file: 'namespaces/get.res.json',
+    path: 'data',
+    required: NAMESPACE_REQUIRED,
+    optional: NAMESPACE_OPTIONAL,
+  },
+  {
+    type: 'NamespaceLegacyFounding',
+    file: 'namespaces/get.res.json',
+    path: 'data.legacyFounding',
+    required: [
+      legacyFounding('founderAccountId'),
+      legacyFounding('genesisOpHash'),
+    ],
+    optional: [],
+  },
+  {
+    type: 'Namespace',
+    file: 'namespaces/list.res.json',
+    path: 'data.0',
+    required: NAMESPACE_REQUIRED,
+    optional: NAMESPACE_OPTIONAL,
+  },
+  {
+    type: 'NamespaceFounding',
+    file: 'namespaces/list.res.json',
+    path: 'data.0.founding',
+    required: [founding('founderAccountId'), founding('salt')],
+    optional: [],
   },
 ];
 
