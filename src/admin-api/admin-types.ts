@@ -478,6 +478,28 @@ export interface Namespace {
    * created before ids were derived, and on nodes that predate it.
    */
   founding?: NamespaceFounding;
+  /**
+   * The founder and genesis op of a namespace created BEFORE ids were derived,
+   * on this node's copy. A separate field from `founding`, never inside it: it
+   * proves nothing about the id, so it must not be accepted where a derived-id
+   * founding is checked. Absent for derived namespaces, and on nodes that
+   * predate it.
+   */
+  legacyFounding?: NamespaceLegacyFounding;
+}
+
+/**
+ * The founder a pre-derivation namespace's plain genesis names, and the hash
+ * of that genesis op (its id in the namespace governance DAG). Lets a client
+ * see which founder and which exact genesis a replica's copy was founded by,
+ * and compare replicas — not a proof of founding: a random id commits to no
+ * founder.
+ */
+export interface NamespaceLegacyFounding {
+  /** Hex `AccountId` of the founder the genesis names. */
+  founderAccountId: string;
+  /** Lowercase hex 32-byte content hash of the genesis op. */
+  genesisOpHash: string;
 }
 
 /**
