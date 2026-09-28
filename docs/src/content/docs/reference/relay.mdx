@@ -133,7 +133,9 @@ different:
 
 A `500` stays an `HTTPError`: that is the node's problem, not a precondition of
 yours. A transport failure is an `HTTPError` with `status: 0`, as everywhere
-else in this SDK.
+else in this SDK. Its `message` carries what the injected `fetch` threw, so a
+sealing failure from `createAttestedSealedFetch` reads as, say,
+`HTTP 0 Error: The node refused to attest: HTTP 404`.
 
 ## Nonce sources
 

@@ -262,6 +262,30 @@ describe('RelayClient.execute', () => {
     expect((err as HTTPError).status).toBe(0);
   });
 
+  /**
+   * The injected fetch is typically `createAttestedSealedFetch`, which throws
+   * a sentence saying why sealing failed. That sentence is the whole report:
+   * losing it leaves the caller with a bare "HTTP 0 Error".
+   */
+  it('keeps the reason when the injected fetch throws', async () => {
+    const reason = 'The node refused to attest: HTTP 404';
+    const failing = (async () => {
+      throw new Error(reason);
+    }) as unknown as typeof fetch;
+    const relay = client(failing, { executorAccount: EXECUTOR });
+
+    for (const call of [
+      () => relay.describe(CONTEXT),
+      () => relay.execute(CONTEXT, 'set', {}),
+    ]) {
+      const err = await call().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HTTPError);
+      expect((err as HTTPError).status).toBe(0);
+      expect((err as HTTPError).bodyText).toBe(reason);
+      expect((err as HTTPError).message).toContain(reason);
+    }
+  });
+
   it('binds the warrant to a not-after in the future', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
