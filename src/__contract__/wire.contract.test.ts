@@ -33,7 +33,6 @@ import type {
   MigrationStatusRollup,
   Namespace,
   NamespaceFounding,
-  NamespaceLegacyFounding,
   NodeIdentity,
   ReparentGroupRequest,
   ReparentGroupResponseData,
@@ -83,7 +82,6 @@ const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
 const namespace = key<Namespace>();
 const founding = key<NamespaceFounding>();
-const legacyFounding = key<NamespaceLegacyFounding>();
 
 const NAMESPACE_REQUIRED = [
   namespace('namespaceId'),
@@ -99,7 +97,6 @@ const NAMESPACE_OPTIONAL = [
   namespace('name'),
   namespace('appVersion'),
   namespace('founding'),
-  namespace('legacyFounding'),
 ];
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
@@ -275,10 +272,8 @@ const SPECS: Spec[] = [
     ],
     optional: [deviceEntry('label')],
   },
-  // A namespace founded before ids were derived carries `legacyFounding`; a
-  // derived one carries `founding`. Siblings, never nested: the founder a plain
-  // genesis names proves nothing about the id, so it must not appear where a
-  // derived-id check looks.
+  // Every namespace id is derived from its founder, and `founding` carries
+  // the pair a client checks it against.
   {
     type: 'Namespace',
     file: 'namespaces/get.res.json',
@@ -287,13 +282,10 @@ const SPECS: Spec[] = [
     optional: NAMESPACE_OPTIONAL,
   },
   {
-    type: 'NamespaceLegacyFounding',
+    type: 'NamespaceFounding',
     file: 'namespaces/get.res.json',
-    path: 'data.legacyFounding',
-    required: [
-      legacyFounding('founderAccountId'),
-      legacyFounding('genesisOpHash'),
-    ],
+    path: 'data.founding',
+    required: [founding('founderAccountId'), founding('salt')],
     optional: [],
   },
   {
