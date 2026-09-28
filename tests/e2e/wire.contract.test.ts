@@ -216,7 +216,9 @@ const SPECS: Spec[] = [
     optional: [member('name')],
   },
   // No policy is set on the provisioned namespace, so this is the disabled
-  // answer — which still carries `mode`, as `replica`.
+  // answer. `mode` is optional in the SDK type because a node before
+  // core#4180 omits it (read as `replica`); a node that has it answers
+  // `replica` here, which the fixture contract test pins.
   {
     type: 'GetTeeAdmissionPolicyResponseData',
     via: 'getTeeAdmissionPolicy',
@@ -229,9 +231,8 @@ const SPECS: Spec[] = [
       teePolicy('allowedRtmr3'),
       teePolicy('allowedTcbStatuses'),
       teePolicy('acceptMock'),
-      teePolicy('mode'),
     ],
-    optional: [teePolicy('enabled'), teePolicy('signedRelease')],
+    optional: [teePolicy('enabled'), teePolicy('signedRelease'), teePolicy('mode')],
   },
 ];
 
