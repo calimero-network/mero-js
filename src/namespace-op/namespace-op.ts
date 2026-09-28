@@ -25,7 +25,7 @@ import {
 } from '../crypto/internal.js';
 
 /** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 10;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 11;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
