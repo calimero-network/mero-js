@@ -1,3 +1,9 @@
+## [21.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.0.0...mero-js-v21.1.0) (2026-09-28)
+
+### Features
+
+* **admin:** declare the namespace founding field ([#198](https://github.com/calimero-network/mero-js/issues/198)) ([ffd3f59](https://github.com/calimero-network/mero-js/commit/ffd3f5968996abd6be1597f4b29a620ba5ae7c5e))
+
 ## [21.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v20.0.0...mero-js-v21.0.0) (2026-09-27)
 
 ### ⚠ BREAKING CHANGES
