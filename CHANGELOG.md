@@ -1,3 +1,9 @@
+## [21.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.2...mero-js-v21.3.0) (2026-09-28)
+
+### Features
+
+* **admin:** classifyError, and redeemInvitation that settles a join by membership ([#207](https://github.com/calimero-network/mero-js/issues/207)) ([12ad2a4](https://github.com/calimero-network/mero-js/commit/12ad2a416d6372ee5aee488e6bce98fb407568fc))
+
 ## [21.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.1...mero-js-v21.2.2) (2026-09-28)
 
 ### Bug Fixes

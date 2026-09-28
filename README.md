@@ -85,6 +85,13 @@ Every failure surfaces as a typed error:
 - **`RpcError`** — the WASM contract returned a JSON-RPC error (`code`, `message`,
   optional `type`/`data`).
 
+`classifyError(err)` turns any of these into `{ kind, retryable, message }`.
+`kind` is read off the status (`'conflict'` for a 409, `'unavailable'` for a
+503, `'unreachable'` for status 0, and so on). `retryable` says whether the same
+request could work later. `message` is the node's own words. To follow an
+invitation, use `sdk.admin.redeemInvitation`: a join that failed but landed
+comes back as `already-member` rather than as an error.
+
 `401`s are handled internally: the SDK refreshes the token and retries once, so
 you only see a `401` if the refresh itself fails. Full details in the
 [error model reference](https://calimero-network.github.io/mero-js/reference/error-model/).

@@ -47,6 +47,13 @@ function extractErrorMessage(bodyText?: string): string | undefined {
 export class HTTPError extends Error {
   name = 'HTTPError';
 
+  /**
+   * The node's own words for the failure, without the `HTTP <status>` prefix
+   * `message` carries: the body's `error` (or `detail`) for a response, the
+   * thrown error's text for status 0. Undefined when there was none.
+   */
+  readonly explanation: string | undefined;
+
   constructor(
     public status: number,
     public statusText: string,
@@ -66,6 +73,7 @@ export class HTTPError extends Error {
         ? `HTTP ${status} ${statusText}: ${explanation}`
         : `HTTP ${status} ${statusText}`,
     );
+    this.explanation = explanation;
   }
 
   toJSON(): {

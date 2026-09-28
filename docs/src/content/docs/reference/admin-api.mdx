@@ -125,6 +125,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `deleteNamespace(namespaceId): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
 | `createNamespaceInvitation(namespaceId, request?): Promise<…InvitationResponseData>` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): Promise<JoinNamespaceResponseData>` | `POST /namespaces/{namespaceId}/join` |
+| `redeemInvitation(namespaceId, invitation, options?): Promise<RedeemOutcome>` | `POST /namespaces/{namespaceId}/join`, then `GET /namespaces`; see [following an invitation](/guides/groups-and-governance/#following-an-invitation) |
 | `leaveNamespace(namespaceId): Promise<void>` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request?): Promise<CreateGroupInNamespaceResponseData>` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): Promise<SubgroupEntry[]>` | `GET /namespaces/{namespaceId}/groups` |
