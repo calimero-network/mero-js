@@ -272,12 +272,21 @@ const SPECS: Spec[] = [
     ],
     optional: [deviceEntry('label')],
   },
+  // Every namespace id is derived from its founder, and `founding` carries
+  // the pair a client checks it against.
   {
     type: 'Namespace',
     file: 'namespaces/get.res.json',
     path: 'data',
     required: NAMESPACE_REQUIRED,
     optional: NAMESPACE_OPTIONAL,
+  },
+  {
+    type: 'NamespaceFounding',
+    file: 'namespaces/get.res.json',
+    path: 'data.founding',
+    required: [founding('founderAccountId'), founding('salt')],
+    optional: [],
   },
   {
     type: 'Namespace',

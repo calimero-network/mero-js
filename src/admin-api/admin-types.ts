@@ -1300,7 +1300,6 @@ export interface RevokeAccountDeviceResponseData {
 
 export interface CreateGroupRequest {
   applicationId: string;
-  groupId?: string;
   appKey?: string;
   name?: string;
   parentGroupId?: string;
