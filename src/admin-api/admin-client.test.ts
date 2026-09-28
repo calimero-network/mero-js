@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
 import type {
   LabelDeviceResponseData,
@@ -6,7 +6,7 @@ import type {
   SignedGroupOpenInvitation,
 } from './admin-types.js';
 import { hexEncodeUtf8 } from './admin-types.js';
-import { HttpClient } from '../http-client/index.js';
+import { HttpClient, HTTPError } from '../http-client/index.js';
 import { CAPABILITIES } from '../capabilities.js';
 
 // A signed invitation exactly as merod emits it: the signed core primitive is
@@ -947,6 +947,54 @@ describe('AdminApiClient', () => {
       });
       const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
       expect(result.namespaceId).toBe('ns-1');
+    });
+
+    it('redeemInvitation joins with the groupName and reports joined', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [{ namespaceId: 'ns-1' }] });
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION, {
+        groupName: 'My NS',
+        teamName: 'Design',
+      });
+      expect(out).toEqual({ status: 'joined', namespaceId: 'ns-1', teamName: 'Design' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({
+        invitation: SIGNED_INVITATION,
+        groupName: 'My NS',
+      });
+    });
+
+    // The join outlasted a proxy's timeout but landed: the listing proves it.
+    it('redeemInvitation reports already-member when the join failed but the namespace is listed', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [{ namespaceId: 'ns-1' }] });
+      const post = vi
+        .spyOn(mock, 'post')
+        .mockRejectedValue(new HTTPError(0, 'Network Error', 'u', new Headers(), 'aborted'));
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION);
+      expect(out).toMatchObject({ status: 'already-member', namespaceId: 'ns-1' });
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+
+    it('redeemInvitation reports a refused join as final, in the node\'s words', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [] });
+      vi.spyOn(mock, 'post').mockRejectedValue(
+        new HTTPError(
+          409,
+          'Conflict',
+          'u',
+          new Headers(),
+          JSON.stringify({ error: 'invitation for group ab expired at 1759000000 (unix seconds)' }),
+        ),
+      );
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION);
+      expect(out).toEqual({
+        status: 'failed',
+        namespaceId: 'ns-1',
+        message: 'invitation for group ab expired at 1759000000 (unix seconds)',
+        reason: 'expired',
+        retryable: false,
+      });
     });
 
     it('createGroupInNamespace sends groupName and visibility', async () => {

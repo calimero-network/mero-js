@@ -133,6 +133,7 @@ import type {
   AdmitJoinRequest,
   AdmitJoinResponseData,
 } from './admin-types.js';
+import { redeemInvitation, type RedeemOutcome } from './redeem-invitation.js';
 
 /**
  * Helper: server wraps most responses in `{ data: T }`.
@@ -892,6 +893,46 @@ export class AdminApiClient {
       return { ...data, namespaceId: data.groupId };
     }
     return data;
+  }
+
+  /**
+   * Join the namespace an invitation grants, and say what happened — including
+   * when the request failed but the join landed anyway.
+   *
+   * Use this rather than {@link joinNamespace} whenever someone is following an
+   * invitation. A join waits for a member to come online and can outlast any
+   * proxy in front of the node; the request then fails while the join
+   * succeeds. This sends the join once, then checks {@link listNamespaces}:
+   * a failed request whose namespace is listed is `already-member`, a success.
+   *
+   * Never throws for an ordinary failure. A failed outcome carries a `reason`
+   * read off the node's status (core rc.56+), and `retryable`, which says
+   * whether to keep the invitation for another attempt.
+   *
+   * @param namespaceId the namespace the invitation names, 64 hex
+   * @param invitation the signed invitation, as the inviter's node minted it
+   * @param options `groupName` is sent with the join; `teamName` is echoed back
+   *   on a successful outcome for the caller's UI
+   */
+  async redeemInvitation(
+    namespaceId: string,
+    invitation: JoinNamespaceRequest['invitation'],
+    options: { groupName?: string; teamName?: string } = {},
+  ): Promise<RedeemOutcome> {
+    const { groupName, teamName } = options;
+    return redeemInvitation(
+      { namespaceId, invitation, teamName },
+      {
+        join: async () => {
+          await this.joinNamespace(
+            namespaceId,
+            groupName === undefined ? { invitation } : { invitation, groupName },
+          );
+        },
+        memberships: async () =>
+          ((await this.listNamespaces()) ?? []).map((n) => n.namespaceId),
+      },
+    );
   }
 
   async createGroupInNamespace(
