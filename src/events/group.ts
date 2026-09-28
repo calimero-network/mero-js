@@ -1,3 +1,5 @@
+import type { GroupMemberRole } from '../admin-api/admin-types.js';
+
 /** Parsed group-membership event (core's untagged `NodeEvent` group variant). */
 export interface GroupMembershipEventData {
   groupId: string;
@@ -10,7 +12,7 @@ export interface GroupMembershipEventData {
     memberAccount: string;
     /** Absent on `MemberRemoved`, and on a `MemberJoined` inherited from an Open
      * subgroup. Core's set is closed. */
-    role?: 'Admin' | 'Member' | 'ReadOnly' | 'ReadOnlyTee';
+    role?: GroupMemberRole;
   };
 }
 

@@ -1434,6 +1434,19 @@ export interface GroupInfo {
 
 export type GroupInfoResponseData = GroupInfo;
 
+/**
+ * A group member's role, as the node serializes it (PascalCase).
+ *
+ * The two TEE roles are minted by hardware-attestation admission only, never by
+ * an invitation or a role change:
+ * - `ReadOnlyTee` — a TEE **replica**: replicates and anchors sync, never
+ *   relays a member's write (a relay intent to one is refused with a 403).
+ * - `RelayTee` — a TEE **relay**: a replica that may also author members'
+ *   writes under their signed warrants, with no `CAN_AUTHOR_ON_BEHALF` grant.
+ *   Admitted when the namespace's {@link TeeAdmissionMode} is `relay`.
+ */
+export type GroupMemberRole = 'Admin' | 'Member' | 'ReadOnly' | 'ReadOnlyTee' | 'RelayTee';
+
 export interface GroupMember {
   /**
    * The member's ACCOUNT: 64 hex characters.
@@ -1446,7 +1459,7 @@ export interface GroupMember {
    * to {@link GroupMemberInput}.
    */
   identity: string;
-  role: string;
+  role: GroupMemberRole;
   name?: string;
 }
 
@@ -1620,6 +1633,15 @@ export interface SignedReleaseTeePolicy {
   minReleaseVersion?: string;
 }
 
+/**
+ * Which role a namespace admits attested TEE nodes with: `replica`
+ * (`ReadOnlyTee`, the default) or `relay` (`RelayTee`, which may also author
+ * members' writes under their warrants). Part of the admin-signed policy, so
+ * every node admits with the same role; changing it converts the TEEs already
+ * admitted.
+ */
+export type TeeAdmissionMode = 'replica' | 'relay';
+
 /** A policy that lists the measurements it admits. */
 export interface MeasurementTeeAdmissionPolicyRequest {
   allowedMrtd: string[];
@@ -1629,6 +1651,8 @@ export interface MeasurementTeeAdmissionPolicyRequest {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Absent means `replica`. */
+  mode?: TeeAdmissionMode;
 }
 
 /** A policy that admits by signed release. The node refuses measurement lists beside it. */
@@ -1636,6 +1660,8 @@ export interface SignedReleaseTeeAdmissionPolicyRequest {
   signedRelease: SignedReleaseTeePolicy;
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Absent means `replica`. */
+  mode?: TeeAdmissionMode;
 }
 
 export type SetTeeAdmissionPolicyRequest =
@@ -1646,6 +1672,8 @@ export type SetTeeAdmissionPolicyRequest =
 export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
 
 export interface GetTeeAdmissionPolicyResponseData {
+  /** `false` when no policy is set; the rest are then empty. */
+  enabled?: boolean;
   allowedMrtd: string[];
   allowedRtmr0: string[];
   allowedRtmr1: string[];
@@ -1655,6 +1683,11 @@ export interface GetTeeAdmissionPolicyResponseData {
   acceptMock: boolean;
   /** Set when the policy admits by signed release; the lists are then empty. */
   signedRelease?: SignedReleaseTeePolicy;
+  /**
+   * The role admitted TEEs receive. `replica` for a policy set before the mode
+   * existed; absent only from a node that predates it.
+   */
+  mode?: TeeAdmissionMode;
 }
 
 /**
