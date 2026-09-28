@@ -106,7 +106,8 @@ export interface IntentResult<T = unknown> {
  *
  * The distinction is the whole reason this type exists. A `403` from this
  * endpoint means one of several unrelated things — no grant on the relay, the
- * relay is a TEE replica (`ReadOnlyTee`, which never relays), the author is
+ * relay is a TEE replica (`ReadOnlyTee`) or a `ReadOnly` member (neither ever
+ * relays), the author is
  * not a member or is read-only in the context, or the nonce was already spent
  * — and they send a caller somewhere completely different: ask an admin, pick
  * a relay the namespace admits in `relay` mode, ask for an invitation, or just

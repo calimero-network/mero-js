@@ -208,11 +208,12 @@ describe('RelayClient.execute', () => {
 
   /**
    * Core refuses a relay intent over a ROLE with a 403 before anything runs:
-   * the relay is a TEE replica, or the author is read-only. Neither changes on
-   * retry, so neither may read as the retryable replay.
+   * the relay is a TEE replica or a read-only member, or the author is
+   * read-only. None changes on retry, so none may read as the retryable replay.
    */
   it.each([
     'this node is a TEE replica (ReadOnlyTee) and does not relay writes; the namespace must admit relays with mode=relay',
+    "this node's role in this context is read-only (ReadOnly), so it does not relay writes",
     "the author's role in this context is read-only",
   ])('surfaces a role refusal as non-retryable: %s', async (error) => {
     const { fetch } = scriptedFetch([{ status: 403, text: JSON.stringify({ error }) }]);
