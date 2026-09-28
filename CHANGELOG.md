@@ -1,3 +1,9 @@
+## [21.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.0...mero-js-v21.2.1) (2026-09-28)
+
+### Bug Fixes
+
+* **relay:** keep the reason when the fetch itself fails ([#205](https://github.com/calimero-network/mero-js/issues/205)) ([d20ece7](https://github.com/calimero-network/mero-js/commit/d20ece788b0338552bd01abe6b82dea14c60629f))
+
 ## [21.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.1.0...mero-js-v21.2.0) (2026-09-28)
 
 ### Features
