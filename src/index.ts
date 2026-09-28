@@ -14,6 +14,9 @@ export * from "./auth-api/index.js";
 // Admin API client
 export * from "./admin-api/index.js";
 
+// What a failed request means — kind, retryable, the node's own words
+export * from "./errors/index.js";
+
 // Auth utilities
 export { parseAuthCallback, buildAuthLoginUrl } from "./auth/index.js";
 export type { AuthCallbackResult, AuthLoginOptions } from "./auth/index.js";
