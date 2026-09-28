@@ -439,6 +439,18 @@ export interface SignedGroupOpenInvitation {
    * unlike `AccountId`, which has its own hex representation.
    */
   readonly app_key?: number[];
+  /**
+   * What the namespace id was derived from, when it was. The joining node
+   * records it before syncing, so it refuses a forged legacy genesis for a
+   * derived id instead of letting whichever genesis arrives first found the
+   * namespace.
+   *
+   * Unsigned and self-verifying: the node takes it only if it reproduces the
+   * namespace id. JSON only — core never borsh-encodes it, so
+   * `encodeSignedInvitation` must not either. Absent from older nodes and
+   * from invitations into namespaces whose id was not derived.
+   */
+  readonly founding?: NamespaceFounding;
   /** @internal Brand — never present at runtime, never write it. */
   readonly __nodeSigned: never;
 }

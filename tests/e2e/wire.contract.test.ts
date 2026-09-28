@@ -146,6 +146,9 @@ const SPECS: Spec[] = [
       // others because core skips it when empty, so the key only reached the
       // wire once nodes began filling it in.
       signed('admitter_addrs'),
+      // What the namespace id was derived from. Optional: absent from older
+      // nodes, and from invitations into a namespace whose id was not derived.
+      signed('founding'),
     ],
   },
   {
