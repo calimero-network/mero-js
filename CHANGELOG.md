@@ -1,3 +1,9 @@
+## [21.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.1...mero-js-v21.2.2) (2026-09-28)
+
+### Bug Fixes
+
+* **namespace-op:** sign namespace ops at schema version 9 ([#201](https://github.com/calimero-network/mero-js/issues/201)) ([5b721dd](https://github.com/calimero-network/mero-js/commit/5b721dd3c1733b5925ae1214e308a4ad7aceb159)), closes [core#4163](https://github.com/calimero-network/core/issues/4163)
+
 ## [21.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.0...mero-js-v21.2.1) (2026-09-28)
 
 ### Bug Fixes
