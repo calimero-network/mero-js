@@ -74,6 +74,9 @@ export * from "./cloud/index.js";
 // Relay client — write through delegated execution, holding only a signing key
 export * from "./relay/index.js";
 
+// Request proofs — a caller's identity on the request itself, no session needed
+export * from "./request-proof/index.js";
+
 // Warrant signing — mint the author's consent for a relay to run one intent
 export { signWarrant, intentHash } from "./warrant/index.js";
 

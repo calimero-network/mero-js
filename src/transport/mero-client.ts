@@ -57,8 +57,12 @@ import { RelayObserver, defaultAudience } from './relay-observer.js';
 import type { RelayObserveConfig } from './relay-observer.js';
 import type { ExecuteTransport, TransportKind } from './types.js';
 import type { AdminApiClient } from '../admin-api/index.js';
+import { createAdminApiClient, createAdminApiClientFromHttpClient } from '../admin-api/index.js';
+import { createHttpClient } from '../http-client/index.js';
+import { createProofAuthorizer } from '../request-proof/index.js';
+import type { ProofCredential, RequestAuthorizer } from '../request-proof/index.js';
+import { SseClient } from '../events/sse.js';
 import type { AuthApiClient } from '../auth-api/index.js';
-import type { SseClient } from '../events/sse.js';
 import type { WsClient } from '../events/ws.js';
 import type { EphemeralClient } from '../ephemeral/index.js';
 import type { CloudClient } from '../cloud/cloud-client.js';
@@ -87,6 +91,20 @@ export interface RelayTransportConfig {
    */
   relay: RelayClient | RelayClientConfig;
   /**
+   * A session on the relay, if this client has one.
+   *
+   * The delegated path has **two** credentials, not one. A warrant authorises a
+   * single intent and is what `execute` sends; a session — minted by
+   * `account_proof` from the same device key, see `login()` — is what the
+   * caller-scoped admin READS are authenticated by (`context:list-own`,
+   * `namespace:list-own`). They are independent: a client with only warrants
+   * writes but cannot list, which is what `admin` throwing used to describe.
+   *
+   * Supply a token, or a function returning the current one so a refreshed
+   * session is picked up without rebuilding the client.
+   */
+  session?: string | (() => Promise<string | undefined>);
+  /**
    * How this client observes the relay node, if it can.
    *
    * Omit it — or pass it with no `nodeKey` — and the client writes but does not
@@ -100,6 +118,23 @@ export interface RelayTransportConfig {
    * publishes one. Nothing here ever fills the key in.
    */
   observe?: RelayObserveConfig;
+  /**
+   * The device cert this client authenticates its own requests with.
+   *
+   * This is the shortest path to everything but writes, and it needs no session
+   * and no node key. The device key signs each request — `X-Calimero-Proof` —
+   * and the node verifies the signature against the certificate the account
+   * signed, with no store read and no prior relationship. Measured against a
+   * node built from core `aecba573b`: the caller-scoped reads answer `200`,
+   * `/sse` answers `200`, and a `/ws` upgrade completes `101`.
+   *
+   * Supplying this makes {@link MeroClient.admin} and {@link MeroClient.events}
+   * available and {@link MeroClient.canSubscribe} true, with no `session` and no
+   * `observe.nodeKey`. Those two remain for the case they were built for: a
+   * device key behind a boundary worth crossing once, where a per-session
+   * signature beats a per-request one.
+   */
+  proof?: ProofCredential;
 }
 
 export type MeroClientConfig = NodeTransportConfig | RelayTransportConfig;
@@ -173,6 +208,19 @@ export class MeroClient {
   private readonly rpcTransport: ExecuteTransport;
   /** The relay's event session, or `null` on a node client / with no node key. */
   private readonly relayObserver: RelayObserver | null = null;
+  /** Admin reads against the relay, when a session or a proof was supplied. */
+  private readonly relayAdmin: AdminApiClient | null = null;
+  /**
+   * Events off the relay authenticated by a request proof, built lazily.
+   *
+   * Separate from {@link relayObserver} rather than a mode inside it: the
+   * observer's whole subject is a session addressed to a node key, and a proof
+   * has neither. Holding the authorizer instead of the client keeps construction
+   * free of the first signature.
+   */
+  private readonly proofAuthorizer: RequestAuthorizer | null = null;
+  private readonly relayUrl: string | null = null;
+  private proofEvents: SseClient | null = null;
 
   constructor(config: MeroClientConfig) {
     if (config.transport === 'relay') {
@@ -182,6 +230,34 @@ export class MeroClient {
         config.relay instanceof RelayClient ? config.relay : new RelayClient(config.relay);
       this.relayObserver = buildObserver(relay, config.observe);
       this.rpcTransport = new RelayTransport(relay, this.relayObserver);
+      this.relayUrl = relay.relayUrl;
+      if (config.proof) {
+        this.proofAuthorizer = createProofAuthorizer(config.proof);
+      }
+      // A session wins where both are present. Not a preference between
+      // credentials but the node's own precedence: it answers a request carrying
+      // a token by that token and consults a proof only when there is none, so
+      // sending both would authenticate by the session anyway — and a client
+      // whose reads and whose events disagreed about which identity they ran as
+      // is the one outcome worth ruling out here.
+      if (config.session) {
+        const token = config.session;
+        this.relayAdmin = createAdminApiClient({
+          baseUrl: relay.relayUrl,
+          getAuthToken: typeof token === 'string' ? async () => token : token,
+        });
+      } else if (this.proofAuthorizer) {
+        const authorizeRequest = this.proofAuthorizer;
+        this.relayAdmin = createAdminApiClientFromHttpClient(
+          createHttpClient({
+            fetch: (url: RequestInfo | URL, init?: RequestInit) =>
+              globalThis.fetch(url as RequestInfo, init),
+            baseUrl: relay.relayUrl,
+            authorizeRequest,
+          }),
+          { baseUrl: relay.relayUrl },
+        );
+      }
       return;
     }
 
@@ -213,7 +289,7 @@ export class MeroClient {
    * who can name the key the login statement is signed against.
    */
   get canSubscribe(): boolean {
-    return this.rpcTransport.canSubscribe;
+    return this.rpcTransport.canSubscribe || this.proofAuthorizer !== null;
   }
 
   /** The underlying `MeroJs`. Node transport only. */
@@ -256,19 +332,31 @@ export class MeroClient {
    * throw below is deliberate until it exists, because the alternative — quietly
    * reaching for a node the caller did not choose — is worse than a clear stop.
    */
+  /**
+   * The admin surface.
+   *
+   * On a node client this is the node's own. On a relay client it exists only
+   * when a `session` was supplied, and it is **the relay's admin API
+   * authenticated as the account** — so the caller-scoped reads answer:
+   * `getContexts` and `listNamespaces` return this account's own, because
+   * `account_proof` grants `context:list-own` and `namespace:list-own`.
+   *
+   * Mutations are not filtered out here, deliberately. A delegated session does
+   * not carry the grants they require, so the node refuses them with a `403`
+   * that names the missing permission — which is a better answer than a
+   * client-side guess, and keeps the policy in the one place that owns it.
+   */
   get admin(): AdminApiClient {
-    if (!this.nodeClient) {
-      throw new Error(
-        'this client was constructed with the relay transport, which serves no admin ' +
-          'surface to a keyholder. Mutations (createNamespace, setMemberCapabilities, …) ' +
-          'are operator actions and will never be available here. The READS ' +
-          '(getContext, getContexts, getApplication, listNamespaces, getBlob) are not ' +
-          'admin operations and should be — they are pending a transport-independent ' +
-          'read API. Until then: context STATE reads work via execute/query on this ' +
-          'client, and events work once a relay node key is supplied.',
-      );
-    }
-    return this.nodeClient.admin;
+    if (this.nodeClient) return this.nodeClient.admin;
+    if (this.relayAdmin) return this.relayAdmin;
+    throw new Error(
+      'this relay-transport client has no admin surface because it was given neither a `proof` ' +
+        'nor a `session`. A warrant authorises one intent and is not a credential for reading. ' +
+        'The caller-scoped reads (getContexts, listNamespaces) want one of the other two: pass ' +
+        '`proof: { credential, deviceSecret }` — the device cert you already hold, which needs ' +
+        'no login and no node key — or a `session` minted with `login()`. Context STATE reads ' +
+        'work through execute/query either way.',
+    );
   }
 
   /** Auth API. Node transport only — a relay issues no node credential. */
@@ -290,6 +378,16 @@ export class MeroClient {
   get events(): SseClient {
     if (this.nodeClient) return this.nodeClient.events;
     if (this.relayObserver) return this.relayObserver.events;
+    if (this.proofAuthorizer && this.relayUrl) {
+      // Built on first use and then kept: a second `SseClient` would open a
+      // second stream and split the subscriptions across two sessions, so the
+      // caller would see some of its events on an object it no longer holds.
+      this.proofEvents ??= new SseClient({
+        baseUrl: this.relayUrl,
+        authorize: this.proofAuthorizer,
+      });
+      return this.proofEvents;
+    }
     throw missingNodeKey('SSE events');
   }
 
@@ -297,6 +395,21 @@ export class MeroClient {
   get ws(): WsClient {
     if (this.nodeClient) return this.nodeClient.ws;
     if (this.relayObserver) return this.relayObserver.ws;
+    if (this.proofAuthorizer) {
+      // Not a missing credential: a proof DOES open `/ws` — measured, `101`
+      // against a node built from core `aecba573b`. What is missing is a way to
+      // carry it, and that is the browser's. `WebSocket` cannot set a request
+      // header, and the guard reads the proof from a header only; the `?token=`
+      // query parameter this client uses for a session exists for exactly that
+      // reason and has no proof equivalent yet.
+      throw new Error(
+        'this client authenticates with a request proof, which cannot open a WebSocket from a ' +
+          "browser: `WebSocket` cannot set the X-Calimero-Proof header, and core's guard reads " +
+          'the proof from a header only (the ?token= query parameter is the session equivalent ' +
+          'and has no proof counterpart). Use `client.events` — SSE is fetch-based, carries the ' +
+          'header, and is the recommended transport anyway.',
+      );
+    }
     throw missingNodeKey('WebSocket events');
   }
 
@@ -350,9 +463,11 @@ export class MeroClient {
    */
   close(): void {
     this.nodeClient?.close();
-    // The observer, not the relay: a relay client holds nothing open. Tearing
-    // down on unmount must not have to know which transport it got.
+    // The observer and the proof stream, not the relay: a relay client holds
+    // nothing open. Tearing down on unmount must not have to know which
+    // transport — or which credential — it got.
     this.relayObserver?.close();
+    this.proofEvents?.close();
   }
 }
 

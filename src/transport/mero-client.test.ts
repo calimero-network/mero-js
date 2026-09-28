@@ -287,12 +287,47 @@ describe('a relay client with no node key', () => {
     expect(() => client().events).toThrow(/never derived from its peerId/);
   });
 
-  it.each(['ephemeral', 'admin', 'auth', 'node', 'cloud'] as const)(
+  it.each(['ephemeral', 'auth', 'node', 'cloud'] as const)(
     'still throws from `%s` rather than falling back to some other node',
     (surface) => {
       expect(() => client()[surface]).toThrow(/relay transport/);
     },
   );
+
+  // `admin` is no longer in that list: it is reachable on a relay client that
+  // was given a session. Without one it still throws, but for a different and
+  // now-fixable reason, so it is asserted on its own terms below.
+  it('throws from `admin` for want of a session, not for want of a node', () => {
+    expect(() => client().admin).toThrow(/was given no session/);
+  });
+
+  /**
+   * The other half of that sentence. A session is what the caller-scoped reads
+   * are authenticated by, so supplying one has to actually produce a usable
+   * admin client — otherwise the error above names a cure that does not work.
+   */
+  it('serves `admin` once a session is supplied, and sends that token', async () => {
+    const seen: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain('/admin-api/contexts');
+      seen.push(new Headers(init?.headers).get('authorization'));
+      return new Response(JSON.stringify({ data: { contexts: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+
+    const withSession = createMeroClient({
+      transport: 'relay',
+      relay: relayClient(fetchImpl),
+      session: 'session-token',
+    });
+
+    expect(() => withSession.admin).not.toThrow();
+    await withSession.admin.getContexts();
+    expect(seen[0]).toBe('Bearer session-token');
+  });
 
   it('closes without error, so teardown need not know the transport', () => {
     expect(() => client().close()).not.toThrow();
@@ -508,7 +543,7 @@ describe('the admin surface on the relay transport', () => {
    * exist yet. A message that says only "no admin here" sends someone looking
    * for a permission to grant, and there isn't one.
    */
-  it('names the reads as pending rather than forbidden', () => {
+  it('names the session as the missing credential, not the transport', () => {
     const client = createMeroClient({
       transport: 'relay',
       relay: new RelayClient({
@@ -527,10 +562,16 @@ describe('the admin surface on the relay transport', () => {
       message = (e as Error).message;
     }
 
-    expect(message).toContain('operator actions');
-    expect(message).toMatch(/getContext|getContexts/);
-    expect(message).toContain('transport-independent');
-    // and it must not suggest the caller is one grant away from fixing it
+    // The reads are no longer pending: an account_proof session serves them, so
+    // the message must name the thing that is missing and how to get it. The
+    // old wording ("pending a transport-independent read API") would now send
+    // someone to wait for work that has landed.
+    expect(message).toMatch(/getContexts|listNamespaces/);
+    expect(message).toContain('session');
+    expect(message).toContain('login()');
+    // A warrant is not a read credential, and saying so is the point.
+    expect(message).toMatch(/warrant/i);
+    // and it must still not suggest the caller is one admin grant away
     expect(message).not.toMatch(/permission denied|grant .* admin/i);
   });
 });

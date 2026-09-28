@@ -9,6 +9,24 @@ export interface Transport {
   baseUrl: string;
   defaultHeaders?: Record<string, string>;
   getAuthToken?: () => Promise<string | undefined>;
+  /**
+   * Per-request authorization, for a credential that commits to the request.
+   *
+   * `getAuthToken` returns one value reused across requests; a request proof
+   * signs the method, the path and the body, so it can only be produced where
+   * those are known. This is called with exactly that, and whatever it returns
+   * is merged into the headers.
+   *
+   * It runs AFTER `getAuthToken`, so a transport holding both sends both and
+   * lets the node decide — which it does by answering a request carrying a token
+   * by that token, and consulting a proof only when there is none.
+   */
+  authorizeRequest?: (request: {
+    method: string;
+    /** The path the node will see, query excluded. */
+    path: string;
+    body?: string | Uint8Array;
+  }) => Promise<Record<string, string>>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
