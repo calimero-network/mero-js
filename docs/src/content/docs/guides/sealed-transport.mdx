@@ -102,7 +102,93 @@ from mero-tee releases' `published-mrtds.json`:
 
 Where the file comes from is the trust decision. Shipping it with the app, taken
 from a release you verified (`cosign verify-blob` against its `.bundle.json`),
-trusts that release. Fetching it at run time trusts whoever serves it.
+trusts that release, and works offline. Fetching the bare file at run time
+trusts whoever serves it. To fetch it at run time without trusting the server,
+fetch it with its signature and verify it in the page:
+[see the next section](#trusting-a-signed-release-at-run-time).
+
+## Trusting a signed release at run time
+
+Shipping `published-mrtds.json` means shipping a new app for every node release.
+Instead, the client can take the release the node runs, from anywhere, and
+check its signature itself. Every mero-tee node release is signed by its release
+workflow with cosign keyless, and publishes `published-mrtds.json` with the
+cosign bundle: a Fulcio certificate issued to that workflow run, and a Rekor log
+entry. Two servers hand both out, as `{"data": {"version", "publishedMrtds", "bundle"}}`:
+
+- the node itself, `GET /admin-api/tee/release`: the release it runs;
+- the cloud's mirror, `GET https://cloud.calimero.network/api/tee/node-releases/{version}`.
+
+Neither is trusted, and the release is public, so it is fetched in the clear,
+before the session it decides on exists. `createSignedReleaseSealedFetch` gets
+the release from the relay, verifies it, builds the quote verifier from it,
+attests and seals:
+
+```typescript
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+import { RelayClient, createSignedReleaseSealedFetch } from '@calimero-network/mero-js';
+
+const relay = new RelayClient({
+  relayUrl,
+  authorAccount,
+  authorProof,
+  deviceSecret,
+  fetch: createSignedReleaseSealedFetch({
+    baseUrl: relayUrl,
+    dcapVerify,
+    profile: 'locked-read-only',
+    // Required: the oldest release you accept.
+    minReleaseVersion: '2.3.87',
+    // Optional: take the release from the cloud's mirror instead of the relay.
+    // releaseSource: cloudNodeReleaseUrl('https://cloud.calimero.network', '2.3.87'),
+  }),
+});
+```
+
+`releaseSource` is a URL, or a function `({ baseUrl, fetch }) => Promise<SignedNodeRelease>`
+called each time the node is attested. The pieces are there to use on their own:
+`fetchNodeRelease(url)` fetches a release, `verifySignedNodeRelease(file, bundle)`
+verifies one and returns it parsed, `trustSignedRelease({ release, profile, minReleaseVersion })`
+returns the options for `createQuoteVerifier`, and `createSignedReleaseVerifier`
+is a quote verifier that does all of it at each attestation.
+
+`verifySignedNodeRelease` runs the checks `cosign verify-blob` does, with WebCrypto
+and the Sigstore trust root embedded in mero-js, and refuses the release, with
+the reason, unless:
+
+- the signature over the exact bytes of the file verifies with the certificate;
+- the certificate chains to a Fulcio CA of the Sigstore trust root, and it and
+  the CA were valid when Rekor logged the signature. A Fulcio certificate lives
+  ten minutes, so it is checked at Rekor's time, not now;
+- it names the node release workflow, exactly
+  `https://github.com/calimero-network/mero-tee/.github/workflows/release-node-image-gcp.yaml@refs/heads/master`,
+  with the GitHub Actions OIDC issuer: the identity core pins too;
+- Rekor's signed entry timestamp verifies, over an entry that is this signature,
+  over this file's SHA-256, by this certificate;
+- the file is a node release's `published-mrtds.json`, whose `tag` is the version
+  the server named.
+
+Nothing reads the clock, so a release that verifies once always does.
+
+**What is trusted:** the release workflow's identity, the Sigstore public-good
+trust root (Fulcio's CAs and Rekor's key, embedded in mero-js), and the minimum
+release you pass. **What is not:** the transport, the server the release came
+from, and the relay.
+
+**Why the minimum is required.** A signature never expires, so every release
+ever signed stays valid. Without a floor, a relay could present an old release,
+with a flaw since fixed, run that old image, and pass. `minReleaseVersion`
+refuses any release older than it (compared as versions: `2.3.100` is newer than
+`2.3.9`). Raise it when a release must no longer be trusted.
+
+**What the relay still chooses.** Which release it presents, and nothing more:
+only a genuinely signed release at or above the minimum passes, and its quote
+must then match that release's measurements in all five registers. It cannot
+present one release and run another.
+
+Shipping `published-mrtds.json` with the app, with `trustedMeasurementsFromReleases`,
+still works, and needs no network for the release: use it offline, or to pin
+exactly the releases you checked.
 
 Mock quotes (`merod --mock-tee`) never pass `createQuoteVerifier`; tests against
 a mock node pass a verifier of their own.
@@ -118,7 +204,9 @@ through a hosted TEE relay. The intent (the warrant and the method's arguments)
 is exactly what should not be readable at the relay's ingress. Seal it with
 `connectCloud({ seal: verifier })`, or give a `RelayClient` a
 `createAttestedSealedFetch({ baseUrl: relayUrl, verify: verifier })`, which
-attests the node from its URL and seals everything after that. See
+attests the node from its URL and seals everything after that. Or give it a
+`createSignedReleaseSealedFetch(...)`, which also takes the image to trust from
+the relay's signed release ([above](#trusting-a-signed-release-at-run-time)). See
 [delegated execution](/guides/delegated-execution/#sealing-the-intent-to-the-tee).
 
 ## What can be sealed, and where
@@ -181,6 +269,7 @@ sealed: the node refuses a sealed upgrade with a `501`, so subscribe over SSE.
 | Error | Meaning |
 | --- | --- |
 | `StaleTransportKeyError` | The node restarted and holds a new key, and you passed a fixed key rather than an attest function. Attest again and rebuild the fetch. |
+| (a plain `Error`) from `verifySignedNodeRelease` and the signed-release fetches | The release did not verify or is older than `minReleaseVersion`; the message says which check failed. Nothing is sealed to a node whose release is refused. |
 | `SealedTransportError` | The node refused the envelope itself (`status`, `code`): `malformed`, `undecryptable`, `replayed_request`. An expired session (`unknown_session`) is handled for you, and so is one `busy` refusal of a handshake: the client waits the `Retry-After` the node gives and tries once more. |
 
 A node configured with `[server.sealed] required = true` refuses unsealed
