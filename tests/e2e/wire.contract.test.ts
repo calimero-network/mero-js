@@ -125,7 +125,6 @@ const SPECS: Spec[] = [
       ns('appVersion'),
       ns('upgradePolicy'),
       ns('founding'),
-      ns('legacyFounding'),
     ],
   },
   {
