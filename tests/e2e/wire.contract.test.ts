@@ -120,7 +120,12 @@ const SPECS: Spec[] = [
       ns('contextCount'),
       ns('subgroupCount'),
     ],
-    optional: [ns('name'), ns('appVersion'), ns('upgradePolicy'), ns('founding')],
+    optional: [
+      ns('name'),
+      ns('appVersion'),
+      ns('upgradePolicy'),
+      ns('founding'),
+    ],
   },
   {
     type: 'CreateGroupInvitationResponseData',

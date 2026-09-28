@@ -473,9 +473,9 @@ export interface Namespace {
    */
   appVersion?: string;
   /**
-   * What the namespace id was derived from. Every namespace id is derived, so
-   * this is present on every replica that has applied the namespace's genesis;
-   * absent only on one that has not yet, or on a node that predates it.
+   * What the namespace id was derived from, on nodes that hold it. Every
+   * namespace's id is derived from its founder since core's schema v10, so
+   * this is absent only on nodes that predate it.
    */
   founding?: NamespaceFounding;
 }

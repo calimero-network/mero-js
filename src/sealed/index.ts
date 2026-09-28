@@ -20,3 +20,23 @@ export type {
   QuoteVerifierOptions,
   TrustedMeasurements,
 } from './verify.js';
+export {
+  DEFAULT_RELEASE_MIRROR,
+  NODE_RELEASE_SIGNER,
+  cloudNodeReleaseUrl,
+  createSignedReleaseSealedFetch,
+  createSignedReleaseVerifier,
+  fetchNodeRelease,
+  fetchNodeReleaseVersion,
+  nodeReleaseVersionFromImage,
+  trustSignedRelease,
+  verifySignedNodeRelease,
+} from './release.js';
+export type {
+  SignedNodeRelease,
+  SignedReleaseSealedFetchOptions,
+  SignedReleaseVerifierOptions,
+  TrustSignedReleaseOptions,
+  VerifySignedNodeReleaseOptions,
+} from './release.js';
+export type { SignerIdentity } from './sigstore.js';
