@@ -472,6 +472,27 @@ export interface Namespace {
    * cannot resolve it (raw-wasm app, legacy key, blob not retained locally).
    */
   appVersion?: string;
+  /**
+   * What the namespace id was derived from, on nodes that hold it: every
+   * replica of a namespace founded with a derived id. Absent for namespaces
+   * created before ids were derived, and on nodes that predate it.
+   */
+  founding?: NamespaceFounding;
+}
+
+/**
+ * The founder and salt a namespace id was derived from:
+ * `domain_hash("calimero.namespace.id.v1", [founder, salt]) === namespaceId`.
+ *
+ * Anyone holding both can confirm which account founded the namespace without
+ * holding any of its state. Neither is secret, and the salt cannot be replayed
+ * for another account: the id commits to the founder.
+ */
+export interface NamespaceFounding {
+  /** Hex `AccountId` of the founder. */
+  founderAccountId: string;
+  /** Hex 32-byte salt. */
+  salt: string;
 }
 
 export type ListNamespacesResponseData = Namespace[];
@@ -710,6 +731,8 @@ export interface CreateNamespaceRequest {
 
 export interface CreateNamespaceResponseData {
   namespaceId: string;
+  /** What the id was derived from. Absent on nodes that predate derived ids. */
+  founding?: NamespaceFounding;
 }
 
 export interface DeleteNamespaceResponseData {
