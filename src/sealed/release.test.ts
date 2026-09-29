@@ -319,8 +319,8 @@ describe('trustSignedRelease', () => {
   });
 });
 
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 describe('fetching a release', () => {
   const serving = (body: unknown, status = 200) =>
@@ -369,6 +369,17 @@ describe('the release a node names', () => {
       fetchNodeReleaseVersion('https://relay.example', { fetch: vi.fn(async () => json({ data: {} })) }),
     ).rejects.toThrow("did not name the node's image");
   });
+
+  it('says so when a node that requires sealing refuses /tee/info unsealed, and fails on other refusals', async () => {
+    const refusing = (code: string) =>
+      vi.fn(async () => json({ error: { code, message: 'refused' } }, 403)) as unknown as typeof globalThis.fetch;
+    await expect(
+      fetchNodeReleaseVersion('https://relay.example', { fetch: refusing('sealed_required') }),
+    ).rejects.toThrow('the node requires sealing and is too old to name its release');
+    await expect(fetchNodeReleaseVersion('https://relay.example', { fetch: refusing('forbidden') })).rejects.toThrow(
+      'HTTP 403',
+    );
+  });
 });
 
 // The real TDX quote from dcap-qvl's samples, as verify.test.ts uses it. It is
@@ -412,14 +423,17 @@ describe('createSignedReleaseSealedFetch', () => {
    * real sample quote, bound to the transport key; and two mirrors serving
    * `{data: SignedNodeRelease}` for that release.
    */
-  const network = () => {
+  const network = ({ infoRefused = false } = {}) => {
     const transportKey = new Uint8Array(32).fill(0x44);
     const requests: string[] = [];
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       requests.push(url);
       if (url === `${RELAY}/admin-api/tee/info`) {
-        return json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } });
+        // A node that requires sealing and predates core#4196 refuses it unsealed.
+        return infoRefused
+          ? json({ error: { code: 'sealed_required', message: 'sealed only' } }, 403)
+          : json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } });
       }
       if ([DEFAULT_RELEASE_MIRROR, CLOUD].some((mirror) => url === `${mirror}/api/tee/node-releases/2.3.87`)) {
         return json({ data: signed('2.3.87') });
@@ -461,6 +475,29 @@ describe('createSignedReleaseSealedFetch', () => {
       createSignedReleaseSealedFetch({ ...options, fetch: byFunction.fetch, releaseSource })(`${RELAY}/x`),
     ).rejects.toThrow('are not an image this verifier trusts');
     expect(releaseSource).toHaveBeenCalledWith({ baseUrl: RELAY, version: '2.3.87', fetch: byFunction.fetch });
+  });
+
+  it('takes releaseVersion when a node that requires sealing will not name its release, and only then', async () => {
+    const refusing = network({ infoRefused: true });
+    await expect(createSignedReleaseSealedFetch({ ...options, fetch: refusing.fetch })(`${RELAY}/x`)).rejects.toThrow(
+      '`releaseVersion`',
+    );
+
+    const pinned = network({ infoRefused: true });
+    await expect(
+      createSignedReleaseSealedFetch({ ...options, fetch: pinned.fetch, releaseVersion: '2.3.87' })(`${RELAY}/x`),
+    ).rejects.toThrow('are not an image this verifier trusts');
+    expect(pinned.requests).toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
+
+    // A node that names its release is taken at its word, as untrusted as ever.
+    const answering = network();
+    await expect(
+      createSignedReleaseSealedFetch({ ...options, fetch: answering.fetch, releaseVersion: '2.3.99' })(`${RELAY}/x`),
+    ).rejects.toThrow('are not an image this verifier trusts');
+    expect(answering.requests).toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
+    expect(answering.requests).not.toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.99`);
+
+    expect(() => createSignedReleaseSealedFetch({ ...options, releaseVersion: 'latest' })).toThrow('releaseVersion');
   });
 
   it('refuses a relay that serves a release below the minimum, before trusting its quote', async () => {
