@@ -1,3 +1,9 @@
+## [22.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.4.0...mero-js-v22.5.0) (2026-09-29)
+
+### Features
+
+* **relay:** schema 15 and delegated governance through a relay ([#215](https://github.com/calimero-network/mero-js/issues/215)) ([d185aec](https://github.com/calimero-network/mero-js/commit/d185aec862d62d02b93e8f95de511f2fcad289dd))
+
 ## [22.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.3.0...mero-js-v22.4.0) (2026-09-29)
 
 ### Features
