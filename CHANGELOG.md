@@ -1,3 +1,9 @@
+## [22.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.3.0...mero-js-v22.4.0) (2026-09-29)
+
+### Features
+
+* **relay:** create contexts through a relay with a creation warrant ([#214](https://github.com/calimero-network/mero-js/issues/214)) ([292fdc5](https://github.com/calimero-network/mero-js/commit/292fdc5a7682130aaf0c664fb5359633814c3b77))
+
 ## [22.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.2.0...mero-js-v22.3.0) (2026-09-29)
 
 ### Features
