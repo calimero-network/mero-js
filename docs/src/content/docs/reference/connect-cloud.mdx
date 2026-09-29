@@ -123,10 +123,14 @@ them to the wrong one, so each gets its own message:
 | it owns several and none was named | pass `namespaceId`, and here they are |
 | the namespace has no relays and HA is off | enable HA in the cloud |
 | HA is on but nothing is assigned yet | retry shortly |
-| every relay lacks the grant | an admin must grant `CAN_AUTHOR_ON_BEHALF` to *this account* |
+| every node is a `ReadOnlyTee` replica | an admin must set the TEE admission policy with `mode: 'relay'` |
+| every relay lacks the grant (nodes reporting no role) | an admin must grant `CAN_AUTHOR_ON_BEHALF` to *this account* |
 
-The last one names the executor account, because that is the value the admin has
-to grant the capability *to*:
+A relay is chosen on the cloud's `canExecute`, so a `RelayTee` needs no grant and a
+`ReadOnlyTee` — a replica — is never picked, whatever its grant. The grant only
+decides for a node too old to report a role, and that message names the
+executor account, because that is the value the admin has to grant the
+capability *to*:
 
 ```bash
 meroctl --node node1 group members set-capabilities <GROUP_ID> <EXECUTOR_ACCOUNT> \

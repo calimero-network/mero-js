@@ -132,11 +132,13 @@ builds the relay client. `sdk.cloud` exposes the same cloud API from an existing
 `MeroJs` instance for apps that have both a node and a cloud account, and
 `RelayClient` is available directly for a relay you were told about out of band.
 
-One precondition is not yours to satisfy: an admin of the namespace must grant
-the relay `CAN_AUTHOR_ON_BEHALF` (core implies it from nothing — not from
-membership, not from admin). Until then `connectCloud` throws naming the account
-that needs the grant, and `relay.describe(contextId)` reports
-`canAuthorOnBehalf: false` so a UI can say so rather than failing a write.
+One precondition is not yours to satisfy: the node must relay. A fleet node
+admitted as a `RelayTee` (the namespace's TEE admission policy set with
+`mode: 'relay'`) relays by role; a `ReadOnlyTee` is a replica and never relays;
+and a node too old to report a role needs an admin of the namespace to grant it
+`CAN_AUTHOR_ON_BEHALF`. `connectCloud` picks a relay on the cloud's `canExecute`,
+which folds that rule in, and otherwise throws saying which of those is missing —
+naming the account that needs the grant when that is the fix.
 
 See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
 [relay client](https://calimero-network.github.io/mero-js/reference/relay/) and

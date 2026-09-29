@@ -104,15 +104,19 @@ somebody owns, not nodeless namespace creation.
 
    ```typescript
    const relays = await cloud.getNamespaceRelays(namespaceId);
-   // [{ peerId, relayUrl, executorAccount, status: 'active', authorshipReady: false }]
+   // [{ peerId, relayUrl, executorAccount, status: 'active', teeRole: 'RelayTee', canExecute: true, ... }]
 
    // or, across every namespace this account owns:
    const machines = await cloud.getMyMachines();
    // [{ peerId, relayUrl, executorAccount, canExecute: false, namespaces: [...] }]
    ```
 
-   `authorshipReady` should already be `true` on a namespace created by a recent
-   merod — see step 5. If it is `false`, step 5 is the fix.
+   Pick a relay on `canExecute`. A fleet node that reports a role is decided by
+   it alone: a `RelayTee` (the namespace's TEE admission policy set with
+   `mode: 'relay'`) relays with no grant, and a `ReadOnlyTee` is a replica that
+   never relays — if every node is one, set the policy to `mode: 'relay'`
+   rather than granting anything. Only a node reporting `teeRole: null` (an
+   older sidecar) is decided by `authorshipReady`, and for it step 5 is the fix.
 
 5. **Grant the relay authorship — usually already done.**
 

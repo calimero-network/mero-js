@@ -44,6 +44,8 @@ const readyRelay = {
   executor_account: EXECUTOR,
   status: 'active',
   authorship_ready: true,
+  tee_role: 'RelayTee',
+  can_execute: true,
 };
 
 function options(over: Record<string, unknown> = {}) {
@@ -197,6 +199,36 @@ describe('connectCloud', () => {
   });
 
   it('names the account an admin must grant when every relay lacks the capability', async () => {
+    // Only a node too old to report a role is decided by the grant.
+    const { tee_role: _teeRole, can_execute: _canExecute, ...legacyRelay } = readyRelay;
+    const { fetch } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: {
+        relays: [{ ...legacyRelay, authorship_ready: false }],
+      },
+    });
+
+    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
+    expect((err as Error).message).toContain('CAN_AUTHOR_ON_BEHALF');
+    expect((err as Error).message).toContain(EXECUTOR);
+  });
+
+  it('points at the TEE admission policy, not the grant, when every node is a replica', async () => {
+    const { fetch } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: {
+        // Holding the grant changes nothing: a ReadOnlyTee never relays.
+        relays: [{ ...readyRelay, tee_role: 'ReadOnlyTee', can_execute: false }],
+      },
+    });
+
+    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
+    expect((err as Error).message).toContain('ReadOnlyTee');
+    expect((err as Error).message).toContain("mode: 'relay'");
+    expect((err as Error).message).not.toContain('CAN_AUTHOR_ON_BEHALF');
+  });
+
+  it('connects through a RelayTee that holds no grant', async () => {
     const { fetch } = routedFetch({
       '/api/cloud/me/namespaces': [namespaceRow(NS)],
       [`/api/cloud/me/namespaces/${NS}/relays`]: {
@@ -204,9 +236,8 @@ describe('connectCloud', () => {
       },
     });
 
-    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
-    expect((err as Error).message).toContain('CAN_AUTHOR_ON_BEHALF');
-    expect((err as Error).message).toContain(EXECUTOR);
+    const connection = await connectCloud(options({ fetch }));
+    expect(connection.relayInfo.peerId).toBe(readyRelay.peer_id);
   });
 
   it('passes the discovered executor account into the minted warrant', async () => {

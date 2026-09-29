@@ -35,7 +35,7 @@
  * need a credential nobody holds.
  */
 
-import { CloudClient } from './cloud-client.js';
+import { CloudClient, pickExecutingRelay } from './cloud-client.js';
 import type { CloudClientConfig, CloudNamespace, CloudRelay } from './cloud-client.js';
 import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
@@ -120,7 +120,8 @@ export interface CloudConnection {
  *
  * Throws rather than returning a half-usable connection, and the message says
  * which step is missing — no namespace, several to choose between, HA not
- * enabled, or no relay holding the authorship grant. Every one of those is
+ * enabled, or no relay that relays (only replicas, or relays waiting for a
+ * grant). Every one of those is
  * something the user has to go and do, and a client that reports them alike
  * cannot tell them what.
  */
@@ -149,15 +150,13 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
   // first — reporting "waiting for the grant" about a relay that was already
   // usable a moment ago.
   const relays = await cloud.getNamespaceRelays(namespace.namespaceId);
-  const relayInfo =
-    relays.find((r) => r.authorshipReady && r.relayUrl !== null && r.executorAccount !== null) ??
-    null;
+  const relayInfo = pickExecutingRelay(relays);
   if (!relayInfo) {
     throw new Error(explainNoRelay(namespace, relays));
   }
 
   const relay = new RelayClient({
-    // Checked by `findExecutingRelay`, which is the only thing that returns a
+    // Checked by `pickExecutingRelay`, which is the only thing that returns a
     // relay — narrowed here rather than re-validated, so the invariant lives in
     // one place.
     relayUrl: relayInfo.relayUrl as string,
@@ -218,11 +217,11 @@ function pickNamespace(namespaces: CloudNamespace[], requested?: string): CloudN
 }
 
 /**
- * Why no relay can write here — the three states, kept apart.
+ * Why no relay can write here — the states, kept apart.
  *
- * They are three different asks of the user (turn HA on, wait, or get an admin
- * to grant a capability) and one message for all of them would send them to
- * the wrong one.
+ * They are different asks of the user (turn HA on, wait, have an admin admit
+ * TEEs as relays, or have an admin grant a capability) and one message for all
+ * of them would send them to the wrong one.
  */
 function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string {
   if (relays.length === 0) {
@@ -230,8 +229,21 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
       ? `namespace ${namespace.namespaceId} has HA enabled but no relay has been assigned to it yet — retry shortly`
       : `namespace ${namespace.namespaceId} has no relays: enable HA on it in the cloud to have an attested node assigned`;
   }
-  const waitingOnGrant = relays.filter((r) => !r.authorshipReady);
-  if (waitingOnGrant.length === relays.length) {
+  // A node that reports a role is decided by it alone: a `ReadOnlyTee` is a
+  // replica and never relays, whatever its grant, so asking for the grant would
+  // send the admin to the wrong fix. Only a node too old to report a role is
+  // still waiting on `CAN_AUTHOR_ON_BEHALF`.
+  const replicas = relays.filter((r) => r.teeRole !== null && r.teeRole !== 'RelayTee');
+  if (replicas.length === relays.length) {
+    return (
+      `every node on namespace ${namespace.namespaceId} is a read-only TEE replica (ReadOnlyTee), ` +
+      `which never relays delegated writes: an admin of the namespace must set its TEE admission ` +
+      `policy with mode: 'relay' — AdminClient.setTeeAdmissionPolicy(namespaceId, { ..., mode: 'relay' }) ` +
+      `— so fleet nodes are admitted as RelayTee`
+    );
+  }
+  const waitingOnGrant = relays.filter((r) => r.teeRole === null && !r.authorshipReady);
+  if (waitingOnGrant.length > 0 && waitingOnGrant.length + replicas.length === relays.length) {
     // Name the call, not just the capability. The grant is a governance op only
     // a namespace admin can publish, so this message is read by someone who has
     // to go ask for it — and "grant CAN_AUTHOR_ON_BEHALF" alone leaves them
@@ -246,7 +258,7 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
       `AdminClient.openToDelegatedExecution(namespaceId) so relays assigned later need no further op`
     );
   }
-  return `namespace ${namespace.namespaceId} has ${relays.length} relay(s), but none reported both a URL and an executor account yet — retry shortly`;
+  return `namespace ${namespace.namespaceId} has ${relays.length} relay(s), but none is ready to relay yet (a URL, an executor account and a recent heartbeat) — retry shortly`;
 }
 
 /**
