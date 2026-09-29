@@ -1,3 +1,9 @@
+## [22.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.1.0...mero-js-v22.2.0) (2026-09-29)
+
+### Features
+
+* **cloud:** pick relays on mdma's can_execute, not authorship_ready ([#211](https://github.com/calimero-network/mero-js/issues/211)) ([f4c16f3](https://github.com/calimero-network/mero-js/commit/f4c16f3d9d05a28dfeab1fa800791c144cad9a55))
+
 ## [22.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.0.0...mero-js-v22.1.0) (2026-09-29)
 
 ### Features
