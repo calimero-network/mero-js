@@ -1,3 +1,9 @@
+## [22.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.2.0...mero-js-v22.3.0) (2026-09-29)
+
+### Features
+
+* **sealed:** name the release for nodes that refuse /tee/info unsealed ([#212](https://github.com/calimero-network/mero-js/issues/212)) ([361ad19](https://github.com/calimero-network/mero-js/commit/361ad1972a2c2c4b418c781a9b6490b08a1dc603))
+
 ## [22.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.1.0...mero-js-v22.2.0) (2026-09-29)
 
 ### Features
