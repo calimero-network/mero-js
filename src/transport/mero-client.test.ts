@@ -298,7 +298,7 @@ describe('a relay client with no node key', () => {
   // was given a session. Without one it still throws, but for a different and
   // now-fixable reason, so it is asserted on its own terms below.
   it('throws from `admin` for want of a session, not for want of a node', () => {
-    expect(() => client().admin).toThrow(/was given no session/);
+    expect(() => client().admin).toThrow(/was given neither a `proof` nor a `session`/);
   });
 
   /**
