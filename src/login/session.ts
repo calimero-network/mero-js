@@ -96,9 +96,14 @@ export interface LoginConfig {
   /** The client surface this session is bound to. */
   audience: Audience;
   /**
-   * How this client names itself to the node. Defaults to the audience's own
-   * spelling, which is the honest answer: a session bound to an origin should
-   * say that origin.
+   * The token request's `client_name`. Defaults to {@link LoginConfig.nodeUrl}.
+   *
+   * mero-auth records this value as the session's `node_url` and, on every
+   * later request, refuses one whose Host is not that URL's host ("Token is not
+   * valid for this host"). So it must name the node being logged in to — which
+   * is what core's own clients send. The audience is not a substitute: a browser
+   * page's origin is a different host from the relay it talks to, and a token
+   * bound to the page's host is refused on the first call.
    */
   clientName?: string;
   /** Seconds the statement stays valid. Defaults to {@link DEFAULT_TTL_SECONDS}. */
@@ -119,18 +124,6 @@ export interface DelegatedSession {
   sessionKey: string;
   /** The session's private half. The caller keeps this; it was never sent. */
   sessionSecret: string;
-}
-
-/** The audience's own spelling, used as the default client name. */
-function audienceLabel(audience: Audience): string {
-  switch (audience.kind) {
-    case 'webOrigin':
-      return audience.origin;
-    case 'codeSigningId':
-      return audience.id;
-    case 'cli':
-      return 'cli';
-  }
 }
 
 /**
@@ -217,7 +210,7 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     body: JSON.stringify({
       auth_method: 'account_proof',
       public_key: session.publicKey,
-      client_name: config.clientName ?? audienceLabel(config.audience),
+      client_name: config.clientName ?? baseUrl,
       timestamp: issuedAt,
       provider_data: {
         challenge,
