@@ -1,3 +1,9 @@
+## [22.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.0.0...mero-js-v22.1.0) (2026-09-29)
+
+### Features
+
+* **admin:** add the RelayTee role and the TEE admission policy mode ([#210](https://github.com/calimero-network/mero-js/issues/210)) ([592a7e0](https://github.com/calimero-network/mero-js/commit/592a7e0f962b21203e3e7c0b85407881c3538d39))
+
 ## [22.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.4.1...mero-js-v22.0.0) (2026-09-28)
 
 ### ⚠ BREAKING CHANGES
