@@ -155,6 +155,18 @@ const relay = new RelayClient({
 `releaseSource` is a mirror's base URL, or a function
 `({ baseUrl, version, fetch }) => Promise<SignedNodeRelease>`, for example
 returning a file bundled with the app, called each time the node is attested.
+
+**Nodes that require sealing.** `/tee/info` is read in the clear, since it comes
+before the session. A node with `[server.sealed] required = true` still serves
+it unsealed, beside `/tee/attest`
+([core#4196](https://github.com/calimero-network/core/pull/4196)): it answers
+anyone without a credential, sealed or not, and the quote `/tee/attest` returns
+in the clear already carries the measurements of the image it names, so the hop
+learns nothing new. A node that requires sealing and predates that refuses it
+with `403 sealed_required`, and the fetch fails saying so. For such a node, name
+the release yourself with `releaseVersion: '2.3.87'`: it is used only when the
+node will not name one, and it is no more trusted than the node's word. The
+quote must still match that signed release.
 The pieces are there to use on their own: `fetchNodeReleaseVersion(baseUrl)`
 reads the release a node names, `fetchNodeRelease(url)` fetches a release,
 `verifySignedNodeRelease(file, bundle)`
