@@ -27,11 +27,15 @@ import {
 /**
  * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
  *
- * 12: core gained the `RelayTee` role and the TEE admission policy's
- * replica/relay mode. No layout this module signs changed; the version moves
- * with core's so a v11 node and a v12 node never share a namespace.
+ * 15: core went to 13 (TEE rows locked to the TEE roles, a TEE's relay role
+ * read at its namespace root row, inherited read-only roles read-only in Open
+ * subgroups), then 14 (`GroupOp::ContextRegisteredOnBehalf`) and 15
+ * (`GroupOp::OnBehalf` / `RootOp::OnBehalf`) for delegated context creation and
+ * governance through a relay. None of these changes a layout this module
+ * signs; the version moves with core's so nodes on different versions never
+ * share a namespace.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 12;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 15;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
