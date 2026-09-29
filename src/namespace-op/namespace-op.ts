@@ -27,11 +27,13 @@ import {
 /**
  * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
  *
- * 12: core gained the `RelayTee` role and the TEE admission policy's
- * replica/relay mode. No layout this module signs changed; the version moves
- * with core's so a v11 node and a v12 node never share a namespace.
+ * 13: core locks attested TEE rows to the TEE roles, reads a TEE's relay
+ * role at its namespace root row, and treats a read-only role inherited into
+ * an Open subgroup as read-only there. No layout this module signs changed;
+ * the version moves with core's so a v12 node and a v13 node never share a
+ * namespace.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 12;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 13;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
