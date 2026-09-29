@@ -67,6 +67,16 @@ export {
   signCreationWarrant,
   parseCreationWarrant,
   creationInitHash,
+  signGovernanceWarrant,
+  parseGovernanceWarrant,
+  governanceOpHash,
+  memberAddedOp,
+  memberRemovedOp,
+  memberLeftOp,
+  memberRoleSetOp,
+  groupCreatedOp,
+  groupReparentedOp,
+  groupDeletedOp,
 } from "./warrant/index.js";
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {
@@ -100,6 +110,12 @@ export type {
   CreationWarrantInput,
   CreationWarrantFields,
   SignedCreationWarrant,
+  GovernanceWarrantInput,
+  GovernanceWarrantFields,
+  GovernanceOp,
+  GovernanceOpKind,
+  GovernanceMemberRole,
+  GroupCreatedInput,
 } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session

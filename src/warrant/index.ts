@@ -11,3 +11,27 @@ export type {
   CreationWarrantFields,
   SignedCreationWarrant,
 } from './creation-warrant.js';
+export {
+  signGovernanceWarrant,
+  parseGovernanceWarrant,
+  governanceOpHash,
+} from './governance-warrant.js';
+export type {
+  GovernanceWarrantInput,
+  GovernanceWarrantFields,
+} from './governance-warrant.js';
+export {
+  memberAddedOp,
+  memberRemovedOp,
+  memberLeftOp,
+  memberRoleSetOp,
+  groupCreatedOp,
+  groupReparentedOp,
+  groupDeletedOp,
+} from './governance-op.js';
+export type {
+  GovernanceOp,
+  GovernanceOpKind,
+  GovernanceMemberRole,
+  GroupCreatedInput,
+} from './governance-op.js';

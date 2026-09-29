@@ -150,6 +150,56 @@ serves the route without a credential.
 `signCreationWarrant`, `parseCreationWarrant` and `creationInitHash` are
 exported for callers that mint the warrant themselves.
 
+## `describeGovernance(groupId): Promise<GovernanceDescription>`
+
+Whether the relay may publish **governance** ops for members of a group:
+`GET /admin-api/groups/{groupId}/governance-intents`.
+
+```typescript
+interface GovernanceDescription {
+  executorAccount: string;  // what the governance warrant's `executor` must name
+  groupId: string;
+  canActOnBehalf: boolean;  // relay standing: RelayTee role or CAN_AUTHOR_ON_BEHALF
+}
+```
+
+## `govern(input): Promise<GovernResult>`
+
+Publish one governance op without a node: add someone to a group, change a
+role, create a subgroup. You sign a **governance warrant** over the op's exact
+borsh bytes; the relay wraps it and publishes it, and every peer applies the op
+**as you**, so your rights decide (`MANAGE_MEMBERS` to add a member, admin to
+add an admin, `CAN_CREATE_SUBGROUP` to create a subgroup). The relay needs only
+standing to act for members.
+
+```typescript
+import { memberAddedOp, groupCreatedOp } from '@calimero-network/mero-js';
+
+// A group op, published on the group itself.
+await relay.govern({ groupId, op: memberAddedOp(otherAccount, 'Member') });
+
+// A root op, published on the NAMESPACE: the new subgroup's id comes back.
+const { groupId: channel } = await relay.govern({
+  groupId: namespaceId,
+  op: groupCreatedOp({ groupId: freshId, parentId: namespaceId, restricted: true, admin: myAccount }),
+});
+```
+
+The op encoders produce each op in its **delegable form**: `memberRemovedOp`,
+`memberLeftOp` and `groupDeletedOp` leave the post-state hashes and the cascade
+lists empty, for the relay to fill in from its own view. The others are
+`memberAddedOp`, `memberRoleSetOp`, `groupCreatedOp` and `groupReparentedOp`.
+The warrant's `scope` is `groupId`, so it cannot be spent in another group, and
+the op's plane (`group` or `root`) is signed over with it.
+
+Like `createContext`, it calls `describeGovernance` first and throws
+`IntentRefusedError` *before* taking a nonce when the relay has no standing.
+An op your rights do not cover comes back from the relay as an
+`IntentRefusedError` with status `403`.
+
+`signGovernanceWarrant`, `parseGovernanceWarrant` and `governanceOpHash` are
+exported for callers that mint the warrant themselves.
+
 ## `IntentRefusedError`
 
 A refusal (`400` or `403`) surfaces as `IntentRefusedError` rather than a bare

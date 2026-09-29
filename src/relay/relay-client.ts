@@ -30,7 +30,10 @@
 
 import { signWarrant } from '../warrant/warrant.js';
 import { signCreationWarrant } from '../warrant/creation-warrant.js';
+import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
+import type { GovernanceOp } from '../warrant/governance-op.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { hex } from '../crypto/internal.js';
 import type { NonceSource } from './nonce-source.js';
 
 /** How long a freshly minted warrant stays presentable, in seconds. */
@@ -140,6 +143,37 @@ export interface CreatedContext {
   groupId: string;
   /** The relay's identity in the new context, hex. */
   memberPublicKey: string;
+}
+
+/** What a relay says about publishing governance ops for members of one group. */
+export interface GovernanceDescription {
+  /** The account a governance warrant must name as `executor`, hex. */
+  executorAccount: string;
+  /** The group asked about, hex. */
+  groupId: string;
+  /**
+   * Whether the relay may act for members here (a `RelayTee` role or
+   * `CAN_AUTHOR_ON_BEHALF`). It needs no right to the op itself: that is
+   * checked on the author, as the op is applied as the author.
+   */
+  canActOnBehalf: boolean;
+}
+
+/** What {@link RelayClient.govern} publishes. */
+export interface GovernInput {
+  /**
+   * Where the op is published, hex: the group itself for a group op, the
+   * **namespace** for a root op (creating, moving or deleting a subgroup).
+   */
+  groupId: string;
+  /** The op, from one of the encoders (`memberAddedOp`, `groupCreatedOp`, ...). */
+  op: GovernanceOp;
+}
+
+/** Where a delegated governance op landed. */
+export interface GovernResult {
+  /** The group the op acted on, hex: the new subgroup, for a creation. */
+  groupId: string;
 }
 
 /** Where an accepted intent landed. */
@@ -308,15 +342,7 @@ export class RelayClient {
         403,
       );
     }
-    const configured = this.config.executorAccount;
-    if (configured && configured.toLowerCase() !== described.executorAccount.toLowerCase()) {
-      throw new Error(
-        `configured executorAccount ${configured} is not the relay's account ` +
-          `${described.executorAccount}; a warrant naming it would be unspendable`,
-      );
-    }
-    const executor = described.executorAccount;
-    this.executorAccount = executor;
+    const executor = this.checkedExecutor(described.executorAccount);
 
     const initArgs = input.initArgs ?? {};
     const nonce = await this.config.nonces.next();
@@ -345,6 +371,83 @@ export class RelayClient {
       groupId: body.data.groupId,
       memberPublicKey: body.data.memberPublicKey,
     };
+  }
+
+  /**
+   * Ask the relay whether it may publish governance ops for members of
+   * `groupId`, and which account a warrant must name.
+   */
+  async describeGovernance(groupId: string): Promise<GovernanceDescription> {
+    const body = await this.json<{ data: GovernanceDescription }>(
+      'GET',
+      `/admin-api/groups/${encodeURIComponent(groupId)}/governance-intents`,
+    );
+    return body.data;
+  }
+
+  /**
+   * Publish one governance op through the relay, as the author.
+   *
+   * The warrant commits to the op's exact bytes and is scoped to `groupId`, so
+   * the relay can neither change what the op does nor spend it elsewhere. Every
+   * peer applies the op as the author, so the author's own rights decide
+   * (`MANAGE_MEMBERS` to add a member, `CAN_CREATE_SUBGROUP` to create a
+   * subgroup, and so on); a lack of them comes back as an
+   * {@link IntentRefusedError} from the relay.
+   *
+   * Always asks {@link describeGovernance} first and refuses *before* taking a
+   * nonce when the relay has no standing, for the reason `createContext` does.
+   * The nonce comes from the configured {@link NonceSource}; it is spent in a
+   * per-group ledger, and a monotonic source is correct for it as for every
+   * other warrant.
+   */
+  async govern(input: GovernInput): Promise<GovernResult> {
+    const described = await this.describeGovernance(input.groupId);
+    if (!described.canActOnBehalf) {
+      throw new IntentRefusedError(
+        `the relay (${described.executorAccount}) has no standing to act for members of group ` +
+          `${described.groupId}; an admin must admit it as a relay or grant it CAN_AUTHOR_ON_BEHALF ` +
+          '(checked before signing, no nonce was spent)',
+        false,
+        403,
+      );
+    }
+    const executor = this.checkedExecutor(described.executorAccount);
+
+    const nonce = await this.config.nonces.next();
+    const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const warrant = await signGovernanceWarrant({
+      scope: input.groupId,
+      op: input.op,
+      authorAccount: this.config.authorAccount,
+      executor,
+      nonce,
+      notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
+      deviceSecret: this.config.deviceSecret,
+    });
+
+    const body = await this.json<{ data: GovernResult }>(
+      'POST',
+      `/admin-api/groups/${encodeURIComponent(input.groupId)}/governance-intents`,
+      { warrant, authorProof: this.config.authorProof, op: hex(input.op.bytes) },
+    );
+    return { groupId: body.data.groupId };
+  }
+
+  /**
+   * The executor a warrant must name: the one the relay answered with, which a
+   * configured account must agree with. Remembered for later calls.
+   */
+  private checkedExecutor(answered: string): string {
+    const configured = this.config.executorAccount;
+    if (configured && configured.toLowerCase() !== answered.toLowerCase()) {
+      throw new Error(
+        `configured executorAccount ${configured} is not the relay's account ` +
+          `${answered}; a warrant naming it would be unspendable`,
+      );
+    }
+    this.executorAccount = answered;
+    return answered;
   }
 
   private async json<T>(method: string, path: string, body?: unknown): Promise<T> {
