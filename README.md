@@ -138,6 +138,11 @@ membership, not from admin). Until then `connectCloud` throws naming the account
 that needs the grant, and `relay.describe(contextId)` reports
 `canAuthorOnBehalf: false` so a UI can say so rather than failing a write.
 
+A keyholder can also **create** a context through a relay:
+`relay.createContext({ groupId, applicationId, initArgs })` signs a creation
+warrant (checked against *your* `CAN_CREATE_CONTEXT`, not the relay's) and
+returns the new `contextId`.
+
 See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
 [relay client](https://calimero-network.github.io/mero-js/reference/relay/) and
 [connectCloud](https://calimero-network.github.io/mero-js/reference/connect-cloud/)

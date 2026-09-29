@@ -29,6 +29,7 @@
  */
 
 import { signWarrant } from '../warrant/warrant.js';
+import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { HTTPError } from '../http-client/web-client.js';
 import type { NonceSource } from './nonce-source.js';
 
@@ -91,6 +92,54 @@ export interface RelayDescription {
   canAuthorOnBehalf: boolean;
   /** The group whose admin grants that capability, hex. */
   groupId: string;
+}
+
+/** What a relay says about its ability to create contexts in one group. */
+export interface CreationDescription {
+  /** The account a creation warrant must name as `executor`, hex. */
+  executorAccount: string;
+  /** The group, hex. */
+  groupId: string;
+  /**
+   * Whether the relay has standing to act for members of this group (a
+   * `RelayTee` role or `CAN_AUTHOR_ON_BEHALF`). It needs no create rights of
+   * its own — those are checked on the author.
+   */
+  canCreateOnBehalf: boolean;
+  /**
+   * Whether the author holds `CAN_CREATE_CONTEXT` (or admin) here. Present only
+   * when `describeCreation` was given an `author`.
+   */
+  authorMayCreate?: boolean;
+}
+
+/** What {@link RelayClient.createContext} creates. */
+export interface CreateContextInput {
+  /** The group to create the context in, hex. */
+  groupId: string;
+  /** The application to create it with, hex (32 bytes). */
+  applicationId: string;
+  /** The JSON the app's `init()` receives — run as the author's account. */
+  initArgs?: unknown;
+  /** Which service of a multi-service bundle; absent for the default. */
+  serviceName?: string;
+  /** A display name for the context. */
+  name?: string;
+  /**
+   * The seed the context id is derived from, hex (32 bytes). Random when
+   * absent, which is what almost every caller wants.
+   */
+  seed?: string;
+}
+
+/** Where a delegated creation landed. */
+export interface CreatedContext {
+  /** The new context's id, hex. */
+  contextId: string;
+  /** The group it was created in, hex. */
+  groupId: string;
+  /** The relay's identity in the new context, hex. */
+  memberPublicKey: string;
 }
 
 /** Where an accepted intent landed. */
@@ -196,6 +245,106 @@ export class RelayClient {
       { method, argsJson, warrant, authorProof: this.config.authorProof },
     );
     return { rootHash: body.data.rootHash, returns: body.data.returns ?? null };
+  }
+
+  /**
+   * Ask the relay what it can do about creating contexts in `groupId`.
+   *
+   * Pass `author` (an account, hex) to also learn whether that account may
+   * create here — `authorMayCreate` is present only then.
+   */
+  async describeCreation(
+    groupId: string,
+    opts: { author?: string } = {},
+  ): Promise<CreationDescription> {
+    const query = opts.author ? `?author=${encodeURIComponent(opts.author)}` : '';
+    const body = await this.json<{ data: CreationDescription }>(
+      'GET',
+      `/admin-api/groups/${encodeURIComponent(groupId)}/context-intents${query}`,
+    );
+    return body.data;
+  }
+
+  /**
+   * Create a context in a group through the relay, as the author.
+   *
+   * Always asks {@link describeCreation} first — with the author, so both
+   * standing checks happen before anything is signed. A relay without standing
+   * in the group, or an author without `CAN_CREATE_CONTEXT`, is refused here as
+   * an {@link IntentRefusedError} *before* a nonce is taken: the nonce source
+   * is monotonic, and a warrant nobody will spend burns one for nothing.
+   *
+   * The creation warrant's nonce is spent in the new context's per-device
+   * ledger — the same one later `execute` calls in that context draw from — so
+   * it comes from the configured {@link NonceSource} like any other warrant.
+   *
+   * Sealing: nothing here is plaintext-specific. The request goes through the
+   * injected `fetch`, so a `createAttestedSealedFetch` seals it exactly as it
+   * seals `execute`. Whether the relay *accepts* it sealed is the node's call:
+   * a proxy-auth relay only admits sealed requests for routes `merod` serves
+   * without a credential, so `/admin-api/groups/:id/context-intents` must be on
+   * that list on the core side or the request comes back
+   * `403 sealed_route_unguarded`.
+   */
+  async createContext(input: CreateContextInput): Promise<CreatedContext> {
+    const described = await this.describeCreation(input.groupId, {
+      author: this.config.authorAccount,
+    });
+    if (!described.canCreateOnBehalf) {
+      throw new IntentRefusedError(
+        `the relay (${described.executorAccount}) has no standing to act for members of group ` +
+          `${described.groupId}; an admin must admit it as a relay or grant it CAN_AUTHOR_ON_BEHALF ` +
+          '(checked before signing — no nonce was spent)',
+        false,
+        403,
+      );
+    }
+    if (described.authorMayCreate === false) {
+      throw new IntentRefusedError(
+        `the author (${this.config.authorAccount}) may not create contexts in group ` +
+          `${described.groupId}; it needs CAN_CREATE_CONTEXT or admin ` +
+          '(checked before signing — no nonce was spent)',
+        false,
+        403,
+      );
+    }
+    const configured = this.config.executorAccount;
+    if (configured && configured.toLowerCase() !== described.executorAccount.toLowerCase()) {
+      throw new Error(
+        `configured executorAccount ${configured} is not the relay's account ` +
+          `${described.executorAccount}; a warrant naming it would be unspendable`,
+      );
+    }
+    const executor = described.executorAccount;
+    this.executorAccount = executor;
+
+    const initArgs = input.initArgs ?? {};
+    const nonce = await this.config.nonces.next();
+    const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const { warrant } = await signCreationWarrant({
+      group: input.groupId,
+      seed: input.seed,
+      authorAccount: this.config.authorAccount,
+      executor,
+      applicationId: input.applicationId,
+      serviceName: input.serviceName,
+      name: input.name,
+      initArgs,
+      nonce,
+      notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
+      deviceSecret: this.config.deviceSecret,
+    });
+
+    const body = await this.json<{ data: CreatedContext }>(
+      'POST',
+      `/admin-api/groups/${encodeURIComponent(input.groupId)}/context-intents`,
+      { warrant, authorProof: this.config.authorProof, initArgs },
+    );
+    return {
+      contextId: body.data.contextId,
+      groupId: body.data.groupId,
+      memberPublicKey: body.data.memberPublicKey,
+    };
   }
 
   private async json<T>(method: string, path: string, body?: unknown): Promise<T> {

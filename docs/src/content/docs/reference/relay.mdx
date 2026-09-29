@@ -108,6 +108,48 @@ nothing accumulates and nothing is reusable.
 When `executorAccount` was not configured, the first call runs `describe` and
 remembers the answer; later calls go straight to the write.
 
+## `describeCreation(groupId, { author? }): Promise<CreationDescription>`
+
+What the relay can do about **creating** contexts in a group —
+`GET /admin-api/groups/{groupId}/context-intents[?author=]`.
+
+```typescript
+interface CreationDescription {
+  executorAccount: string;     // what the creation warrant's `executor` must name
+  groupId: string;
+  canCreateOnBehalf: boolean;  // relay standing: RelayTee role or CAN_AUTHOR_ON_BEHALF
+  authorMayCreate?: boolean;   // only with `author`: CAN_CREATE_CONTEXT or admin
+}
+```
+
+## `createContext(input): Promise<CreatedContext>`
+
+Create a context in a group without a node. You sign a **creation warrant**
+locally; the relay publishes it, every peer checks *your* `CAN_CREATE_CONTEXT`
+(the relay needs no create rights of its own), and the app's `init` runs as your
+account.
+
+```typescript
+const { contextId, groupId, memberPublicKey } = await relay.createContext({
+  groupId,
+  applicationId,
+  initArgs: { name: 'general' },  // what init() receives; default {}
+  name: 'general',                // optional display name
+  serviceName: undefined,         // optional, for multi-service bundles
+  seed: undefined,                // optional hex 32; random when omitted
+});
+```
+
+It always calls `describeCreation` (with your account) first and throws
+`IntentRefusedError` *before* taking a nonce when the relay has no standing or
+you may not create. The warrant's nonce comes from the same `NonceSource` —
+it is spent in the new context's per-device ledger. Over a sealed `fetch` the
+request is sealed like `execute`; a proxy-auth relay accepts it only once core
+serves the route without a credential.
+
+`signCreationWarrant`, `parseCreationWarrant` and `creationInitHash` are
+exported for callers that mint the warrant themselves.
+
 ## `IntentRefusedError`
 
 A refusal (`400` or `403`) surfaces as `IntentRefusedError` rather than a bare
