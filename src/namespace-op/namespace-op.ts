@@ -34,8 +34,12 @@ import {
  * governance through a relay. None of these changes a layout this module
  * signs; the version moves with core's so nodes on different versions never
  * share a namespace.
+ *
+ * 16: a namespace can be founded through a relay (a delegated
+ * `NamespaceCreatedV2`), and `GroupOp::FoundingRelayAttested` lets that relay
+ * admit itself as the namespace's first TEE. Again no layout this module signs.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 15;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 16;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
