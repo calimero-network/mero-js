@@ -61,7 +61,13 @@ export * from "./sealed/index.js";
 export * from "./relay/index.js";
 
 // Warrant signing — mint the author's consent for a relay to run one intent
-export { signWarrant, intentHash } from "./warrant/index.js";
+export {
+  signWarrant,
+  intentHash,
+  signCreationWarrant,
+  parseCreationWarrant,
+  creationInitHash,
+} from "./warrant/index.js";
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {
   generateAccountRoot,
@@ -89,7 +95,12 @@ export {
   SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
 } from "./namespace-op/index.js";
 export type { SignMemberJoinInput } from "./namespace-op/index.js";
-export type { WarrantInput } from "./warrant/index.js";
+export type {
+  WarrantInput,
+  CreationWarrantInput,
+  CreationWarrantFields,
+  SignedCreationWarrant,
+} from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
 export {

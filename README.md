@@ -140,6 +140,11 @@ and a node too old to report a role needs an admin of the namespace to grant it
 which folds that rule in, and otherwise throws saying which of those is missing —
 naming the account that needs the grant when that is the fix.
 
+A keyholder can also **create** a context through a relay:
+`relay.createContext({ groupId, applicationId, initArgs })` signs a creation
+warrant (checked against *your* `CAN_CREATE_CONTEXT`, not the relay's) and
+returns the new `contextId`.
+
 See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
 [relay client](https://calimero-network.github.io/mero-js/reference/relay/) and
 [connectCloud](https://calimero-network.github.io/mero-js/reference/connect-cloud/)
