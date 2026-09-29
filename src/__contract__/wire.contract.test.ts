@@ -26,6 +26,9 @@ import type {
   AccountSignWithRootResponseData,
   CreateContextRequest,
   CreateContextResponseData,
+  GetTeeAdmissionPolicyResponseData,
+  GroupMember,
+  GroupMemberRole,
   GroupUpgradeStatus,
   MemberMigrationReport,
   MemberMigrationStatusEntry,
@@ -36,6 +39,8 @@ import type {
   NodeIdentity,
   ReparentGroupRequest,
   ReparentGroupResponseData,
+  SignedReleaseTeeAdmissionPolicyRequest,
+  TeeAdmissionMode,
   UpgradeGroupResponseData,
 } from '../admin-api/admin-types.js';
 import type { ExecuteParams } from '../rpc/index.js';
@@ -82,6 +87,9 @@ const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
 const namespace = key<Namespace>();
 const founding = key<NamespaceFounding>();
+const member = key<GroupMember>();
+const teePolicyReq = key<SignedReleaseTeeAdmissionPolicyRequest>();
+const teePolicyRes = key<GetTeeAdmissionPolicyResponseData>();
 
 const NAMESPACE_REQUIRED = [
   namespace('namespaceId'),
@@ -302,7 +310,57 @@ const SPECS: Spec[] = [
     required: [founding('founderAccountId'), founding('salt')],
     optional: [],
   },
+  {
+    type: 'GroupMember',
+    file: 'groups/members.res.json',
+    path: 'members.2',
+    required: [member('identity'), member('role')],
+    optional: [member('name')],
+  },
+  // The signed-release form, which is the one a hosted relay fleet uses; `mode`
+  // is what decides replica or relay.
+  {
+    type: 'SignedReleaseTeeAdmissionPolicyRequest',
+    file: 'groups/tee_admission_policy.req.json',
+    required: [
+      teePolicyReq('signedRelease'),
+      teePolicyReq('allowedTcbStatuses'),
+      teePolicyReq('acceptMock'),
+    ],
+    optional: [teePolicyReq('mode')],
+    // Core's request carries the measurement lists (empty) beside the
+    // signed-release form; the SDK's form type deliberately omits them.
+    ignoredCoreKeys: [
+      'allowedMrtd',
+      'allowedRtmr0',
+      'allowedRtmr1',
+      'allowedRtmr2',
+      'allowedRtmr3',
+    ],
+  },
+  {
+    type: 'GetTeeAdmissionPolicyResponseData',
+    file: 'groups/tee_admission_policy.res.json',
+    required: [
+      teePolicyRes('allowedMrtd'),
+      teePolicyRes('allowedRtmr0'),
+      teePolicyRes('allowedRtmr1'),
+      teePolicyRes('allowedRtmr2'),
+      teePolicyRes('allowedRtmr3'),
+      teePolicyRes('allowedTcbStatuses'),
+      teePolicyRes('acceptMock'),
+    ],
+    optional: [teePolicyRes('enabled'), teePolicyRes('signedRelease'), teePolicyRes('mode')],
+  },
 ];
+
+/**
+ * Values, not just keys: every role and mode core puts on the wire is one the
+ * SDK's union names. A key check alone would pass a `RelayTee` the SDK cannot
+ * switch on.
+ */
+const ROLES: readonly GroupMemberRole[] = ['Admin', 'Member', 'ReadOnly', 'ReadOnlyTee', 'RelayTee'];
+const MODES: readonly TeeAdmissionMode[] = ['replica', 'relay'];
 
 /** Resolves a Spec's dotted `path` against the parsed fixture. */
 function descend(
@@ -323,6 +381,24 @@ describe('wire contract (core fixtures ↔ SDK types)', () => {
     it.skip('skipped: set CALIMERO_CORE_DIR to a core checkout to run', () => {});
     return;
   }
+
+  it('every member role core emits is a GroupMemberRole', () => {
+    const raw = JSON.parse(
+      readFileSync(join(WIRE_DIR, 'groups/members.res.json'), 'utf8'),
+    ) as { members: { role: string }[] };
+    const emitted = raw.members.map((m) => m.role);
+    for (const role of emitted) {
+      expect(ROLES as readonly string[], `core role '${role}' is not a GroupMemberRole`).toContain(role);
+    }
+    expect(emitted).toContain('RelayTee');
+  });
+
+  it('every TEE admission mode core emits is a TeeAdmissionMode', () => {
+    for (const file of ['groups/tee_admission_policy.req.json', 'groups/tee_admission_policy.res.json']) {
+      const raw = JSON.parse(readFileSync(join(WIRE_DIR, file), 'utf8')) as { mode?: string };
+      expect(MODES as readonly string[], `${file}: mode '${raw.mode}'`).toContain(raw.mode);
+    }
+  });
 
   for (const spec of SPECS) {
     it(`${spec.type} ↔ ${spec.file}`, () => {

@@ -105,10 +105,13 @@ export interface IntentResult<T = unknown> {
  * Thrown when a relay refuses an intent, carrying which precondition failed.
  *
  * The distinction is the whole reason this type exists. A `403` from this
- * endpoint means one of three unrelated things — no grant on the relay, the
- * author is not a member, or the nonce was already spent — and they send a
- * caller somewhere completely different: ask an admin, ask for an invitation,
- * or just retry. Collapsing them into "forbidden" makes a retryable replay look
+ * endpoint means one of several unrelated things — no grant on the relay, the
+ * relay is a TEE replica (`ReadOnlyTee`) or a `ReadOnly` member (neither ever
+ * relays), the author is
+ * not a member or is read-only in the context, or the nonce was already spent
+ * — and they send a caller somewhere completely different: ask an admin, pick
+ * a relay the namespace admits in `relay` mode, ask for an invitation, or just
+ * retry. Collapsing them into "forbidden" makes a retryable replay look
  * like a permissions bug.
  */
 export class IntentRefusedError extends Error {

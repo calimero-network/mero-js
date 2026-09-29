@@ -24,8 +24,14 @@ import {
   u64le,
 } from '../crypto/internal.js';
 
-/** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 11;
+/**
+ * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
+ *
+ * 12: core gained the `RelayTee` role and the TEE admission policy's
+ * replica/relay mode. No layout this module signs changed; the version moves
+ * with core's so a v11 node and a v12 node never share a namespace.
+ */
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 12;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');

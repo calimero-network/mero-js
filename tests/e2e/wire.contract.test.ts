@@ -34,7 +34,9 @@ import type {
   Application,
   ContextWithGroup,
   CreateGroupInvitationResponseData,
+  GetTeeAdmissionPolicyResponseData,
   GroupInvitationFromAdmin,
+  GroupMember,
   MemberDevice,
   MemberDevicesEntry,
   Namespace,
@@ -58,6 +60,8 @@ const inv = key<GroupInvitationFromAdmin>();
 const memberDevices = key<MemberDevicesEntry>();
 const memberDevice = key<MemberDevice>();
 const sealed = key<SealedEnvelope>();
+const member = key<GroupMember>();
+const teePolicy = key<GetTeeAdmissionPolicyResponseData>();
 
 interface Spec {
   /** The declared type under test, for failure messages. */
@@ -86,6 +90,8 @@ let namespaces: Namespace[] = [];
 let invitation: CreateGroupInvitationResponseData;
 let memberDeviceEntries: MemberDevicesEntry[] = [];
 let envelope: SealedEnvelope;
+let members: GroupMember[] = [];
+let teeAdmissionPolicy: GetTeeAdmissionPolicyResponseData;
 
 const SPECS: Spec[] = [
   {
@@ -202,6 +208,32 @@ const SPECS: Spec[] = [
     ],
     optional: [],
   },
+  {
+    type: 'GroupMember',
+    via: 'listGroupMembers',
+    sample: () => members as unknown as Record<string, unknown>[],
+    required: [member('identity'), member('role')],
+    optional: [member('name')],
+  },
+  // No policy is set on the provisioned namespace, so this is the disabled
+  // answer. `mode` is optional in the SDK type because a node before
+  // core#4180 omits it (read as `replica`); a node that has it answers
+  // `replica` here, which the fixture contract test pins.
+  {
+    type: 'GetTeeAdmissionPolicyResponseData',
+    via: 'getTeeAdmissionPolicy',
+    sample: () => [teeAdmissionPolicy as unknown as Record<string, unknown>],
+    required: [
+      teePolicy('allowedMrtd'),
+      teePolicy('allowedRtmr0'),
+      teePolicy('allowedRtmr1'),
+      teePolicy('allowedRtmr2'),
+      teePolicy('allowedRtmr3'),
+      teePolicy('allowedTcbStatuses'),
+      teePolicy('acceptMock'),
+    ],
+    optional: [teePolicy('enabled'), teePolicy('signedRelease'), teePolicy('mode')],
+  },
 ];
 
 describe('live wire contract (merod responses ↔ SDK types)', () => {
@@ -243,6 +275,8 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
     memberDeviceEntries = (await mero.admin.listMemberDevices(namespaceId)).members;
     const { accountId } = await mero.admin.getNodeIdentity();
     envelope = await mero.admin.sealToAccount(namespaceId, accountId, { plaintext: 'deadbeef' });
+    members = (await mero.admin.listGroupMembers(namespaceId)).members;
+    teeAdmissionPolicy = await mero.admin.getTeeAdmissionPolicy(namespaceId);
   }, 120000);
 
   afterAll(() => {

@@ -206,6 +206,28 @@ describe('RelayClient.execute', () => {
     expect((err as IntentRefusedError).status).toBe(403);
   });
 
+  /**
+   * Core refuses a relay intent over a ROLE with a 403 before anything runs:
+   * the relay is a TEE replica or a read-only member, or the author is
+   * read-only. None changes on retry, so none may read as the retryable replay.
+   */
+  it.each([
+    'this node is a TEE replica (ReadOnlyTee) and does not relay writes; the namespace must admit relays with mode=relay',
+    "this node's role in this context is read-only (ReadOnly), so it does not relay writes",
+    "the author's role in this context is read-only",
+  ])('surfaces a role refusal as non-retryable: %s', async (error) => {
+    const { fetch } = scriptedFetch([{ status: 403, text: JSON.stringify({ error }) }]);
+
+    const err = await client(fetch, { executorAccount: EXECUTOR })
+      .execute(CONTEXT, 'set', {})
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).status).toBe(403);
+    expect((err as IntentRefusedError).retryable).toBe(false);
+    expect((err as IntentRefusedError).reason).toBe(error);
+  });
+
   it('surfaces a spent nonce as retryable', async () => {
     const { fetch } = scriptedFetch([
       {
