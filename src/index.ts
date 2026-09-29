@@ -152,3 +152,7 @@ export {
   discoverLocalNodes,
 } from "./nodeDiscovery.js";
 export type { DiscoverLocalNodesOptions } from "./nodeDiscovery.js";
+
+// A relay's node key, learned from its TEE attestation rather than pasted in.
+export { attestRelayNodeKey, attestKeyBinding, reportDataOf } from "./relay-attestation/index.js";
+export type { AttestedNodeKey, AttestRelayNodeKeyOptions } from "./relay-attestation/index.js";
