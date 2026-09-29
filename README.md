@@ -145,6 +145,10 @@ A keyholder can also **create** a context through a relay:
 warrant (checked against *your* `CAN_CREATE_CONTEXT`, not the relay's) and
 returns the new `contextId`.
 
+And it can **govern** through one: `relay.govern({ groupId, op })` signs a
+governance warrant over one op, such as `memberAddedOp(account, 'Member')` or
+`groupCreatedOp({ ... })`, and every peer applies it under *your* rights.
+
 See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
 [relay client](https://calimero-network.github.io/mero-js/reference/relay/) and
 [connectCloud](https://calimero-network.github.io/mero-js/reference/connect-cloud/)

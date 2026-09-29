@@ -6,6 +6,9 @@ export type {
   CreationDescription,
   CreateContextInput,
   CreatedContext,
+  GovernanceDescription,
+  GovernInput,
+  GovernResult,
 } from './relay-client.js';
 export { createMemoryNonceSource, createLocalStorageNonceSource } from './nonce-source.js';
 export type { NonceSource } from './nonce-source.js';
