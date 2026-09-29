@@ -41,6 +41,36 @@ import {
 /** Where the hosted cloud lives when a caller names no other. */
 const DEFAULT_CLOUD_BASE_URL = 'https://cloud.calimero.network';
 
+/**
+ * The cloud's own `can_execute` where it sends one, else `legacy`.
+ *
+ * The cloud decides relaying by role (`RelayTee` relays, `ReadOnlyTee` never
+ * does) and only falls back to the `CAN_AUTHOR_ON_BEHALF` grant for a node
+ * that reports none, so re-deriving it here from `authorship_ready` would call
+ * a grant-holding `ReadOnlyTee` writable. `legacy` is the grant-based answer,
+ * for a cloud older than the field — the only rule such a cloud knew.
+ */
+function canExecuteOf(row: Record<string, unknown>, legacy: boolean): boolean {
+  return typeof row.can_execute === 'boolean' ? row.can_execute : legacy;
+}
+
+/** The reported `tee_role`, or `null` when absent (older cloud or sidecar). */
+function teeRoleOf(row: Record<string, unknown>): string | null {
+  return typeof row.tee_role === 'string' && row.tee_role !== '' ? row.tee_role : null;
+}
+
+/**
+ * The first relay a warrant can be spent at, or `null`.
+ *
+ * Shared by {@link CloudClient.findExecutingRelay} and `connectCloud`, which
+ * already holds the list and must not fetch it twice.
+ */
+export function pickExecutingRelay(relays: readonly CloudRelay[]): CloudRelay | null {
+  return (
+    relays.find((r) => r.canExecute && r.relayUrl !== null && r.executorAccount !== null) ?? null
+  );
+}
+
 export interface CloudClientConfig {
   cloudBaseUrl?: string;
   /**
@@ -102,11 +132,13 @@ export interface CloudNamespace {
  * One attested node the cloud has assigned to a namespace, described as a
  * relay.
  *
- * `authorshipReady` is the field that decides whether a write can happen, and
- * it is reported rather than assumed because it is not the cloud's to grant:
- * `CAN_AUTHOR_ON_BEHALF` is a governance capability, set by an admin of the
- * namespace, and the cloud only relays what the node observed. A relay that is
- * `active` with `authorshipReady: false` is a healthy node waiting for a grant.
+ * `canExecute` is the field that decides whether a write can happen, and it is
+ * the cloud's own verdict rather than something to re-derive: a node that
+ * reports a role relays only as a `RelayTee` (the namespace's TEE admission
+ * policy set with `mode: 'relay'`), whatever its grant; a `ReadOnlyTee` is a
+ * replica and never relays. Only a node too old to report a role is decided by
+ * `authorshipReady` — the `CAN_AUTHOR_ON_BEHALF` grant, which is reported
+ * rather than assumed because it is not the cloud's to give.
  */
 export interface CloudRelay {
   peerId: string;
@@ -118,6 +150,20 @@ export interface CloudRelay {
   status: string;
   /** Whether this relay holds `CAN_AUTHOR_ON_BEHALF` on the namespace. */
   authorshipReady: boolean;
+  /**
+   * The core role the node reported for itself here — `'RelayTee'` or
+   * `'ReadOnlyTee'` — or `null` for a sidecar too old to report one.
+   */
+  teeRole: string | null;
+  /**
+   * Whether an intent can be presented here now: a URL, an executor account, a
+   * fresh heartbeat, and a node that relays by role (or, for one reporting no
+   * role, holds the grant).
+   *
+   * The cloud's `can_execute`. Against an older cloud that does not send it,
+   * derived from `authorshipReady` plus the URL and account, as before.
+   */
+  canExecute: boolean;
   lastSeenAt?: string | null;
   confirmedAt?: string | null;
 }
@@ -173,9 +219,12 @@ export interface CloudNamespaceNode {
   canAdmit: boolean;
   /** Whether the node holds `CAN_AUTHOR_ON_BEHALF` on the namespace root group. */
   authorshipReady: boolean;
+  /** `'RelayTee'`, `'ReadOnlyTee'`, or `null` for a node too old to report one. */
+  teeRole: string | null;
   /**
    * Whether a delegated write can be posted here now — a URL, an account, a
-   * fresh heartbeat and the grant.
+   * fresh heartbeat, and a `RelayTee` (or, for a node reporting no role, the
+   * grant). A `ReadOnlyTee` is a replica and never relays.
    *
    * Namespace-level. A context in a RESTRICTED SUBGROUP is governed by that
    * subgroup, so per-context routing remains the exact answer if a write is
@@ -202,6 +251,8 @@ export interface CloudMachineNamespace {
   status: string;
   /** Whether the machine holds `CAN_AUTHOR_ON_BEHALF` on this namespace. */
   authorshipReady: boolean;
+  /** `'RelayTee'`, `'ReadOnlyTee'`, or `null` for a machine too old to report one. */
+  teeRole: string | null;
   /**
    * Whether the machine's heartbeat for this namespace is recent.
    *
@@ -227,7 +278,8 @@ export interface CloudMachine {
   executorAccount: string | null;
   /**
    * Whether this machine can write for the caller *somewhere* — a URL, an
-   * executor account, and the grant on at least one namespace.
+   * executor account, and at least one namespace it relays in: as a
+   * `RelayTee`, or, reporting no role, holding the grant.
    *
    * Folded here so a client does not re-derive the three-way precondition and
    * get a refusal it cannot explain.
@@ -529,41 +581,49 @@ export class CloudClient {
    * The relays serving one namespace: where to present an intent, and as whom.
    *
    * Everything a client needs in order to mint a warrant it can actually
-   * spend. Filter on `authorshipReady` before signing — a warrant presented to
-   * a relay with no grant is refused *after* the author has burned a nonce from
-   * its monotonic sequence on it.
+   * spend. Filter on `canExecute` before signing — a warrant presented to a
+   * relay that does not relay (a `ReadOnlyTee` replica, or a node with no role
+   * and no grant) is refused *after* the author has burned a nonce from its
+   * monotonic sequence on it.
    */
   async getNamespaceRelays(namespaceId: string): Promise<CloudRelay[]> {
     const body = await this.request<{ relays?: Array<Record<string, unknown>> }>(
       'GET',
       `/api/cloud/me/namespaces/${encodeURIComponent(namespaceId)}/relays`,
     );
-    return (body.relays ?? []).map((row) => ({
-      peerId: String(row.peer_id ?? ''),
-      relayUrl: (row.relay_url as string | null | undefined) ?? null,
-      executorAccount: (row.executor_account as string | null | undefined) ?? null,
-      status: String(row.status ?? ''),
-      authorshipReady: row.authorship_ready === true,
-      lastSeenAt: (row.last_seen_at as string | null | undefined) ?? null,
-      confirmedAt: (row.confirmed_at as string | null | undefined) ?? null,
-    }));
+    return (body.relays ?? []).map((row) => {
+      const relayUrl = (row.relay_url as string | null | undefined) ?? null;
+      const executorAccount = (row.executor_account as string | null | undefined) ?? null;
+      const authorshipReady = row.authorship_ready === true;
+      return {
+        peerId: String(row.peer_id ?? ''),
+        relayUrl,
+        executorAccount,
+        status: String(row.status ?? ''),
+        authorshipReady,
+        teeRole: teeRoleOf(row),
+        canExecute: canExecuteOf(
+          row,
+          authorshipReady && relayUrl !== null && executorAccount !== null,
+        ),
+        lastSeenAt: (row.last_seen_at as string | null | undefined) ?? null,
+        confirmedAt: (row.confirmed_at as string | null | undefined) ?? null,
+      };
+    });
   }
 
   /**
    * The first relay for `namespaceId` that can actually run an intent, or
    * `null`.
    *
-   * "Can actually run one" is three conditions, and a client that checks fewer
-   * gets a refusal it cannot explain: the cloud must know a URL, the relay must
-   * have reported the executor account a warrant has to name, and the grant
-   * must be in place.
+   * "Can actually run one" is several conditions, and a client that checks
+   * fewer gets a refusal it cannot explain: the cloud must know a URL, the
+   * relay must have reported the executor account a warrant has to name, and
+   * the node must relay — which the cloud folds into `canExecute`.
    */
   async findExecutingRelay(namespaceId: string): Promise<CloudRelay | null> {
     const relays = await this.getNamespaceRelays(namespaceId);
-    return (
-      relays.find((r) => r.authorshipReady && r.relayUrl !== null && r.executorAccount !== null) ??
-      null
-    );
+    return pickExecutingRelay(relays);
   }
 
   /**
@@ -597,17 +657,27 @@ export class CloudClient {
     });
     return {
       namespaceId: String(body.namespace_id ?? namespaceId),
-      nodes: (body.admitters ?? []).map((row) => ({
-        peerId: String(row.peer_id ?? ''),
-        account: (row.account as string | null | undefined) ?? null,
-        relayUrl: (row.relay_url as string | null | undefined) ?? null,
-        admitUrl: (row.admit_url as string | null | undefined) ?? null,
-        status: String(row.status ?? ''),
-        fresh: row.fresh === true,
-        canAdmit: row.can_admit === true,
-        authorshipReady: row.authorship_ready === true,
-        canExecute: row.can_execute === true,
-      })),
+      nodes: (body.admitters ?? []).map((row) => {
+        const account = (row.account as string | null | undefined) ?? null;
+        const relayUrl = (row.relay_url as string | null | undefined) ?? null;
+        const fresh = row.fresh === true;
+        const authorshipReady = row.authorship_ready === true;
+        return {
+          peerId: String(row.peer_id ?? ''),
+          account,
+          relayUrl,
+          admitUrl: (row.admit_url as string | null | undefined) ?? null,
+          status: String(row.status ?? ''),
+          fresh,
+          canAdmit: row.can_admit === true,
+          authorshipReady,
+          teeRole: teeRoleOf(row),
+          canExecute: canExecuteOf(
+            row,
+            authorshipReady && relayUrl !== null && account !== null && fresh,
+          ),
+        };
+      }),
       servable: body.servable === true,
       writable: body.writable === true,
     };
@@ -766,23 +836,32 @@ export class CloudClient {
       'GET',
       '/api/cloud/me/machines',
     );
-    return (body.machines ?? []).map((row) => ({
-      peerId: String(row.peer_id ?? ''),
-      relayUrl: (row.relay_url as string | null | undefined) ?? null,
-      executorAccount: (row.executor_account as string | null | undefined) ?? null,
-      canExecute: row.can_execute === true,
-      namespaces: (Array.isArray(row.namespaces) ? row.namespaces : []).map((n) => {
+    return (body.machines ?? []).map((row) => {
+      const relayUrl = (row.relay_url as string | null | undefined) ?? null;
+      const executorAccount = (row.executor_account as string | null | undefined) ?? null;
+      const namespaces = (Array.isArray(row.namespaces) ? row.namespaces : []).map((n) => {
         const ns = n as Record<string, unknown>;
         return {
           namespaceId: String(ns.namespace_id ?? ''),
           status: String(ns.status ?? ''),
           authorshipReady: ns.authorship_ready === true,
+          teeRole: teeRoleOf(ns),
           fresh: ns.fresh === true,
           confirmedAt: (ns.confirmed_at as string | null | undefined) ?? null,
           lastSeenAt: (ns.last_seen_at as string | null | undefined) ?? null,
         };
-      }),
-    }));
+      });
+      return {
+        peerId: String(row.peer_id ?? ''),
+        relayUrl,
+        executorAccount,
+        canExecute: canExecuteOf(
+          row,
+          relayUrl !== null && executorAccount !== null && namespaces.some((n) => n.authorshipReady),
+        ),
+        namespaces,
+      };
+    });
   }
 
   /**
