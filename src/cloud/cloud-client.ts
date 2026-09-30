@@ -25,6 +25,7 @@
  * to involve it.
  */
 
+import type { AccountOwnershipProof } from './account-ownership.js';
 import {
   resolveRoot,
   resolveRootPair,
@@ -958,6 +959,20 @@ export class CloudClient {
       'POST',
       `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
       { body },
+    );
+  }
+
+  /**
+   * Enable HA for a namespace this ACCOUNT founded through a relay, with the
+   * founder's claim (`signAccountOwnershipClaim`) instead of a node's
+   * ownership proof: a nodeless account holds no node that could issue one.
+   * The login must be linked to that account.
+   */
+  async enableFoundedNamespaceHa(namespaceId: string, ownershipProof: AccountOwnershipProof): Promise<unknown> {
+    return this.request<unknown>(
+      'POST',
+      `/api/cloud/me/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
+      { body: { groups: [], ownership_proof: ownershipProof } },
     );
   }
 
