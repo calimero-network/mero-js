@@ -77,6 +77,8 @@ export {
   groupCreatedOp,
   groupReparentedOp,
   groupDeletedOp,
+  namespaceCreatedOp,
+  foundedNamespaceId,
 } from "./warrant/index.js";
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {
@@ -116,6 +118,7 @@ export type {
   GovernanceOpKind,
   GovernanceMemberRole,
   GroupCreatedInput,
+  NamespaceCreatedInput,
 } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session

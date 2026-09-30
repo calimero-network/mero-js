@@ -200,6 +200,45 @@ An op your rights do not cover comes back from the relay as an
 `signGovernanceWarrant`, `parseGovernanceWarrant` and `governanceOpHash` are
 exported for callers that mint the warrant themselves.
 
+## `foundNamespace(input?): Promise<FoundedNamespace>`
+
+Found a namespace without a node, with you as its founder, owner and admin.
+You sign a governance warrant (kind `root`) over the exact genesis,
+`namespaceCreatedOp({ founder, credential, salt })`, scoped to the namespace id
+`foundedNamespaceId(founder, salt)`. The id is derived from your account and the
+salt, so the relay can neither pick another id nor found it for anyone else. It
+posts to `POST /admin-api/groups/{namespaceId}/governance-intents`.
+
+```typescript
+const { namespaceId, salt, teeEnabled, teeError } = await relay.foundNamespace({
+  executorAccount: relayAccount, // the namespace does not exist yet, so nothing to describe
+});
+```
+
+```typescript
+interface FoundNamespaceInput {
+  salt?: string;            // 32 bytes hex; random when absent
+  executorAccount?: string; // falls back to the configured or learned account
+}
+interface FoundedNamespace {
+  namespaceId: string;
+  salt: string;             // keep it: (founder, salt) proves who founded the namespace
+  teeEnabled: boolean;      // the relay admitted itself as the namespace's first TEE
+  teeError?: string;        // why not, when it tried and failed
+}
+```
+
+The relay is seated in the new namespace as its **founding relay** (a `Member`
+holding `CAN_AUTHOR_ON_BEHALF`), so `govern`, `createContext` and `execute`
+work through it straight away. A TEE relay then admits itself as the
+namespace's first TEE (`GroupOp::FoundingRelayAttested`), which also sets a
+default relay-mode admission policy; `teeEnabled` says whether it did. The
+namespace is founded either way.
+
+There is no `describe` step: without an executor account from the input or the
+config, it throws before taking a nonce. A salt that names an existing
+namespace comes back as an `HTTPError` with status `409`.
+
 ## `IntentRefusedError`
 
 A refusal (`400` or `403`) surfaces as `IntentRefusedError` rather than a bare

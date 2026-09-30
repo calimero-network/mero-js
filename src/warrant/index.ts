@@ -28,10 +28,13 @@ export {
   groupCreatedOp,
   groupReparentedOp,
   groupDeletedOp,
+  namespaceCreatedOp,
+  foundedNamespaceId,
 } from './governance-op.js';
 export type {
   GovernanceOp,
   GovernanceOpKind,
   GovernanceMemberRole,
   GroupCreatedInput,
+  NamespaceCreatedInput,
 } from './governance-op.js';
