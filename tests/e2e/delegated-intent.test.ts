@@ -28,83 +28,33 @@
  * Requires MEROD_BINARY. Skipped without it, so a local run against an
  * already-booted node does not fail on a missing binary.
  */
-import { execFileSync } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { login } from '../../src/login/index.js';
+import { MemoryTokenStore } from '../../src/token-store/index.js';
 import { signWarrant } from '../../src/warrant/index.js';
-import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
+import {
+  MEROD_BINARY,
+  ensureApplication,
+  mintDevice,
+  offlineMerod,
+  resolveBaseUrl,
+  resolveCreds,
+  runId,
+  type MintedDevice,
+} from './harness.js';
 
 const NODE_URL = resolveBaseUrl();
 const { username: USERNAME, password: PASSWORD } = resolveCreds();
 const RUN = runId();
-const MEROD = process.env.MEROD_BINARY;
 
 /** The intent every warrant below authorises, shared so they commit alike. */
 const ARGS = { key: 'delegated', value: `from-sdk-${RUN}` };
 
-/**
- * A fixed BIP-39 phrase, so the author's ACCOUNT is deterministic.
- *
- * It owns nothing. It is here because this scenario needs an author whose
- * account holds **no node at all** — the case delegated authorship exists for —
- * and an account only exists where some root does. A node's own root would work
- * and would need no phrase, but `sign-cert` reads it from the datastore and
- * RocksDB's lock is exclusive, so it cannot be read while the node under test is
- * serving this suite. `--from` opens no store, which is what makes it usable
- * here.
- */
-const AUTHOR_PHRASE =
-  'legal winner thank year wave sausage worth useful legal winner thank year ' +
-  'wave sausage worth useful legal winner thank year wave sausage worth title';
-
-interface MintedDevice {
-  credential: string;
-  account: string;
-  secret: string;
-}
-
-/** Run an offline `merod account` subcommand and return its stdout. */
-function merod(args: string[]): string {
-  return execFileSync(MEROD as string, ['--node', 'sdk-e2e-offline', ...args], {
-    encoding: 'utf8',
-    timeout: 60_000,
-  });
-}
-
-/**
- * Mint a device for the phrase's account and certify it, offline.
- *
- * `--generate` mints the keypair and certifies it in one step, so the secret
- * exists only in this output and never reaches the node — which is the whole
- * point: a node holding it could forge writes in the member's name.
- */
-function mintDevice(): MintedDevice {
-  const dir = mkdtempSync(join(tmpdir(), 'mero-warrant-'));
-  const phraseFile = join(dir, 'phrase');
-  writeFileSync(phraseFile, `${AUTHOR_PHRASE}\n`, { mode: 0o600 });
-
-  const out = merod(['account', 'sign-cert', '--generate', '--from', phraseFile]);
-  const lines = out.split('\n');
-
-  const credential = lines.find((l) => /^[0-9a-f]{100,}$/.test(l.trim()))?.trim();
-  const account = /^Account: +([0-9a-f]{64})$/m.exec(out)?.[1];
-  const secret = /^Secret: +([0-9a-f]{64})$/m.exec(out)?.[1];
-
-  // Named individually rather than one "parse failed": if `sign-cert` changes
-  // its output, the message should say which field went missing.
-  if (!credential) throw new Error(`sign-cert printed no credential:\n${out}`);
-  if (!account) throw new Error(`sign-cert printed no Account line:\n${out}`);
-  if (!secret) throw new Error(`sign-cert printed no Secret line:\n${out}`);
-
-  return { credential, account, secret };
-}
-
-describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
+describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () => {
   let mero: MeroJs;
   let contextId: string;
   let namespaceId: string;
@@ -272,6 +222,70 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
   }, 60_000);
 
   /**
+   * The author reads back what the relay wrote for it, with no warrant.
+   *
+   * A read publishes nothing, so there is no peer to show consent to; what it
+   * needs is proof that *this* account may see *this* context, and a session
+   * answers that. So the author logs in with the same device certificate the
+   * intent carried, and queries as its account. The value is the one the
+   * delegated write above stored, which makes this a round trip across the two
+   * paths an account without a node has: write by warrant, read by session.
+   *
+   * Needs the node to accept device-key logins (`merod init --device-key-login`).
+   * A node started without it refuses the login with one specific 404, and only
+   * that refusal is accepted here: it is asserted, not skipped, so the file
+   * still reports every test as run. This cannot hide a missing read path:
+   * core's coverage gate requires `POST .../query` to answer under 400, and it
+   * only does on the branch below.
+   */
+  it('reads back what it wrote, as the author account, without a warrant', async () => {
+    const attempt = login({
+      nodeUrl: NODE_URL,
+      // Pinned from the node here only because this suite also administers it;
+      // a real client learns the key out of band (see LoginConfig.node).
+      node: (await mero.admin.getNodeIdentity()).publicKey,
+      deviceSecret: device.secret,
+      accountProof: device.credential,
+      audience: { kind: 'cli' },
+    });
+    const session = await attempt.catch((err: unknown) => {
+      const { status, bodyText } = err as { status?: number; bodyText?: string };
+      if (status !== 404 || !/account_proof provider is not enabled/.test(bodyText ?? '')) {
+        throw err;
+      }
+      return null;
+    });
+    if (session === null) {
+      console.warn(
+        '[delegated-intent] this node does not accept device-key logins ' +
+          '(start it with `merod init --device-key-login`); asserting that instead.',
+      );
+      await expect(attempt).rejects.toMatchObject({ status: 404 });
+      return;
+    }
+    const tokens = new MemoryTokenStore();
+    tokens.setTokens({
+      access_token: session.accessToken,
+      refresh_token: session.refreshToken,
+      expires_at: Date.now() + 3_600_000,
+    });
+    const author = new MeroJs({ baseUrl: NODE_URL, tokenStore: tokens });
+    try {
+      await expect(
+        author.admin.queryContext(contextId, { method: 'get', argsJson: { key: ARGS.key } }),
+      ).resolves.toEqual({ returns: ARGS.value });
+
+      // A session authorizes reads only. `set` is a mutating method, so the
+      // node refuses it here rather than quietly writing without a warrant.
+      await expect(
+        author.admin.queryContext(contextId, { method: 'set', argsJson: ARGS }),
+      ).rejects.toMatchObject({ status: 409 });
+    } finally {
+      author.close();
+    }
+  }, 60_000);
+
+  /**
    * The two signers agree byte for byte over identical inputs.
    *
    * This is the check the acceptance tests above can only imply. A node saying
@@ -326,7 +340,7 @@ describe.skipIf(!MEROD)('performIntent E2E — delegated authorship', () => {
 
   /** The same warrant as `merod` mints it, for the byte comparison. */
   function mintWarrantWithMerod(nonce: number, notAfter: number): string {
-    return merod([
+    return offlineMerod([
       'account',
       'warrant',
       '--context',

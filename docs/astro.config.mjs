@@ -71,6 +71,7 @@ export default defineConfig({
             'guides/high-availability',
             'guides/delegated-execution',
             'guides/one-app-two-transports',
+            'guides/sealed-transport',
           ],
         },
         {

@@ -240,8 +240,11 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
   );
 }
 
-/** Decode a cited-head list, refusing one longer than a node will accept. */
-function citedHeads(heads: string[] | undefined, label: string): Uint8Array[] {
+/**
+ * Decode a cited-head list, refusing one longer than a node will accept.
+ * Shared with `creation-warrant.ts`; internal, not exported from the package root.
+ */
+export function citedHeads(heads: string[] | undefined, label: string): Uint8Array[] {
   const list = heads ?? [];
   if (list.length > MAX_CITED_HEADS) {
     throw new Error(

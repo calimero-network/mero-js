@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CloudClient } from './cloud-client.js';
+import { CloudClient, admitterAddrsFromNetworkStatus } from './cloud-client.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { signAccountLink } from '../account/index.js';
 
@@ -138,10 +138,18 @@ describe('CloudClient relay discovery', () => {
     executor_account: EXECUTOR,
     status: 'active',
     authorship_ready: true,
+    tee_role: 'RelayTee',
+    can_execute: true,
     last_seen_at: '2026-01-01T00:00:00',
     confirmed_at: '2026-01-01T00:00:00',
     ...over,
   });
+
+  /** A row from a cloud that predates `can_execute` and `tee_role`. */
+  const legacyRow = (over: Record<string, unknown> = {}) => {
+    const { can_execute: _canExecute, tee_role: _teeRole, ...rest } = relayRow(over);
+    return rest;
+  };
 
   function signedIn(fetchImpl: typeof fetch) {
     return new CloudClient({
@@ -190,9 +198,57 @@ describe('CloudClient relay discovery', () => {
         nodeKey: null,
         status: 'active',
         authorshipReady: true,
+        teeRole: 'RelayTee',
+        canExecute: true,
         lastSeenAt: '2026-01-01T00:00:00',
         confirmedAt: '2026-01-01T00:00:00',
       },
+    ]);
+  });
+
+  it("takes the cloud's can_execute over the grant, both ways", async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          relays: [
+            // A RelayTee relays by role: no grant needed.
+            relayRow({ peer_id: 'relay', authorship_ready: false }),
+            // A ReadOnlyTee is a replica and never relays, grant or not.
+            relayRow({ peer_id: 'replica', tee_role: 'ReadOnlyTee', can_execute: false }),
+          ],
+        },
+      },
+    ]);
+
+    const [relay, replica] = await signedIn(fetch).getNamespaceRelays(NS);
+
+    expect(relay).toMatchObject({ authorshipReady: false, teeRole: 'RelayTee', canExecute: true });
+    expect(replica).toMatchObject({
+      authorshipReady: true,
+      teeRole: 'ReadOnlyTee',
+      canExecute: false,
+    });
+  });
+
+  it('falls back to the grant against a cloud that sends no can_execute', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          relays: [
+            legacyRow({ peer_id: 'granted' }),
+            legacyRow({ peer_id: 'waiting', authorship_ready: false }),
+            legacyRow({ peer_id: 'no-url', relay_url: null }),
+          ],
+        },
+      },
+    ]);
+
+    const relays = await signedIn(fetch).getNamespaceRelays(NS);
+
+    expect(relays.map((r) => [r.peerId, r.canExecute, r.teeRole])).toEqual([
+      ['granted', true, null],
+      ['waiting', false, null],
+      ['no-url', false, null],
     ]);
   });
 
@@ -202,18 +258,23 @@ describe('CloudClient relay discovery', () => {
   });
 
   /**
-   * Three independent things have to hold before a relay can run an intent, and
-   * a client that checks fewer gets a refusal it cannot explain — after having
-   * burned a nonce on the warrant.
+   * Several independent things have to hold before a relay can run an intent,
+   * and a client that checks fewer gets a refusal it cannot explain — after
+   * having burned a nonce on the warrant.
    */
-  it('findExecutingRelay skips a relay missing any of the three preconditions', async () => {
+  it('findExecutingRelay skips a relay missing any precondition', async () => {
     const cases: Array<[string, Record<string, unknown>]> = [
-      ['no authorship grant', { authorship_ready: false }],
-      ['no url reported', { relay_url: null }],
-      ['no executor account reported', { executor_account: null }],
+      [
+        'a read-only replica, even with the grant',
+        relayRow({ tee_role: 'ReadOnlyTee', can_execute: false }),
+      ],
+      ['the cloud says it cannot execute', relayRow({ can_execute: false })],
+      ['no url reported', relayRow({ relay_url: null })],
+      ['no executor account reported', relayRow({ executor_account: null })],
+      ['legacy cloud, no authorship grant', legacyRow({ authorship_ready: false })],
     ];
-    for (const [, over] of cases) {
-      const { fetch } = scriptedFetch([{ body: { relays: [relayRow(over)] } }]);
+    for (const [, row] of cases) {
+      const { fetch } = scriptedFetch([{ body: { relays: [row] } }]);
       await expect(signedIn(fetch).findExecutingRelay(NS)).resolves.toBeNull();
     }
   });
@@ -223,8 +284,28 @@ describe('CloudClient relay discovery', () => {
       {
         body: {
           relays: [
-            relayRow({ peer_id: 'waiting', authorship_ready: false }),
-            relayRow({ peer_id: 'ready' }),
+            relayRow({ peer_id: 'replica', tee_role: 'ReadOnlyTee', can_execute: false }),
+            // A RelayTee needs no grant: the role alone decides.
+            relayRow({ peer_id: 'ready', authorship_ready: false }),
+          ],
+        },
+      },
+    ]);
+
+    await expect(signedIn(fetch).findExecutingRelay(NS)).resolves.toMatchObject({
+      peerId: 'ready',
+      teeRole: 'RelayTee',
+      canExecute: true,
+    });
+  });
+
+  it('findExecutingRelay decides on the grant against an older cloud', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          relays: [
+            legacyRow({ peer_id: 'waiting', authorship_ready: false }),
+            legacyRow({ peer_id: 'ready' }),
           ],
         },
       },
@@ -309,6 +390,7 @@ describe('CloudClient machines and setup', () => {
                   namespace_id: NS,
                   status: 'active',
                   authorship_ready: true,
+                  tee_role: 'RelayTee',
                   fresh: true,
                   confirmed_at: '2026-01-01T00:00:00',
                   last_seen_at: '2026-01-01T00:01:00',
@@ -334,6 +416,7 @@ describe('CloudClient machines and setup', () => {
             namespaceId: NS,
             status: 'active',
             authorshipReady: true,
+            teeRole: 'RelayTee',
             fresh: true,
             confirmedAt: '2026-01-01T00:00:00',
             lastSeenAt: '2026-01-01T00:01:00',
@@ -370,6 +453,40 @@ describe('CloudClient machines and setup', () => {
     expect(machine.canExecute).toBe(false);
     expect(machine.namespaces[0].fresh).toBe(false);
     expect(machine.namespaces[0].authorshipReady).toBe(false);
+    expect(machine.namespaces[0].teeRole).toBeNull();
+  });
+
+  it("keeps the cloud's can_execute for a machine that is only a replica", async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          machines: [
+            {
+              peer_id: 'p',
+              relay_url: 'https://relay.example',
+              executor_account: EXECUTOR,
+              can_execute: false,
+              namespaces: [
+                {
+                  namespace_id: NS,
+                  status: 'active',
+                  authorship_ready: true,
+                  tee_role: 'ReadOnlyTee',
+                  fresh: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const [machine] = await signedIn(fetch).getMyMachines();
+
+    // Holding the grant does not make a ReadOnlyTee relay; the cloud already
+    // decided, and re-deriving from `authorshipReady` would say otherwise.
+    expect(machine.canExecute).toBe(false);
+    expect(machine.namespaces[0].teeRole).toBe('ReadOnlyTee');
   });
 
   /**
@@ -404,6 +521,51 @@ describe('CloudClient machines and setup', () => {
     ]);
     // The claim already established ownership; these carry no proof.
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({});
+  });
+
+  it('sends the owner node addresses with enable-ha when given, and nothing otherwise', async () => {
+    const { fetch, calls } = scriptedFetch([{ body: {} }, { body: {} }]);
+    const cloud = signedIn(fetch);
+    const laptop = '/ip4/63.181.86.34/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWOwner';
+
+    await cloud.enableNamespaceHa(NS, { admitterAddrs: [laptop] });
+    // Omitted means "leave what the cloud holds" -- an empty body, not an
+    // empty list, which would clear it.
+    await cloud.enableNamespaceHa(NS);
+
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ admitter_addrs: [laptop] });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({});
+  });
+});
+
+describe('admitterAddrsFromNetworkStatus', () => {
+  const PEER = '12D3KooWOwner';
+
+  it('makes every external address end in this node\'s own peer id', () => {
+    const status = {
+      localPeerId: PEER,
+      listenAddrs: ['/ip4/0.0.0.0/tcp/2528'],
+      externalAddrs: [
+        '/ip4/1.2.3.4/udp/2528/quic-v1',
+        `/ip4/1.2.3.4/tcp/2528/p2p/${PEER}`,
+        // Names the RELAY's peer, so "contains /p2p/" is not complete.
+        '/ip4/9.9.9.9/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit',
+        'not-a-multiaddr',
+      ],
+    };
+    expect(admitterAddrsFromNetworkStatus(status)).toEqual([
+      `/ip4/1.2.3.4/udp/2528/quic-v1/p2p/${PEER}`,
+      `/ip4/1.2.3.4/tcp/2528/p2p/${PEER}`,
+      `/ip4/9.9.9.9/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit/p2p/${PEER}`,
+    ]);
+    // The admin API's `{ data }` wrapper reads the same.
+    expect(admitterAddrsFromNetworkStatus({ data: status })).toHaveLength(3);
+  });
+
+  it('is empty when there is nothing dialable to say', () => {
+    expect(admitterAddrsFromNetworkStatus(null)).toEqual([]);
+    expect(admitterAddrsFromNetworkStatus({ externalAddrs: ['/ip4/1.2.3.4/tcp/1'] })).toEqual([]);
+    expect(admitterAddrsFromNetworkStatus({ localPeerId: PEER, externalAddrs: [] })).toEqual([]);
   });
 });
 
@@ -608,6 +770,7 @@ describe('CloudClient namespace routing', () => {
       fresh: true,
       can_admit: true,
       authorship_ready: true,
+      tee_role: 'RelayTee',
       can_execute: true,
       ...overrides,
     };
@@ -636,6 +799,7 @@ describe('CloudClient namespace routing', () => {
         fresh: true,
         canAdmit: true,
         authorshipReady: true,
+        teeRole: 'RelayTee',
         canExecute: true,
       },
     ]);
@@ -662,6 +826,33 @@ describe('CloudClient namespace routing', () => {
     expect(routing.nodes[0].canExecute).toBe(false);
     expect(routing.servable).toBe(true);
     expect(routing.writable).toBe(false);
+  });
+
+  it('derives canExecute from the grant against a cloud that sends none', async () => {
+    const legacy = (over: Record<string, unknown>) => {
+      const { can_execute: _c, tee_role: _t, ...rest } = row(over);
+      return rest;
+    };
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          namespace_id: NS,
+          admitters: [
+            legacy({ peer_id: 'granted' }),
+            legacy({ peer_id: 'stale', fresh: false }),
+            legacy({ peer_id: 'waiting', authorship_ready: false }),
+          ],
+        },
+      },
+    ]);
+
+    const routing = await anonymous(fetch).getNamespaceRouting(NS);
+
+    expect(routing.nodes.map((n) => [n.peerId, n.canExecute, n.teeRole])).toEqual([
+      ['granted', true, null],
+      ['stale', false, null],
+      ['waiting', false, null],
+    ]);
   });
 
   it('picks only a node the invitation actually named', async () => {

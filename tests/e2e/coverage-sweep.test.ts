@@ -39,6 +39,18 @@ async function cover(label: string, fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+/**
+ * Exercise a route this node can only refuse, and pin the exact refusal, so a
+ * regression back to a generic 500 fails here.
+ */
+async function refusedWith(fn: () => Promise<unknown>, status: number): Promise<void> {
+  const err = await fn()
+    .then(() => undefined)
+    .catch((e: Error & { status?: number }) => e);
+  expect(err, 'expected a refusal, got a success').toBeDefined();
+  expect(err?.status, `unexpected refusal: ${err?.message}`).toBe(status);
+}
+
 describe('Admin API E2E — Route coverage sweep', () => {
   beforeAll(async () => {
     mero = new MeroJs({ baseUrl: NODE_URL });
@@ -64,10 +76,7 @@ describe('Admin API E2E — Route coverage sweep', () => {
 
   // NOTE: blobs, network/usage, group+context metadata, TEE policy, and createGroup
   // are deeply asserted in round-trip.test.ts — kept out of this tolerant sweep.
-  it('node reads: certificate; context resync/sync', async () => {
-    // A node serving plain HTTP holds no certificate, so 404 is the only answer
-    // this route can give here; asserting it still catches the route moving.
-    await expect(mero.admin.getCertificate()).rejects.toMatchObject({ status: 404 });
+  it('context resync/sync', async () => {
     await cover('resync', () => mero.admin.resyncContext(contextId, { force: true }));
     await cover('syncOne', () => mero.admin.syncContext(contextId));
     await cover('syncAll', () => mero.admin.syncContext()); // no-arg → POST /contexts/sync
@@ -95,16 +104,32 @@ describe('Admin API E2E — Route coverage sweep', () => {
     );
   });
 
+  // `package@version` the job published to a registry this node is configured
+  // with (core's SDK e2e serves this repo's own kv-store bundle). Without one,
+  // no install by coordinates can succeed, so the test above is all there is.
+  const REGISTRY_APP = process.env.MERO_FIXTURE_REGISTRY_APP;
+
+  it.skipIf(!REGISTRY_APP)('install-application: installs a package from the node registry', async () => {
+    const [pkg, version] = REGISTRY_APP!.split('@') as [string, string];
+    const { applicationId } = await mero.admin.installApplication({ package: pkg, version });
+    // The row records where the bundle came from: the coordinates asked for,
+    // which are also what the node checked the bundle's manifest against.
+    const { application } = await mero.admin.getApplication(applicationId);
+    expect(application).toMatchObject({ id: applicationId, package: pkg, version });
+  });
+
   it('group upgrade + cascade/migration status + abort', async () => {
     await cover('upgradeStatus', () => mero.admin.getGroupUpgradeStatus(groupId));
     await cover('cascadeStatus', () => mero.admin.getCascadeStatus(namespaceId));
     await cover('migrationStatus', () => mero.admin.getMigrationStatus(namespaceId));
-    // Already running this application, so core refuses with a 500; the point
-    // here is that it deserialized the body under `deny_unknown_fields`.
-    await cover('upgrade', () =>
-      mero.admin.upgradeGroup(groupId, { targetApplicationId: applicationId }),
+    // The group already runs this application: 409, once the body got past
+    // `deny_unknown_fields`.
+    await refusedWith(
+      () => mero.admin.upgradeGroup(groupId, { targetApplicationId: applicationId }),
+      409,
     );
-    await cover('upgradeRetry', () => mero.admin.retryGroupUpgrade(groupId));
+    // And it was never upgraded, so there is no upgrade to retry: 404.
+    await refusedWith(() => mero.admin.retryGroupUpgrade(groupId), 404);
     await cover('abortMigration', () => mero.admin.abortMigration(namespaceId));
   });
 
@@ -146,9 +171,9 @@ describe('Admin API E2E — Route coverage sweep', () => {
     // and leaving one that is no longer mapped is an error.
     await cover('leaveContext', () => mero.admin.leaveContext(contextId));
     await cover('detach', () => mero.admin.detachContextFromGroup(groupId, contextId));
-    // groupId here is the namespace root, which core sends to leave_namespace
-    // instead - a 500 cover() tolerates.
-    await cover('leaveGroup', () => mero.admin.leaveGroup(groupId));
+    // groupId here is the namespace root, which the group leave refuses with a
+    // 400 pointing at the namespace leave.
+    await refusedWith(() => mero.admin.leaveGroup(groupId), 400);
     // The sole owner cannot walk out of its own namespace, so this can only ever
     // be refused on this node; assert the refusal rather than swallow it.
     await expect(mero.admin.leaveNamespace(namespaceId)).rejects.toMatchObject({ status: 403 });

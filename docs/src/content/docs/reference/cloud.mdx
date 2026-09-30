@@ -219,17 +219,25 @@ interface CloudRelay {
   executorAccount: string | null;   // the account a warrant must name as `executor`
   status: string;                   // 'assigned' | 'active'
   authorshipReady: boolean;         // does it hold CAN_AUTHOR_ON_BEHALF here?
+  teeRole: string | null;           // 'RelayTee' | 'ReadOnlyTee' | null (sidecar too old to report one)
+  canExecute: boolean;              // can an intent be presented here now?
   lastSeenAt?: string | null;
   confirmedAt?: string | null;
 }
 ```
 
-`authorshipReady` is **reported, not decided** by the cloud.
-`CAN_AUTHOR_ON_BEHALF` is a governance capability granted by an admin of the
-namespace and observable only by a node holding that group's key, so the cloud
-relays what the relay last told it. A relay that is `active` with
-`authorshipReady: false` is a healthy replica **waiting for a grant** — and that
-is the normal first state, because core implies the capability from nothing.
+`canExecute` is the field to act on. It is the cloud's own `can_execute` — a
+URL, an executor account, a fresh heartbeat, and a node that **relays by role**:
+a `RelayTee` (admitted under a TEE admission policy set with `mode: 'relay'`)
+relays without needing `CAN_AUTHOR_ON_BEHALF`, and a `ReadOnlyTee` is a replica
+that **never** relays, whatever its grant. Only a node reporting no role (a
+sidecar older than the field) is decided by `authorshipReady`. Against a cloud
+too old to send `can_execute`, the client derives it the way it always was:
+`authorshipReady` plus a URL and an executor account.
+
+`authorshipReady` and `teeRole` are **reported, not decided** by the cloud: both
+are governance facts observable only by a node holding that group's key, so the
+cloud relays what the relay last told it.
 
 An owned namespace with no relays comes back as an empty array, not a 404: "HA
 is not enabled" and "you do not own this" must not look alike. A namespace this
@@ -239,15 +247,17 @@ account does not own is a `404` `HTTPError`.
 
 The first relay that can *actually* run an intent, or `null`.
 
-Three independent conditions have to hold, and a caller who checks fewer gets a
-refusal it cannot explain — after the author has already spent a nonce on the
+Several independent conditions have to hold, and a caller who checks fewer gets
+a refusal it cannot explain — after the author has already spent a nonce on the
 warrant: the cloud must know a URL, the relay must have reported its executor
-account, and the grant must be in place.
+account, and the node must relay. That last one is `canExecute`, never
+`authorshipReady` on its own: a `ReadOnlyTee` holding the grant still refuses.
 
 ```typescript
 const relay = await cloud.findExecutingRelay(namespaceId);
 if (!relay) {
-  // enable HA, wait for an assignment, or ask an admin for the grant —
+  // enable HA, wait for an assignment, admit TEEs as relays (mode: 'relay'),
+  // or — for a node too old to report a role — ask an admin for the grant.
   // `getNamespaceRelays` tells you which
 }
 ```
@@ -278,7 +288,8 @@ interface CloudNamespaceNode {
   fresh: boolean;
   canAdmit: boolean;             // a URL + an account + a fresh heartbeat
   authorshipReady: boolean;      // does it hold CAN_AUTHOR_ON_BEHALF here?
-  canExecute: boolean;           // the above + the grant
+  teeRole: string | null;        // 'RelayTee' | 'ReadOnlyTee' | null (no role reported)
+  canExecute: boolean;           // the above + a RelayTee (or, with no role, the grant)
 }
 ```
 
@@ -292,11 +303,12 @@ the joiner already signed is not authoring on anyone's behalf — merod checks
 only that the node is on the invitation's signed `admitters` list — so a node
 with no grant is a perfectly good admitter.
 
-`canExecute` is the **namespace-level** answer, and like `authorshipReady` above
-it is reported, never decided by the cloud. A context in a restricted subgroup is
-governed by that subgroup, so a node can hold the grant on the namespace and not
-on the group owning one context; if a write is refused despite `canExecute`, fall
-back to the per-context routing read.
+`canExecute` is the **namespace-level** answer, folded from what the node
+reported: a `RelayTee` relays by role, a `ReadOnlyTee` never does, and only a node
+reporting no role is decided by the grant. A context in a restricted subgroup is
+governed by that subgroup, so a node can relay for the namespace and not for the
+group owning one context; if a write is refused despite `canExecute`, fall back
+to the per-context routing read.
 
 An empty `nodes` array is a state, not an error: a namespace with no fleet
 assignment has no cloud node, and the joiner must use one of the invitation's
@@ -375,11 +387,12 @@ interface CloudMachine {
   peerId: string;
   relayUrl: string | null;
   executorAccount: string | null;
-  canExecute: boolean;                  // a URL + an account + the grant somewhere
+  canExecute: boolean;                  // a URL + an account + relaying somewhere
   namespaces: Array<{
     namespaceId: string;
     status: string;                     // 'assigned' | 'active'
     authorshipReady: boolean;
+    teeRole: string | null;             // 'RelayTee' | 'ReadOnlyTee' | null
     fresh: boolean;                     // heartbeat within the fleet freshness TTL
     confirmedAt?: string | null;
     lastSeenAt?: string | null;
@@ -414,6 +427,29 @@ await cloud.disableNamespaceHa(namespaceId);      // …and to stop
 
 `claimNamespace` is idempotent for the same account; a namespace already claimed
 by someone else is a `409`, and a replayed proof nonce a `403`.
+
+### Letting the first fleet node reach you
+
+The first fleet node placed on a namespace has nobody but your node to ask for
+admission. Without an address it can only broadcast its attestation and hope
+your node — often a laptop behind a relay — is in the gossip mesh to hear it.
+Pass your node's addresses with `enableNamespaceHa` and the fleet node dials you
+directly instead:
+
+```ts
+import { admitterAddrsFromNetworkStatus } from '@calimero-network/mero-js';
+
+const status = await sdk.admin.getNetworkStatus();
+await cloud.enableNamespaceHa(namespaceId, {
+  admitterAddrs: admitterAddrsFromNetworkStatus(status),
+});
+```
+
+`admitterAddrsFromNetworkStatus` takes the node's external addresses and makes
+each end in `/p2p/<its peer id>`, the shape a fleet node dials. They are a dial
+hint, never a grant: your node still admits by its own TEE admission policy.
+Omit `admitterAddrs` to leave what the cloud already holds; send them again when
+your relay address changes and they replace the stored ones.
 
 `disableNamespaceHa` is not merely a billing flip: each assigned node notices the
 namespace is no longer assigned to it and **self-leaves**, which makes core evict

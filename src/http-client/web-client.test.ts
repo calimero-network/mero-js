@@ -630,6 +630,31 @@ describe('WebHttpClient - Token Refresh', () => {
       }
     });
 
+    it('reports the thrown message for a status-0 transport failure', () => {
+      const cases: Array<[string, string, string]> = [
+        [
+          'Error',
+          'The node refused to attest: HTTP 404',
+          'HTTP 0 Error: The node refused to attest: HTTP 404',
+        ],
+        [
+          'AbortError',
+          'This operation was aborted',
+          'HTTP 0 AbortError: This operation was aborted',
+        ],
+        ['Network Error', 'Failed to fetch', 'HTTP 0 Network Error: Failed to fetch'],
+      ];
+      for (const [statusText, bodyText, message] of cases) {
+        const url = 'https://api.example.com/x';
+        const error = new HTTPError(0, statusText, url, new Headers(), bodyText);
+        expect(error.message).toBe(message);
+        expect(error.status).toBe(0);
+        expect(error.bodyText).toBe(bodyText);
+      }
+      const empty = new HTTPError(0, 'Error', 'https://api.example.com/x', new Headers(), '');
+      expect(empty.message).toBe('HTTP 0 Error');
+    });
+
     it('reads a nested { error: { message } } envelope', () => {
       const error = new HTTPError(
         502,

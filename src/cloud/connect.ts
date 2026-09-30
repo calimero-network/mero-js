@@ -27,6 +27,13 @@
  *
  * # What it does not do
  *
+ * # Sealing the relay
+ *
+ * TLS in front of a relay ends outside its TD, at the host's ingress, where
+ * the warrant and the method's arguments are readable. Pass `seal` (a quote
+ * verifier) and every call to the relay is sealed to the key its attested TD
+ * holds, so they are readable only inside it.
+ *
  * It does not read state. A relay writes on the author's behalf; reads still
  * come from a node the client can query, or from the app's own projection of
  * the events it receives. `connectCloud` is deliberately narrow about this
@@ -34,7 +41,7 @@
  * need a credential nobody holds.
  */
 
-import { CloudClient } from './cloud-client.js';
+import { CloudClient, pickExecutingRelay } from './cloud-client.js';
 import type { CloudClientConfig, CloudNamespace, CloudRelay } from './cloud-client.js';
 import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
@@ -44,6 +51,9 @@ import { resolveRoot, type RootSource } from '../account/account.js';
 import { MeroClient } from '../transport/mero-client.js';
 import type { RelayObserveConfig } from '../transport/relay-observer.js';
 import type { Audience } from '../login/index.js';
+import { derivePublicKey, hex } from '../crypto/internal.js';
+import { createAttestedSealedFetch } from '../sealed/sealed.js';
+import type { VerifyTransportQuote } from '../sealed/sealed.js';
 
 export interface ConnectCloudOptions {
   /** Defaults to the hosted cloud. */
@@ -98,6 +108,17 @@ export interface ConnectCloudOptions {
   nonces?: NonceSource;
   /** Seconds a minted warrant stays presentable. Defaults to 300. */
   ttlSeconds?: number;
+  /**
+   * Seal every call to the relay to its attested TEE, verified with this — for
+   * example {@link createQuoteVerifier} with the MRTDs you trust. The warrant
+   * and the method's arguments then reach only the relay's TD, not whatever
+   * terminates TLS in front of it, and the relay is one this client checked
+   * itself rather than one the cloud vouched for. Calls to the cloud are not
+   * sealed; they carry no intent.
+   *
+   * Without it, calls to the relay are plain HTTPS.
+   */
+  seal?: VerifyTransportQuote;
   fetch?: typeof fetch;
   timeoutMs?: number;
 
@@ -163,7 +184,8 @@ export interface CloudConnection {
  *
  * Throws rather than returning a half-usable connection, and the message says
  * which step is missing — no namespace, several to choose between, HA not
- * enabled, or no relay holding the authorship grant. Every one of those is
+ * enabled, or no relay that relays (only replicas, or relays waiting for a
+ * grant). Every one of those is
  * something the user has to go and do, and a client that reports them alike
  * cannot tell them what.
  */
@@ -197,15 +219,13 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
   // first — reporting "waiting for the grant" about a relay that was already
   // usable a moment ago.
   const relays = await cloud.getNamespaceRelays(namespace.namespaceId);
-  const relayInfo =
-    relays.find((r) => r.authorshipReady && r.relayUrl !== null && r.executorAccount !== null) ??
-    null;
+  const relayInfo = pickExecutingRelay(relays);
   if (!relayInfo) {
     throw new Error(explainNoRelay(namespace, relays));
   }
 
   const relay = new RelayClient({
-    // Checked by `findExecutingRelay`, which is the only thing that returns a
+    // Checked by `pickExecutingRelay`, which is the only thing that returns a
     // relay — narrowed here rather than re-validated, so the invariant lives in
     // one place.
     relayUrl: relayInfo.relayUrl as string,
@@ -215,7 +235,15 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     signer,
     nonces: options.nonces ?? defaultNonceSource(signer.publicKey),
     ttlSeconds: options.ttlSeconds,
-    fetch: options.fetch,
+    // Only the relay is sealed: a sealed fetch is bound to one node and refuses
+    // any other URL, and the cloud calls above carry no intent.
+    fetch: options.seal
+      ? createAttestedSealedFetch({
+          baseUrl: relayInfo.relayUrl as string,
+          verify: options.seal,
+          fetch: options.fetch,
+        })
+      : options.fetch,
     timeoutMs: options.timeoutMs,
   });
 
@@ -345,11 +373,11 @@ function pickNamespace(namespaces: CloudNamespace[], requested?: string): CloudN
 }
 
 /**
- * Why no relay can write here — the three states, kept apart.
+ * Why no relay can write here — the states, kept apart.
  *
- * They are three different asks of the user (turn HA on, wait, or get an admin
- * to grant a capability) and one message for all of them would send them to
- * the wrong one.
+ * They are different asks of the user (turn HA on, wait, have an admin admit
+ * TEEs as relays, or have an admin grant a capability) and one message for all
+ * of them would send them to the wrong one.
  */
 function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string {
   if (relays.length === 0) {
@@ -357,8 +385,21 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
       ? `namespace ${namespace.namespaceId} has HA enabled but no relay has been assigned to it yet — retry shortly`
       : `namespace ${namespace.namespaceId} has no relays: enable HA on it in the cloud to have an attested node assigned`;
   }
-  const waitingOnGrant = relays.filter((r) => !r.authorshipReady);
-  if (waitingOnGrant.length === relays.length) {
+  // A node that reports a role is decided by it alone: a `ReadOnlyTee` is a
+  // replica and never relays, whatever its grant, so asking for the grant would
+  // send the admin to the wrong fix. Only a node too old to report a role is
+  // still waiting on `CAN_AUTHOR_ON_BEHALF`.
+  const replicas = relays.filter((r) => r.teeRole !== null && r.teeRole !== 'RelayTee');
+  if (replicas.length === relays.length) {
+    return (
+      `every node on namespace ${namespace.namespaceId} is a read-only TEE replica (ReadOnlyTee), ` +
+      `which never relays delegated writes: an admin of the namespace must set its TEE admission ` +
+      `policy with mode: 'relay' — AdminClient.setTeeAdmissionPolicy(namespaceId, { ..., mode: 'relay' }) ` +
+      `— so fleet nodes are admitted as RelayTee`
+    );
+  }
+  const waitingOnGrant = relays.filter((r) => r.teeRole === null && !r.authorshipReady);
+  if (waitingOnGrant.length > 0 && waitingOnGrant.length + replicas.length === relays.length) {
     // Name the call, not just the capability. The grant is a governance op only
     // a namespace admin can publish, so this message is read by someone who has
     // to go ask for it — and "grant CAN_AUTHOR_ON_BEHALF" alone leaves them
@@ -373,7 +414,7 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
       `AdminClient.openToDelegatedExecution(namespaceId) so relays assigned later need no further op`
     );
   }
-  return `namespace ${namespace.namespaceId} has ${relays.length} relay(s), but none reported both a URL and an executor account yet — retry shortly`;
+  return `namespace ${namespace.namespaceId} has ${relays.length} relay(s), but none is ready to relay yet (a URL, an executor account and a recent heartbeat) — retry shortly`;
 }
 
 /**

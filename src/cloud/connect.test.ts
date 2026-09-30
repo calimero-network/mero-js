@@ -62,6 +62,8 @@ const readyRelay = {
   executor_account: EXECUTOR,
   status: 'active',
   authorship_ready: true,
+  tee_role: 'RelayTee',
+  can_execute: true,
 };
 
 function options(over: Record<string, unknown> = {}) {
@@ -101,6 +103,31 @@ describe('connectCloud', () => {
     // the plaintext of every write its users make.
     expect(calls).toContain(`POST https://relay.example/admin-api/contexts/${CONTEXT}/intents`);
     expect(calls.some((c) => c.includes('cloud.example') && c.includes('/intents'))).toBe(false);
+  });
+
+  /**
+   * With `seal`, the relay is attested by this client and the intent never
+   * crosses in the clear: here the verifier refuses the relay's quote, so the
+   * write fails before anything but the attestation reached the relay. The
+   * cloud calls stay plain; they carry no intent.
+   */
+  it('attests and seals to the relay when asked, and sends no intent in the clear', async () => {
+    const { fetch, calls } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: { relays: [readyRelay] },
+      '/admin-api/tee/attest': {
+        data: { quoteB64: 'AA==', transportPublicKey: '11'.repeat(32) },
+      },
+    });
+
+    const connection = await connectCloud(options({ fetch, seal: async () => false }));
+    await expect(connection.execute(CONTEXT, 'set', { key: 'k' })).rejects.toMatchObject({
+      bodyText: expect.stringMatching(/did not verify/),
+    });
+
+    expect(calls).toContain('POST https://relay.example/admin-api/tee/attest');
+    expect(calls.some((c) => c.includes('/intents'))).toBe(false);
+    expect(calls.some((c) => c.includes('cloud.example/api/cloud/me/namespaces'))).toBe(true);
   });
 
   it('exchanges a Google ID token when no session token is held', async () => {
@@ -190,6 +217,36 @@ describe('connectCloud', () => {
   });
 
   it('names the account an admin must grant when every relay lacks the capability', async () => {
+    // Only a node too old to report a role is decided by the grant.
+    const { tee_role: _teeRole, can_execute: _canExecute, ...legacyRelay } = readyRelay;
+    const { fetch } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: {
+        relays: [{ ...legacyRelay, authorship_ready: false }],
+      },
+    });
+
+    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
+    expect((err as Error).message).toContain('CAN_AUTHOR_ON_BEHALF');
+    expect((err as Error).message).toContain(EXECUTOR);
+  });
+
+  it('points at the TEE admission policy, not the grant, when every node is a replica', async () => {
+    const { fetch } = routedFetch({
+      '/api/cloud/me/namespaces': [namespaceRow(NS)],
+      [`/api/cloud/me/namespaces/${NS}/relays`]: {
+        // Holding the grant changes nothing: a ReadOnlyTee never relays.
+        relays: [{ ...readyRelay, tee_role: 'ReadOnlyTee', can_execute: false }],
+      },
+    });
+
+    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
+    expect((err as Error).message).toContain('ReadOnlyTee');
+    expect((err as Error).message).toContain("mode: 'relay'");
+    expect((err as Error).message).not.toContain('CAN_AUTHOR_ON_BEHALF');
+  });
+
+  it('connects through a RelayTee that holds no grant', async () => {
     const { fetch } = routedFetch({
       '/api/cloud/me/namespaces': [namespaceRow(NS)],
       [`/api/cloud/me/namespaces/${NS}/relays`]: {
@@ -197,9 +254,8 @@ describe('connectCloud', () => {
       },
     });
 
-    const err = await connectCloud(options({ fetch })).catch((e: unknown) => e);
-    expect((err as Error).message).toContain('CAN_AUTHOR_ON_BEHALF');
-    expect((err as Error).message).toContain(EXECUTOR);
+    const connection = await connectCloud(options({ fetch }));
+    expect(connection.relayInfo.peerId).toBe(readyRelay.peer_id);
   });
 
   it('passes the discovered executor account into the minted warrant', async () => {

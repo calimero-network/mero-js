@@ -69,16 +69,54 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/download-released-merod.sh
 
+      - name: Serve the test bundle from a fixture registry
+        # The node installs by `package@version` from its one configured
+        # registry, so a successful POST /install-application needs one that has
+        # the bundle. This is the downloader's layout
+        # (artifacts/{package}/{version}/{package}-{version}.mpk), keyed by the
+        # manifest's own package and appVersion, which the node checks the
+        # bundle against.
+        run: |
+          MPK=tests/e2e/assets/kv-store.mpk
+          PKG=$(tar -xzOf "$MPK" manifest.json | jq -r .package)
+          VER=$(tar -xzOf "$MPK" manifest.json | jq -r .appVersion)
+          mkdir -p "fixture-registry/artifacts/$PKG/$VER"
+          cp "$MPK" "fixture-registry/artifacts/$PKG/$VER/$PKG-$VER.mpk"
+          (cd fixture-registry && exec python3 -m http.server 4021 --bind 127.0.0.1) > registry.log 2>&1 &
+          echo $! > registry.pid
+          echo "MERO_FIXTURE_REGISTRY_APP=$PKG@$VER" >> "$GITHUB_ENV"
+
       - name: Boot merod (embedded auth, single node)
+        # --device-key-login lets delegated-intent log in as the author ACCOUNT
+        # and read through POST /contexts/:id/query, which a password session
+        # cannot do. `cli` is the audience that test's login names.
         run: |
           ./merod --home ./e2e-node --node e2e init \
-            --server-port 4001 --swarm-port 4002 --auth-mode embedded
-          ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
+            --server-port 4001 --swarm-port 4002 --auth-mode embedded \
+            --device-key-login --device-key-login-audience cli
+          CALIMERO_REGISTRY_MODE=http CALIMERO_REGISTRY_URL=http://127.0.0.1:4021/ \
+            ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
           echo $! > merod.pid
           for i in $(seq 1 30); do
             curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && { echo "merod healthy"; break; }
             sleep 2
             [ "$i" = "30" ] && { echo "merod did not become healthy"; exit 1; }
+          done
+
+      - name: Boot a fresh merod to pair onto the main node's account
+        # account-pairing-two-node pairs this node onto the e2e node's account,
+        # then names, rescopes and revokes it. It has to be a node that has joined
+        # nothing, and it is spent by the run. No network link to the e2e node is
+        # needed: every call the suite makes is answered by the holder.
+        run: |
+          ./merod --home ./pair-node --node pair init \
+            --server-port 4011 --swarm-port 4012 --auth-mode embedded
+          ./merod --home ./pair-node --node pair run > merod-pair.log 2>&1 &
+          echo $! > merod-pair.pid
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4011/admin-api/health >/dev/null 2>&1 && { echo "pair merod healthy"; break; }
+            sleep 2
+            [ "$i" = "30" ] && { echo "pair merod did not become healthy"; exit 1; }
           done
 
       # The e2e harness self-provisions (installs kv-store if absent) and reads
@@ -95,6 +133,7 @@ jobs:
           # and ran ONLY in core's sdk-e2e.yml — so this repo reported green on a
           # suite it had never executed.
           MEROD_BINARY: ${{ github.workspace }}/merod
+          MERO_PAIR_NODE_URL: http://localhost:4011
         run: |
           set -o pipefail
           pnpm test:e2e 2>&1 | tee e2e.log
@@ -115,6 +154,13 @@ jobs:
           # naming the file beats the silence it replaces.
           grep -qE "delegated-intent\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
             || { echo "::error::delegated-intent suite did not run — MEROD_BINARY unset or merod unusable"; exit 1; }
+          # The same guard for the two-node pairing suite, which skips without
+          # MERO_PAIR_NODE_URL.
+          grep -qE "account-pairing-two-node\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
+            || { echo "::error::account-pairing-two-node suite did not run — MERO_PAIR_NODE_URL unset or the pair node unusable"; exit 1; }
+          # And the registry install, which skips without MERO_FIXTURE_REGISTRY_APP.
+          ! grep -E "coverage-sweep\.test\.ts.*skipped" e2e.log \
+            || { echo "::error::coverage-sweep skipped a test — the fixture registry is not set up"; exit 1; }
 
       - name: Upload e2e logs
         if: always()
@@ -124,11 +170,16 @@ jobs:
           path: |
             e2e.log
             merod.log
+            merod-pair.log
+            registry.log
           if-no-files-found: warn
 
       - name: Stop merod
         if: always()
-        run: kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
+        run: |
+          kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat merod-pair.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat registry.pid 2>/dev/null)" 2>/dev/null || true
 
   multinode:
     name: Multi-node E2E (vs released merod)

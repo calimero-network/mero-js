@@ -1,0 +1,316 @@
+---
+title: Sealed transport
+description: Encrypt traffic end to end to a TEE node's attested key, with forward secrecy, so a proxy or relay in the path cannot read or forge it.
+sidebar:
+  order: 10
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A node speaks plain HTTP. Whatever TLS sits in front of it ends outside the
+enclave, at a reverse proxy, a load balancer or a relay. Everything that crosses
+that hop is readable there: your bearer token, the method you call, its
+arguments and its result. A genuine attestation quote says what runs inside the
+TEE. It says nothing about who reads the bytes on the way in.
+
+Sealed transport encrypts that traffic end to end to the attested enclave. The
+client opens a session with a Noise handshake to an X25519 key the node's quote
+commits to; only the attested enclave can complete it, so only it can read a
+request or produce a response the client accepts.
+
+```typescript
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+import {
+  MeroJs,
+  createQuoteVerifier,
+  createSealedFetch,
+  fetchAttestedTransportKey,
+  trustedMeasurementsFromReleases,
+} from '@calimero-network/mero-js';
+// The release's published-mrtds.json, shipped with the app (see below).
+import release from './trusted/mero-tee-v2.3.78.published-mrtds.json';
+
+const baseUrl = 'https://tee-node.example';
+
+// Accept the node's key only if its quote verifies, here, for an image you trust.
+const verifier = createQuoteVerifier({
+  dcapVerify,
+  ...trustedMeasurementsFromReleases([release], { profile: 'locked-read-only' }),
+});
+const probe = new MeroJs({ baseUrl });
+const attest = () => fetchAttestedTransportKey(probe.admin, verifier);
+
+// Every call from here on is sealed: login, admin, JSON-RPC and events.
+const mero = new MeroJs({
+  baseUrl,
+  fetch: createSealedFetch({ baseUrl, transportPublicKey: attest }),
+});
+```
+
+## Verifying the quote
+
+`createQuoteVerifier` checks the node's quote in the page, with nothing but the
+node. It asks the node for the Intel-signed collateral the quote verifies
+against (`includeCollateral`), then accepts the quote only when:
+
+- its signatures verify against Intel's root, with collateral valid now;
+- the platform's TCB status is allowed (`UpToDate` by default), and never
+  `Revoked`;
+- its measurements (MRTD and RTMR0–3) are, all together, those of an image in
+  `allowedMeasurements`;
+- its report data is the nonce followed by the binding to the transport key.
+
+Any failure rejects with the reason, and no key is trusted. Taking the collateral
+from the node you are verifying is safe: Intel signs it, so the node can only
+choose which valid collateral to serve, not forge it. A node that predates
+`includeCollateral` sends none. Pass `fetchCollateral` to get it elsewhere, for
+example `(quote) => getCollateral(PHALA_PCCS_URL, quote)` from `@phala/dcap-qvl`.
+Without it, such a node is refused.
+
+The DCAP verification comes from [`@phala/dcap-qvl`](https://www.npmjs.com/package/@phala/dcap-qvl),
+a pure JavaScript implementation that you install and pass in as `dcapVerify`.
+It is not bundled, so mero-js keeps no runtime dependencies and applications that
+never talk to a TEE node pay nothing for it. In a browser build it needs Node
+polyfills for `buffer`, `crypto` and `stream`; see its README for Vite and
+webpack settings.
+
+## Which images to trust
+
+The measurements are the whole point: they name the image you trust to read your
+traffic. Take them from the node release you accept, never from the node you are
+talking to.
+
+**An MRTD alone names no image.** On GCP the MRTD measures the platform's TD
+firmware. Every mero-tee image, every profile and every release shares it, and
+so does any other TD on the same platform, whatever it runs. The image is in
+RTMR1–3. So `createQuoteVerifier` refuses to be built from `allowedMrtd` alone.
+Give it `allowedMeasurements`, where a quote must match one image in all five
+registers, so registers of different images never combine. (`allowedMrtd` with
+all of `allowedRtmr1`–`3` still works, but checks each register on its own.)
+
+`trustedMeasurementsFromReleases(releases, { profile })` builds those options
+from mero-tee releases' `published-mrtds.json`:
+
+- **one profile** of each release: `locked-read-only` for production. A `debug`
+  image of the same release has other RTMRs and is refused;
+- **every release your nodes may run.** Each release has its own RTMRs, so during
+  a rollout pass the old release and the new one, and drop the old one once no
+  node runs it. A client that trusts only the new release refuses the nodes not
+  yet replaced;
+- **only the TCB statuses every one of them accepts**, which the release lists
+  (today `UpToDate` and `OutOfDate`: GCP's TDX hosts report `OutOfDate`).
+
+Where the file comes from is the trust decision. Shipping it with the app, taken
+from a release you verified (`cosign verify-blob` against its `.bundle.json`),
+trusts that release, and works offline. Fetching the bare file at run time
+trusts whoever serves it. To fetch it at run time without trusting the server,
+fetch it with its signature and verify it in the page:
+[see the next section](#trusting-a-signed-release-at-run-time).
+
+## Trusting a signed release at run time
+
+Shipping `published-mrtds.json` means shipping a new app for every node release.
+Instead, the client can take the release the node runs, from anywhere, and
+check its signature itself. Every mero-tee node release is signed by its release
+workflow with cosign keyless, and publishes `published-mrtds.json` with the
+cosign bundle: a Fulcio certificate issued to that workflow run, and a Rekor log
+entry.
+
+Which release the node runs, it says itself: its `GET /admin-api/tee/info`
+names its image, and a released image's name ends in its version
+(`merotee-ubuntu-questing-25-10-locked-read-only-2-3-87` is 2.3.87). The file
+and bundle for that version come from a mirror, as
+`{"data": {"version", "publishedMrtds", "bundle"}}`; the public one is the
+cloud's, `GET https://cloud.calimero.network/api/tee/node-releases/{version}`.
+
+Neither is trusted. A node naming the wrong release only fails: its quote must
+match the release it named. A mirror serving a file that is not signed is
+refused, and one that serves nothing only stops the client connecting. The
+release is public, so it is fetched in the clear, before the session it decides
+on exists. `createSignedReleaseSealedFetch` reads the version from the relay,
+gets that release, verifies it, builds the quote verifier from it, attests and
+seals:
+
+```typescript
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+import { RelayClient, createSignedReleaseSealedFetch } from '@calimero-network/mero-js';
+
+const relay = new RelayClient({
+  relayUrl,
+  authorAccount,
+  authorProof,
+  deviceSecret,
+  fetch: createSignedReleaseSealedFetch({
+    baseUrl: relayUrl,
+    dcapVerify,
+    profile: 'locked-read-only',
+    // Required: the oldest release you accept.
+    minReleaseVersion: '2.3.87',
+    // Optional: another mirror than DEFAULT_RELEASE_MIRROR, the cloud's.
+    // releaseSource: 'https://releases.example.com',
+  }),
+});
+```
+
+`releaseSource` is a mirror's base URL, or a function
+`({ baseUrl, version, fetch }) => Promise<SignedNodeRelease>`, for example
+returning a file bundled with the app, called each time the node is attested.
+
+**Nodes that require sealing.** `/tee/info` is read in the clear, since it comes
+before the session. A node with `[server.sealed] required = true` still serves
+it unsealed, beside `/tee/attest`
+([core#4196](https://github.com/calimero-network/core/pull/4196)): it answers
+anyone without a credential, sealed or not, and the quote `/tee/attest` returns
+in the clear already carries the measurements of the image it names, so the hop
+learns nothing new. A node that requires sealing and predates that refuses it
+with `403 sealed_required`, and the fetch fails saying so. For such a node, name
+the release yourself with `releaseVersion: '2.3.87'`: it is used only when the
+node will not name one, and it is no more trusted than the node's word. The
+quote must still match that signed release.
+The pieces are there to use on their own: `fetchNodeReleaseVersion(baseUrl)`
+reads the release a node names, `fetchNodeRelease(url)` fetches a release,
+`verifySignedNodeRelease(file, bundle)`
+verifies one and returns it parsed, `trustSignedRelease({ release, profile, minReleaseVersion })`
+returns the options for `createQuoteVerifier`, and `createSignedReleaseVerifier`
+is a quote verifier that does all of it at each attestation.
+
+`verifySignedNodeRelease` runs the checks `cosign verify-blob` does, with WebCrypto
+and the Sigstore trust root embedded in mero-js, and refuses the release, with
+the reason, unless:
+
+- the signature over the exact bytes of the file verifies with the certificate;
+- the certificate chains to a Fulcio CA of the Sigstore trust root, and it and
+  the CA were valid when Rekor logged the signature. A Fulcio certificate lives
+  ten minutes, so it is checked at Rekor's time, not now;
+- it names the node release workflow, exactly
+  `https://github.com/calimero-network/mero-tee/.github/workflows/release-node-image-gcp.yaml@refs/heads/master`,
+  with the GitHub Actions OIDC issuer: the identity core pins too;
+- Rekor's signed entry timestamp verifies, over an entry that is this signature,
+  over this file's SHA-256, by this certificate;
+- the file is a node release's `published-mrtds.json`, whose `tag` is the version
+  the server named.
+
+Nothing reads the clock, so a release that verifies once always does.
+
+**What is trusted:** the release workflow's identity, the Sigstore public-good
+trust root (Fulcio's CAs and Rekor's key, embedded in mero-js), and the minimum
+release you pass. **What is not:** the transport, the server the release came
+from, and the relay.
+
+**Why the minimum is required.** A signature never expires, so every release
+ever signed stays valid. Without a floor, a relay could present an old release,
+with a flaw since fixed, run that old image, and pass. `minReleaseVersion`
+refuses any release older than it (compared as versions: `2.3.100` is newer than
+`2.3.9`). Raise it when a release must no longer be trusted.
+
+**What the relay still chooses.** Which release it presents, and nothing more:
+only a genuinely signed release at or above the minimum passes, and its quote
+must then match that release's measurements in all five registers. It cannot
+present one release and run another.
+
+Shipping `published-mrtds.json` with the app, with `trustedMeasurementsFromReleases`,
+still works, and needs no network for the release: use it offline, or to pin
+exactly the releases you checked.
+
+Mock quotes (`merod --mock-tee`) never pass `createQuoteVerifier`; tests against
+a mock node pass a verifier of their own.
+
+Passing `attest` as a function, rather than a key you fetched once, lets the
+client attest again, through your verifier, when the node restarts and holds a
+new key. Given bytes instead, a restart surfaces as `StaleTransportKeyError`.
+
+## Delegated execution to a TEE relay
+
+The case sealing matters most for: a browser holding one device key, writing
+through a hosted TEE relay. The intent (the warrant and the method's arguments)
+is exactly what should not be readable at the relay's ingress. Seal it with
+`connectCloud({ seal: verifier })`, or give a `RelayClient` a
+`createAttestedSealedFetch({ baseUrl: relayUrl, verify: verifier })`, which
+attests the node from its URL and seals everything after that. Or give it a
+`createSignedReleaseSealedFetch(...)`, which also takes the image to trust from
+the relay's signed release ([above](#trusting-a-signed-release-at-run-time)). See
+[delegated execution](/guides/delegated-execution/#sealing-the-intent-to-the-tee).
+
+## What can be sealed, and where
+
+The node opens an envelope and routes the request inside it like a direct one.
+Whether that request then meets an auth check depends on the node:
+
+| Node | Sealable |
+| --- | --- |
+| embedded auth (`merod` checks requests itself) | everything: login, admin API, JSON-RPC, SSE, intents |
+| proxy auth (a proxy in front checks requests; every hosted TEE node) | only what `merod` serves without a credential: `.../intents` on a relay, `/admin-api/health`, `/ready`, `/is-authed`, `/tee/info`, `/tee/attest` |
+
+A proxy sees only `POST /sealed/v2`, never the route inside, so it cannot guard
+it. A node in proxy mode therefore refuses, inside the envelope, a sealed
+request for any route the proxy would have guarded: `403` with code
+`sealed_route_unguarded`, before anything runs. On a hosted relay that means
+intents are sealed, and login and reads are not.
+
+## Runtimes
+
+Sealing uses WebCrypto: X25519, AES-GCM, HMAC and SHA-256. Current browsers and
+Node have all four. React Native has no WebCrypto of its own. Install
+[`react-native-quick-crypto`](https://www.npmjs.com/package/react-native-quick-crypto)
+(1.x) as the global `crypto`; its `subtle` implements the X25519 operations the
+handshake uses. We have not run mero-js on React Native in CI. A runtime without
+X25519 fails at the first handshake with an error that says so, rather than
+sending anything unsealed.
+
+## What a proxy sees
+
+Opaque `POST`s to `/sealed/v2/handshake` and `/sealed/v2`, with content type
+`application/vnd.calimero.sealed`. Method, path, headers (the `Authorization`
+header among them) and body are all inside the envelope. The node opens it and
+routes the inner request exactly like a direct one, so auth and permissions
+apply unchanged.
+
+Each request carries an id its session accepts once, so a replayed request is
+refused. Responses stream back in sealed, numbered frames, so a proxy cannot
+reorder, drop or cut them short unnoticed. `createSealedFetch` refuses any URL
+outside `baseUrl` rather than sending it in the clear.
+
+## Forward secrecy
+
+The node's transport key only authenticates it in the handshake. The session
+keys come from ephemeral keys on both sides, which are discarded when the
+handshake ends. A session lasts at most an hour, and ten minutes unused; after
+that the node drops its keys, and what was sent in it cannot be opened, not
+even with the transport key. The client opens a new session on its own, so you
+never see this.
+
+## Streams
+
+Server-sent events are sealed frame by frame, so `mero.events` works through
+the sealed fetch unchanged. A stream still open when its session ends is cut
+off, and the client reconnects under a new session. WebSockets cannot be
+sealed: the node refuses a sealed upgrade with a `501`, so subscribe over SSE.
+
+## Errors
+
+| Error | Meaning |
+| --- | --- |
+| `StaleTransportKeyError` | The node restarted and holds a new key, and you passed a fixed key rather than an attest function. Attest again and rebuild the fetch. |
+| (a plain `Error`) from `verifySignedNodeRelease` and the signed-release fetches | The release did not verify or is older than `minReleaseVersion`; the message says which check failed. Nothing is sealed to a node whose release is refused. |
+| `SealedTransportError` | The node refused the envelope itself (`status`, `code`): `malformed`, `undecryptable`, `replayed_request`. An expired session (`unknown_session`) is handled for you, and so is one `busy` refusal of a handshake: the client waits the `Retry-After` the node gives and tries once more. |
+
+A node configured with `[server.sealed] required = true` refuses unsealed
+requests with `403` and code `sealed_required` (an ordinary `HTTPError`). If you
+see it, the client is not using the sealed fetch for that call.
+
+A node that leaves auth to a proxy answers a sealed request for a route that
+proxy guards with `403` and code `sealed_route_unguarded`, inside the envelope
+(see [what can be sealed](#what-can-be-sealed-and-where)).
+
+Errors from the inner request come back as ordinary responses, so the usual
+`HTTPError` handling applies. A response whose frames do not open, or that
+stops before its end, errors its body stream.
+
+## Limits
+
+- **64 MiB** per sealed request body. Responses stream in 64 KiB frames, uncapped.
+- **No WebSockets** (see above).
+
+The wire format (a Noise `NK` handshake, then AES-256-GCM frames) is specified
+in core's
+[security guide](https://calimero-network.github.io/core/operate/security/#sealed-transport-encrypting-to-the-tee).

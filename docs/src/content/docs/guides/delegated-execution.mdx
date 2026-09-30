@@ -5,6 +5,7 @@ sidebar:
   order: 9
 ---
 
+import SeqDiagram from '../../../components/SeqDiagram.astro';
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 Every piece of delegated execution works. Getting a first write through it
@@ -103,15 +104,19 @@ somebody owns, not nodeless namespace creation.
 
    ```typescript
    const relays = await cloud.getNamespaceRelays(namespaceId);
-   // [{ peerId, relayUrl, executorAccount, status: 'active', authorshipReady: false }]
+   // [{ peerId, relayUrl, executorAccount, status: 'active', teeRole: 'RelayTee', canExecute: true, ... }]
 
    // or, across every namespace this account owns:
    const machines = await cloud.getMyMachines();
    // [{ peerId, relayUrl, executorAccount, canExecute: false, namespaces: [...] }]
    ```
 
-   `authorshipReady` should already be `true` on a namespace created by a recent
-   merod — see step 5. If it is `false`, step 5 is the fix.
+   Pick a relay on `canExecute`. A fleet node that reports a role is decided by
+   it alone: a `RelayTee` (the namespace's TEE admission policy set with
+   `mode: 'relay'`) relays with no grant, and a `ReadOnlyTee` is a replica that
+   never relays — if every node is one, set the policy to `mode: 'relay'`
+   rather than granting anything. Only a node reporting `teeRole: null` (an
+   older sidecar) is decided by `authorshipReady`, and for it step 5 is the fix.
 
 5. **Grant the relay authorship — usually already done.**
 
@@ -261,6 +266,70 @@ somebody owns, not nodeless namespace creation.
 
 </Steps>
 
+## Sealing the intent to the TEE
+
+A hosted relay runs `merod` inside a TDX trust domain, but TLS ends at the host's
+ingress, outside it. There the warrant and the method's arguments are plaintext.
+Pass `seal` and they are sealed to the relay's attested key instead, so only the
+TD reads them:
+
+```typescript
+import { connectCloud, createQuoteVerifier, trustedMeasurementsFromReleases } from '@calimero-network/mero-js';
+// The node release's published-mrtds.json, shipped with the app.
+import release from './trusted/mero-tee-v2.3.78.published-mrtds.json';
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+
+const connection = await connectCloud({
+  googleIdToken,
+  authorAccount: account,
+  authorProof,
+  deviceSecret,
+  seal: createQuoteVerifier({
+    dcapVerify,
+    ...trustedMeasurementsFromReleases([release], { profile: 'locked-read-only' }),
+  }),
+});
+```
+
+<SeqDiagram
+  id="d-sealed-relay"
+  title="connectCloud with seal"
+  lanes={[
+    { label: 'Browser', color: '#f0883e' },
+    { label: 'Cloud', color: '#39d0d8' },
+    { label: 'Ingress (host)', color: '#8b949e' },
+    { label: 'Relay TD', color: '#3fb950' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'which relay serves my namespace?' },
+    { from: 1, to: 0, label: 'relay URL + executor account' },
+    { from: 0, to: 3, label: 'POST /tee/attest (unsealed): quote + transport key + collateral' },
+    { from: 0, to: 0, label: 'verify the quote in the page: Intel, TCB, image, binding', color: '#a5ff11' },
+    { from: 0, to: 3, label: 'open a sealed session to the attested key' },
+    { from: 0, to: 2, label: 'POST /sealed/v2 [warrant + args, opaque]' },
+    { from: 2, to: 3, label: 'forward, cannot read it', color: '#8b949e' },
+    { from: 3, to: 3, label: 'open, verify the warrant, run as the author' },
+    { from: 3, to: 0, label: 'sealed result' },
+  ]}
+/>
+
+Two things change, and one does not:
+
+- **You check the relay yourself.** Without `seal`, a hosted relay is "attested"
+  in the sense that the cloud checked it at registration. With it, the page
+  verifies the relay's quote against the release measurements you pass, before
+  anything is sent. Pass every release your relays may run: see [which images to
+  trust](/guides/sealed-transport/#which-images-to-trust).
+- **Only the TD reads the intent.** The ingress sees opaque POSTs.
+- **The warrant is still the authority.** Peers verify it exactly as before.
+
+What stays plain on a hosted relay: the attestation call, and anything that
+needs a session (login and `POST .../query` reads). Hosted relays leave auth to a
+proxy, which cannot check a request it cannot read, so the relay refuses those
+sealed with `403 sealed_route_unguarded`. [How a client reaches a
+node](https://calimero-network.github.io/core/protocol/client-paths/) compares
+this path with writing through your own node and with the TEE authority.
+
 ## Where it breaks, and what each failure means
 
 Every one of these is a different action, which is why the SDK reports them
@@ -271,7 +340,7 @@ apart rather than as "could not connect".
 | `connectCloud`: "owns no namespaces" | step 2 not done | claim the namespace from the owner's node |
 | `connectCloud`: "owns N namespaces — pass namespaceId" | ambiguous | name it |
 | `connectCloud`: "no relays: enable HA" | step 3 not done | enable HA in the cloud |
-| `connectCloud`: "no relay has been assigned yet" | step 4 in flight | wait; if it persists, no attested node has capacity or the MRTD is not allowlisted |
+| `connectCloud`: "no relay has been assigned yet" | step 4 in flight | wait; if it persists, no attested node has capacity or its image is not allowlisted |
 | `connectCloud`: "waiting for the authorship grant" (names an account) | **step 5 not done** | grant `CAN_AUTHOR_ON_BEHALF` to that account |
 | `IntentRefusedError`, "author's account is not a member" | step 6 not done | add the keyholder's account to the group |
 | `IntentRefusedError`, `retryable: true`, "nonce" | warrant replayed | re-present under a fresh warrant; if it repeats, the [nonce source](/reference/relay/#nonce-sources) is restarting |

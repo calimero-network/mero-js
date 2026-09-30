@@ -14,22 +14,81 @@ contract, and cancellation.
 ## `HTTPError`
 
 Thrown when the server returns a non-2xx response. Network failures (offline,
-DNS, CORS) also surface as `HTTPError`, with `status: 0`.
+DNS, CORS) also surface as `HTTPError`, with `status: 0`. No response arrived,
+so the thrown error's message is kept in `bodyText` and carried into `message`
+— for example `HTTP 0 AbortError: This operation was aborted`, or
+`HTTP 0 Error: The node refused to attest: HTTP 404` from a sealed fetch.
 
 ```typescript
 class HTTPError extends Error {
   name = 'HTTPError';
   status: number;      // HTTP status (0 for network errors)
-  statusText: string;  // status text ('Network Error' when status is 0)
+  statusText: string;  // status text (when status is 0: 'Network Error' or the thrown error's name)
   url: string;         // the request URL that failed
   headers: Headers;    // response headers
-  bodyText?: string;   // raw response body if available (capped ~64KB)
+  bodyText?: string;   // raw response body if available (capped ~64KB); the thrown message when status is 0
+  explanation?: string; // the node's own words — the body's `error`, or the thrown message when status is 0
   toJSON(): { status; statusText; url; headers; bodyText? };
 }
 ```
 
-Common statuses: `401` (not authenticated — the SDK retries via refresh first),
-`403` (insufficient permissions), `404` (not found), `422` (validation).
+`message` is `HTTP <status> <statusText>: <explanation>`, for logs.
+`explanation` is the same text without the status line, for a UI that shows
+what the node said.
+
+Since core `0.11.0-rc.56`, an admin request the node refuses answers with the
+status that names the refusal, where earlier releases answered almost every
+one with `500`:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | The request is malformed. Sending it again cannot help. |
+| `401` | Not authenticated. The SDK retries once via refresh first. |
+| `403` | The node will not do this for this caller. |
+| `404` | What the request names does not exist on this node, or has not synced yet. |
+| `409` | The request contradicts current state: an expired or spent invitation, a removed member. |
+| `413` | The body is over the node's limit. |
+| `503` / `504` | The node cannot serve this yet, for example with no member online to hand over a group key. |
+
+## Classifying a failure: `classifyError`
+
+Most callers ask two things of a failure: what kind is it, and would the same
+request work later? `classifyError` answers both for anything a `catch` hands
+over: an `HTTPError`, an axios-style error, a browser `TypeError` from a
+`fetch` that never connected, or a plain `Error`.
+
+```typescript
+import { classifyError } from '@calimero-network/mero-js';
+
+try {
+  await sdk.admin.uploadBlob(file);
+} catch (err) {
+  const { kind, retryable, message } = classifyError(err);
+  if (kind === 'too-large') showError('That file is over the node\'s limit.');
+  else if (retryable) scheduleRetry();
+  else showError(message); // the node's own words
+}
+```
+
+| `kind` | Status | `retryable` |
+| --- | --- | --- |
+| `invalid` | `400`, other `4xx` | no |
+| `unauthorized` | `401` | yes (after signing in) |
+| `forbidden` | `403` | no |
+| `not-found` | `404` | yes |
+| `conflict` | `409` | no |
+| `gone` | `410` | no |
+| `too-large` | `413` | no |
+| `rate-limited` | `429` | yes |
+| `unavailable` | `503`, `504` | yes |
+| `server` | other `5xx` | yes |
+| `unreachable` | `0`, or a `TypeError` | yes |
+| `unknown` | no status | yes |
+
+`retryable: false` means the node chose the answer, so asking again gets the
+same one. For following an invitation, use
+[`admin.redeemInvitation`](/guides/groups-and-governance/#following-an-invitation),
+which builds on this and also settles a join that timed out but landed.
 
 ## `AuthRevokedError`
 

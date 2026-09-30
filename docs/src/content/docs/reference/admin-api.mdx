@@ -29,6 +29,7 @@ not paginate, so there are no limit/offset/cursor parameters.
 | Method | Endpoint |
 | --- | --- |
 | `healthCheck(): Promise<HealthStatus>` | `GET /health` |
+| `readinessCheck(): Promise<ReadinessStatus>` | `GET /ready` (throws on `503` while the node is not ready) |
 | `isAuthed(): Promise<AdminAuthStatus>` | `GET /is-authed` |
 
 ## Applications
@@ -71,6 +72,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `syncContext(contextId?): Promise<void>` | `POST /contexts/sync/{contextId?}` |
 | `resyncContext(contextId, request?): Promise<ResyncContextResponseData>` | `POST /contexts/{contextId}/resync` |
 | `inviteSpecializedNode(request): Promise<InviteSpecializedNodeResponseData>` | `POST /contexts/invite-specialized-node` |
+| `queryContext(contextId, request: QueryContextRequest): Promise<QueryContextResponseData>` | `POST /contexts/{contextId}/query` (read-only methods; needs an account session from `login`) |
 
 ### Context identity
 
@@ -123,6 +125,7 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `deleteNamespace(namespaceId): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
 | `createNamespaceInvitation(namespaceId, request?): Promise<…InvitationResponseData>` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): Promise<JoinNamespaceResponseData>` | `POST /namespaces/{namespaceId}/join` |
+| `redeemInvitation(namespaceId, invitation, options?): Promise<RedeemOutcome>` | `POST /namespaces/{namespaceId}/join`, then `GET /namespaces`; see [following an invitation](/guides/groups-and-governance/#following-an-invitation) |
 | `leaveNamespace(namespaceId): Promise<void>` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request?): Promise<CreateGroupInNamespaceResponseData>` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): Promise<SubgroupEntry[]>` | `GET /namespaces/{namespaceId}/groups` |
@@ -175,6 +178,8 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `deleteGroup(groupId): Promise<DeleteGroupResponseData>` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): Promise<ListGroupMembersResponseData>` | `GET /groups/{groupId}/members` |
 | `listGroupMemberDevices(groupId, options?): Promise<MemberDevicesEntry[]>` | `GET /groups/{groupId}/member-devices` |
+| `listMemberDevices(groupId, options?): Promise<ListMemberDevicesResponseData>` | `GET /groups/{groupId}/member-devices` |
+| `sealToAccount(groupId, account, request: SealToAccountRequest): Promise<SealedEnvelope>` | `POST /groups/{groupId}/accounts/{account}/seal` |
 | `listGroupContexts(groupId): Promise<ListGroupContextsResponseData>` | `GET /groups/{groupId}/contexts` |
 | `addGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members` |
 | `removeGroupMembers(groupId, request): Promise<void>` | `POST /groups/{groupId}/members/remove` |
@@ -196,6 +201,8 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `setSubgroupVisibility(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/subgroup-visibility` |
 | `getTeeAdmissionPolicy(groupId): Promise<GetTeeAdmissionPolicyResponseData>` | `GET /groups/{groupId}/settings/tee-admission-policy` |
 | `setTeeAdmissionPolicy(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/tee-admission-policy` |
+| `setTeeAuthoringPolicy(groupId, request): Promise<void>` | `PUT /groups/{groupId}/settings/tee-authoring-policy` |
+| `disableTeeAuthoringPolicy(groupId): Promise<void>` | `DELETE /groups/{groupId}/settings/tee-authoring-policy` |
 
 ### Metadata
 
@@ -240,7 +247,7 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | --- | --- |
 | `getTeeInfo(): Promise<TeeInfoResponseData>` | `GET /tee/info` |
 | `teeAttest(request): Promise<TeeAttestResponseData>` | `POST /tee/attest` |
-| `teeVerifyQuote(request): Promise<TeeVerifyQuoteResponseData>` | `POST /tee/verify-quote` |
+| `teeVerifyQuote(request): Promise<TeeVerifyQuoteResponseData>` | `POST /tee/verify-quote`. **Deprecated:** nodes no longer serve it (core#3262); verify with `createQuoteVerifier`. |
 
 ## Network & node
 
@@ -250,7 +257,6 @@ A pairing invite should carry it, so `initAccountPairing({ accountRootPublicKey,
 | `getPeersCount(): Promise<{ count: number }>` | `GET /peers` |
 | `getNetworkStatus(): Promise<unknown>` | `GET /network/status` |
 | `getUsage(): Promise<unknown>` | `GET /usage` |
-| `getCertificate(): Promise<string>` | `GET /certificate` |
 
 ## Key domain types
 

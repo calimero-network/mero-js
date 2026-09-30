@@ -14,6 +14,9 @@ export * from "./auth-api/index.js";
 // Admin API client
 export * from "./admin-api/index.js";
 
+// What a failed request means — kind, retryable, the node's own words
+export * from "./errors/index.js";
+
 // Auth utilities
 export { parseAuthCallback, buildAuthLoginUrl } from "./auth/index.js";
 export type { AuthCallbackResult, AuthLoginOptions } from "./auth/index.js";
@@ -71,6 +74,9 @@ export type { Codec, EphemeralEntry } from "./ephemeral/index.js";
 // Cloud client — namespaces, relays, HA, and the cloud sign-in path
 export * from "./cloud/index.js";
 
+// Sealed transport — requests encrypted to a TEE node's attested key
+export * from "./sealed/index.js";
+
 // Relay client — write through delegated execution, holding only a signing key
 export * from "./relay/index.js";
 
@@ -78,8 +84,23 @@ export * from "./relay/index.js";
 export * from "./request-proof/index.js";
 
 // Warrant signing — mint the author's consent for a relay to run one intent
-export { signWarrant, intentHash } from "./warrant/index.js";
-
+export {
+  signWarrant,
+  intentHash,
+  signCreationWarrant,
+  parseCreationWarrant,
+  creationInitHash,
+  signGovernanceWarrant,
+  parseGovernanceWarrant,
+  governanceOpHash,
+  memberAddedOp,
+  memberRemovedOp,
+  memberLeftOp,
+  memberRoleSetOp,
+  groupCreatedOp,
+  groupReparentedOp,
+  groupDeletedOp,
+} from "./warrant/index.js";
 // Who signs — pass a `Signer` anywhere a `deviceSecret`/`rootSecret` is taken,
 // so a key that cannot be exported to hex can still be used.
 export { signerFromSecret, signerFromCryptoKey } from "./signer/index.js";
@@ -126,10 +147,31 @@ export {
   SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
 } from "./namespace-op/index.js";
 export type { SignMemberJoinInput } from "./namespace-op/index.js";
-export type { WarrantInput } from "./warrant/index.js";
+export type {
+  WarrantInput,
+  CreationWarrantInput,
+  CreationWarrantFields,
+  SignedCreationWarrant,
+  GovernanceWarrantInput,
+  GovernanceWarrantFields,
+  GovernanceOp,
+  GovernanceOpKind,
+  GovernanceMemberRole,
+  GroupCreatedInput,
+} from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
-export { requestBodyHash, signRequest } from "./request/index.js";
+export {
+  requestBodyHash,
+  signRequest,
+  callerProof,
+  createProofSigner,
+} from "./request/index.js";
+export type {
+  CallerProofInput,
+  ProofRequest,
+  ProofSignerOptions,
+} from "./request/index.js";
 export type { RequestSigInput } from "./request/index.js";
 export { signLoginStatement } from "./login/index.js";
 export type { Audience, LoginStatementInput } from "./login/index.js";

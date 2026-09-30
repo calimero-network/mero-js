@@ -85,6 +85,13 @@ Every failure surfaces as a typed error:
 - **`RpcError`** — the WASM contract returned a JSON-RPC error (`code`, `message`,
   optional `type`/`data`).
 
+`classifyError(err)` turns any of these into `{ kind, retryable, message }`.
+`kind` is read off the status (`'conflict'` for a 409, `'unavailable'` for a
+503, `'unreachable'` for status 0, and so on). `retryable` says whether the same
+request could work later. `message` is the node's own words. To follow an
+invitation, use `sdk.admin.redeemInvitation`: a join that failed but landed
+comes back as `already-member` rather than as an error.
+
 `401`s are handled internally: the SDK refreshes the token and retries once, so
 you only see a `401` if the refresh itself fails. Full details in the
 [error model reference](https://calimero-network.github.io/mero-js/reference/error-model/).
@@ -125,11 +132,22 @@ builds the relay client. `sdk.cloud` exposes the same cloud API from an existing
 `MeroJs` instance for apps that have both a node and a cloud account, and
 `RelayClient` is available directly for a relay you were told about out of band.
 
-One precondition is not yours to satisfy: an admin of the namespace must grant
-the relay `CAN_AUTHOR_ON_BEHALF` (core implies it from nothing — not from
-membership, not from admin). Until then `connectCloud` throws naming the account
-that needs the grant, and `relay.describe(contextId)` reports
-`canAuthorOnBehalf: false` so a UI can say so rather than failing a write.
+One precondition is not yours to satisfy: the node must relay. A fleet node
+admitted as a `RelayTee` (the namespace's TEE admission policy set with
+`mode: 'relay'`) relays by role; a `ReadOnlyTee` is a replica and never relays;
+and a node too old to report a role needs an admin of the namespace to grant it
+`CAN_AUTHOR_ON_BEHALF`. `connectCloud` picks a relay on the cloud's `canExecute`,
+which folds that rule in, and otherwise throws saying which of those is missing —
+naming the account that needs the grant when that is the fix.
+
+A keyholder can also **create** a context through a relay:
+`relay.createContext({ groupId, applicationId, initArgs })` signs a creation
+warrant (checked against *your* `CAN_CREATE_CONTEXT`, not the relay's) and
+returns the new `contextId`.
+
+And it can **govern** through one: `relay.govern({ groupId, op })` signs a
+governance warrant over one op, such as `memberAddedOp(account, 'Member')` or
+`groupCreatedOp({ ... })`, and every peer applies it under *your* rights.
 
 See the [cloud client](https://calimero-network.github.io/mero-js/reference/cloud/),
 [relay client](https://calimero-network.github.io/mero-js/reference/relay/) and

@@ -1,3 +1,5 @@
+import type { DcapCollateral } from '../sealed/verify.js';
+
 // Admin API Types — aligned with core server routes
 // All types use camelCase to match core's #[serde(rename_all = "camelCase")]
 
@@ -7,6 +9,16 @@ export { ApiResponse } from '../http-client/index.js';
 // ---- Health and Status ----
 
 export interface HealthStatus {
+  status: string;
+}
+
+/**
+ * What `GET /admin-api/ready` reports: `ready` once the node has finished
+ * starting up and its store answers. A node that is not ready answers `503`
+ * with its lifecycle stage (or `store_unavailable`) as the status, which the
+ * client surfaces as an `HTTPError`.
+ */
+export interface ReadinessStatus {
   status: string;
 }
 
@@ -460,6 +472,27 @@ export interface Namespace {
    * cannot resolve it (raw-wasm app, legacy key, blob not retained locally).
    */
   appVersion?: string;
+  /**
+   * What the namespace id was derived from, on nodes that hold it. Every
+   * namespace's id is derived from its founder since core's schema v10, so
+   * this is absent only on nodes that predate it.
+   */
+  founding?: NamespaceFounding;
+}
+
+/**
+ * The founder and salt a namespace id was derived from:
+ * `domain_hash("calimero.namespace.id.v1", [founder, salt]) === namespaceId`.
+ *
+ * Anyone holding both can confirm which account founded the namespace without
+ * holding any of its state. Neither is secret, and the salt cannot be replayed
+ * for another account: the id commits to the founder.
+ */
+export interface NamespaceFounding {
+  /** Hex `AccountId` of the founder. */
+  founderAccountId: string;
+  /** Hex 32-byte salt. */
+  salt: string;
 }
 
 export type ListNamespacesResponseData = Namespace[];
@@ -516,6 +549,26 @@ export interface PerformIntentRequest {
 }
 
 /** What a performed intent reports back. */
+/**
+ * A read of a context, run as the caller's account. Needs no warrant: a read
+ * publishes nothing, so there is no peer to convince.
+ */
+export interface QueryContextRequest {
+  /**
+   * The method to call. It must be declared read-only in the application's ABI
+   * (a `&self` method in a Rust app); anything else is refused with a `409`,
+   * because a write needs a warrant ({@link PerformIntentRequest}).
+   */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+}
+
+export interface QueryContextResponseData {
+  /** The method's own return value. */
+  returns: unknown | null;
+}
+
 export interface PerformIntentResponseData {
   /**
    * The context's scope root after the run — how a caller sees that it wrote.
@@ -678,6 +731,8 @@ export interface CreateNamespaceRequest {
 
 export interface CreateNamespaceResponseData {
   namespaceId: string;
+  /** What the id was derived from. Absent on nodes that predate derived ids. */
+  founding?: NamespaceFounding;
 }
 
 export interface DeleteNamespaceResponseData {
@@ -1301,7 +1356,6 @@ export interface ListMemberDevicesOptions {
 
 export interface CreateGroupRequest {
   applicationId: string;
-  groupId?: string;
   appKey?: string;
   name?: string;
   parentGroupId?: string;
@@ -1318,13 +1372,16 @@ export interface GroupUpgradeStatus {
   initiatedBy: string;
   status: string;
   /** Contexts THIS NODE enumerated for the upgrade. Node-local; fleet progress
-   * is the `getMigrationStatus` rollup. */
+   * is the `getMigrationStatus` rollup. The counters and `completedAt` come
+   * from the upgrade propagator only: a plain group upgrade swaps each context
+   * lazily, on its next execution, and reports `completed` without any of them. */
   localContextsTotal?: number;
   localContextsSwapped?: number;
   /** Contexts whose swap failed on this node; a non-zero value is what
    * `retryGroupUpgrade` picks up. */
   localContextsFailed?: number;
-  /** Unix seconds at which THIS NODE finished its own context swaps. Not fleet
+  /** Unix seconds at which THIS NODE finished its own context swaps, when the
+   * propagator ran them (absent on a lazy upgrade, see above). Not fleet
    * convergence - that is `MigrationStatus.fleetCompletedAt`. */
   completedAt?: number;
 }
@@ -1433,6 +1490,19 @@ export interface GroupInfo {
 
 export type GroupInfoResponseData = GroupInfo;
 
+/**
+ * A group member's role, as the node serializes it (PascalCase).
+ *
+ * The two TEE roles are minted by hardware-attestation admission only, never by
+ * an invitation or a role change:
+ * - `ReadOnlyTee` — a TEE **replica**: replicates and anchors sync, never
+ *   relays a member's write (a relay intent to one is refused with a 403).
+ * - `RelayTee` — a TEE **relay**: a replica that may also author members'
+ *   writes under their signed warrants, with no `CAN_AUTHOR_ON_BEHALF` grant.
+ *   Admitted when the namespace's {@link TeeAdmissionMode} is `relay`.
+ */
+export type GroupMemberRole = 'Admin' | 'Member' | 'ReadOnly' | 'ReadOnlyTee' | 'RelayTee';
+
 export interface GroupMember {
   /**
    * The member's ACCOUNT: 64 hex characters.
@@ -1445,7 +1515,7 @@ export interface GroupMember {
    * to {@link GroupMemberInput}.
    */
   identity: string;
-  role: string;
+  role: GroupMemberRole;
   name?: string;
 }
 
@@ -1458,6 +1528,58 @@ export interface ListGroupMembersResponseData {
    * major. Switch reads to `response.members`.
    */
   data?: GroupMember[];
+}
+
+/** One device bound to a member account. */
+export interface MemberDevice {
+  /** 64 hex; the form `revokeAccountDevice` takes. */
+  deviceId: string;
+  /**
+   * The key this device's signatures carry, 64 hex. Joins against the
+   * identities a context lists.
+   */
+  signingKey: string;
+}
+
+/** A member account and the devices bound to it in the namespace. */
+export interface MemberDevicesEntry {
+  /** The member's ACCOUNT, 64 hex. */
+  account: string;
+  devices: MemberDevice[];
+}
+
+export interface ListMemberDevicesResponseData {
+  /**
+   * Every account in the group if the calling node is an admin; only its own
+   * entry if it is a plain member.
+   */
+  members: MemberDevicesEntry[];
+}
+
+export interface SealToAccountRequest {
+  /**
+   * Hex-encoded plaintext. Small by design: the route exists to hand an account
+   * something like a list of namespace ids, and the node caps the size.
+   */
+  plaintext: string;
+}
+
+/**
+ * A payload sealed to an account's root key. Only that account's root can open
+ * it; the node that sealed it cannot.
+ */
+export interface SealedEnvelope {
+  /**
+   * The root-key epoch it was sealed under. A rotated root still opens envelopes
+   * from its own epoch, so a recipient holding several needs to know which.
+   */
+  accountRootEpoch: number;
+  /** Hex, 32 bytes: the one-shot sender key. */
+  ephemeralPublicKey: string;
+  /** Hex, 12 bytes: the AES-256-GCM nonce. */
+  nonce: string;
+  /** Hex: the ciphertext with its 16-byte tag appended. */
+  ciphertext: string;
 }
 
 export interface GroupContextEntry {
@@ -1549,7 +1671,30 @@ export interface SetSubgroupVisibilityRequest {
 // Returns empty
 export type SetSubgroupVisibilityResponseData = Record<string, never>;
 
-export interface SetTeeAdmissionPolicyRequest {
+/**
+ * The signed-release form of a TEE admission policy: admit a TEE running any
+ * mero-tee node release the mero-tee release workflow signed, if its quote
+ * matches one of `allowedProfiles` in that release's `published-mrtds.json`.
+ * Unlike the measurement lists, it does not need updating for each release.
+ */
+export interface SignedReleaseTeePolicy {
+  /** Image profiles to admit, e.g. `locked-read-only`. */
+  allowedProfiles: string[];
+  /** The oldest release admitted (`2.3.72`); any signed release when absent. */
+  minReleaseVersion?: string;
+}
+
+/**
+ * Which role a namespace admits attested TEE nodes with: `replica`
+ * (`ReadOnlyTee`, the default) or `relay` (`RelayTee`, which may also author
+ * members' writes under their warrants). Part of the admin-signed policy, so
+ * every node admits with the same role; changing it converts the TEEs already
+ * admitted.
+ */
+export type TeeAdmissionMode = 'replica' | 'relay';
+
+/** A policy that lists the measurements it admits. */
+export interface MeasurementTeeAdmissionPolicyRequest {
   allowedMrtd: string[];
   allowedRtmr0: string[];
   allowedRtmr1: string[];
@@ -1557,12 +1702,29 @@ export interface SetTeeAdmissionPolicyRequest {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Absent means `replica`. */
+  mode?: TeeAdmissionMode;
 }
+
+/** A policy that admits by signed release. The node refuses measurement lists beside it. */
+export interface SignedReleaseTeeAdmissionPolicyRequest {
+  signedRelease: SignedReleaseTeePolicy;
+  allowedTcbStatuses: string[];
+  acceptMock: boolean;
+  /** Absent means `replica`. */
+  mode?: TeeAdmissionMode;
+}
+
+export type SetTeeAdmissionPolicyRequest =
+  | MeasurementTeeAdmissionPolicyRequest
+  | SignedReleaseTeeAdmissionPolicyRequest;
 
 // Returns empty
 export type SetTeeAdmissionPolicyResponseData = Record<string, never>;
 
 export interface GetTeeAdmissionPolicyResponseData {
+  /** `false` when no policy is set; the rest are then empty. */
+  enabled?: boolean;
   allowedMrtd: string[];
   allowedRtmr0: string[];
   allowedRtmr1: string[];
@@ -1570,7 +1732,28 @@ export interface GetTeeAdmissionPolicyResponseData {
   allowedRtmr3: string[];
   allowedTcbStatuses: string[];
   acceptMock: boolean;
+  /** Set when the policy admits by signed release; the lists are then empty. */
+  signedRelease?: SignedReleaseTeePolicy;
+  /**
+   * The role admitted TEEs receive. `replica` for a policy set before the mode
+   * existed; absent only from a node that predates it.
+   */
+  mode?: TeeAdmissionMode;
 }
+
+/**
+ * Which admitted TEEs may author as the group's TEE authority (the writer behind
+ * `TeeOnly` storage and `#[app::tee]` methods). A TEE whose attested MRTD is in
+ * `allowedMrtd` may author; an empty list turns TEE authorship off.
+ *
+ * Namespace-scoped: set it on the namespace root. The node refuses it on a subgroup.
+ */
+export interface SetTeeAuthoringPolicyRequest {
+  allowedMrtd: string[];
+}
+
+// Returns empty
+export type SetTeeAuthoringPolicyResponseData = Record<string, never>;
 
 // ---- Group / member / context metadata ----
 
@@ -1767,6 +1950,17 @@ export interface TeeInfoResponseData {
 export interface TeeAttestRequest {
   nonce: string;
   applicationId?: string;
+  /**
+   * Bind the node's X25519 transport key into the quote; the response names it
+   * as `transportPublicKey`. See `fetchAttestedTransportKey`.
+   */
+  bindTransportKey?: boolean;
+  /**
+   * Also return the Intel-signed collateral the quote is verified against, as
+   * `collateral`, so the quote can be verified with nothing but the node. See
+   * `createQuoteVerifier`. A node that predates it refuses the field.
+   */
+  includeCollateral?: boolean;
 }
 
 export interface QuoteHeader {
@@ -1809,14 +2003,27 @@ export interface Quote {
 export interface TeeAttestResponseData {
   quoteB64: string;
   quote: Quote;
+  /** Hex X25519 transport key, present only when the request set `bindTransportKey`. */
+  transportPublicKey?: string;
+  /**
+   * The Intel-signed collateral the quote verifies against, present only when
+   * the request set `includeCollateral` and the quote is not a mock.
+   */
+  collateral?: DcapCollateral;
 }
 
+/**
+ * @deprecated Nodes no longer serve `/admin-api/tee/verify-quote` (removed in
+ * core#3262), so a request for it fails. Verify quotes with
+ * `createQuoteVerifier`.
+ */
 export interface TeeVerifyQuoteRequest {
   quoteB64: string;
   nonce: string;
   expectedApplicationHash?: string;
 }
 
+/** @deprecated See {@link TeeVerifyQuoteRequest}. */
 export interface TeeVerifyQuoteResponseData {
   quoteVerified: boolean;
   nonceVerified: boolean;

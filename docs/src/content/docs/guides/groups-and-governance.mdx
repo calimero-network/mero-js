@@ -40,6 +40,47 @@ const { groupId, memberIdentity, memberAccount } = await sdk.admin.joinNamespace
 );
 ```
 
+### Following an invitation
+
+When a person follows an invitation link, call `redeemInvitation`, not
+`joinNamespace`. A join waits for a member of the namespace to come online, and
+that can outlast any proxy in front of the node. The request then fails even
+though the join lands. `redeemInvitation` sends the join once, then checks
+`listNamespaces`. A failed request whose namespace is listed is reported as
+`already-member`, which is a success.
+
+```typescript
+import { shouldRetain } from '@calimero-network/mero-js';
+
+const outcome = await sdk.admin.redeemInvitation(namespaceId, invitation, {
+  groupName: 'Design',
+});
+
+switch (outcome.status) {
+  case 'joined':
+  case 'already-member':
+    openNamespace(outcome.namespaceId);
+    break;
+  case 'failed':
+    // `reason`: 'expired' | 'invalid' | 'refused' | 'signed-out'
+    //         | 'no-one-online' | 'node-unreachable' | 'unknown'
+    showError(outcome.reason, outcome.message);
+    if (!shouldRetain(outcome)) discardInvitation();
+    break;
+}
+```
+
+It never throws for an ordinary failure. The `reason` comes from the node's
+status on core `0.11.0-rc.56` and later, and from its message on older nodes.
+`retryable` (and `shouldRetain`) say whether to keep the invitation for another
+attempt. An expired, invalid or refused one is final. One that failed because
+no member was online, or because the node could not be reached, is worth
+keeping.
+
+A join that is more than one call, such as a namespace followed by a context
+inside it, can use the standalone `redeemInvitation(parsed, redeemer)`. Pass your
+own `join`, plus a `memberships` that lists namespace ids.
+
 ## Groups, members & roles
 
 ```typescript
@@ -145,12 +186,30 @@ await sdk.admin.setTeeAdmissionPolicy(groupId, {
 const policy = await sdk.admin.getTeeAdmissionPolicy(groupId);
 ```
 
-Nodes can also attest and verify quotes directly:
+### TEE authoring policy
+
+Admission decides which TEEs may join; the authoring policy decides which of the
+admitted ones may write as the namespace's TEE authority (`TeeOnly` storage and
+`#[app::tee]` methods). It is namespace-scoped, so set it on the namespace root.
+
+```typescript
+await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: ['<mrtd-hex>'] });
+
+// Turn TEE authorship off. Admitted TEEs stay members; none can author.
+await sdk.admin.disableTeeAuthoringPolicy(namespaceId);
+// Equivalent: an empty allowlist applies the same op.
+await sdk.admin.setTeeAuthoringPolicy(namespaceId, { allowedMrtd: [] });
+```
+
+The node has no read-back route for this policy.
+
+Nodes can also attest directly. Verify a quote in the client with
+`createQuoteVerifier` (see [sealed transport](/guides/sealed-transport/#verifying-the-quote)),
+not by asking a node:
 
 ```typescript
 const info = await sdk.admin.getTeeInfo();                 // { cloudProvider, osImage, mrtd }
 const attestation = await sdk.admin.teeAttest({ nonce });  // { quoteB64, quote }
-const verdict = await sdk.admin.teeVerifyQuote({ quoteB64, nonce });
 ```
 
 For cloud-managed TEE redundancy, see [high availability](/guides/high-availability/).

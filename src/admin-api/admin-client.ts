@@ -2,6 +2,7 @@ import { HttpClient, HTTPError, withRetry } from '../http-client/index.js';
 import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
+  ReadinessStatus,
   AdminAuthStatus,
   InstallApplicationRequest,
   InstallApplicationResponseData,
@@ -94,6 +95,7 @@ import type {
   SetSubgroupVisibilityRequest,
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
+  SetTeeAuthoringPolicyRequest,
   SetGroupMetadataRequest,
   SetMemberMetadataRequest,
   SetContextMetadataRequest,
@@ -124,10 +126,16 @@ import type {
   PerformIntentRequest,
   PerformIntentResponseData,
   IntentRelayInfo,
+  QueryContextRequest,
+  QueryContextResponseData,
+  ListMemberDevicesResponseData,
+  SealToAccountRequest,
+  SealedEnvelope,
   AdmitJoinRequest,
   AdmitJoinResponseData,
   WarrantNonceState,
 } from './admin-types.js';
+import { redeemInvitation, type RedeemOutcome } from './redeem-invitation.js';
 
 /**
  * Thrown when a node answers the warrant-nonce route with a 404.
@@ -325,6 +333,15 @@ export class AdminApiClient {
 
   async healthCheck(): Promise<HealthStatus> {
     return unwrap(await this.httpClient.get<{ data: HealthStatus }>('/admin-api/health'));
+  }
+
+  /**
+   * Whether the node has finished starting and its store answers. Public, like
+   * {@link healthCheck}; unlike it, a node that is up but not ready answers
+   * `503`, which this surfaces as an `HTTPError` whose body names the stage.
+   */
+  async readinessCheck(): Promise<ReadinessStatus> {
+    return unwrap(await this.httpClient.get<{ data: ReadinessStatus }>('/admin-api/ready'));
   }
 
   async isAuthed(): Promise<AdminAuthStatus> {
@@ -834,6 +851,27 @@ export class AdminApiClient {
   }
 
   /**
+   * Read a context as the session's ACCOUNT, without minting a warrant.
+   *
+   * Needs an account-authenticated session — one from {@link login}, not the
+   * admin password login — and refuses otherwise with a `401`. The account must
+   * be a member of the group owning the context (`403` if not), and the method
+   * must be declared read-only in the app's ABI (`409` if not; a write needs
+   * {@link performIntent}).
+   */
+  async queryContext(
+    contextId: string,
+    request: QueryContextRequest,
+  ): Promise<QueryContextResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: QueryContextResponseData }>(
+        `/admin-api/contexts/${contextId}/query`,
+        request,
+      ),
+    );
+  }
+
+  /**
    * Ask what this node can do for a member in `contextId`, before they sign
    * anything.
    *
@@ -946,6 +984,46 @@ export class AdminApiClient {
       return { ...data, namespaceId: data.groupId };
     }
     return data;
+  }
+
+  /**
+   * Join the namespace an invitation grants, and say what happened — including
+   * when the request failed but the join landed anyway.
+   *
+   * Use this rather than {@link joinNamespace} whenever someone is following an
+   * invitation. A join waits for a member to come online and can outlast any
+   * proxy in front of the node; the request then fails while the join
+   * succeeds. This sends the join once, then checks {@link listNamespaces}:
+   * a failed request whose namespace is listed is `already-member`, a success.
+   *
+   * Never throws for an ordinary failure. A failed outcome carries a `reason`
+   * read off the node's status (core rc.56+), and `retryable`, which says
+   * whether to keep the invitation for another attempt.
+   *
+   * @param namespaceId the namespace the invitation names, 64 hex
+   * @param invitation the signed invitation, as the inviter's node minted it
+   * @param options `groupName` is sent with the join; `teamName` is echoed back
+   *   on a successful outcome for the caller's UI
+   */
+  async redeemInvitation(
+    namespaceId: string,
+    invitation: JoinNamespaceRequest['invitation'],
+    options: { groupName?: string; teamName?: string } = {},
+  ): Promise<RedeemOutcome> {
+    const { groupName, teamName } = options;
+    return redeemInvitation(
+      { namespaceId, invitation, teamName },
+      {
+        join: async () => {
+          await this.joinNamespace(
+            namespaceId,
+            groupName === undefined ? { invitation } : { invitation, groupName },
+          );
+        },
+        memberships: async () =>
+          ((await this.listNamespaces()) ?? []).map((n) => n.namespaceId),
+      },
+    );
   }
 
   async createGroupInNamespace(
@@ -1388,6 +1466,41 @@ export class AdminApiClient {
     return parseWarrantNonce(raw);
   }
 
+  /**
+   * Member accounts in the group and the devices bound to each. An admin node
+   * sees every account; a plain member only its own. `403` if this node is not a
+   * member of the group.
+   */
+  async listMemberDevices(
+    groupId: string,
+    options: ListMemberDevicesOptions = {},
+  ): Promise<ListMemberDevicesResponseData> {
+    const params = new URLSearchParams();
+    if (options.offset !== undefined) params.set('offset', String(options.offset));
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const path = `/admin-api/groups/${groupId}/member-devices${query ? `?${query}` : ''}`;
+    return this.httpClient.get<ListMemberDevicesResponseData>(path);
+  }
+
+  /**
+   * Seal a small payload to a member account's root key. This node must be a
+   * member of the group, and `account` must be an account the group knows, so
+   * the route reaches no further than the caller already does.
+   */
+  async sealToAccount(
+    groupId: string,
+    account: string,
+    request: SealToAccountRequest,
+  ): Promise<SealedEnvelope> {
+    return unwrap(
+      await this.httpClient.post<{ data: SealedEnvelope }>(
+        `/admin-api/groups/${groupId}/accounts/${account}/seal`,
+        request,
+      ),
+    );
+  }
+
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
     return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${groupId}/contexts`));
   }
@@ -1555,6 +1668,29 @@ export class AdminApiClient {
     return response.data ?? response;
   }
 
+  /**
+   * Sets which admitted TEEs may author as the TEE authority. Pass
+   * `{ allowedMrtd: [] }` to turn TEE authorship off. `groupId` must be a
+   * namespace root; the node refuses a subgroup. The node exposes no read-back
+   * route for this policy.
+   */
+  async setTeeAuthoringPolicy(
+    groupId: string,
+    request: SetTeeAuthoringPolicyRequest,
+  ): Promise<void> {
+    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`, request);
+  }
+
+  /**
+   * Turns TEE authorship off in the namespace: every TEE loses its authority,
+   * and admitted TEEs stay members. The node applies the same op as
+   * `setTeeAuthoringPolicy(groupId, { allowedMrtd: [] })`. `groupId` must be a
+   * namespace root.
+   */
+  async disableTeeAuthoringPolicy(groupId: string): Promise<void> {
+    await this.httpClient.delete(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`);
+  }
+
   // ---- Group / member / context metadata ----
 
   async setGroupMetadata(groupId: string, request: SetGroupMetadataRequest): Promise<void> {
@@ -1712,6 +1848,10 @@ export class AdminApiClient {
     return unwrap(await this.httpClient.post<{ data: TeeAttestResponseData }>('/admin-api/tee/attest', request));
   }
 
+  /**
+   * @deprecated Nodes no longer serve `/admin-api/tee/verify-quote` (removed in
+   * core#3262), so this fails. Verify quotes with `createQuoteVerifier`.
+   */
   async teeVerifyQuote(request: TeeVerifyQuoteRequest): Promise<TeeVerifyQuoteResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: TeeVerifyQuoteResponseData }>('/admin-api/tee/verify-quote', request),
@@ -1732,11 +1872,6 @@ export class AdminApiClient {
   /** Node storage/usage stats (GET /admin-api/usage). */
   async getUsage(): Promise<unknown> {
     return this.httpClient.get<unknown>('/admin-api/usage');
-  }
-
-  /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
-  async getCertificate(): Promise<string> {
-    return this.httpClient.get<string>('/admin-api/certificate', { parse: 'text' });
   }
 
   // ---- Group / context / namespace membership ----

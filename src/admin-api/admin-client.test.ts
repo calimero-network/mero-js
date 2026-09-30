@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AdminApiClient, compareSemver } from './admin-client.js';
 import type {
   AccountDeviceEntry,
@@ -8,7 +8,7 @@ import type {
   SignedGroupOpenInvitation,
 } from './admin-types.js';
 import { hexEncodeUtf8 } from './admin-types.js';
-import { HttpClient } from '../http-client/index.js';
+import { HttpClient, HTTPError } from '../http-client/index.js';
 import { CAPABILITIES } from '../capabilities.js';
 
 // A signed invitation exactly as merod emits it: the signed core primitive is
@@ -100,6 +100,11 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('GET', '/admin-api/health', { data: { status: 'alive' } });
       const result = await client.healthCheck();
       expect(result).toEqual({ status: 'alive' });
+    });
+
+    it('readinessCheck unwraps data', async () => {
+      mock.setMockResponse('GET', '/admin-api/ready', { data: { status: 'ready' } });
+      await expect(client.readinessCheck()).resolves.toEqual({ status: 'ready' });
     });
 
     it('isAuthed returns raw response', async () => {
@@ -700,6 +705,19 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('queryContext posts method and args and unwraps data', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/query', {
+        data: { returns: 'v' },
+      });
+      await expect(
+        client.queryContext('ctx-1', { method: 'get', argsJson: { key: 'k' } }),
+      ).resolves.toEqual({ returns: 'v' });
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/query')).toEqual({
+        method: 'get',
+        argsJson: { key: 'k' },
+      });
+    });
+
     it('performIntent leaves nested args untouched', async () => {
       // The warrant commits to H(method, args), and the node recomputes that
       // hash from what arrives. Anything this client did to the shape on the way
@@ -931,6 +949,54 @@ describe('AdminApiClient', () => {
       });
       const result = await client.joinNamespace('ns-1', { invitation: SIGNED_INVITATION });
       expect(result.namespaceId).toBe('ns-1');
+    });
+
+    it('redeemInvitation joins with the groupName and reports joined', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
+      });
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [{ namespaceId: 'ns-1' }] });
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION, {
+        groupName: 'My NS',
+        teamName: 'Design',
+      });
+      expect(out).toEqual({ status: 'joined', namespaceId: 'ns-1', teamName: 'Design' });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({
+        invitation: SIGNED_INVITATION,
+        groupName: 'My NS',
+      });
+    });
+
+    // The join outlasted a proxy's timeout but landed: the listing proves it.
+    it('redeemInvitation reports already-member when the join failed but the namespace is listed', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [{ namespaceId: 'ns-1' }] });
+      const post = vi
+        .spyOn(mock, 'post')
+        .mockRejectedValue(new HTTPError(0, 'Network Error', 'u', new Headers(), 'aborted'));
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION);
+      expect(out).toMatchObject({ status: 'already-member', namespaceId: 'ns-1' });
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+
+    it('redeemInvitation reports a refused join as final, in the node\'s words', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces', { data: [] });
+      vi.spyOn(mock, 'post').mockRejectedValue(
+        new HTTPError(
+          409,
+          'Conflict',
+          'u',
+          new Headers(),
+          JSON.stringify({ error: 'invitation for group ab expired at 1759000000 (unix seconds)' }),
+        ),
+      );
+      const out = await client.redeemInvitation('ns-1', SIGNED_INVITATION);
+      expect(out).toEqual({
+        status: 'failed',
+        namespaceId: 'ns-1',
+        message: 'invitation for group ab expired at 1759000000 (unix seconds)',
+        reason: 'expired',
+        retryable: false,
+      });
     });
 
     it('createGroupInNamespace sends groupName and visibility', async () => {
@@ -1385,6 +1451,41 @@ describe('AdminApiClient', () => {
       expect(result.members).toEqual([]);
     });
 
+    it('listMemberDevices returns the payload as sent (no data envelope)', async () => {
+      const members = [
+        { account: 'acc-1', devices: [{ deviceId: 'dev-1', signingKey: 'key-1' }] },
+      ];
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices', { members });
+      await expect(client.listMemberDevices('g-1')).resolves.toEqual({ members });
+    });
+
+    it('listMemberDevices passes offset and limit as query params', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/member-devices?offset=5&limit=10', {
+        members: [],
+      });
+      await expect(client.listMemberDevices('g-1', { offset: 5, limit: 10 })).resolves.toEqual({
+        members: [],
+      });
+    });
+
+    it('sealToAccount posts the plaintext and unwraps the envelope', async () => {
+      const envelope = {
+        accountRootEpoch: 0,
+        ephemeralPublicKey: 'eph',
+        nonce: 'n',
+        ciphertext: 'c',
+      };
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/accounts/acc-1/seal', {
+        data: envelope,
+      });
+      await expect(
+        client.sealToAccount('g-1', 'acc-1', { plaintext: 'deadbeef' }),
+      ).resolves.toEqual(envelope);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/accounts/acc-1/seal')).toEqual({
+        plaintext: 'deadbeef',
+      });
+    });
+
     it('listGroupContexts unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/contexts', { data: [{ contextId: 'ctx-1', alias: 'Chat' }] });
       const result = await client.listGroupContexts('g-1');
@@ -1573,6 +1674,38 @@ describe('AdminApiClient', () => {
       mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy', {});
       await client.setTeeAdmissionPolicy('g-1', policy);
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
+    });
+
+    it('setTeeAdmissionPolicy sends a signed-release policy', async () => {
+      const policy = {
+        signedRelease: { allowedProfiles: ['locked-read-only'], minReleaseVersion: '2.3.72' },
+        allowedTcbStatuses: ['UpToDate'],
+        acceptMock: false,
+      };
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy', {});
+      await client.setTeeAdmissionPolicy('g-1', policy);
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-admission-policy')).toEqual(policy);
+    });
+
+    it('setTeeAuthoringPolicy sends the MRTD allowlist', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: ['abc'] });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        allowedMrtd: ['abc'],
+      });
+    });
+
+    it('setTeeAuthoringPolicy sends an empty allowlist to turn authorship off', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: [] });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        allowedMrtd: [],
+      });
+    });
+
+    it('disableTeeAuthoringPolicy sends DELETE to the policy route', async () => {
+      mock.setMockResponse('DELETE', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await expect(client.disableTeeAuthoringPolicy('g-1')).resolves.toBeUndefined();
     });
 
   });

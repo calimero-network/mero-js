@@ -90,6 +90,7 @@ export class SseClient {
   private subscribedGroupIds: Set<string> = new Set();
   private closed = false;
   private listeners: SseListeners = { connect: [], event: [], error: [] };
+  private fetchImpl: typeof fetch;
 
   constructor(opts: {
     baseUrl: string;
@@ -102,6 +103,7 @@ export class SseClient {
      */
     authorize?: SseAuthorizer;
     reconnectDelayMs?: number;
+    fetch?: typeof fetch;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     if (opts.authorize) {
@@ -113,6 +115,10 @@ export class SseClient {
       throw new Error('SseClient needs either `getAuthToken` or `authorize`');
     }
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 3000;
+    // globalThis.fetch must be called as a method on globalThis, not through a
+    // variable, or browsers throw "Illegal invocation".
+    this.fetchImpl = (url: RequestInfo | URL, init?: RequestInit) =>
+      opts.fetch ? opts.fetch(url, init) : globalThis.fetch(url, init);
   }
 
   on(event: 'connect', handler: SseConnectHandler): void;
@@ -201,7 +207,7 @@ export class SseClient {
 
     try {
       const url = `${this.baseUrl}/sse`;
-      const response = await fetch(url, {
+      const response = await this.fetchImpl(url, {
         headers: {
           ...(await this.authorize({ method: 'GET', path: new URL(url).pathname })),
           'Accept': 'text/event-stream',
@@ -408,7 +414,7 @@ export class SseClient {
       // differ in key order, which fails as a refused credential rather than as
       // anything that names the real cause.
       const body = JSON.stringify({ id: this.sessionId, method, params });
-      const response = await fetch(url, {
+      const response = await this.fetchImpl(url, {
         method: 'POST',
         headers: {
           ...(await this.authorize({ method: 'POST', path: new URL(url).pathname, body })),

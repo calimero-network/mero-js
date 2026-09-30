@@ -47,6 +47,13 @@ function extractErrorMessage(bodyText?: string): string | undefined {
 export class HTTPError extends Error {
   name = 'HTTPError';
 
+  /**
+   * The node's own words for the failure, without the `HTTP <status>` prefix
+   * `message` carries: the body's `error` (or `detail`) for a response, the
+   * thrown error's text for status 0. Undefined when there was none.
+   */
+  readonly explanation: string | undefined;
+
   constructor(
     public status: number,
     public statusText: string,
@@ -54,12 +61,19 @@ export class HTTPError extends Error {
     public headers: Headers,
     public bodyText?: string, // cap at ~64KB
   ) {
-    const explanation = extractErrorMessage(bodyText);
+    // Status 0 means no response arrived: every client puts the thrown error's
+    // message in `bodyText`, as plain text. It is the only explanation there is
+    // — "The node refused to attest: HTTP 404" from a sealed fetch, or
+    // "This operation was aborted" from a timeout — so report it as is.
+    const explanation =
+      extractErrorMessage(bodyText) ??
+      (status === 0 && bodyText?.trim() ? bodyText.trim() : undefined);
     super(
       explanation
         ? `HTTP ${status} ${statusText}: ${explanation}`
         : `HTTP ${status} ${statusText}`,
     );
+    this.explanation = explanation;
   }
 
   toJSON(): {
@@ -113,6 +127,23 @@ function headersToRecord(headers: Headers): Record<string, string> {
 }
 
 // Web Standards HTTP client implementation
+/**
+ * The path a node will verify a request signature against.
+ *
+ * `new URL` drops the query and keeps any prefix the base URL contributed,
+ * which is exactly what reaches the server. The fallback covers a `url` that is
+ * already relative — it cannot be parsed, and signing the whole string with its
+ * query attached would be worse than signing the part before the `?`.
+ */
+function pathForProof(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    const query = url.indexOf('?');
+    return query === -1 ? url : url.slice(0, query);
+  }
+}
+
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
@@ -316,6 +347,27 @@ export class WebHttpClient implements HttpClient {
     }
     if (init?.keepalive !== undefined) {
       requestInit.keepalive = init.keepalive;
+    }
+
+    // Signed here rather than in `buildHeaders`, which sees neither the method
+    // nor the body — and a proof commits to both. Signed AFTER the body is
+    // settled above, so what is hashed is what is sent.
+    //
+    // The path comes from the built URL's `pathname`, not from the `path`
+    // argument: that argument may carry a query string, and may be relative to
+    // a base URL that contributes its own prefix. The node verifies against the
+    // path it received, so the only safe source is the URL actually being
+    // fetched. A query string is deliberately not covered — core's `RequestSig`
+    // signs the path alone, and signing more here would fail every request.
+    if (this.transport.getProof) {
+      const proof = await this.transport.getProof({
+        method: requestInit.method ?? 'GET',
+        path: pathForProof(url),
+        body: requestInit.body,
+      });
+      if (proof) {
+        headersObj['X-Calimero-Proof'] = proof;
+      }
     }
 
     try {

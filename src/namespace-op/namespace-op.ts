@@ -17,8 +17,22 @@ import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
 import { concat, fromHex, hex, u32le, u64le } from '../crypto/internal.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
 
-/** Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value. */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 11;
+/**
+ * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
+ *
+ * 15: core went to 13 (TEE rows locked to the TEE roles, a TEE's relay role
+ * read at its namespace root row, inherited read-only roles read-only in Open
+ * subgroups), then 14 (`GroupOp::ContextRegisteredOnBehalf`) and 15
+ * (`GroupOp::OnBehalf` / `RootOp::OnBehalf`) for delegated context creation and
+ * governance through a relay. None of these changes a layout this module
+ * signs; the version moves with core's so nodes on different versions never
+ * share a namespace.
+ *
+ * 16: a namespace can be founded through a relay (a delegated
+ * `NamespaceCreatedV2`), and `GroupOp::FoundingRelayAttested` lets that relay
+ * admit itself as the namespace's first TEE. Again no layout this module signs.
+ */
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 16;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');

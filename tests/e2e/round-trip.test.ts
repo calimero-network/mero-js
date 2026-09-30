@@ -165,6 +165,35 @@ describe('Round-trip E2E — Member lifecycle [Tier 2]', () => {
   });
 });
 
+describe('Round-trip E2E — Node and member reads', () => {
+  it('readinessCheck reports the node ready', async () => {
+    await expect(mero.admin.readinessCheck()).resolves.toEqual({ status: 'ready' });
+  });
+
+  it('listMemberDevices lists this node as a member, with its own device', async () => {
+    // The node created the namespace, so it is its one member and an admin, and
+    // the device it binds is the one it signs with.
+    const me = await mero.admin.getNodeIdentity();
+    const { members } = await mero.admin.listMemberDevices(groupId);
+    const mine = members.find((m) => m.account === me.accountId);
+    expect(mine, `node account ${me.accountId} missing from member-devices`).toBeTruthy();
+    expect(mine!.devices).toContainEqual({ deviceId: me.deviceId, signingKey: me.publicKey });
+  });
+
+  it('sealToAccount seals to a member account and returns a well-formed envelope', async () => {
+    const me = await mero.admin.getNodeIdentity();
+    const plaintext = 'deadbeef';
+    const envelope = await mero.admin.sealToAccount(groupId, me.accountId, { plaintext });
+    expect(envelope.accountRootEpoch).toBe(0);
+    expect(envelope.ephemeralPublicKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(envelope.nonce).toMatch(/^[0-9a-f]{24}$/);
+    // AES-GCM keeps the length and appends a 16-byte tag.
+    expect(envelope.ciphertext).toMatch(/^[0-9a-f]+$/);
+    expect(envelope.ciphertext.length).toBe(plaintext.length + 32);
+    expect(envelope.ciphertext.startsWith(plaintext)).toBe(false);
+  });
+});
+
 describe('Round-trip E2E — Groups', () => {
   it('TEE admission policy: set then get returns it', async () => {
     // The all-zero 48-byte measurement `create_mock_quote` reports for every
@@ -172,17 +201,19 @@ describe('Round-trip E2E — Groups', () => {
     // mock quote is entertained at all, not whether its measurements are
     // checked -- admission puts every quote through the allowlists either way.
     const ZERO_MEASUREMENT = '0'.repeat(96);
-    // `allowedRtmr3` is required. MRTD measures the virtual firmware, so it is
-    // identical across every image profile of a release and constant across
-    // most releases; RTMR3 is the only measurement that says which image ran.
+    // `allowedRtmr1`..`allowedRtmr3` are required. MRTD measures the virtual
+    // firmware, so it is identical across every image profile of a release and
+    // constant across most releases; RTMR3 is the only measurement that says
+    // which image ran. RTMR3 is extended from public inputs, though, so it only
+    // proves that when the kernel (RTMR1) and initrd (RTMR2) are pinned too.
     // This policy previously left every list empty, which round-tripped but
     // could never have admitted anyone -- admission has always refused an empty
     // `allowedMrtd`.
     const policy = {
       allowedMrtd: [ZERO_MEASUREMENT],
       allowedRtmr0: [],
-      allowedRtmr1: [],
-      allowedRtmr2: [],
+      allowedRtmr1: [ZERO_MEASUREMENT],
+      allowedRtmr2: [ZERO_MEASUREMENT],
       allowedRtmr3: [ZERO_MEASUREMENT],
       allowedTcbStatuses: [],
       acceptMock: true,
@@ -193,7 +224,26 @@ describe('Round-trip E2E — Groups', () => {
     // Read the measurements back too. Asserting only `acceptMock` let a policy
     // round-trip while saying nothing about which images it admits.
     expect(got.allowedMrtd).toEqual([ZERO_MEASUREMENT]);
+    expect(got.allowedRtmr1).toEqual([ZERO_MEASUREMENT]);
+    expect(got.allowedRtmr2).toEqual([ZERO_MEASUREMENT]);
     expect(got.allowedRtmr3).toEqual([ZERO_MEASUREMENT]);
+  });
+
+  it('TEE authoring policy: set on the namespace root, then turn it off', async () => {
+    // Core has no read-back route for this policy, so the check is that the node
+    // accepts both writes. `groupId` is the namespace root: the policy is
+    // namespace-scoped and the node refuses it on a subgroup.
+    const ZERO_MEASUREMENT = '0'.repeat(96);
+    await expect(
+      mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [ZERO_MEASUREMENT] }),
+    ).resolves.toBeUndefined();
+    // Turn TEE authorship off both ways the node offers: the explicit DELETE,
+    // then a PUT with an empty allowlist (the same op). Either leaves the
+    // namespace with no TEE authority, so no later test runs under one.
+    await expect(mero.admin.disableTeeAuthoringPolicy(groupId)).resolves.toBeUndefined();
+    await expect(
+      mero.admin.setTeeAuthoringPolicy(groupId, { allowedMrtd: [] }),
+    ).resolves.toBeUndefined();
   });
 
   // POST /admin-api/groups requires applicationId (not just a name).

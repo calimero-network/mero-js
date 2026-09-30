@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
+import type { CreateGroupInvitationResponseData } from '../../src/admin-api/admin-types.js';
 import { resolveCreds, ensureApplication, runId } from './harness.js';
 
 const N1 = process.env.MERO_NODE1_URL ?? 'http://localhost:4501';
@@ -20,12 +21,16 @@ let n1: MeroJs;
 let n2: MeroJs;
 let applicationId: string;
 let namespaceId: string;
+/** node-2's account in the namespace: what every member-addressing route takes. */
+let memberAccount: string;
 
 suite('Multi-node E2E — namespace invite/join', () => {
   beforeAll(async () => {
-    n1 = new MeroJs({ baseUrl: N1 });
+    // A debug merod (core's SDK e2e builds one) can outlast the 10s default on
+    // a cold first call, and every governance op here waits for peer acks.
+    n1 = new MeroJs({ baseUrl: N1, timeoutMs: 60_000 });
     await n1.authenticate(CREDS);
-    n2 = new MeroJs({ baseUrl: N2 });
+    n2 = new MeroJs({ baseUrl: N2, timeoutMs: 60_000 });
     await n2.authenticate(CREDS);
 
     // Both nodes need the application to run the shared context.
@@ -68,6 +73,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
     // member-addressing endpoint takes. Both render as 64 hex, so the shape
     // cannot tell them apart - see the listing note in round-trip.test.ts.
     expect(joined.memberAccount).toMatch(/^[0-9a-f]{64}$/);
+    memberAccount = joined.memberAccount;
   });
 
   /**
@@ -126,7 +132,70 @@ suite('Multi-node E2E — namespace invite/join', () => {
     const info = await n2.admin.getBlobInfo(blobId, { contextId });
     expect(info.size).toBe(bytes.length);
   }, 180000);
+
+  it('node-2 joins a subgroup by invitation, then leaves it', async () => {
+    const subgroupId = await subgroupJoinedByNode2(`leave-${RUN}`);
+    await n2.admin.leaveGroup(subgroupId);
+    await waitFor(async () => ((await roleOnNode1(subgroupId)) === undefined ? true : undefined), 60000);
+  }, 120000);
+
+  it('node-1 removes node-2 from a subgroup it joined', async () => {
+    const subgroupId = await subgroupJoinedByNode2(`remove-${RUN}`);
+    await n1.admin.removeGroupMembers(subgroupId, { members: [memberAccount] });
+    expect(await roleOnNode1(subgroupId)).toBeUndefined();
+  }, 120000);
+
+  it("node-1 sets node-2's role, auto-follow and metadata in the namespace", async () => {
+    await n1.admin.updateMemberRole(namespaceId, memberAccount, { role: 'Admin' });
+    expect(await roleOnNode1(namespaceId)).toBe('Admin');
+    await n1.admin.updateMemberRole(namespaceId, memberAccount, { role: 'Member' });
+    expect(await roleOnNode1(namespaceId)).toBe('Member');
+
+    await n1.admin.setMemberAutoFollow(namespaceId, memberAccount, {
+      autoFollowContexts: true,
+      autoFollowSubgroups: false,
+    });
+
+    const tag = `mn-${RUN}`;
+    await n1.admin.setMemberMetadata(namespaceId, memberAccount, { data: { tag } });
+    const meta = await n1.admin.getMemberMetadata(namespaceId, memberAccount);
+    expect(meta?.data).toMatchObject({ tag });
+  }, 60000);
+
+  // Last: node-2 is out of the namespace afterwards.
+  it('node-2 leaves the namespace', async () => {
+    await n2.admin.leaveNamespace(namespaceId);
+    await waitFor(async () => ((await roleOnNode1(namespaceId)) === undefined ? true : undefined), 60000);
+  }, 120000);
 });
+
+/**
+ * node-1 creates a subgroup of the namespace and invites node-2, which joins
+ * it. Resolves once node-1 lists node-2 as a member, so a call that addresses
+ * node-2 there cannot race the join.
+ */
+async function subgroupJoinedByNode2(name: string): Promise<string> {
+  const { groupId } = await n1.admin.createGroup({
+    applicationId,
+    parentGroupId: namespaceId,
+    name,
+  });
+  // Not recursive, so the single-invitation shape.
+  const { invitation } = (await n1.admin.createGroupInvitation(
+    groupId,
+    {},
+  )) as CreateGroupInvitationResponseData;
+  const joined = await n2.admin.joinGroup({ invitation });
+  expect(joined.groupId).toBe(groupId);
+  await waitFor(async () => roleOnNode1(groupId), 60000);
+  return groupId;
+}
+
+/** node-2's role in `groupId` as node-1 lists it, or undefined if it is not a member. */
+async function roleOnNode1(groupId: string): Promise<string | undefined> {
+  const { members } = await n1.admin.listGroupMembers(groupId);
+  return members.find((m) => m.identity === memberAccount)?.role;
+}
 
 /** Poll `fn` until it returns something defined, or the budget runs out. */
 async function waitFor<T>(fn: () => Promise<T | undefined>, budgetMs: number): Promise<T> {

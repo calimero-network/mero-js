@@ -3,6 +3,9 @@ import { RelayClient, IntentRefusedError } from './relay-client.js';
 import { createMemoryNonceSource } from './nonce-source.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { parseWarrant } from '../warrant/warrant.js';
+import { creationInitHash, parseCreationWarrant } from '../warrant/creation-warrant.js';
+import { governanceOpHash, parseGovernanceWarrant } from '../warrant/governance-warrant.js';
+import { groupCreatedOp, memberAddedOp } from '../warrant/governance-op.js';
 
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
@@ -206,6 +209,28 @@ describe('RelayClient.execute', () => {
     expect((err as IntentRefusedError).status).toBe(403);
   });
 
+  /**
+   * Core refuses a relay intent over a ROLE with a 403 before anything runs:
+   * the relay is a TEE replica or a read-only member, or the author is
+   * read-only. None changes on retry, so none may read as the retryable replay.
+   */
+  it.each([
+    'this node is a TEE replica (ReadOnlyTee) and does not relay writes; the namespace must admit relays with mode=relay',
+    "this node's role in this context is read-only (ReadOnly), so it does not relay writes",
+    "the author's role in this context is read-only",
+  ])('surfaces a role refusal as non-retryable: %s', async (error) => {
+    const { fetch } = scriptedFetch([{ status: 403, text: JSON.stringify({ error }) }]);
+
+    const err = await client(fetch, { executorAccount: EXECUTOR })
+      .execute(CONTEXT, 'set', {})
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).status).toBe(403);
+    expect((err as IntentRefusedError).retryable).toBe(false);
+    expect((err as IntentRefusedError).reason).toBe(error);
+  });
+
   it('surfaces a spent nonce as retryable', async () => {
     const { fetch } = scriptedFetch([
       {
@@ -262,6 +287,30 @@ describe('RelayClient.execute', () => {
     expect((err as HTTPError).status).toBe(0);
   });
 
+  /**
+   * The injected fetch is typically `createAttestedSealedFetch`, which throws
+   * a sentence saying why sealing failed. That sentence is the whole report:
+   * losing it leaves the caller with a bare "HTTP 0 Error".
+   */
+  it('keeps the reason when the injected fetch throws', async () => {
+    const reason = 'The node refused to attest: HTTP 404';
+    const failing = (async () => {
+      throw new Error(reason);
+    }) as unknown as typeof fetch;
+    const relay = client(failing, { executorAccount: EXECUTOR });
+
+    for (const call of [
+      () => relay.describe(CONTEXT),
+      () => relay.execute(CONTEXT, 'set', {}),
+    ]) {
+      const err = await call().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HTTPError);
+      expect((err as HTTPError).status).toBe(0);
+      expect((err as HTTPError).bodyText).toBe(reason);
+      expect((err as HTTPError).message).toContain(reason);
+    }
+  });
+
   it('binds the warrant to a not-after in the future', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
@@ -287,3 +336,259 @@ describe('RelayClient.execute', () => {
     }
   });
 });
+
+describe('RelayClient.describeCreation', () => {
+  it('reads the group route, with the author when given', async () => {
+    const data = {
+      executorAccount: EXECUTOR,
+      groupId: GROUP,
+      canCreateOnBehalf: true,
+      authorMayCreate: true,
+    };
+    const { fetch, calls } = scriptedFetch([{ body: { data } }, { body: { data } }]);
+    const relay = client(fetch);
+
+    await expect(relay.describeCreation(GROUP)).resolves.toEqual(data);
+    await relay.describeCreation(GROUP, { author: AUTHOR });
+
+    expect(calls[0].url).toBe(`https://relay.example/admin-api/groups/${GROUP}/context-intents`);
+    expect(calls[0].init?.method).toBe('GET');
+    expect(calls[1].url).toBe(
+      `https://relay.example/admin-api/groups/${GROUP}/context-intents?author=${AUTHOR}`,
+    );
+  });
+
+  it('leaves an unknown group as a 404 HTTPError', async () => {
+    const { fetch } = scriptedFetch([{ status: 404, text: 'group not found' }]);
+    const err = await client(fetch).describeCreation(GROUP).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect((err as HTTPError).status).toBe(404);
+  });
+});
+
+describe('RelayClient.createContext', () => {
+  const APPLICATION = '5a'.repeat(32);
+  const NEW_CONTEXT = 'c0'.repeat(32);
+  const MEMBER_KEY = 'd1'.repeat(32);
+  const described = (over: Record<string, unknown> = {}) => ({
+    body: {
+      data: {
+        executorAccount: EXECUTOR,
+        groupId: GROUP,
+        canCreateOnBehalf: true,
+        authorMayCreate: true,
+        ...over,
+      },
+    },
+  });
+  const created = {
+    body: { data: { contextId: NEW_CONTEXT, groupId: GROUP, memberPublicKey: MEMBER_KEY } },
+  };
+
+  it('describes, signs and posts a creation warrant', async () => {
+    const { fetch, calls } = scriptedFetch([described(), created]);
+
+    const result = await client(fetch).createContext({
+      groupId: GROUP,
+      applicationId: APPLICATION,
+      initArgs: { name: 'general' },
+      name: 'general',
+    });
+
+    expect(result).toEqual({ contextId: NEW_CONTEXT, groupId: GROUP, memberPublicKey: MEMBER_KEY });
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST']);
+    expect(calls[0].url).toBe(
+      `https://relay.example/admin-api/groups/${GROUP}/context-intents?author=${AUTHOR}`,
+    );
+    expect(calls[1].url).toBe(`https://relay.example/admin-api/groups/${GROUP}/context-intents`);
+
+    const sent = JSON.parse(String(calls[1].init?.body)) as {
+      warrant: string;
+      authorProof: string;
+      initArgs: unknown;
+    };
+    expect(Object.keys(sent).sort()).toEqual(['authorProof', 'initArgs', 'warrant']);
+    expect(sent.authorProof).toBe('aa');
+    expect(sent.initArgs).toEqual({ name: 'general' });
+
+    const fields = parseCreationWarrant(sent.warrant);
+    expect(fields.group).toBe(GROUP);
+    expect(fields.authorAccount).toBe(AUTHOR);
+    expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.applicationId).toBe(APPLICATION);
+    expect(fields.name).toBe('general');
+    expect(fields.serviceName).toBeNull();
+    expect(fields.nonce).toBe(1n);
+    // The warrant commits to exactly the initArgs that were sent.
+    expect(fields.initHash).toBe(hexOf(await creationInitHash(sent.initArgs)));
+  });
+
+  it('passes the seed through and defaults initArgs to {}', async () => {
+    const { fetch, calls } = scriptedFetch([described(), created]);
+    const seed = '12'.repeat(32);
+
+    await client(fetch).createContext({ groupId: GROUP, applicationId: APPLICATION, seed });
+
+    const sent = JSON.parse(String(calls[1].init?.body)) as { warrant: string; initArgs: unknown };
+    expect(sent.initArgs).toEqual({});
+    expect(parseCreationWarrant(sent.warrant).seed).toBe(seed);
+  });
+
+  it.each([
+    ['the relay has no standing', { canCreateOnBehalf: false }, /no standing to act for members/],
+    ['the author may not create', { authorMayCreate: false }, /may not create contexts/],
+  ])('refuses before spending a nonce when %s', async (_why, over, message) => {
+    const { fetch, calls } = scriptedFetch([described(over), described(), created]);
+    const relay = client(fetch);
+
+    const err = await relay
+      .createContext({ groupId: GROUP, applicationId: APPLICATION })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).reason).toMatch(message);
+    expect((err as IntentRefusedError).retryable).toBe(false);
+    expect(calls).toHaveLength(1);
+
+    // The number the refused call would have used is still the next one.
+    await relay.createContext({ groupId: GROUP, applicationId: APPLICATION });
+    const sent = JSON.parse(String(calls[2].init?.body)) as { warrant: string };
+    expect(parseCreationWarrant(sent.warrant).nonce).toBe(1n);
+  });
+
+  it('refuses a configured executor the relay does not answer to', async () => {
+    const { fetch, calls } = scriptedFetch([described()]);
+    const err = await client(fetch, { executorAccount: 'ee'.repeat(32) })
+      .createContext({ groupId: GROUP, applicationId: APPLICATION })
+      .catch((e: unknown) => e);
+
+    expect(String(err)).toMatch(/would be unspendable/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('surfaces a 403 from the relay with its message', async () => {
+    const error = 'the author lacks CAN_CREATE_CONTEXT in this group';
+    const { fetch } = scriptedFetch([described(), { status: 403, text: JSON.stringify({ error }) }]);
+
+    const err = await client(fetch)
+      .createContext({ groupId: GROUP, applicationId: APPLICATION })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).status).toBe(403);
+    expect((err as IntentRefusedError).reason).toBe(error);
+    expect((err as IntentRefusedError).retryable).toBe(false);
+  });
+
+  it('leaves an unknown application as a 404 HTTPError', async () => {
+    const { fetch } = scriptedFetch([described(), { status: 404, text: 'application not found' }]);
+    const err = await client(fetch)
+      .createContext({ groupId: GROUP, applicationId: APPLICATION })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect((err as HTTPError).status).toBe(404);
+  });
+});
+
+describe('RelayClient.describeGovernance', () => {
+  it('reads the group governance route', async () => {
+    const data = { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true };
+    const { fetch, calls } = scriptedFetch([{ body: { data } }]);
+
+    await expect(client(fetch).describeGovernance(GROUP)).resolves.toEqual(data);
+    expect(calls[0].url).toBe(`https://relay.example/admin-api/groups/${GROUP}/governance-intents`);
+    expect(calls[0].init?.method).toBe('GET');
+  });
+
+  it('leaves an unknown group as a 404 HTTPError', async () => {
+    const { fetch } = scriptedFetch([{ status: 404, text: 'this node knows no such group' }]);
+    const err = await client(fetch).describeGovernance(GROUP).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect((err as HTTPError).status).toBe(404);
+  });
+});
+
+describe('RelayClient.govern', () => {
+  const MEMBER = '44'.repeat(32);
+  const described = (over: Record<string, unknown> = {}) => ({
+    body: { data: { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true, ...over } },
+  });
+  const governed = (groupId = GROUP) => ({ body: { data: { groupId } } });
+
+  it('describes, signs and posts a warrant over the exact op bytes', async () => {
+    const { fetch, calls } = scriptedFetch([described(), governed()]);
+    const op = memberAddedOp(MEMBER, 'Member');
+
+    await expect(client(fetch).govern({ groupId: GROUP, op })).resolves.toEqual({ groupId: GROUP });
+
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST']);
+    expect(calls[1].url).toBe(`https://relay.example/admin-api/groups/${GROUP}/governance-intents`);
+    const sent = JSON.parse(String(calls[1].init?.body)) as {
+      warrant: string;
+      authorProof: string;
+      op: string;
+    };
+    expect(Object.keys(sent).sort()).toEqual(['authorProof', 'op', 'warrant']);
+    expect(sent.authorProof).toBe('aa');
+    expect(sent.op).toBe(hexOf(op.bytes));
+
+    const fields = parseGovernanceWarrant(sent.warrant);
+    expect(fields.scope).toBe(GROUP);
+    expect(fields.kind).toBe('group');
+    expect(fields.authorAccount).toBe(AUTHOR);
+    expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.nonce).toBe(1n);
+    expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
+    expect(fields.notAfter).toBeGreaterThan(BigInt(Math.floor(Date.now() / 1000)));
+  });
+
+  it('signs a root op on the root plane, and returns the group it acted on', async () => {
+    const created = 'c5'.repeat(32);
+    const { fetch, calls } = scriptedFetch([described(), governed(created)]);
+    const op = groupCreatedOp({ groupId: created, parentId: GROUP, restricted: true, admin: AUTHOR });
+
+    await expect(client(fetch).govern({ groupId: GROUP, op })).resolves.toEqual({ groupId: created });
+
+    const sent = JSON.parse(String(calls[1].init?.body)) as { warrant: string };
+    expect(parseGovernanceWarrant(sent.warrant).kind).toBe('root');
+  });
+
+  it('refuses before spending a nonce when the relay has no standing', async () => {
+    const { fetch, calls } = scriptedFetch([described({ canActOnBehalf: false }), described(), governed()]);
+    const relay = client(fetch);
+    const op = memberAddedOp(MEMBER, 'Member');
+
+    const err = await relay.govern({ groupId: GROUP, op }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).reason).toMatch(/no standing to act for members/);
+    expect((err as IntentRefusedError).retryable).toBe(false);
+    expect(calls).toHaveLength(1);
+
+    await relay.govern({ groupId: GROUP, op });
+    const sent = JSON.parse(String(calls[2].init?.body)) as { warrant: string };
+    expect(parseGovernanceWarrant(sent.warrant).nonce).toBe(1n);
+  });
+
+  it('refuses a configured executor the relay does not answer to', async () => {
+    const { fetch, calls } = scriptedFetch([described()]);
+    const err = await client(fetch, { executorAccount: 'ee'.repeat(32) })
+      .govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') })
+      .catch((e: unknown) => e);
+    expect(String(err)).toMatch(/would be unspendable/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('surfaces the author lacking the right as a refusal with the relay\'s message', async () => {
+    const error = 'the author lacks MANAGE_MEMBERS in this group';
+    const { fetch } = scriptedFetch([described(), { status: 403, text: JSON.stringify({ error }) }]);
+    const err = await client(fetch)
+      .govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IntentRefusedError);
+    expect((err as IntentRefusedError).status).toBe(403);
+    expect((err as IntentRefusedError).reason).toBe(error);
+  });
+});
+
+const hexOf = (bytes: Uint8Array) =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');

@@ -27,6 +27,21 @@ export interface Transport {
     path: string;
     body?: string | Uint8Array;
   }) => Promise<Record<string, string>>;
+  /**
+   * Sign each request instead of, or alongside, presenting a session.
+   *
+   * Called per call with the method, the path the node will see, and the exact
+   * body — a proof commits to all three, so unlike `getAuthToken` it cannot be
+   * resolved once and reused. Returning `undefined` sends no proof header,
+   * which is how a client that only sometimes has a key stays usable.
+   *
+   * `createProofSigner` builds one of these from a credential and a key.
+   */
+  getProof?: (request: {
+    method: string;
+    path: string;
+    body?: unknown;
+  }) => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.

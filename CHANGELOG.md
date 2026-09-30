@@ -1,3 +1,195 @@
+## [22.5.1](https://github.com/calimero-network/mero-js/compare/mero-js-v22.5.0...mero-js-v22.5.1) (2026-09-29)
+
+### Bug Fixes
+
+* **namespace-op:** sign namespace ops at schema version 16 ([#216](https://github.com/calimero-network/mero-js/issues/216)) ([766d3d5](https://github.com/calimero-network/mero-js/commit/766d3d594d4ff732ad56a6650d56d743906d7a67))
+
+## [22.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.4.0...mero-js-v22.5.0) (2026-09-29)
+
+### Features
+
+* **relay:** schema 15 and delegated governance through a relay ([#215](https://github.com/calimero-network/mero-js/issues/215)) ([d185aec](https://github.com/calimero-network/mero-js/commit/d185aec862d62d02b93e8f95de511f2fcad289dd))
+
+## [22.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.3.0...mero-js-v22.4.0) (2026-09-29)
+
+### Features
+
+* **relay:** create contexts through a relay with a creation warrant ([#214](https://github.com/calimero-network/mero-js/issues/214)) ([292fdc5](https://github.com/calimero-network/mero-js/commit/292fdc5a7682130aaf0c664fb5359633814c3b77))
+
+## [22.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.2.0...mero-js-v22.3.0) (2026-09-29)
+
+### Features
+
+* **sealed:** name the release for nodes that refuse /tee/info unsealed ([#212](https://github.com/calimero-network/mero-js/issues/212)) ([361ad19](https://github.com/calimero-network/mero-js/commit/361ad1972a2c2c4b418c781a9b6490b08a1dc603))
+
+## [22.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.1.0...mero-js-v22.2.0) (2026-09-29)
+
+### Features
+
+* **cloud:** pick relays on mdma's can_execute, not authorship_ready ([#211](https://github.com/calimero-network/mero-js/issues/211)) ([f4c16f3](https://github.com/calimero-network/mero-js/commit/f4c16f3d9d05a28dfeab1fa800791c144cad9a55))
+
+## [22.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.0.0...mero-js-v22.1.0) (2026-09-29)
+
+### Features
+
+* **admin:** add the RelayTee role and the TEE admission policy mode ([#210](https://github.com/calimero-network/mero-js/issues/210)) ([592a7e0](https://github.com/calimero-network/mero-js/commit/592a7e0f962b21203e3e7c0b85407881c3538d39))
+
+## [22.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.4.1...mero-js-v22.0.0) (2026-09-28)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** drop the chosen group id from CreateGroupRequest (#202)
+
+### Features
+
+* **admin:** drop the chosen group id from CreateGroupRequest ([#202](https://github.com/calimero-network/mero-js/issues/202)) ([34bbef4](https://github.com/calimero-network/mero-js/commit/34bbef4a83ebc583c8759a4914cd3f334444b246))
+
+## [21.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v21.4.0...mero-js-v21.4.1) (2026-09-28)
+
+### Bug Fixes
+
+* **namespace-op:** sign namespace ops at schema version 11 ([#208](https://github.com/calimero-network/mero-js/issues/208)) ([8ed336b](https://github.com/calimero-network/mero-js/commit/8ed336b7e06668ee065a357f9f13d38502f63fa7)), closes [core#4172](https://github.com/calimero-network/core/issues/4172)
+
+## [21.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.3.0...mero-js-v21.4.0) (2026-09-28)
+
+### Features
+
+* **sealed:** verify signed mero-tee releases at run time; sign namespace ops at schema 10 ([#206](https://github.com/calimero-network/mero-js/issues/206)) ([7f653ae](https://github.com/calimero-network/mero-js/commit/7f653aedd2524fae879013353a63dd2a812f3e09))
+
+## [21.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.2...mero-js-v21.3.0) (2026-09-28)
+
+### Features
+
+* **admin:** classifyError, and redeemInvitation that settles a join by membership ([#207](https://github.com/calimero-network/mero-js/issues/207)) ([12ad2a4](https://github.com/calimero-network/mero-js/commit/12ad2a416d6372ee5aee488e6bce98fb407568fc))
+
+## [21.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.1...mero-js-v21.2.2) (2026-09-28)
+
+### Bug Fixes
+
+* **namespace-op:** sign namespace ops at schema version 9 ([#201](https://github.com/calimero-network/mero-js/issues/201)) ([5b721dd](https://github.com/calimero-network/mero-js/commit/5b721dd3c1733b5925ae1214e308a4ad7aceb159)), closes [core#4163](https://github.com/calimero-network/core/issues/4163)
+
+## [21.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v21.2.0...mero-js-v21.2.1) (2026-09-28)
+
+### Bug Fixes
+
+* **relay:** keep the reason when the fetch itself fails ([#205](https://github.com/calimero-network/mero-js/issues/205)) ([d20ece7](https://github.com/calimero-network/mero-js/commit/d20ece788b0338552bd01abe6b82dea14c60629f))
+
+## [21.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.1.0...mero-js-v21.2.0) (2026-09-28)
+
+### Features
+
+* **admin:** declare the namespace legacy founding field ([#199](https://github.com/calimero-network/mero-js/issues/199)) ([64f98a9](https://github.com/calimero-network/mero-js/commit/64f98a9c989e66c9735fbe15faa807a830ad3cd1))
+
+## [21.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v21.0.0...mero-js-v21.1.0) (2026-09-28)
+
+### Features
+
+* **admin:** declare the namespace founding field ([#198](https://github.com/calimero-network/mero-js/issues/198)) ([ffd3f59](https://github.com/calimero-network/mero-js/commit/ffd3f5968996abd6be1597f4b29a620ba5ae7c5e))
+
+## [21.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v20.0.0...mero-js-v21.0.0) (2026-09-27)
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** remove getCertificate; test(e2e): cover upgrade retry (#196)
+
+### Code Refactoring
+
+* **admin:** remove getCertificate; test(e2e): cover upgrade retry ([#196](https://github.com/calimero-network/mero-js/issues/196)) ([19bd45f](https://github.com/calimero-network/mero-js/commit/19bd45f098e74f7f539462a37bf7ed72efba72ac))
+
+## [20.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.1...mero-js-v20.0.0) (2026-09-27)
+
+### ⚠ BREAKING CHANGES
+
+* **sealed:** trust a TEE image by all of its measurements, and build them from releases (#195)
+
+### Bug Fixes
+
+* **sealed:** trust a TEE image by all of its measurements, and build them from releases ([#195](https://github.com/calimero-network/mero-js/issues/195)) ([a631b5f](https://github.com/calimero-network/mero-js/commit/a631b5f19a50e6f092f7a41c713f73e5cad2cf8a))
+
+## [19.27.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.27.0...mero-js-v19.27.1) (2026-09-27)
+
+### Bug Fixes
+
+* **login:** keep the global fetch receiver on the default path ([#193](https://github.com/calimero-network/mero-js/issues/193)) ([fefbd07](https://github.com/calimero-network/mero-js/commit/fefbd0725e6bad0213aad6b3b25851b65edc916f))
+
+## [19.27.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.26.0...mero-js-v19.27.0) (2026-09-27)
+
+### Features
+
+* **sealed:** seal delegated execution to a TEE relay end to end ([#189](https://github.com/calimero-network/mero-js/issues/189)) ([8b8c7b4](https://github.com/calimero-network/mero-js/commit/8b8c7b49b80bbd50861654cd4b75df2e5aa14cfa))
+
+## [19.26.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.25.0...mero-js-v19.26.0) (2026-09-27)
+
+### Features
+
+* **sealed:** verify a TEE node's quote in the page, and name what React Native needs ([#186](https://github.com/calimero-network/mero-js/issues/186)) ([516b000](https://github.com/calimero-network/mero-js/commit/516b00003124a0317e6d67179a6a70bd75f162cb))
+
+## [19.25.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.1...mero-js-v19.25.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add readinessCheck, listMemberDevices, sealToAccount, queryContext ([#181](https://github.com/calimero-network/mero-js/issues/181)) ([aabf7ce](https://github.com/calimero-network/mero-js/commit/aabf7cef93349507cff1bd149601d38db440aab8))
+
+## [19.24.1](https://github.com/calimero-network/mero-js/compare/mero-js-v19.24.0...mero-js-v19.24.1) (2026-09-26)
+
+### Bug Fixes
+
+* **sealed:** bound what a proxy can make the client buffer, and retry a busy handshake ([#180](https://github.com/calimero-network/mero-js/issues/180)) ([eb9ce20](https://github.com/calimero-network/mero-js/commit/eb9ce205171491c5ecc39e94b918ebabbb4bfad6))
+
+## [19.24.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.23.0...mero-js-v19.24.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add disableTeeAuthoringPolicy for DELETE tee-authoring-policy ([#179](https://github.com/calimero-network/mero-js/issues/179)) ([f833d1e](https://github.com/calimero-network/mero-js/commit/f833d1e954f7c99b1133744ac31c5d03332779be))
+
+## [19.23.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.22.0...mero-js-v19.23.0) (2026-09-26)
+
+### Features
+
+* **sealed:** open forward-secret sessions and stream sealed responses ([#178](https://github.com/calimero-network/mero-js/issues/178)) ([f46cc27](https://github.com/calimero-network/mero-js/commit/f46cc273beae5d97466ca1e5b90ee31e289084c6))
+
+## [19.22.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.21.0...mero-js-v19.22.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** type the signed-release TEE admission policy ([#174](https://github.com/calimero-network/mero-js/issues/174)) ([5564435](https://github.com/calimero-network/mero-js/commit/5564435199a7706eeaeb18d60007056c57aaa09f))
+
+## [19.21.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.20.0...mero-js-v19.21.0) (2026-09-26)
+
+### Features
+
+* **sealed:** seal requests to a TEE node's attested transport key ([#177](https://github.com/calimero-network/mero-js/issues/177)) ([820fdbd](https://github.com/calimero-network/mero-js/commit/820fdbd55bef290bcc61f0179d04b40a063f0f18))
+
+## [19.20.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.19.0...mero-js-v19.20.0) (2026-09-26)
+
+### Features
+
+* **admin-api:** add setTeeAuthoringPolicy for the tee-authoring-policy route ([#175](https://github.com/calimero-network/mero-js/issues/175)) ([3156824](https://github.com/calimero-network/mero-js/commit/3156824b849e863b1e95424e5287fcd38fb5dcdd)), closes [#4059](https://github.com/calimero-network/mero-js/issues/4059) [core#4059](https://github.com/calimero-network/core/issues/4059)
+
+## [19.19.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.18.0...mero-js-v19.19.0) (2026-09-26)
+
+### Features
+
+* **cloud:** let enable-ha carry the owner node's admitter addresses ([#173](https://github.com/calimero-network/mero-js/issues/173)) ([3770457](https://github.com/calimero-network/mero-js/commit/3770457b0cddc1a5c728e44225ca5da338017c79))
+
+## [19.18.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.17.0...mero-js-v19.18.0) (2026-09-26)
+
+### Features
+
+* **http-client:** support a custom fetch implementation in MeroJsConfig ([#171](https://github.com/calimero-network/mero-js/issues/171)) ([34b71e0](https://github.com/calimero-network/mero-js/commit/34b71e0053c6af94f4b6b0567dc386813562b3ac))
+
+## [19.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.16.0...mero-js-v19.17.0) (2026-09-24)
+
+### Features
+
+* **mero-js:** let a MeroJs client sign its requests ([#169](https://github.com/calimero-network/mero-js/issues/169)) ([02b56c5](https://github.com/calimero-network/mero-js/commit/02b56c51302fbab5ecc858df0b8b03aa88e9a9a4))
+
+## [19.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.15.0...mero-js-v19.16.0) (2026-09-24)
+
+### Features
+
+* **request:** carry a signed proof on every request ([#168](https://github.com/calimero-network/mero-js/issues/168)) ([ae9c808](https://github.com/calimero-network/mero-js/commit/ae9c8085886eb89cb5ae562dfa485049a0acf6a9))
+
 ## [19.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v19.14.1...mero-js-v19.15.0) (2026-09-24)
 
 ### Features
