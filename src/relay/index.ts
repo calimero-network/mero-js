@@ -9,6 +9,8 @@ export type {
   GovernanceDescription,
   GovernInput,
   GovernResult,
+  FoundNamespaceInput,
+  FoundedNamespace,
 } from './relay-client.js';
 export {
   createMemoryNonceSource,

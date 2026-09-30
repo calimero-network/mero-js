@@ -32,9 +32,14 @@ import { signWarrant } from '../warrant/warrant.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
 import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
-import type { GovernanceOp } from '../warrant/governance-op.js';
+import {
+  defaultCapabilitiesSetOp,
+  foundedNamespaceId,
+  namespaceCreatedOp,
+  type GovernanceOp,
+} from '../warrant/governance-op.js';
 import { HTTPError } from '../http-client/web-client.js';
-import { hex } from '../crypto/internal.js';
+import { fromHex, hex } from '../crypto/internal.js';
 import type { NonceSource } from './nonce-source.js';
 
 /** How long a freshly minted warrant stays presentable, in seconds. */
@@ -199,6 +204,63 @@ export interface GovernInput {
 export interface GovernResult {
   /** The group the op acted on, hex: the new subgroup, for a creation. */
   groupId: string;
+}
+
+/** What {@link RelayClient.foundNamespace} founds with. */
+export interface FoundNamespaceInput {
+  /**
+   * The salt the namespace id is derived from, hex (32 bytes). Random when
+   * absent, which is what almost every caller wants: one account founds many
+   * namespaces by varying it.
+   */
+  salt?: string;
+  /**
+   * The relay's account, hex: the warrant's `executor`. The namespace does not
+   * exist yet, so there is nothing to ask `describeGovernance` about. Falls back
+   * to the client's configured or already-learned `executorAccount`.
+   */
+  executorAccount?: string;
+  /**
+   * The namespace root's default capability mask (`MemberCapabilities` bits),
+   * set right after founding. A namespace is founded with core's minimal
+   * default (`CAN_JOIN_OPEN_SUBGROUPS` only), so an app that wants members to
+   * create contexts or invite, for example, names its own mask here.
+   *
+   * Set through the relay with a delegated `DefaultCapabilitiesSet`, applied as
+   * the founder, who is the namespace's admin. It cannot include
+   * `CAN_AUTHOR_ON_BEHALF` (bit 9): which relays may write for members is never
+   * decided through a relay, and such a mask is refused before anything is
+   * signed.
+   */
+  defaultCapabilities?: number;
+}
+
+/** A namespace founded through a relay. */
+export interface FoundedNamespace {
+  /** The new namespace's id, hex: `foundedNamespaceId(author, salt)`. */
+  namespaceId: string;
+  /**
+   * The salt it was derived with, hex. Keep it if anyone will need to be shown
+   * who founded the namespace: `(founder, salt)` reproduces the id.
+   */
+  salt: string;
+  /**
+   * Whether the relay admitted itself as the namespace's first TEE, which also
+   * sets its default relay-mode admission policy. `false` from a relay that is
+   * not a TEE, or whose attestation failed (see `teeError`). The namespace is
+   * founded either way.
+   */
+  teeEnabled: boolean;
+  /** Why `teeEnabled` is `false`, when the relay tried and failed. */
+  teeError?: string;
+  /**
+   * Present only when `defaultCapabilities` was asked for: whether the mask was
+   * set. `false` leaves the namespace founded with core's default; retry with
+   * `govern({ groupId: namespaceId, op: defaultCapabilitiesSetOp(mask) })`.
+   */
+  defaultCapabilitiesSet?: boolean;
+  /** Why `defaultCapabilitiesSet` is `false`. */
+  defaultCapabilitiesError?: string;
 }
 
 /** Where an accepted intent landed. */
@@ -519,12 +581,120 @@ export class RelayClient {
       signer,
     });
 
-    const body = await this.json<{ data: GovernResult }>(
-      'POST',
-      `/admin-api/groups/${encodeURIComponent(input.groupId)}/governance-intents`,
-      { warrant, authorProof: this.config.authorProof, op: hex(input.op.bytes) },
-    );
-    return { groupId: body.data.groupId };
+    const data = await this.postGovernance(input.groupId, input.op, warrant);
+    return { groupId: data.groupId };
+  }
+
+  /**
+   * Found a namespace through the relay, with the author as its founder, owner
+   * and admin. For an account with no node, this is how it gets a namespace at
+   * all.
+   *
+   * The author signs the exact genesis (`NamespaceCreatedV2`, carrying the
+   * author's own credential and the salt) under a root-plane governance
+   * warrant scoped to the new namespace's id, which is derived from the
+   * author's account and the salt, so the relay can neither choose another id
+   * nor found it for anyone else. The relay takes an identity in the new
+   * namespace, mints its key, publishes the genesis, and is seated as the
+   * founding relay (a `Member` holding `CAN_AUTHOR_ON_BEHALF`), so later
+   * `govern`, `createContext` and `execute` calls in the namespace work
+   * through it straight away. A TEE relay then admits itself as the
+   * namespace's first TEE; `teeEnabled` reports whether it did.
+   *
+   * The executor cannot be learned from the relay first: the namespace does not
+   * exist, so `describeGovernance` has nothing to answer about. It comes from
+   * `input.executorAccount`, the configured one, or one an earlier call learned
+   * (`describe`, `createContext`, `govern`), and without any of them this
+   * throws before taking a nonce.
+   * The nonce is spent in the new namespace's ledger.
+   *
+   * With `defaultCapabilities`, the founder then sets the namespace's default
+   * capability mask through the same relay (a second warrant, a second nonce)
+   * and `defaultCapabilitiesSet` reports whether it landed. A failure there
+   * does not throw, since the namespace is already founded.
+   *
+   * Refusals (`400`/`403`) come back as {@link IntentRefusedError}; a salt
+   * that names an existing namespace is a `409`, an `HTTPError`.
+   */
+  async foundNamespace(input: FoundNamespaceInput = {}): Promise<FoundedNamespace> {
+    const executor = input.executorAccount
+      ? this.checkedExecutor(input.executorAccount)
+      : this.executorAccount;
+    if (!executor) {
+      throw new Error(
+        "foundNamespace needs the relay's account: pass executorAccount or configure it " +
+          '(checked before signing, no nonce was spent)',
+      );
+    }
+    const salt = input.salt
+      ? hex(fromHex(input.salt, 'salt', 32))
+      : hex(crypto.getRandomValues(new Uint8Array(32)));
+    const namespaceId = await foundedNamespaceId(this.config.authorAccount, salt);
+    const op = namespaceCreatedOp({
+      founder: this.config.authorAccount,
+      credential: this.config.authorProof,
+      salt,
+    });
+
+    // Encoded (and so validated) before anything is signed: a mask the relay
+    // would refuse must not cost the founding a nonce.
+    const capabilitiesOp =
+      input.defaultCapabilities === undefined
+        ? undefined
+        : defaultCapabilitiesSetOp(input.defaultCapabilities);
+
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
+    const nonce = await this.config.nonces.next();
+    const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const warrant = await signGovernanceWarrant({
+      scope: namespaceId,
+      op,
+      authorAccount: this.config.authorAccount,
+      executor,
+      nonce,
+      notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
+      signer,
+    });
+
+    const data = await this.postGovernance(namespaceId, op, warrant);
+    const founded: FoundedNamespace = {
+      namespaceId: data.groupId,
+      salt,
+      teeEnabled: data.teeEnabled ?? false,
+      ...(data.teeError ? { teeError: data.teeError } : {}),
+    };
+    if (!capabilitiesOp) return founded;
+
+    // A second op, under its own warrant, on the namespace root: the founder is
+    // its admin and the relay was seated to act for members, so it goes through
+    // the ordinary `govern` path. The namespace exists whatever happens here, so
+    // a failure is reported rather than thrown.
+    try {
+      await this.govern({ groupId: founded.namespaceId, op: capabilitiesOp });
+      return { ...founded, defaultCapabilitiesSet: true };
+    } catch (err) {
+      return {
+        ...founded,
+        defaultCapabilitiesSet: false,
+        defaultCapabilitiesError: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  private async postGovernance(
+    groupId: string,
+    op: GovernanceOp,
+    warrant: string,
+  ): Promise<{ groupId: string; teeEnabled?: boolean; teeError?: string }> {
+    const body = await this.json<{
+      data: { groupId: string; teeEnabled?: boolean; teeError?: string };
+    }>('POST', `/admin-api/groups/${encodeURIComponent(groupId)}/governance-intents`, {
+      warrant,
+      authorProof: this.config.authorProof,
+      op: hex(op.bytes),
+    });
+    return body.data;
   }
 
   /**

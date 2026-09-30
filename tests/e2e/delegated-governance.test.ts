@@ -15,6 +15,11 @@
  * (`GroupCreated`, published on the namespace log). The relay holds no right to
  * either op; the author does, and every peer applies the op as the author.
  *
+ * And the genesis: the author founds a namespace of its own through the relay
+ * (`NamespaceCreatedV2` under a warrant scoped to the id derived from the
+ * author and a salt), becomes its admin, and can govern it through the same
+ * relay straight away, since the relay is seated as its founding relay.
+ *
  * Same rig as `delegated-creation.test.ts`: the relay is a node serving
  * delegated execution publicly, and setup goes to its unguarded admin API.
  *
@@ -25,11 +30,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { CAPABILITY_PRESETS } from '../../src/capabilities.js';
 import { IntentRefusedError, RelayClient } from '../../src/relay/relay-client.js';
 import { createMemoryNonceSource } from '../../src/relay/nonce-source.js';
 import { signerFromSecret } from '../../src/signer/index.js';
 import { generateAccountRoot } from '../../src/account/index.js';
-import { groupCreatedOp, memberAddedOp } from '../../src/warrant/governance-op.js';
+import {
+  foundedNamespaceId,
+  groupCreatedOp,
+  memberAddedOp,
+} from '../../src/warrant/governance-op.js';
 import {
   MEROD_BINARY,
   ensureApplication,
@@ -185,4 +195,65 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
       expect.objectContaining({ identity: relayAccount, role: 'Admin' }),
     );
   }, 120_000);
+
+  it('founds a namespace the author owns, and governs it through the same relay', async () => {
+    // mero-chat's mask: core founds with a minimal default and the app names its own.
+    const MASK = CAPABILITY_PRESETS.COLLABORATOR;
+    const founded = await relay.foundNamespace({
+      executorAccount: relayAccount,
+      defaultCapabilities: MASK,
+    });
+    expect(founded.namespaceId).toBe(await foundedNamespaceId(device.account, founded.salt));
+    expect(typeof founded.teeEnabled).toBe('boolean');
+    if (!founded.teeEnabled && founded.teeError) {
+      // A relay that is not a TEE says nothing; one that tried and failed says why.
+      console.warn(`founding relay did not attest: ${founded.teeError}`);
+    }
+
+    // Set through the relay as the founder, who is the namespace's admin.
+    expect(founded.defaultCapabilitiesError).toBeUndefined();
+    expect(founded.defaultCapabilitiesSet).toBe(true);
+    await expect(operator.admin.getGroupInfo(founded.namespaceId)).resolves.toMatchObject({
+      groupId: founded.namespaceId,
+      defaultCapabilities: MASK,
+    });
+    // The AUTHOR is the founder and admin. The relay is seated to serve it, as
+    // a Member, or as the namespace's first TEE if it attested.
+    const { members } = await operator.admin.listGroupMembers(founded.namespaceId);
+    expect(members).toContainEqual(
+      expect.objectContaining({ identity: device.account, role: 'Admin' }),
+    );
+    expect(members).toContainEqual(
+      expect.objectContaining({
+        identity: relayAccount,
+        role: founded.teeEnabled ? 'RelayTee' : 'Member',
+      }),
+    );
+
+    // Seated with standing to act for members, so the founder governs its new
+    // namespace through the relay with no grant from anyone.
+    await expect(relay.describeGovernance(founded.namespaceId)).resolves.toEqual({
+      executorAccount: relayAccount,
+      groupId: founded.namespaceId,
+      canActOnBehalf: true,
+    });
+    const subgroupId = randomId();
+    await expect(
+      relay.govern({
+        groupId: founded.namespaceId,
+        op: groupCreatedOp({
+          groupId: subgroupId,
+          parentId: founded.namespaceId,
+          restricted: true,
+          admin: device.account,
+        }),
+      }),
+    ).resolves.toEqual({ groupId: subgroupId });
+
+    // The same salt names the same namespace, which is never founded twice.
+    const again = await relay
+      .foundNamespace({ salt: founded.salt, executorAccount: relayAccount })
+      .catch((e: unknown) => e);
+    expect(again).toBeInstanceOf(Error);
+  }, 180_000);
 });
