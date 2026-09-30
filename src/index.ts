@@ -75,6 +75,8 @@ export {
   memberLeftOp,
   memberRoleSetOp,
   groupCreatedOp,
+  createdSubgroupId,
+  subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
 } from "./warrant/index.js";
@@ -120,6 +122,7 @@ export type {
   GovernanceOpKind,
   GovernanceMemberRole,
   GroupCreatedInput,
+  SubgroupCreation,
 } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session

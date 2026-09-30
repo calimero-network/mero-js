@@ -20,6 +20,7 @@ import {
   type GovernanceWarrantInput,
 } from './governance-warrant.js';
 import {
+  createdSubgroupId,
   groupCreatedOp,
   groupDeletedOp,
   groupReparentedOp,
@@ -27,6 +28,7 @@ import {
   memberLeftOp,
   memberRemovedOp,
   memberRoleSetOp,
+  subgroupCreation,
   type GovernanceOp,
 } from './governance-op.js';
 import { fromHex } from '../crypto/internal.js';
@@ -153,11 +155,36 @@ describe('governance op encoders', () => {
       parentId: '11'.repeat(32),
       restricted: true,
       admin: '22'.repeat(32),
+      salt: '33'.repeat(32),
     });
     expect(op.kind).toBe('root');
-    expect(hex(op.bytes)).toBe('00' + '55'.repeat(32) + '11'.repeat(32) + '01' + '22'.repeat(32));
+    expect(hex(op.bytes)).toBe(
+      '00' + '55'.repeat(32) + '11'.repeat(32) + '01' + '22'.repeat(32) + '33'.repeat(32),
+    );
     expect(hex(await governanceOpHash(op))).toBe(
-      '0ae00fae1b87e3b0f285246632ebe31e2e3b687a563a1f5299be997657dfd55f',
+      '3a30eacf28687109de2b63b649cb0d8a532f344212066897547f52a416a1be0e',
+    );
+  });
+
+  // Core's `created_subgroup_id_has_a_known_answer`.
+  it('derives a subgroup id as core does', async () => {
+    await expect(
+      createdSubgroupId('11'.repeat(32), '33'.repeat(32), true, '22'.repeat(32)),
+    ).resolves.toBe('6c949a0f0e0c3c55310223f4cd03f888b6e84c7e963f9171a5639fc54ea93b1a');
+  });
+
+  it('builds a subgroup creation whose id is the derived one', async () => {
+    const created = await subgroupCreation({
+      parentId: '11'.repeat(32),
+      restricted: false,
+      admin: '22'.repeat(32),
+    });
+    expect(created.salt).toMatch(/^[0-9a-f]{64}$/);
+    expect(created.groupId).toBe(
+      await createdSubgroupId('22'.repeat(32), '11'.repeat(32), false, created.salt),
+    );
+    expect(hex(created.op.bytes)).toBe(
+      '00' + created.groupId + '11'.repeat(32) + '00' + '22'.repeat(32) + created.salt,
     );
   });
 

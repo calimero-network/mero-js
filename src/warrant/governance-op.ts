@@ -19,7 +19,7 @@
  * `crates/governance-types/src/tests.rs` (`delegated_governance_op_vectors_are_stable`).
  */
 
-import { concat, fromHex, u32le } from '../crypto/internal.js';
+import { concat, domainHash, fromHex, hex, u32le } from '../crypto/internal.js';
 
 /**
  * Which plane an op is published on: `group` is a `GroupOp` on the group's own
@@ -133,9 +133,42 @@ export function memberRoleSetOp(member: string, memberRole: GovernanceMemberRole
   };
 }
 
+/** Domain of core's `created_subgroup_id`. */
+const SUBGROUP_ID_DOMAIN = new TextEncoder().encode('calimero.subgroup.id.v1');
+
+/**
+ * The id `admin` derives for a subgroup under `parentId` with birth visibility
+ * `restricted` and `salt` (all hex), as core's `created_subgroup_id` does:
+ * `domain_hash("calimero.subgroup.id.v1", [admin, parentId, [restricted], salt])`.
+ *
+ * A subgroup's id is bound to its create, so nobody but its creator can name
+ * it: a node refuses a `GroupCreated` whose fields do not reproduce its id.
+ * That is what stops a second member racing a concurrent create for an id it
+ * saw gossiped.
+ */
+export async function createdSubgroupId(
+  admin: string,
+  parentId: string,
+  restricted: boolean,
+  salt: string,
+): Promise<string> {
+  return hex(
+    await domainHash(SUBGROUP_ID_DOMAIN, [
+      fromHex(admin, 'admin', 32),
+      fromHex(parentId, 'parentId', 32),
+      new Uint8Array([restricted ? 1 : 0]),
+      fromHex(salt, 'salt', 32),
+    ]),
+  );
+}
+
 /** What a subgroup is created with. */
 export interface GroupCreatedInput {
-  /** The new subgroup's id, hex (32 bytes). Choose it fresh; a taken id is refused. */
+  /**
+   * The new subgroup's id, hex (32 bytes). It must be
+   * `createdSubgroupId(admin, parentId, restricted, salt)`; a node refuses any
+   * other. {@link subgroupCreation} draws the salt and derives it for you.
+   */
   groupId: string;
   /** The group it is nested under, hex: the namespace root or an existing subgroup. */
   parentId: string;
@@ -146,6 +179,8 @@ export interface GroupCreatedInput {
    * refuses any other, since the op is applied as the author.
    */
   admin: string;
+  /** The salt `groupId` was derived with, hex (32 bytes). Random; need not be kept. */
+  salt: string;
 }
 
 /**
@@ -163,8 +198,28 @@ export function groupCreatedOp(input: GroupCreatedInput): GovernanceOp {
       fromHex(input.parentId, 'parentId', 32),
       tag(input.restricted ? 1 : 0),
       fromHex(input.admin, 'admin', 32),
+      fromHex(input.salt, 'salt', 32),
     ),
   };
+}
+
+/** A new subgroup's create: its derived id, the salt it was derived with, and the op. */
+export interface SubgroupCreation {
+  groupId: string;
+  salt: string;
+  op: GovernanceOp;
+}
+
+/**
+ * Create a subgroup under `parentId`: draws a fresh salt (unless one is given),
+ * derives the id with {@link createdSubgroupId}, and encodes the op.
+ */
+export async function subgroupCreation(
+  input: Omit<GroupCreatedInput, 'groupId' | 'salt'> & { salt?: string },
+): Promise<SubgroupCreation> {
+  const salt = input.salt ?? hex(crypto.getRandomValues(new Uint8Array(32)));
+  const groupId = await createdSubgroupId(input.admin, input.parentId, input.restricted, salt);
+  return { groupId, salt, op: groupCreatedOp({ ...input, groupId, salt }) };
 }
 
 /** Move `childGroupId` under `newParentId`, a root op. */
