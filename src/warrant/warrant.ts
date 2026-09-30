@@ -28,16 +28,8 @@
  * at a relay as a 403: an authorization refusal, nowhere near the cause.
  */
 
-import {
-  concat,
-  derivePublicKey,
-  domainHash,
-  fromHex,
-  hex,
-  importSigningKey,
-  u32le,
-  u64le,
-} from '../crypto/internal.js';
+import { concat, domainHash, fromHex, hex, u32le, u64le } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 const SIGN_DOMAIN = new TextEncoder().encode('calimero.warrant.v2');
 const INTENT_DOMAIN = new TextEncoder().encode('calimero.warrant.intent.v1');
@@ -127,8 +119,18 @@ export interface WarrantInput {
    *
    * Never sent anywhere. It signs locally and only the signature travels, which
    * is the whole reason a warrant can be minted by something holding no node.
+   *
+   * Mutually exclusive with {@link WarrantInput.signer}: exactly one is
+   * required. Prefer `signer` in a browser, since a secret held as a string is
+   * readable by anything on the origin.
    */
-  deviceSecret: string;
+  deviceSecret?: string;
+  /**
+   * The author device's signer, in place of {@link WarrantInput.deviceSecret}:
+   * for a key that cannot be exported to hex (a non-extractable WebCrypto key,
+   * a passkey, a hardware or remote signer).
+   */
+  signer?: Signer;
 }
 
 
@@ -171,8 +173,8 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
   const accountHeads = citedHeads(input.accountHeads, 'accountHeads');
   const governanceFloor = citedHeads(input.governanceFloor, 'governanceFloor');
 
-  const key = await importSigningKey(input.deviceSecret);
-  const publicKey = await derivePublicKey(input.deviceSecret);
+  const signer = await resolveSigner(input.deviceSecret, input.signer, 'deviceSecret');
+  const publicKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
 
   const method = new TextEncoder().encode(input.method);
   const commitment = await intentHash(input.method, input.argsJson);
@@ -200,9 +202,7 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
     notAfter,
   ]);
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, key, preimage),
-  );
+  const signature = checkedSignature(await signer.sign(preimage));
 
   // Borsh: a `String` is a u32 length then its UTF-8 bytes; a `Vec<[u8; 32]>` is
   // a u32 count then the elements. u32 HERE; u64 in the preimage above.
@@ -231,6 +231,21 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
  * Decode a cited-head list, refusing one longer than a node will accept.
  * Shared with `creation-warrant.ts`; internal, not exported from the package root.
  */
+/**
+ * A signer's output, refused unless it is a 64-byte Ed25519 signature.
+ *
+ * The signature is spliced into the encoding at a fixed width, so a signer that
+ * returned anything else would yield a warrant that parses as garbage at a
+ * relay, far from the signer at fault. Internal.
+ */
+export function checkedSignature(signature: Uint8Array): Uint8Array {
+  if (!(signature instanceof Uint8Array) || signature.length !== 64) {
+    const got = signature instanceof Uint8Array ? `${signature.length} bytes` : typeof signature;
+    throw new Error(`signer returned ${got}, expected a 64-byte Ed25519 signature`);
+  }
+  return signature;
+}
+
 export function citedHeads(heads: string[] | undefined, label: string): Uint8Array[] {
   const list = heads ?? [];
   if (list.length > MAX_CITED_HEADS) {

@@ -78,6 +78,10 @@ export {
   groupReparentedOp,
   groupDeletedOp,
 } from "./warrant/index.js";
+// Who signs — a key's capability, separated from its material, so a
+// non-extractable key can be used wherever a hex secret could.
+export { signerFromSecret, signerFromCryptoKey } from "./signer/index.js";
+export type { Signer } from "./signer/index.js";
 // Account roots — mint one with a recovery phrase, or prove you hold one
 export {
   generateAccountRoot,
