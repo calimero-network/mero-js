@@ -1,3 +1,9 @@
+## [22.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.5.1...mero-js-v22.6.0) (2026-09-30)
+
+### Features
+
+* **warrant:** sign creation and governance warrants with a Signer ([#217](https://github.com/calimero-network/mero-js/issues/217)) ([1c619e4](https://github.com/calimero-network/mero-js/commit/1c619e4bcf4b64cf2e15d05d898ff3102d5e1864)), closes [#203](https://github.com/calimero-network/mero-js/issues/203)
+
 ## [22.5.1](https://github.com/calimero-network/mero-js/compare/mero-js-v22.5.0...mero-js-v22.5.1) (2026-09-29)
 
 ### Bug Fixes
