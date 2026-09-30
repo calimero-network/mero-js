@@ -40,6 +40,77 @@ export type CapabilityName = keyof typeof CAPABILITIES;
 export type CapabilityBit = (typeof CAPABILITIES)[CapabilityName];
 
 /**
+ * Ready-made masks for `setDefaultCapabilities` / `setMemberCapabilities` and
+ * `RelayClient.foundNamespace({ defaultCapabilities })`, so an app can name the
+ * default it gives members instead of passing a bare number.
+ *
+ * Why this matters: a namespace's default mask is copied into a non-admin
+ * member's row when they join, and a namespace starts without
+ * `CAN_CREATE_CONTEXT` in it. An app that never sets a default leaves every
+ * invited member unable to create a context until an admin grants it by hand.
+ *
+ * None of these include `CAN_AUTHOR_ON_BEHALF`; grant that deliberately (see
+ * `AdminApiClient.grantAuthorship` / `openToDelegatedExecution`).
+ */
+export const CAPABILITY_PRESETS = {
+  /** No capabilities. */
+  NONE: 0,
+  /** Join Open subgroups only: what a namespace starts with. */
+  JOIN_ONLY: CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS,
+  /**
+   * Create contexts, invite members, join Open subgroups (= 7). A member who
+   * can work in the namespace but not reshape it.
+   */
+  CONTRIBUTOR:
+    CAPABILITIES.CAN_CREATE_CONTEXT |
+    CAPABILITIES.CAN_INVITE_MEMBERS |
+    CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS,
+  /**
+   * `CONTRIBUTOR` plus create and delete subgroups and manage their visibility
+   * (= 231). What mero-chat gives members, so they can start and close their
+   * own channels.
+   */
+  COLLABORATOR:
+    CAPABILITIES.CAN_CREATE_CONTEXT |
+    CAPABILITIES.CAN_INVITE_MEMBERS |
+    CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS |
+    CAPABILITIES.CAN_CREATE_SUBGROUP |
+    CAPABILITIES.CAN_DELETE_SUBGROUP |
+    CAPABILITIES.CAN_MANAGE_VISIBILITY,
+} as const;
+
+export type CapabilityPreset = keyof typeof CAPABILITY_PRESETS;
+
+/**
+ * Builds a u32 mask from capability names and/or bit values:
+ * `capMask('CAN_CREATE_CONTEXT', 'CAN_INVITE_MEMBERS') === 3`.
+ * Throws on a name core does not assign, so a typo can't silently yield 0.
+ */
+export function capMask(...caps: Array<CapabilityName | number>): number {
+  let mask = 0;
+  for (const cap of caps) {
+    if (typeof cap === 'number') {
+      mask |= cap;
+    } else if (Object.prototype.hasOwnProperty.call(CAPABILITIES, cap)) {
+      mask |= CAPABILITIES[cap];
+    } else {
+      throw new Error(`unknown capability: ${String(cap)}`);
+    }
+  }
+  return mask >>> 0;
+}
+
+/**
+ * The names of the assigned capability bits set in `mask`, in bit order.
+ * Unassigned bits (10 and above) are not reported.
+ */
+export function capNames(mask: number): CapabilityName[] {
+  return (Object.keys(CAPABILITIES) as CapabilityName[]).filter((name) =>
+    hasCap(mask, CAPABILITIES[name]),
+  );
+}
+
+/**
  * Returns true if `mask` has every bit of `cap` set. Both operands are
  * coerced to unsigned 32-bit (`>>> 0`) before comparing so a high bit such
  * as `1 << 31` doesn't fall foul of `&` yielding a signed result.

@@ -15,11 +15,13 @@
  *
  * Sources in core, for the next person to check a discriminant:
  * `crates/governance-types/src/lib.rs` (`GroupOp`, `RootOp`),
- * `crates/primitives/src/context.rs` (`GroupMemberRole`), and the vectors in
+ * `crates/primitives/src/context.rs` (`GroupMemberRole`),
+ * `crates/account/src/namespace_id.rs` (`founded_namespace_id`), and the vectors in
  * `crates/governance-types/src/tests.rs` (`delegated_governance_op_vectors_are_stable`).
  */
 
-import { concat, fromHex, u32le } from '../crypto/internal.js';
+import { CAPABILITIES, hasCap } from '../capabilities.js';
+import { concat, domainHash, fromHex, fromHexUnsized, hex, u32le } from '../crypto/internal.js';
 
 /**
  * Which plane an op is published on: `group` is a `GroupOp` on the group's own
@@ -54,6 +56,7 @@ const GROUP_OP = {
   MemberRemoved: 2,
   MemberLeft: 3,
   MemberRoleSet: 4,
+  DefaultCapabilitiesSet: 6,
 } as const;
 
 /** `RootOp` discriminants, by position in core's enum. */
@@ -61,7 +64,11 @@ const ROOT_OP = {
   GroupCreated: 0,
   GroupReparented: 1,
   GroupDeleted: 2,
+  NamespaceCreatedV2: 9,
 } as const;
+
+/** core's `NAMESPACE_ID_DOMAIN`, which a founded namespace id is hashed under. */
+const NAMESPACE_ID_DOMAIN = new TextEncoder().encode('calimero.namespace.id.v1');
 
 /** A post-state hash left for the relay to compute: 32 zero bytes. */
 const CLEARED_HASH = new Uint8Array(32);
@@ -133,6 +140,30 @@ export function memberRoleSetOp(member: string, memberRole: GovernanceMemberRole
   };
 }
 
+/**
+ * Set the group's default capability mask (`MemberCapabilities` bits, a `u32`),
+ * the capabilities every member holds without a per-member grant. Needs admin.
+ *
+ * The relay refuses any change to `CAN_AUTHOR_ON_BEHALF` (bit 9) through this
+ * path, and no namespace starts with it in its default mask, so a mask that
+ * sets it is refused here rather than burning a nonce on a certain 403.
+ */
+export function defaultCapabilitiesSetOp(capabilities: number): GovernanceOp {
+  if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
+    throw new Error(`capabilities must be a u32 bit mask, got ${String(capabilities)}`);
+  }
+  // Never changed through a relay.
+  if (hasCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
+    throw new Error(
+      'capabilities may not include CAN_AUTHOR_ON_BEHALF (512): a relay never carries a change to it',
+    );
+  }
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.DefaultCapabilitiesSet), u32le(capabilities)),
+  };
+}
+
 /** What a subgroup is created with. */
 export interface GroupCreatedInput {
   /** The new subgroup's id, hex (32 bytes). Choose it fresh; a taken id is refused. */
@@ -187,5 +218,65 @@ export function groupDeletedOp(rootGroupId: string): GovernanceOp {
   return {
     kind: 'root',
     bytes: concat(tag(ROOT_OP.GroupDeleted), fromHex(rootGroupId, 'rootGroupId', 32), EMPTY_VEC, EMPTY_VEC),
+  };
+}
+
+/**
+ * The id of the namespace `founder` founds with `salt`: core's
+ * `founded_namespace_id`, `domain_hash("calimero.namespace.id.v1", [founder, salt])`.
+ *
+ * Anyone holding the pair can recompute it, and only the founder's account
+ * hashes to it, which is why a relay founding a namespace for a member cannot
+ * choose the id: the member computes it and signs it.
+ */
+export async function foundedNamespaceId(founder: string, salt: string): Promise<string> {
+  return hex(
+    await domainHash(NAMESPACE_ID_DOMAIN, [
+      fromHex(founder, 'founder', 32),
+      fromHex(salt, 'salt', 32),
+    ]),
+  );
+}
+
+/** What a namespace is founded with. */
+export interface NamespaceCreatedInput {
+  /** The founding account, hex: the **author's**. It becomes founder, owner and admin. */
+  founder: string;
+  /**
+   * The founder's `AccountProof<DeviceCert>`, hex: the credential the author
+   * already presents as `authorProof`. Its account must be `founder` and its
+   * device key the one that signs the warrant; the genesis apply checks both
+   * and binds the founder's device from it.
+   */
+  credential: string;
+  /**
+   * The salt the namespace id is derived with, hex (32 bytes). Choose it at
+   * random; {@link foundedNamespaceId} gives the id it yields.
+   */
+  salt: string;
+}
+
+/**
+ * Found a namespace: core's `RootOp::NamespaceCreatedV2` genesis, a root op
+ * published on the new namespace's own log.
+ *
+ * Its delegable form is the op itself, nothing cleared, so the author signs the
+ * exact genesis. Borsh is `[9] || founder || credential || salt`: the credential
+ * is a nested struct, not a length-prefixed byte string, so it is written
+ * inline. The warrant's scope must be {@link foundedNamespaceId}`(founder, salt)`.
+ */
+export function namespaceCreatedOp(input: NamespaceCreatedInput): GovernanceOp {
+  const credential = fromHexUnsized(input.credential, 'credential');
+  if (credential.length === 0) {
+    throw new Error('credential must be the founder\'s AccountProof<DeviceCert>, got nothing');
+  }
+  return {
+    kind: 'root',
+    bytes: concat(
+      tag(ROOT_OP.NamespaceCreatedV2),
+      fromHex(input.founder, 'founder', 32),
+      credential,
+      fromHex(input.salt, 'salt', 32),
+    ),
   };
 }
