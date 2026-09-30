@@ -54,7 +54,8 @@ interface RelayClientConfig {
   executorAccount?: string;      // hex; discovered via describe() when omitted
   authorAccount: string;         // hex — whose consent the warrant carries
   authorProof: string;           // hex borsh AccountProof<DeviceCert>
-  deviceSecret: string;          // hex ed25519 seed; NEVER transmitted
+  deviceSecret?: string;         // hex ed25519 seed; NEVER transmitted
+  signer?: Signer;               // or: a key that cannot be exported (exactly one)
   nonces: NonceSource;
   ttlSeconds?: number;           // default 300
   fetch?: typeof fetch;
@@ -67,6 +68,21 @@ relay's processes rotating its key does not void warrants already issued to it.
 
 `deviceSecret` signs in your process and only the signature leaves. That is the
 whole reason a keyholder can author without a node.
+
+A key that cannot be exported to hex (a non-extractable WebCrypto key, a
+passkey, a hardware or remote signer) goes in `signer` instead: anything with a
+`publicKey` (64 hex) and an async `sign(payload)` returning a 64-byte Ed25519
+signature over the payload as given. `signerFromCryptoKey(privateKey, publicKey)`
+wraps a WebCrypto key; `signerFromSecret(hex)` wraps a seed. `signWarrant`,
+`signCreationWarrant` and `signGovernanceWarrant` take the same pair of options.
+
+```typescript
+const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
+const relay = new RelayClient({
+  relayUrl, authorAccount, authorProof, nonces,
+  signer: await signerFromCryptoKey(pair.privateKey, pair.publicKey),
+});
+```
 
 ## `describe(contextId): Promise<RelayDescription>`
 

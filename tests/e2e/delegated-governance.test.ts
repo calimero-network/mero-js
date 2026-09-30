@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
 import { IntentRefusedError, RelayClient } from '../../src/relay/relay-client.js';
 import { createMemoryNonceSource } from '../../src/relay/nonce-source.js';
+import { signerFromSecret } from '../../src/signer/index.js';
 import { generateAccountRoot } from '../../src/account/index.js';
 import { groupCreatedOp, memberAddedOp } from '../../src/warrant/governance-op.js';
 import {
@@ -80,7 +81,8 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
       relayUrl,
       authorAccount: device.account,
       authorProof: device.credential,
-      deviceSecret: device.secret,
+      // Through a Signer, the path a non-extractable key takes.
+      signer: await signerFromSecret(device.secret, 'deviceSecret'),
       nonces: createMemoryNonceSource(1),
       timeoutMs: 60_000,
     });
