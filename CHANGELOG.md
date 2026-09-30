@@ -1,3 +1,9 @@
+## [22.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.7.0...mero-js-v22.8.0) (2026-09-30)
+
+### Features
+
+* signer interface, account root, cloud enrolment and per-request device proofs ([#203](https://github.com/calimero-network/mero-js/issues/203)) ([d31a48c](https://github.com/calimero-network/mero-js/commit/d31a48ce567583ad723ea1d954fe7eb91b2426fc)), closes [#312](https://github.com/calimero-network/mero-js/issues/312) [#4018](https://github.com/calimero-network/mero-js/issues/4018) [#193](https://github.com/calimero-network/mero-js/issues/193)
+
 ## [22.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.6.0...mero-js-v22.7.0) (2026-09-30)
 
 ### Features
