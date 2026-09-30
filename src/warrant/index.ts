@@ -30,6 +30,9 @@ export {
   subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
+  namespaceCreatedOp,
+  defaultCapabilitiesSetOp,
+  foundedNamespaceId,
 } from './governance-op.js';
 export type {
   GovernanceOp,
@@ -37,4 +40,5 @@ export type {
   GovernanceMemberRole,
   GroupCreatedInput,
   SubgroupCreation,
+  NamespaceCreatedInput,
 } from './governance-op.js';

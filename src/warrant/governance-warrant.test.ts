@@ -29,8 +29,12 @@ import {
   memberRemovedOp,
   memberRoleSetOp,
   subgroupCreation,
+  namespaceCreatedOp,
+  foundedNamespaceId,
+  defaultCapabilitiesSetOp,
   type GovernanceOp,
 } from './governance-op.js';
+import { signDeviceCert } from '../device-cert/device-cert.js';
 import { fromHex } from '../crypto/internal.js';
 import { signerFromCryptoKey, signerFromSecret, type Signer } from '../signer/signer.js';
 
@@ -358,5 +362,125 @@ describe('signing through a Signer', () => {
     };
     const { deviceSecret: _unused, ...terms } = FIXTURE;
     await expect(signGovernanceWarrant({ ...terms, signer })).rejects.toThrow(/signer returned 63 bytes/);
+  });
+});
+
+/**
+ * The delegated genesis, end to end: credential, derived id, op bytes, op hash
+ * and the signed warrant.
+ *
+ * Core pins no vector for a delegated `NamespaceCreatedV2`, so these were
+ * produced by a scratch program against core's own crates at the commit that
+ * merged #4212 (`calimero-account`'s `DeviceCert::sign`, `AccountProof`,
+ * `founded_namespace_id` and `GovernanceWarrant::sign`/`op_hash`;
+ * `calimero-governance-types`' `RootOp::NamespaceCreatedV2` and its
+ * `delegable_form`), with these fixed inputs: root secret 0x77.., device secret
+ * 0x07.., device id 0x33.., KEM key 0x55.., device epoch 1, salt 0x5c..,
+ * executor 0x33.., nonce 1, not_after 1_700_000_000. The program asserted the
+ * delegable form is the op itself, that it decodes back as the genesis and as a
+ * `NamespaceOp`, and that the warrant covers it.
+ */
+describe('namespace genesis conformance', () => {
+  const CREDENTIAL =
+    '02c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60' +
+    'a700000000161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7f1' +
+    '403095feff333333333333333333333333333333333333333333333333333333' +
+    '3333333333ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea' +
+    '691446d22c555555555555555555555555555555555555555555555555555555' +
+    '55555555550000000001000000292c12a66bae1c2c32f62455037246da6f84b2' +
+    '4345a590ef3db4bf15670afc5ea47b30ec242827257fb2f33660dda6f081b0ba' +
+    '253c0f3d02014cbabeb5c9a70f';
+  const FOUNDER = '161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7f1403095feff';
+  const SALT = '5c'.repeat(32);
+  const NAMESPACE_ID = '107c1c0ef0ca701608f0ec814572775e41197ba131b1263931d5789cf76bef69';
+  const OP_HASH = 'eec5a1ad4daa778659cbde6395cd6cd5839a5ac97966e88f4affdd88b831376e';
+  const WARRANT =
+    '107c1c0ef0ca701608f0ec814572775e41197ba131b1263931d5789cf76bef69' +
+    '01161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7f1403095fe' +
+    'ffea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d2' +
+    '2c33333333333333333333333333333333333333333333333333333333333333' +
+    '33eec5a1ad4daa778659cbde6395cd6cd5839a5ac97966e88f4affdd88b83137' +
+    '6e0000000000000000010000000000000000f1536500000000f864c24c356d77' +
+    '6caab4082bf9e51bd7b1aa74cc1a1ea0a637cc4570d4b339e46ac7c5f639be7d' +
+    'c8e239b5625a7f140c35d60c1da9132e7e9e37e5dd78d75a04';
+
+  it('mints the credential core mints from the same keys', async () => {
+    const credential = await signDeviceCert({
+      rootSecret: '77'.repeat(32),
+      device: '33'.repeat(32),
+      signPublicKey: EXPECTED_DEVICE_KEY,
+      kemPublicKey: '55'.repeat(32),
+      deviceEpoch: 1,
+    });
+    expect(credential).toBe(CREDENTIAL);
+  });
+
+  it('derives the namespace id core derives', async () => {
+    expect(await foundedNamespaceId(FOUNDER, SALT)).toBe(NAMESPACE_ID);
+    // core's own known answer, `founded_namespace_id_has_a_known_answer`.
+    expect(await foundedNamespaceId('11'.repeat(32), '22'.repeat(32))).toBe(
+      '35f5e77cc3c7cdb18eef50f1ea2808f27069dd25143e935994fcd58b3876c0bd',
+    );
+  });
+
+  it('encodes the genesis as core does, and hashes it on the root plane', async () => {
+    const op = namespaceCreatedOp({ founder: FOUNDER, credential: CREDENTIAL, salt: SALT });
+    expect(op.kind).toBe('root');
+    expect(op.bytes.length).toBe(302);
+    expect(hex(op.bytes)).toBe('09' + FOUNDER + CREDENTIAL + SALT);
+    expect(hex(op.bytes)).toBe(
+    '09161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7f1403095fe' +
+    'ff02c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b' +
+    '60a700000000161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7' +
+    'f1403095feff3333333333333333333333333333333333333333333333333333' +
+    '333333333333ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421e' +
+    'ea691446d22c5555555555555555555555555555555555555555555555555555' +
+    '5555555555550000000001000000292c12a66bae1c2c32f62455037246da6f84' +
+    'b24345a590ef3db4bf15670afc5ea47b30ec242827257fb2f33660dda6f081b0' +
+    'ba253c0f3d02014cbabeb5c9a70f5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c' +
+    '5c5c5c5c5c5c5c5c5c5c5c5c5c5c',
+    );
+    expect(hex(await governanceOpHash(op))).toBe(OP_HASH);
+  });
+
+  it('signs the exact warrant core signs over it', async () => {
+    const warrant = await signGovernanceWarrant({
+      scope: NAMESPACE_ID,
+      op: namespaceCreatedOp({ founder: FOUNDER, credential: CREDENTIAL, salt: SALT }),
+      authorAccount: FOUNDER,
+      executor: '33'.repeat(32),
+      nonce: 1,
+      notAfter: 1_700_000_000,
+      deviceSecret: DEVICE_SECRET,
+    });
+    expect(warrant).toBe(WARRANT);
+  });
+
+  it('refuses an empty credential and a malformed salt', () => {
+    expect(() => namespaceCreatedOp({ founder: FOUNDER, credential: '', salt: SALT })).toThrow(
+      /credential must be/,
+    );
+    expect(() => namespaceCreatedOp({ founder: FOUNDER, credential: CREDENTIAL, salt: '5c' })).toThrow(
+      /salt must be 64 hex/,
+    );
+  });
+});
+
+describe('defaultCapabilitiesSetOp', () => {
+  // From the same scratch program: `GroupOp::DefaultCapabilitiesSet` with
+  // `MemberCapabilities::from_bits_truncate(231)`, its delegable form (the op
+  // itself) and `GovernanceWarrant::op_hash(Group, ..)`.
+  it('encodes DefaultCapabilitiesSet as core does', async () => {
+    const op = defaultCapabilitiesSetOp(231);
+    expect(op.kind).toBe('group');
+    expect(hex(op.bytes)).toBe('06e7000000');
+    expect(hex(await governanceOpHash(op))).toBe('0bc00f5f7627b34a104b6aa059887c2cf30f59f468711462176f35592fcf95fd');
+  });
+
+  it('refuses CAN_AUTHOR_ON_BEHALF and anything that is not a u32', () => {
+    expect(() => defaultCapabilitiesSetOp(512)).toThrow(/CAN_AUTHOR_ON_BEHALF/);
+    expect(() => defaultCapabilitiesSetOp(2 ** 32)).toThrow(/u32/);
+    expect(() => defaultCapabilitiesSetOp(-1)).toThrow(/u32/);
+    expect(hex(defaultCapabilitiesSetOp(0xffff_fdff).bytes)).toBe('06fffdffff');
   });
 });

@@ -5,7 +5,13 @@ import { HTTPError } from '../http-client/web-client.js';
 import { parseWarrant } from '../warrant/warrant.js';
 import { creationInitHash, parseCreationWarrant } from '../warrant/creation-warrant.js';
 import { governanceOpHash, parseGovernanceWarrant } from '../warrant/governance-warrant.js';
-import { groupCreatedOp, memberAddedOp } from '../warrant/governance-op.js';
+import {
+  defaultCapabilitiesSetOp,
+  foundedNamespaceId,
+  groupCreatedOp,
+  memberAddedOp,
+  namespaceCreatedOp,
+} from '../warrant/governance-op.js';
 import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
 
 const CONTEXT = '01'.repeat(32);
@@ -594,6 +600,226 @@ describe('RelayClient.govern', () => {
     expect(err).toBeInstanceOf(IntentRefusedError);
     expect((err as IntentRefusedError).status).toBe(403);
     expect((err as IntentRefusedError).reason).toBe(error);
+  });
+});
+
+describe('RelayClient.foundNamespace', () => {
+  const SALT = '5c'.repeat(32);
+  const founded = (data: Record<string, unknown>) => ({ body: { data } });
+
+  it('signs the genesis under a root warrant scoped to the derived id, and posts it there', async () => {
+    const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+    const { fetch, calls } = scriptedFetch([
+      founded({ groupId: namespaceId, teeEnabled: true }),
+    ]);
+
+    await expect(
+      client(fetch, { executorAccount: EXECUTOR }).foundNamespace({ salt: SALT.toUpperCase() }),
+    ).resolves.toEqual({ namespaceId, salt: SALT, teeEnabled: true });
+
+    // No describe: the namespace does not exist yet, so there is nothing to ask.
+    expect(calls.map((c) => c.init?.method)).toEqual(['POST']);
+    expect(calls[0].url).toBe(
+      `https://relay.example/admin-api/groups/${namespaceId}/governance-intents`,
+    );
+    const sent = JSON.parse(String(calls[0].init?.body)) as {
+      warrant: string;
+      authorProof: string;
+      op: string;
+    };
+    const op = namespaceCreatedOp({ founder: AUTHOR, credential: 'aa', salt: SALT });
+    expect(sent.op).toBe(hexOf(op.bytes));
+    expect(sent.op).toBe('09' + AUTHOR + 'aa' + SALT);
+    expect(sent.authorProof).toBe('aa');
+
+    const fields = parseGovernanceWarrant(sent.warrant);
+    expect(fields.scope).toBe(namespaceId);
+    expect(fields.kind).toBe('root');
+    expect(fields.authorAccount).toBe(AUTHOR);
+    expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.nonce).toBe(1n);
+    expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
+  });
+
+  it('reports a failed attestation, and a relay that is not a TEE, as teeEnabled false', async () => {
+    const { fetch } = scriptedFetch([
+      founded({ groupId: 'f1'.repeat(32), teeEnabled: false, teeError: 'no quote' }),
+      founded({ groupId: 'f2'.repeat(32), teeEnabled: false }),
+      founded({ groupId: 'f3'.repeat(32) }),
+    ]);
+    const relay = client(fetch, { executorAccount: EXECUTOR });
+    await expect(relay.foundNamespace()).resolves.toMatchObject({
+      teeEnabled: false,
+      teeError: 'no quote',
+    });
+    const plain = await relay.foundNamespace();
+    expect(plain.teeEnabled).toBe(false);
+    expect(plain).not.toHaveProperty('teeError');
+    await expect(relay.foundNamespace()).resolves.toMatchObject({ teeEnabled: false });
+  });
+
+  it('draws a fresh random salt each time, and derives the id from it', async () => {
+    const { fetch, calls } = scriptedFetch([
+      founded({ groupId: 'f1'.repeat(32) }),
+      founded({ groupId: 'f2'.repeat(32) }),
+    ]);
+    const relay = client(fetch, { executorAccount: EXECUTOR });
+    const a = await relay.foundNamespace();
+    const b = await relay.foundNamespace();
+    expect(a.salt).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.salt).not.toBe(b.salt);
+
+    const scope = (i: number) =>
+      parseGovernanceWarrant((JSON.parse(String(calls[i].init?.body)) as { warrant: string }).warrant)
+        .scope;
+    expect(scope(0)).toBe(await foundedNamespaceId(AUTHOR, a.salt));
+    expect(scope(1)).toBe(await foundedNamespaceId(AUTHOR, b.salt));
+  });
+
+  it('takes the executor from the input, and refuses one the configured account contradicts', async () => {
+    const { fetch, calls } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
+    await client(fetch).foundNamespace({ executorAccount: EXECUTOR });
+    const sent = JSON.parse(String(calls[0].init?.body)) as { warrant: string };
+    expect(parseGovernanceWarrant(sent.warrant).executor).toBe(EXECUTOR);
+
+    const err = await client(scriptedFetch([]).fetch, { executorAccount: 'ee'.repeat(32) })
+      .foundNamespace({ executorAccount: EXECUTOR })
+      .catch((e: unknown) => e);
+    expect(String(err)).toMatch(/would be unspendable/);
+  });
+
+  it('refuses before taking a nonce when it does not know the relay\'s account', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const next = vi.spyOn(nonces, 'next');
+    const { fetch, calls } = scriptedFetch([]);
+    await expect(client(fetch, { nonces }).foundNamespace()).rejects.toThrow(
+      /needs the relay's account/,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('signs with a configured signer, and refuses a config naming both before taking a nonce', async () => {
+    const pkcs8 = new Uint8Array([
+      0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+      0x22, 0x04, 0x20, ...new Uint8Array(32).fill(0x77),
+    ]);
+    const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+    const signer = signerFromCryptoKey(key, (await signerFromSecret(DEVICE_SECRET)).publicKey);
+
+    const warrantOf = async (overrides: Record<string, unknown>) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      try {
+        const { fetch, calls } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
+        await client(fetch, { executorAccount: EXECUTOR, ...overrides }).foundNamespace({ salt: SALT });
+        return (JSON.parse(String(calls[0].init?.body)) as { warrant: string }).warrant;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+    expect(await warrantOf({ deviceSecret: undefined, signer })).toBe(await warrantOf({}));
+
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([]);
+    await expect(
+      client(fetch, { executorAccount: EXECUTOR, signer, nonces }).foundNamespace(),
+    ).rejects.toThrow(/not both/);
+    expect(calls).toHaveLength(0);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  describe('defaultCapabilities', () => {
+    /** mero-chat's mask: create contexts, invite, join Open subgroups, and more. */
+    const MASK = 231;
+    const describedNs = (namespaceId: string) => ({
+      body: { data: { executorAccount: EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
+    });
+
+    it('sets the mask through the relay right after founding, as the founder', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const { fetch, calls } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: true }),
+        describedNs(namespaceId),
+        founded({ groupId: namespaceId }),
+      ]);
+
+      await expect(
+        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+          salt: SALT,
+          defaultCapabilities: MASK,
+        }),
+      ).resolves.toEqual({ namespaceId, salt: SALT, teeEnabled: true, defaultCapabilitiesSet: true });
+
+      expect(calls.map((c) => c.init?.method)).toEqual(['POST', 'GET', 'POST']);
+      expect(calls[2].url).toBe(
+        `https://relay.example/admin-api/groups/${namespaceId}/governance-intents`,
+      );
+      const sent = JSON.parse(String(calls[2].init?.body)) as { warrant: string; op: string };
+      const op = defaultCapabilitiesSetOp(MASK);
+      expect(sent.op).toBe('06e7000000');
+      const fields = parseGovernanceWarrant(sent.warrant);
+      expect(fields.scope).toBe(namespaceId);
+      expect(fields.kind).toBe('group');
+      expect(fields.authorAccount).toBe(AUTHOR);
+      expect(fields.nonce).toBe(2n);
+      expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
+    });
+
+    it('reports a refused mask without throwing: the namespace is founded either way', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const error = 'the author is not an admin';
+      const { fetch } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: false }),
+        describedNs(namespaceId),
+        { status: 403, text: JSON.stringify({ error }) },
+      ]);
+      await expect(
+        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+          salt: SALT,
+          defaultCapabilities: MASK,
+        }),
+      ).resolves.toEqual({
+        namespaceId,
+        salt: SALT,
+        teeEnabled: false,
+        defaultCapabilitiesSet: false,
+        defaultCapabilitiesError: expect.stringContaining(error),
+      });
+    });
+
+    it('refuses a mask it could never set before founding anything', async () => {
+      const nonces = createMemoryNonceSource(1);
+      const { fetch, calls } = scriptedFetch([]);
+      const relay = client(fetch, { executorAccount: EXECUTOR, nonces });
+      await expect(relay.foundNamespace({ defaultCapabilities: MASK | 512 })).rejects.toThrow(
+        /CAN_AUTHOR_ON_BEHALF/,
+      );
+      await expect(relay.foundNamespace({ defaultCapabilities: -1 })).rejects.toThrow(/u32/);
+      await expect(relay.foundNamespace({ defaultCapabilities: 1.5 })).rejects.toThrow(/u32/);
+      expect(calls).toHaveLength(0);
+      expect(await nonces.next()).toBe(1n);
+    });
+
+    it('omits the fields when no mask was asked for', async () => {
+      const { fetch } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
+      const out = await client(fetch, { executorAccount: EXECUTOR }).foundNamespace();
+      expect(out).not.toHaveProperty('defaultCapabilitiesSet');
+      expect(out).not.toHaveProperty('defaultCapabilitiesError');
+    });
+  });
+
+  it('surfaces an existing namespace (409) as an HTTPError and a refusal (403) as a refusal', async () => {
+    const { fetch } = scriptedFetch([
+      { status: 409, text: JSON.stringify({ error: 'group already exists' }) },
+      { status: 403, text: JSON.stringify({ error: 'not authorized' }) },
+    ]);
+    const relay = client(fetch, { executorAccount: EXECUTOR });
+    const conflict = await relay.foundNamespace({ salt: SALT }).catch((e: unknown) => e);
+    expect(conflict).toBeInstanceOf(HTTPError);
+    expect((conflict as HTTPError).status).toBe(409);
+    const refused = await relay.foundNamespace({ salt: SALT }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(IntentRefusedError);
   });
 });
 

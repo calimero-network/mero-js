@@ -79,6 +79,9 @@ export {
   subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
+  namespaceCreatedOp,
+  defaultCapabilitiesSetOp,
+  foundedNamespaceId,
 } from "./warrant/index.js";
 // Who signs — a key's capability, separated from its material, so a
 // non-extractable key can be used wherever a hex secret could.
@@ -123,6 +126,7 @@ export type {
   GovernanceMemberRole,
   GroupCreatedInput,
   SubgroupCreation,
+  NamespaceCreatedInput,
 } from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
