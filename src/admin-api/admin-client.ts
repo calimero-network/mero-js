@@ -94,6 +94,10 @@ import type {
   SetTeeAdmissionPolicyRequest,
   GetTeeAdmissionPolicyResponseData,
   SetTeeAuthoringPolicyRequest,
+  TransferOwnershipRequest,
+  ChangeNamespaceAdminRequest,
+  OwnerDeleteGroupRequest,
+  RootGuardedOpRequest,
   SetGroupMetadataRequest,
   SetMemberMetadataRequest,
   SetContextMetadataRequest,
@@ -1434,9 +1438,52 @@ export class AdminApiClient {
    * and admitted TEEs stay members. The node applies the same op as
    * `setTeeAuthoringPolicy(groupId, { allowedMrtd: [] })`. `groupId` must be a
    * namespace root.
+   *
+   * `rootProof` is the signing admin's own root proof for that empty policy
+   * (`teeAuthoringPolicyOp([])`); omit it on a node that holds that root.
    */
-  async disableTeeAuthoringPolicy(groupId: string): Promise<void> {
-    await this.httpClient.delete(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`);
+  async disableTeeAuthoringPolicy(groupId: string, options: RootGuardedOpRequest = {}): Promise<void> {
+    const path = `/admin-api/groups/${groupId}/settings/tee-authoring-policy`;
+    if (options.rootProof === undefined) {
+      await this.httpClient.delete(path);
+      return;
+    }
+    await this.httpClient.request(path, {
+      method: 'DELETE',
+      body: JSON.stringify({ rootProof: options.rootProof }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // ---- Root-guarded owner ops (core schema 18) ----
+
+  /**
+   * Hand the group to `newOwner`, who must already be one of its admins.
+   * Owner-only, and it needs the owner account's root proof; see
+   * {@link RootGuardedOpRequest}.
+   */
+  async transferOwnership(groupId: string, request: TransferOwnershipRequest): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/transfer-ownership`, request);
+  }
+
+  /**
+   * Repoint the namespace's admin pin at `newAdmin`, a member of its root.
+   * Owner-only, with the owner account's root proof; see {@link RootGuardedOpRequest}.
+   */
+  async changeNamespaceAdmin(
+    namespaceId: string,
+    request: ChangeNamespaceAdminRequest,
+  ): Promise<void> {
+    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/admin`, request);
+  }
+
+  /**
+   * Delete a group through the owner-only path: it must hold no contexts, and
+   * the op needs the owner account's root proof. {@link deleteGroup} is the
+   * admin-level cascading delete.
+   */
+  async ownerDeleteGroup(groupId: string, request: OwnerDeleteGroupRequest = {}): Promise<void> {
+    await this.httpClient.post(`/admin-api/groups/${groupId}/owner-delete`, request);
   }
 
   // ---- Group / member / context metadata ----

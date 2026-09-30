@@ -1430,6 +1430,19 @@ export interface GroupInfo {
    * `null` if no metadata has ever been set for this group.
    */
   metadata?: MetadataRecord | null;
+  /** Hex hash of the group's authorization-relevant state, for convergence polling. */
+  groupStateHash?: string;
+  /**
+   * The namespace this group belongs to (itself, for a namespace root). An
+   * owner-op root proof binds it. Absent from nodes before core schema 18.
+   */
+  namespaceId?: string;
+  /**
+   * How many root-guarded owner ops this group has applied: the `counter` a
+   * root proof for its next one must name. Absent from nodes before core
+   * schema 18.
+   */
+  ownerOpCounter?: number;
 }
 
 export type GroupInfoResponseData = GroupInfo;
@@ -1653,6 +1666,12 @@ export interface MeasurementTeeAdmissionPolicyRequest {
   acceptMock: boolean;
   /** Absent means `replica`. */
   mode?: TeeAdmissionMode;
+  /**
+   * Hex borsh of the signing admin's own root proof for this policy op
+   * ({@link signOwnerOpProof} with the matching policy encoder). Omit it on a
+   * node that holds that admin's account root, which signs one itself.
+   */
+  rootProof?: string;
 }
 
 /** A policy that admits by signed release. The node refuses measurement lists beside it. */
@@ -1662,6 +1681,12 @@ export interface SignedReleaseTeeAdmissionPolicyRequest {
   acceptMock: boolean;
   /** Absent means `replica`. */
   mode?: TeeAdmissionMode;
+  /**
+   * Hex borsh of the signing admin's own root proof for this policy op
+   * ({@link signOwnerOpProof} with the matching policy encoder). Omit it on a
+   * node that holds that admin's account root, which signs one itself.
+   */
+  rootProof?: string;
 }
 
 export type SetTeeAdmissionPolicyRequest =
@@ -1699,7 +1724,48 @@ export interface GetTeeAdmissionPolicyResponseData {
  */
 export interface SetTeeAuthoringPolicyRequest {
   allowedMrtd: string[];
+  /**
+   * Hex borsh of the signing admin's own root proof for this policy op
+   * ({@link signOwnerOpProof} with the matching policy encoder). Omit it on a
+   * node that holds that admin's account root, which signs one itself.
+   */
+  rootProof?: string;
 }
+
+/**
+ * The root proof an owner-level op carries (core schema 18).
+ *
+ * A device key alone cannot transfer a group, repoint a namespace's admin,
+ * delete a group through the owner-only path, or set a TEE policy: each needs a
+ * proof signed by the account's ROOT key. On a node that holds that root (as
+ * `merod init` provisions) omit `rootProof` and the node signs it. Otherwise sign
+ * one offline with {@link signOwnerOpProof}, over the group's current
+ * `ownerOpCounter` and `namespaceId` from {@link GroupInfo}. Each proof applies
+ * once. Without either, the node answers `403`.
+ */
+export interface RootGuardedOpRequest {
+  /** Hex borsh of an `AccountProof<OwnerOpAuthorization>`. */
+  rootProof?: string;
+}
+
+/** Hand a group to `newOwner`, an account (64 hex) that is already one of its admins. */
+export interface TransferOwnershipRequest extends RootGuardedOpRequest {
+  newOwner: string;
+}
+
+/** Repoint a namespace's admin pin at `newAdmin`, an account that is a member of its root. */
+export interface ChangeNamespaceAdminRequest extends RootGuardedOpRequest {
+  newAdmin: string;
+}
+
+/**
+ * The owner-only deletion of a group that holds no contexts. The admin-level
+ * cascading delete is {@link AdminApiClient.deleteGroup}.
+ */
+export type OwnerDeleteGroupRequest = RootGuardedOpRequest;
+
+// Returns empty
+export type RootGuardedOpResponseData = Record<string, never>;
 
 // Returns empty
 export type SetTeeAuthoringPolicyResponseData = Record<string, never>;

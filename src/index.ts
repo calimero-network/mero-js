@@ -114,6 +114,27 @@ export {
   SIGNED_NAMESPACE_OP_SCHEMA_VERSION,
 } from "./namespace-op/index.js";
 export type { SignMemberJoinInput } from "./namespace-op/index.js";
+export {
+  OWNER_OP_KIND,
+  transferOwnershipOp,
+  groupDeleteOp,
+  adminChangedOp,
+  teeAuthoringPolicyOp,
+  teeAdmissionPolicyOp,
+  teeReleaseAdmissionPolicyOp,
+  ownerOpDigest,
+  ownerOpSigningPayload,
+  signOwnerOpProof,
+  rootGuardedOpBytes,
+} from "./owner-op/index.js";
+export type {
+  OwnerOp,
+  OwnerOpKind,
+  OwnerOpPlane,
+  OwnerOpProofInput,
+  TeeAdmissionPolicyOpInput,
+  TeeReleaseAdmissionPolicyOpInput,
+} from "./owner-op/index.js";
 export type {
   WarrantInput,
   CreationWarrantInput,

@@ -43,8 +43,14 @@ import {
  * one `createdSubgroupId(admin, parentId, restricted, salt)` derives
  * (calimero-network/core#4244), so two concurrent creates for one id can never
  * name different creators. The layout of that variant changed.
+ *
+ * 18: owner-level ops need the account ROOT, not only a device of it
+ * (calimero-network/core, root-guarded owner ops). `GroupOp::RootGuarded` and
+ * `RootOp::RootGuarded` are appended and carry a root-signed proof, and the bare
+ * `TransferOwnership`, `AdminChanged`, `GroupDelete` and TEE policy ops are
+ * refused. No layout this module signs changes; see `../owner-op` for the proof.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 17;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 18;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');

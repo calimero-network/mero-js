@@ -1642,6 +1642,48 @@ describe('AdminApiClient', () => {
       await expect(client.disableTeeAuthoringPolicy('g-1')).resolves.toBeUndefined();
     });
 
+    it('disableTeeAuthoringPolicy carries a root proof in the DELETE body when given one', async () => {
+      mock.setMockResponse('DELETE', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.disableTeeAuthoringPolicy('g-1', { rootProof: 'ab12' });
+      expect(mock.getRequestBody('DELETE', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        rootProof: 'ab12',
+      });
+    });
+
+    it('setTeeAuthoringPolicy passes a root proof through', async () => {
+      mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy', {});
+      await client.setTeeAuthoringPolicy('g-1', { allowedMrtd: ['abc'], rootProof: 'ab12' });
+      expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/tee-authoring-policy')).toEqual({
+        allowedMrtd: ['abc'],
+        rootProof: 'ab12',
+      });
+    });
+  });
+
+  describe('Root-guarded owner ops', () => {
+    it('transferOwnership posts the new owner and the proof', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/transfer-ownership', { data: {} });
+      await client.transferOwnership('g-1', { newOwner: 'a'.repeat(64), rootProof: 'ab12' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/transfer-ownership')).toEqual({
+        newOwner: 'a'.repeat(64),
+        rootProof: 'ab12',
+      });
+    });
+
+    it('changeNamespaceAdmin posts to the namespace admin route', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/n-1/admin', { data: {} });
+      await client.changeNamespaceAdmin('n-1', { newAdmin: 'b'.repeat(64) });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/n-1/admin')).toEqual({
+        newAdmin: 'b'.repeat(64),
+      });
+    });
+
+    it('ownerDeleteGroup posts an empty body when the node signs the proof', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/owner-delete', { data: {} });
+      await client.ownerDeleteGroup('g-1');
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/owner-delete')).toEqual({});
+    });
+
   });
 
   describe('Group / member / context metadata', () => {

@@ -41,6 +41,10 @@ import type {
   ReparentGroupResponseData,
   SignedReleaseTeeAdmissionPolicyRequest,
   TeeAdmissionMode,
+  TransferOwnershipRequest,
+  ChangeNamespaceAdminRequest,
+  OwnerDeleteGroupRequest,
+  GroupInfo,
   UpgradeGroupResponseData,
 } from '../admin-api/admin-types.js';
 import type { ExecuteParams } from '../rpc/index.js';
@@ -90,6 +94,10 @@ const founding = key<NamespaceFounding>();
 const member = key<GroupMember>();
 const teePolicyReq = key<SignedReleaseTeeAdmissionPolicyRequest>();
 const teePolicyRes = key<GetTeeAdmissionPolicyResponseData>();
+const transferReq = key<TransferOwnershipRequest>();
+const adminReq = key<ChangeNamespaceAdminRequest>();
+const ownerDeleteReq = key<OwnerDeleteGroupRequest>();
+const groupInfo = key<GroupInfo>();
 
 const NAMESPACE_REQUIRED = [
   namespace('namespaceId'),
@@ -111,6 +119,50 @@ const NAMESPACE_OPTIONAL = [
 // unexported inline type whose index signature makes `key<T>()` accept any
 // string, so a spec for it would compile no matter how wrong the name was.
 const SPECS: Spec[] = [
+  // Root-guarded owner ops (core schema 18). `rootProof` is hex a signer copies
+  // verbatim, so a rename here is every offline proof silently dropped.
+  {
+    type: 'TransferOwnershipRequest',
+    file: 'groups/transfer_ownership.req.json',
+    required: [transferReq('newOwner')],
+    optional: [transferReq('rootProof')],
+  },
+  {
+    type: 'ChangeNamespaceAdminRequest',
+    file: 'namespaces/change_admin.req.json',
+    required: [adminReq('newAdmin')],
+    optional: [adminReq('rootProof')],
+  },
+  {
+    type: 'OwnerDeleteGroupRequest',
+    file: 'groups/owner_delete.req.json',
+    required: [],
+    optional: [ownerDeleteReq('rootProof')],
+  },
+  // `ownerOpCounter` and `namespaceId` are what a client reads before it signs
+  // an owner-op proof offline.
+  {
+    type: 'GroupInfo',
+    file: 'groups/group_info.res.json',
+    path: 'data',
+    required: [
+      groupInfo('groupId'),
+      groupInfo('appKey'),
+      groupInfo('targetApplicationId'),
+      groupInfo('memberCount'),
+      groupInfo('contextCount'),
+      groupInfo('defaultCapabilities'),
+      groupInfo('subgroupVisibility'),
+    ],
+    optional: [
+      groupInfo('groupStateHash'),
+      groupInfo('namespaceId'),
+      groupInfo('ownerOpCounter'),
+      groupInfo('metadata'),
+      groupInfo('activeUpgrade'),
+      groupInfo('upgradePolicy'),
+    ],
+  },
   {
     type: 'CreateContextRequest',
     file: 'contexts/create_context.req.json',
@@ -327,7 +379,7 @@ const SPECS: Spec[] = [
       teePolicyReq('allowedTcbStatuses'),
       teePolicyReq('acceptMock'),
     ],
-    optional: [teePolicyReq('mode')],
+    optional: [teePolicyReq('mode'), teePolicyReq('rootProof')],
     // Core's request carries the measurement lists (empty) beside the
     // signed-release form; the SDK's form type deliberately omits them.
     ignoredCoreKeys: [
