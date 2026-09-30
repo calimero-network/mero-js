@@ -6,6 +6,7 @@ import { parseWarrant } from '../warrant/warrant.js';
 import { creationInitHash, parseCreationWarrant } from '../warrant/creation-warrant.js';
 import { governanceOpHash, parseGovernanceWarrant } from '../warrant/governance-warrant.js';
 import { groupCreatedOp, memberAddedOp } from '../warrant/governance-op.js';
+import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
 
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
@@ -592,3 +593,63 @@ describe('RelayClient.govern', () => {
 
 const hexOf = (bytes: Uint8Array) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+describe('RelayClient with a Signer in place of deviceSecret', () => {
+  const APPLICATION = '5a'.repeat(32);
+  const MEMBER = '44'.repeat(32);
+  const describedCreation = {
+    body: {
+      data: { executorAccount: EXECUTOR, groupId: GROUP, canCreateOnBehalf: true, authorMayCreate: true },
+    },
+  };
+  const created = {
+    body: { data: { contextId: 'c0'.repeat(32), groupId: GROUP, memberPublicKey: 'd1'.repeat(32) } },
+  };
+  const describedGovernance = {
+    body: { data: { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true } },
+  };
+  const governed = { body: { data: { groupId: GROUP } } };
+
+  /** The same seed as `DEVICE_SECRET`, as a key that can sign and never be exported. */
+  async function unexportableSigner() {
+    const pkcs8 = new Uint8Array([
+      0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+      0x22, 0x04, 0x20, ...new Uint8Array(32).fill(0x77),
+    ]);
+    const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+    return signerFromCryptoKey(key, (await signerFromSecret(DEVICE_SECRET)).publicKey);
+  }
+
+  /** The warrant each client posts, with the clock pinned so `notAfter` agrees. */
+  async function postedWarrants(overrides: Record<string, unknown>): Promise<string[]> {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    try {
+      const { fetch, calls } = scriptedFetch([describedCreation, created, describedGovernance, governed]);
+      const relay = client(fetch, overrides);
+      await relay.createContext({ groupId: GROUP, applicationId: APPLICATION, seed: '12'.repeat(32) });
+      await relay.govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') });
+      return [calls[1], calls[3]].map(
+        (c) => (JSON.parse(String(c.init?.body)) as { warrant: string }).warrant,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('posts the same creation and governance warrants as the secret it stands for', async () => {
+    const viaSecret = await postedWarrants({});
+    const viaSigner = await postedWarrants({ deviceSecret: undefined, signer: await unexportableSigner() });
+    expect(viaSigner).toEqual(viaSecret);
+  });
+
+  it('refuses a config naming both, before spending a nonce', async () => {
+    const { fetch } = scriptedFetch([describedGovernance, describedGovernance, governed]);
+    const nonces = createMemoryNonceSource(1);
+    const relay = client(fetch, { signer: await unexportableSigner(), nonces });
+    await expect(
+      relay.govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') }),
+    ).rejects.toThrow(/not both/);
+    expect(await nonces.next()).toBe(1n);
+  });
+});

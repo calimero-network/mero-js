@@ -72,15 +72,15 @@ export interface RelayClientConfig {
    * Never transmitted. It signs in this process and only the signature leaves,
    * which is the whole reason a keyholder can author without a node.
    *
-   * Mutually exclusive with {@link RelayClientConfig.signer}. A browser should
-   * prefer the signer: a secret that exists as a string can be read by anything
-   * on the origin, and a warrant-signing key held as a non-extractable
-   * `CryptoKey` cannot.
+   * Mutually exclusive with {@link RelayClientConfig.signer}: exactly one is
+   * required. A browser should prefer the signer: a secret held as a string is
+   * readable by anything on the origin, and a non-extractable key is not.
    */
   deviceSecret?: string;
   /**
-   * The author device's signer — use instead of
-   * {@link RelayClientConfig.deviceSecret} when the key cannot be exported.
+   * The author device's signer: use instead of
+   * {@link RelayClientConfig.deviceSecret} when the key cannot be exported
+   * (a non-extractable WebCrypto key, a passkey, a hardware or remote signer).
    */
   signer?: Signer;
   /**
@@ -347,6 +347,8 @@ export class RelayClient {
   ): Promise<IntentResult<T>> {
     const executor = this.executorAccount ?? (await this.describe(contextId)).executorAccount;
 
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const warrant = await signWarrant({
@@ -357,11 +359,7 @@ export class RelayClient {
       argsJson,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      signer: await resolveSigner(
-        this.config.deviceSecret,
-        this.config.signer,
-        'deviceSecret',
-      ),
+      signer,
     });
 
     const body = await this.json<{ data: { rootHash: string; returns: T | null } }>(
@@ -436,6 +434,8 @@ export class RelayClient {
     const executor = this.checkedExecutor(described.executorAccount);
 
     const initArgs = input.initArgs ?? {};
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const { warrant } = await signCreationWarrant({
@@ -449,7 +449,7 @@ export class RelayClient {
       initArgs,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.creationSecret(),
+      signer,
     });
 
     const body = await this.json<{ data: CreatedContext }>(
@@ -505,6 +505,8 @@ export class RelayClient {
     }
     const executor = this.checkedExecutor(described.executorAccount);
 
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const warrant = await signGovernanceWarrant({
@@ -514,7 +516,7 @@ export class RelayClient {
       executor,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.creationSecret(),
+      signer,
     });
 
     const body = await this.json<{ data: GovernResult }>(
@@ -529,20 +531,6 @@ export class RelayClient {
    * The executor a warrant must name: the one the relay answered with, which a
    * configured account must agree with. Remembered for later calls.
    */
-  /**
-   * The hex device secret the creation and governance warrant signers take:
-   * unlike `signWarrant` they have no `Signer` form yet, so a client configured
-   * with only a `signer` cannot mint them.
-   */
-  private creationSecret(): string {
-    if (!this.config.deviceSecret) {
-      throw new Error(
-        'creating a context or governing through a relay needs deviceSecret: its warrant signer takes no Signer yet',
-      );
-    }
-    return this.config.deviceSecret;
-  }
-
   private checkedExecutor(answered: string): string {
     const configured = this.config.executorAccount;
     if (configured && configured.toLowerCase() !== answered.toLowerCase()) {
