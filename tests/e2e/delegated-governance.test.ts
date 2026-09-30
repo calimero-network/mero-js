@@ -32,6 +32,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
 import { IntentRefusedError, RelayClient } from '../../src/relay/relay-client.js';
 import { createMemoryNonceSource } from '../../src/relay/nonce-source.js';
+import { signerFromSecret } from '../../src/signer/index.js';
 import { generateAccountRoot } from '../../src/account/index.js';
 import {
   foundedNamespaceId,
@@ -89,7 +90,8 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
       relayUrl,
       authorAccount: device.account,
       authorProof: device.credential,
-      deviceSecret: device.secret,
+      // Through a Signer, the path a non-extractable key takes.
+      signer: await signerFromSecret(device.secret, 'deviceSecret'),
       nonces: createMemoryNonceSource(1),
       timeoutMs: 60_000,
     });
@@ -194,7 +196,12 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
   }, 120_000);
 
   it('founds a namespace the author owns, and governs it through the same relay', async () => {
-    const founded = await relay.foundNamespace({ executorAccount: relayAccount });
+    // mero-chat's mask: core founds with a minimal default and the app names its own.
+    const MASK = 231;
+    const founded = await relay.foundNamespace({
+      executorAccount: relayAccount,
+      defaultCapabilities: MASK,
+    });
     expect(founded.namespaceId).toBe(await foundedNamespaceId(device.account, founded.salt));
     expect(typeof founded.teeEnabled).toBe('boolean');
     if (!founded.teeEnabled && founded.teeError) {
@@ -202,8 +209,12 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
       console.warn(`founding relay did not attest: ${founded.teeError}`);
     }
 
+    // Set through the relay as the founder, who is the namespace's admin.
+    expect(founded.defaultCapabilitiesError).toBeUndefined();
+    expect(founded.defaultCapabilitiesSet).toBe(true);
     await expect(operator.admin.getGroupInfo(founded.namespaceId)).resolves.toMatchObject({
       groupId: founded.namespaceId,
+      defaultCapabilities: MASK,
     });
     // The AUTHOR is the founder and admin. The relay is seated to serve it, as
     // a Member, or as the namespace's first TEE if it attested.

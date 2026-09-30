@@ -6,11 +6,13 @@ import { parseWarrant } from '../warrant/warrant.js';
 import { creationInitHash, parseCreationWarrant } from '../warrant/creation-warrant.js';
 import { governanceOpHash, parseGovernanceWarrant } from '../warrant/governance-warrant.js';
 import {
+  defaultCapabilitiesSetOp,
   foundedNamespaceId,
   groupCreatedOp,
   memberAddedOp,
   namespaceCreatedOp,
 } from '../warrant/governance-op.js';
+import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
 
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
@@ -691,6 +693,116 @@ describe('RelayClient.foundNamespace', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('signs with a configured signer, and refuses a config naming both before taking a nonce', async () => {
+    const pkcs8 = new Uint8Array([
+      0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+      0x22, 0x04, 0x20, ...new Uint8Array(32).fill(0x77),
+    ]);
+    const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+    const signer = signerFromCryptoKey(key, (await signerFromSecret(DEVICE_SECRET)).publicKey);
+
+    const warrantOf = async (overrides: Record<string, unknown>) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      try {
+        const { fetch, calls } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
+        await client(fetch, { executorAccount: EXECUTOR, ...overrides }).foundNamespace({ salt: SALT });
+        return (JSON.parse(String(calls[0].init?.body)) as { warrant: string }).warrant;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+    expect(await warrantOf({ deviceSecret: undefined, signer })).toBe(await warrantOf({}));
+
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([]);
+    await expect(
+      client(fetch, { executorAccount: EXECUTOR, signer, nonces }).foundNamespace(),
+    ).rejects.toThrow(/not both/);
+    expect(calls).toHaveLength(0);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  describe('defaultCapabilities', () => {
+    /** mero-chat's mask: create contexts, invite, join Open subgroups, and more. */
+    const MASK = 231;
+    const describedNs = (namespaceId: string) => ({
+      body: { data: { executorAccount: EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
+    });
+
+    it('sets the mask through the relay right after founding, as the founder', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const { fetch, calls } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: true }),
+        describedNs(namespaceId),
+        founded({ groupId: namespaceId }),
+      ]);
+
+      await expect(
+        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+          salt: SALT,
+          defaultCapabilities: MASK,
+        }),
+      ).resolves.toEqual({ namespaceId, salt: SALT, teeEnabled: true, defaultCapabilitiesSet: true });
+
+      expect(calls.map((c) => c.init?.method)).toEqual(['POST', 'GET', 'POST']);
+      expect(calls[2].url).toBe(
+        `https://relay.example/admin-api/groups/${namespaceId}/governance-intents`,
+      );
+      const sent = JSON.parse(String(calls[2].init?.body)) as { warrant: string; op: string };
+      const op = defaultCapabilitiesSetOp(MASK);
+      expect(sent.op).toBe('06e7000000');
+      const fields = parseGovernanceWarrant(sent.warrant);
+      expect(fields.scope).toBe(namespaceId);
+      expect(fields.kind).toBe('group');
+      expect(fields.authorAccount).toBe(AUTHOR);
+      expect(fields.nonce).toBe(2n);
+      expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
+    });
+
+    it('reports a refused mask without throwing: the namespace is founded either way', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const error = 'the author is not an admin';
+      const { fetch } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: false }),
+        describedNs(namespaceId),
+        { status: 403, text: JSON.stringify({ error }) },
+      ]);
+      await expect(
+        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+          salt: SALT,
+          defaultCapabilities: MASK,
+        }),
+      ).resolves.toEqual({
+        namespaceId,
+        salt: SALT,
+        teeEnabled: false,
+        defaultCapabilitiesSet: false,
+        defaultCapabilitiesError: expect.stringContaining(error),
+      });
+    });
+
+    it('refuses a mask it could never set before founding anything', async () => {
+      const nonces = createMemoryNonceSource(1);
+      const { fetch, calls } = scriptedFetch([]);
+      const relay = client(fetch, { executorAccount: EXECUTOR, nonces });
+      await expect(relay.foundNamespace({ defaultCapabilities: MASK | 512 })).rejects.toThrow(
+        /CAN_AUTHOR_ON_BEHALF/,
+      );
+      await expect(relay.foundNamespace({ defaultCapabilities: -1 })).rejects.toThrow(/u32/);
+      await expect(relay.foundNamespace({ defaultCapabilities: 1.5 })).rejects.toThrow(/u32/);
+      expect(calls).toHaveLength(0);
+      expect(await nonces.next()).toBe(1n);
+    });
+
+    it('omits the fields when no mask was asked for', async () => {
+      const { fetch } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
+      const out = await client(fetch, { executorAccount: EXECUTOR }).foundNamespace();
+      expect(out).not.toHaveProperty('defaultCapabilitiesSet');
+      expect(out).not.toHaveProperty('defaultCapabilitiesError');
+    });
+  });
+
   it('surfaces an existing namespace (409) as an HTTPError and a refusal (403) as a refusal', async () => {
     const { fetch } = scriptedFetch([
       { status: 409, text: JSON.stringify({ error: 'group already exists' }) },
@@ -707,3 +819,63 @@ describe('RelayClient.foundNamespace', () => {
 
 const hexOf = (bytes: Uint8Array) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+describe('RelayClient with a Signer in place of deviceSecret', () => {
+  const APPLICATION = '5a'.repeat(32);
+  const MEMBER = '44'.repeat(32);
+  const describedCreation = {
+    body: {
+      data: { executorAccount: EXECUTOR, groupId: GROUP, canCreateOnBehalf: true, authorMayCreate: true },
+    },
+  };
+  const created = {
+    body: { data: { contextId: 'c0'.repeat(32), groupId: GROUP, memberPublicKey: 'd1'.repeat(32) } },
+  };
+  const describedGovernance = {
+    body: { data: { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true } },
+  };
+  const governed = { body: { data: { groupId: GROUP } } };
+
+  /** The same seed as `DEVICE_SECRET`, as a key that can sign and never be exported. */
+  async function unexportableSigner() {
+    const pkcs8 = new Uint8Array([
+      0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+      0x22, 0x04, 0x20, ...new Uint8Array(32).fill(0x77),
+    ]);
+    const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+    return signerFromCryptoKey(key, (await signerFromSecret(DEVICE_SECRET)).publicKey);
+  }
+
+  /** The warrant each client posts, with the clock pinned so `notAfter` agrees. */
+  async function postedWarrants(overrides: Record<string, unknown>): Promise<string[]> {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    try {
+      const { fetch, calls } = scriptedFetch([describedCreation, created, describedGovernance, governed]);
+      const relay = client(fetch, overrides);
+      await relay.createContext({ groupId: GROUP, applicationId: APPLICATION, seed: '12'.repeat(32) });
+      await relay.govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') });
+      return [calls[1], calls[3]].map(
+        (c) => (JSON.parse(String(c.init?.body)) as { warrant: string }).warrant,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('posts the same creation and governance warrants as the secret it stands for', async () => {
+    const viaSecret = await postedWarrants({});
+    const viaSigner = await postedWarrants({ deviceSecret: undefined, signer: await unexportableSigner() });
+    expect(viaSigner).toEqual(viaSecret);
+  });
+
+  it('refuses a config naming both, before spending a nonce', async () => {
+    const { fetch } = scriptedFetch([describedGovernance, describedGovernance, governed]);
+    const nonces = createMemoryNonceSource(1);
+    const relay = client(fetch, { signer: await unexportableSigner(), nonces });
+    await expect(
+      relay.govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') }),
+    ).rejects.toThrow(/not both/);
+    expect(await nonces.next()).toBe(1n);
+  });
+});

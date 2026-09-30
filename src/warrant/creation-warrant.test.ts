@@ -18,8 +18,15 @@ import {
   type CreationWarrantInput,
 } from './creation-warrant.js';
 import { fromHex } from '../crypto/internal.js';
+import { signerFromCryptoKey, signerFromSecret, type Signer } from '../signer/signer.js';
 
 const DEVICE_SECRET = '07'.repeat(32);
+
+/** Ed25519 PKCS#8 prefix, so the raw seed can be imported as a non-extractable key. */
+const PKCS8_ED25519_PREFIX = new Uint8Array([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+  0x22, 0x04, 0x20,
+]);
 const GROUP = '11'.repeat(32);
 const SEED = '12'.repeat(32);
 const AUTHOR_ACCOUNT = '22'.repeat(32);
@@ -275,5 +282,64 @@ describe('limits and inputs', () => {
     });
     expect(parse(warrant).accountHeads).toEqual([]);
     expect(parse(warrant).governanceFloor).toEqual([]);
+  });
+});
+
+const wireOf = (signed: { warrant: string }) => signed.warrant;
+
+describe('signing through a Signer', () => {
+  /** The same seed as `DEVICE_SECRET`, as a key that can sign and never be exported. */
+  async function unexportable(): Promise<CryptoKey> {
+    const pkcs8 = new Uint8Array(PKCS8_ED25519_PREFIX.length + 32);
+    pkcs8.set(PKCS8_ED25519_PREFIX, 0);
+    pkcs8.set(fromHex(DEVICE_SECRET, 'seed', 32), PKCS8_ED25519_PREFIX.length);
+    return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
+  }
+
+  it('yields core\'s exact bytes from a non-extractable CryptoKey', async () => {
+    const key = await unexportable();
+    expect(key.extractable).toBe(false);
+    const signer = await signerFromCryptoKey(key, EXPECTED_DEVICE_KEY);
+    const { deviceSecret: _unused, ...terms } = FIXTURE;
+    expect(wireOf(await signCreationWarrant({ ...terms, signer }))).toBe(EXPECTED_WIRE);
+  });
+
+  it('yields core\'s exact bytes from a hand-rolled async signer, signing the preimage as is', async () => {
+    // Stands in for a passkey, hardware or remote signer: nothing but a public
+    // key and an async sign call that may resolve later.
+    const key = await unexportable();
+    const seen: Uint8Array[] = [];
+    const signer: Signer = {
+      publicKey: EXPECTED_DEVICE_KEY,
+      async sign(message) {
+        seen.push(message);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
+      },
+    };
+    const { deviceSecret: _unused, ...terms } = FIXTURE;
+    const viaSigner = wireOf(await signCreationWarrant({ ...terms, signer }));
+    const viaSecret = wireOf(await signCreationWarrant(FIXTURE));
+    expect(viaSigner).toBe(viaSecret);
+    expect(viaSigner).toBe(EXPECTED_WIRE);
+    expect(seen.map(hex)).toEqual([EXPECTED_PREIMAGE]);
+  });
+
+  it('refuses both a secret and a signer, and neither', async () => {
+    const signer = await signerFromSecret(DEVICE_SECRET);
+    await expect(signCreationWarrant({ ...FIXTURE, signer })).rejects.toThrow(/not both/);
+    const { deviceSecret: _unused, ...terms } = FIXTURE;
+    await expect(signCreationWarrant(terms as CreationWarrantInput)).rejects.toThrow(
+      /deviceSecret or signer is required/,
+    );
+  });
+
+  it('refuses a signer whose output is not a 64-byte signature', async () => {
+    const signer: Signer = {
+      publicKey: EXPECTED_DEVICE_KEY,
+      sign: async () => new Uint8Array(63),
+    };
+    const { deviceSecret: _unused, ...terms } = FIXTURE;
+    await expect(signCreationWarrant({ ...terms, signer })).rejects.toThrow(/signer returned 63 bytes/);
   });
 });

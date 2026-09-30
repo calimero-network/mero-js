@@ -32,12 +32,14 @@ import { signWarrant } from '../warrant/warrant.js';
 import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
 import {
+  defaultCapabilitiesSetOp,
   foundedNamespaceId,
   namespaceCreatedOp,
   type GovernanceOp,
 } from '../warrant/governance-op.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { fromHex, hex } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 import type { NonceSource } from './nonce-source.js';
 
 /** How long a freshly minted warrant stays presentable, in seconds. */
@@ -74,8 +76,18 @@ export interface RelayClientConfig {
    *
    * Never transmitted. It signs in this process and only the signature leaves,
    * which is the whole reason a keyholder can author without a node.
+   *
+   * Mutually exclusive with {@link RelayClientConfig.signer}: exactly one is
+   * required. A browser should prefer the signer: a secret held as a string is
+   * readable by anything on the origin, and a non-extractable key is not.
    */
-  deviceSecret: string;
+  deviceSecret?: string;
+  /**
+   * The author device's signer: use instead of
+   * {@link RelayClientConfig.deviceSecret} when the key cannot be exported
+   * (a non-extractable WebCrypto key, a passkey, a hardware or remote signer).
+   */
+  signer?: Signer;
   /** Where nonces come from. See {@link NonceSource} — a reset replays. */
   nonces: NonceSource;
   /**
@@ -194,6 +206,19 @@ export interface FoundNamespaceInput {
    * to the client's configured or already-learned `executorAccount`.
    */
   executorAccount?: string;
+  /**
+   * The namespace root's default capability mask (`MemberCapabilities` bits),
+   * set right after founding. A namespace is founded with core's minimal
+   * default (`CAN_JOIN_OPEN_SUBGROUPS` only), so an app that wants members to
+   * create contexts or invite, for example, names its own mask here.
+   *
+   * Set through the relay with a delegated `DefaultCapabilitiesSet`, applied as
+   * the founder, who is the namespace's admin. It cannot include
+   * `CAN_AUTHOR_ON_BEHALF` (bit 9): which relays may write for members is never
+   * decided through a relay, and such a mask is refused before anything is
+   * signed.
+   */
+  defaultCapabilities?: number;
 }
 
 /** A namespace founded through a relay. */
@@ -214,6 +239,14 @@ export interface FoundedNamespace {
   teeEnabled: boolean;
   /** Why `teeEnabled` is `false`, when the relay tried and failed. */
   teeError?: string;
+  /**
+   * Present only when `defaultCapabilities` was asked for: whether the mask was
+   * set. `false` leaves the namespace founded with core's default; retry with
+   * `govern({ groupId: namespaceId, op: defaultCapabilitiesSetOp(mask) })`.
+   */
+  defaultCapabilitiesSet?: boolean;
+  /** Why `defaultCapabilitiesSet` is `false`. */
+  defaultCapabilitiesError?: string;
 }
 
 /** Where an accepted intent landed. */
@@ -270,6 +303,15 @@ export class RelayClient {
   }
 
   /**
+   * The author device's signer, built from `deviceSecret` when that is what was
+   * configured. A {@link Signer} and never the secret, so no caller of a
+   * `RelayClient` gains the ability to read key material.
+   */
+  async authorSigner(): Promise<Signer> {
+    return resolveSigner(this.config.deviceSecret, this.config.signer, 'deviceSecret');
+  }
+
+  /**
    * Ask the relay what it can do in `contextId`.
    *
    * Cheap and unauthenticated on a relay that serves delegated execution
@@ -300,6 +342,8 @@ export class RelayClient {
   ): Promise<IntentResult<T>> {
     const executor = this.executorAccount ?? (await this.describe(contextId)).executorAccount;
 
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const warrant = await signWarrant({
@@ -310,7 +354,7 @@ export class RelayClient {
       argsJson,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.config.deviceSecret,
+      signer,
     });
 
     const body = await this.json<{ data: { rootHash: string; returns: T | null } }>(
@@ -385,6 +429,8 @@ export class RelayClient {
     const executor = this.checkedExecutor(described.executorAccount);
 
     const initArgs = input.initArgs ?? {};
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const { warrant } = await signCreationWarrant({
@@ -398,7 +444,7 @@ export class RelayClient {
       initArgs,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.config.deviceSecret,
+      signer,
     });
 
     const body = await this.json<{ data: CreatedContext }>(
@@ -454,6 +500,8 @@ export class RelayClient {
     }
     const executor = this.checkedExecutor(described.executorAccount);
 
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const warrant = await signGovernanceWarrant({
@@ -463,7 +511,7 @@ export class RelayClient {
       executor,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.config.deviceSecret,
+      signer,
     });
 
     const data = await this.postGovernance(input.groupId, input.op, warrant);
@@ -493,6 +541,11 @@ export class RelayClient {
    * throws before taking a nonce.
    * The nonce is spent in the new namespace's ledger.
    *
+   * With `defaultCapabilities`, the founder then sets the namespace's default
+   * capability mask through the same relay (a second warrant, a second nonce)
+   * and `defaultCapabilitiesSet` reports whether it landed. A failure there
+   * does not throw, since the namespace is already founded.
+   *
    * Refusals (`400`/`403`) come back as {@link IntentRefusedError}; a salt
    * that names an existing namespace is a `409`, an `HTTPError`.
    */
@@ -516,6 +569,15 @@ export class RelayClient {
       salt,
     });
 
+    // Encoded (and so validated) before anything is signed: a mask the relay
+    // would refuse must not cost the founding a nonce.
+    const capabilitiesOp =
+      input.defaultCapabilities === undefined
+        ? undefined
+        : defaultCapabilitiesSetOp(input.defaultCapabilities);
+
+    // Resolved before the nonce, so a misconfigured key burns none.
+    const signer = await this.authorSigner();
     const nonce = await this.config.nonces.next();
     const ttl = this.config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const warrant = await signGovernanceWarrant({
@@ -525,16 +587,32 @@ export class RelayClient {
       executor,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
-      deviceSecret: this.config.deviceSecret,
+      signer,
     });
 
     const data = await this.postGovernance(namespaceId, op, warrant);
-    return {
+    const founded: FoundedNamespace = {
       namespaceId: data.groupId,
       salt,
       teeEnabled: data.teeEnabled ?? false,
       ...(data.teeError ? { teeError: data.teeError } : {}),
     };
+    if (!capabilitiesOp) return founded;
+
+    // A second op, under its own warrant, on the namespace root: the founder is
+    // its admin and the relay was seated to act for members, so it goes through
+    // the ordinary `govern` path. The namespace exists whatever happens here, so
+    // a failure is reported rather than thrown.
+    try {
+      await this.govern({ groupId: founded.namespaceId, op: capabilitiesOp });
+      return { ...founded, defaultCapabilitiesSet: true };
+    } catch (err) {
+      return {
+        ...founded,
+        defaultCapabilitiesSet: false,
+        defaultCapabilitiesError: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   private async postGovernance(

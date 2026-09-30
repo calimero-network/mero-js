@@ -29,6 +29,7 @@ export {
   groupReparentedOp,
   groupDeletedOp,
   namespaceCreatedOp,
+  defaultCapabilitiesSetOp,
   foundedNamespaceId,
 } from './governance-op.js';
 export type {

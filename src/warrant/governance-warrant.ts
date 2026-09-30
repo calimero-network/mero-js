@@ -27,18 +27,10 @@
  * asserts the same vectors. A drift would surface at a relay as a 400.
  */
 
-import {
-  concat,
-  derivePublicKey,
-  domainHash,
-  fromHex,
-  hex,
-  importSigningKey,
-  u32le,
-  u64le,
-} from '../crypto/internal.js';
+import { concat, domainHash, fromHex, hex, u32le, u64le } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 import type { GovernanceOp, GovernanceOpKind } from './governance-op.js';
-import { citedHeads } from './warrant.js';
+import { checkedSignature, citedHeads } from './warrant.js';
 
 const SIGN_DOMAIN = new TextEncoder().encode('calimero.governance-warrant.v1');
 const OP_DOMAIN = new TextEncoder().encode('calimero.governance-warrant.op.v1');
@@ -70,8 +62,21 @@ export interface GovernanceWarrantInput {
   accountHeads?: string[];
   /** Governance heads the author's view descended from, each hex (32 bytes). At most 64. */
   governanceFloor?: string[];
-  /** The author device's ed25519 signing secret, hex (32 bytes). Never sent. */
-  deviceSecret: string;
+  /**
+   * The author device's ed25519 signing secret, hex (32 bytes). Never sent.
+   *
+   * Mutually exclusive with {@link GovernanceWarrantInput.signer}: exactly one is required.
+   * Prefer `signer` in a browser, since a secret held as a string is readable
+   * by anything on the origin.
+   */
+  deviceSecret?: string;
+  /**
+   * The author device's signer, in place of {@link GovernanceWarrantInput.deviceSecret}: for a
+   * key that cannot be exported to hex (a non-extractable WebCrypto key, a
+   * passkey, a hardware or remote signer). Its `publicKey` becomes the
+   * warrant's `author_device_key`, and it signs the 32-byte preimage as is.
+   */
+  signer?: Signer;
 }
 
 /** A governance warrant's fields, decoded from the wire encoding. */
@@ -79,7 +84,7 @@ export interface GovernanceWarrantFields {
   scope: string;
   kind: GovernanceOpKind;
   authorAccount: string;
-  /** The author device key `signGovernanceWarrant` derived from the secret. */
+  /** The author device key: the signer's public key. */
   deviceKey: string;
   executor: string;
   opHash: string;
@@ -149,8 +154,8 @@ export async function signGovernanceWarrant(input: GovernanceWarrantInput): Prom
   const governanceFloor = citedHeads(input.governanceFloor, 'governanceFloor');
   const kind = kindByte(input.op.kind);
 
-  const key = await importSigningKey(input.deviceSecret);
-  const deviceKey = await derivePublicKey(input.deviceSecret);
+  const signer = await resolveSigner(input.deviceSecret, input.signer, 'deviceSecret');
+  const deviceKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
   const opHash = await governanceOpHash(input.op);
 
   const preimage = await governanceWarrantPreimage({
@@ -165,9 +170,7 @@ export async function signGovernanceWarrant(input: GovernanceWarrantInput): Prom
     nonce: input.nonce,
     notAfter: input.notAfter,
   });
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, key, preimage),
-  );
+  const signature = checkedSignature(await signer.sign(preimage));
 
   return hex(
     concat(

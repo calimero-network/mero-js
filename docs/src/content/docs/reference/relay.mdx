@@ -54,7 +54,8 @@ interface RelayClientConfig {
   executorAccount?: string;      // hex; discovered via describe() when omitted
   authorAccount: string;         // hex — whose consent the warrant carries
   authorProof: string;           // hex borsh AccountProof<DeviceCert>
-  deviceSecret: string;          // hex ed25519 seed; NEVER transmitted
+  deviceSecret?: string;         // hex ed25519 seed; NEVER transmitted
+  signer?: Signer;               // or: a key that cannot be exported (exactly one)
   nonces: NonceSource;
   ttlSeconds?: number;           // default 300
   fetch?: typeof fetch;
@@ -67,6 +68,21 @@ relay's processes rotating its key does not void warrants already issued to it.
 
 `deviceSecret` signs in your process and only the signature leaves. That is the
 whole reason a keyholder can author without a node.
+
+A key that cannot be exported to hex (a non-extractable WebCrypto key, a
+passkey, a hardware or remote signer) goes in `signer` instead: anything with a
+`publicKey` (64 hex) and an async `sign(payload)` returning a 64-byte Ed25519
+signature over the payload as given. `signerFromCryptoKey(privateKey, publicKey)`
+wraps a WebCrypto key; `signerFromSecret(hex)` wraps a seed. `signWarrant`,
+`signCreationWarrant` and `signGovernanceWarrant` take the same pair of options.
+
+```typescript
+const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
+const relay = new RelayClient({
+  relayUrl, authorAccount, authorProof, nonces,
+  signer: await signerFromCryptoKey(pair.privateKey, pair.publicKey),
+});
+```
 
 ## `describe(contextId): Promise<RelayDescription>`
 
@@ -210,8 +226,9 @@ salt, so the relay can neither pick another id nor found it for anyone else. It
 posts to `POST /admin-api/groups/{namespaceId}/governance-intents`.
 
 ```typescript
-const { namespaceId, salt, teeEnabled, teeError } = await relay.foundNamespace({
+const { namespaceId, salt, teeEnabled, defaultCapabilitiesSet } = await relay.foundNamespace({
   executorAccount: relayAccount, // the namespace does not exist yet, so nothing to describe
+  defaultCapabilities: 231,      // optional: your app's default member mask
 });
 ```
 
@@ -219,12 +236,15 @@ const { namespaceId, salt, teeEnabled, teeError } = await relay.foundNamespace({
 interface FoundNamespaceInput {
   salt?: string;            // 32 bytes hex; random when absent
   executorAccount?: string; // falls back to the configured or learned account
+  defaultCapabilities?: number; // MemberCapabilities bits, set right after founding
 }
 interface FoundedNamespace {
   namespaceId: string;
   salt: string;             // keep it: (founder, salt) proves who founded the namespace
   teeEnabled: boolean;      // the relay admitted itself as the namespace's first TEE
   teeError?: string;        // why not, when it tried and failed
+  defaultCapabilitiesSet?: boolean; // only when defaultCapabilities was given
+  defaultCapabilitiesError?: string;
 }
 ```
 
@@ -234,6 +254,15 @@ work through it straight away. A TEE relay then admits itself as the
 namespace's first TEE (`GroupOp::FoundingRelayAttested`), which also sets a
 default relay-mode admission policy; `teeEnabled` says whether it did. The
 namespace is founded either way.
+
+A namespace is founded with core's minimal default mask
+(`CAN_JOIN_OPEN_SUBGROUPS`). With `defaultCapabilities`, you then set your own
+through the same relay: a delegated `DefaultCapabilitiesSet`
+(`defaultCapabilitiesSetOp(mask)`) on the namespace root, under a second
+warrant and nonce, applied as you, the admin. It may not include
+`CAN_AUTHOR_ON_BEHALF` (bit 9), which is refused before anything is signed. A
+failure there does not throw, since the namespace already exists:
+`defaultCapabilitiesSet` is `false` and `defaultCapabilitiesError` says why.
 
 There is no `describe` step: without an executor account from the input or the
 config, it throws before taking a nonce. A salt that names an existing

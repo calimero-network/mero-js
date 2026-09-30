@@ -55,7 +55,11 @@ const GROUP_OP = {
   MemberRemoved: 2,
   MemberLeft: 3,
   MemberRoleSet: 4,
+  DefaultCapabilitiesSet: 6,
 } as const;
+
+/** `MemberCapabilities::CAN_AUTHOR_ON_BEHALF`: bit 9. Never changed through a relay. */
+const CAN_AUTHOR_ON_BEHALF = 1 << 9;
 
 /** `RootOp` discriminants, by position in core's enum. */
 const ROOT_OP = {
@@ -135,6 +139,29 @@ export function memberRoleSetOp(member: string, memberRole: GovernanceMemberRole
   return {
     kind: 'group',
     bytes: concat(tag(GROUP_OP.MemberRoleSet), fromHex(member, 'member', 32), role(memberRole)),
+  };
+}
+
+/**
+ * Set the group's default capability mask (`MemberCapabilities` bits, a `u32`),
+ * the capabilities every member holds without a per-member grant. Needs admin.
+ *
+ * The relay refuses any change to `CAN_AUTHOR_ON_BEHALF` (bit 9) through this
+ * path, and no namespace starts with it in its default mask, so a mask that
+ * sets it is refused here rather than burning a nonce on a certain 403.
+ */
+export function defaultCapabilitiesSetOp(capabilities: number): GovernanceOp {
+  if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
+    throw new Error(`capabilities must be a u32 bit mask, got ${String(capabilities)}`);
+  }
+  if ((capabilities & CAN_AUTHOR_ON_BEHALF) !== 0) {
+    throw new Error(
+      'capabilities may not include CAN_AUTHOR_ON_BEHALF (512): a relay never carries a change to it',
+    );
+  }
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.DefaultCapabilitiesSet), u32le(capabilities)),
   };
 }
 
