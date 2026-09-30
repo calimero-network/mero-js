@@ -254,11 +254,38 @@ export class WebHttpClient implements HttpClient {
       headersObj = headers;
     }
     
+    const method = init?.method || 'GET';
+
+    // A credential that commits to the request can only be produced here, where
+    // the method, the assembled path and the body are all known. The path comes
+    // from the URL rather than from `path`, because a base URL may carry a prefix
+    // (`…/admin-api`) that the node sees and a bare relative path would not sign.
+    if (this.transport.authorizeRequest) {
+      const body = init?.body;
+      if (body !== undefined && typeof body !== 'string' && !(body instanceof Uint8Array)) {
+        throw new Error(
+          'this transport authorizes each request against its body, so the body must be a string ' +
+            'or Uint8Array — a stream cannot be signed, because the signature would have to read ' +
+            'bytes the request then cannot send.',
+        );
+      }
+      Object.assign(
+        headersObj,
+        await this.transport.authorizeRequest({
+          method,
+          path: new URL(url).pathname,
+          // Narrowed by the guard above; `BodyInit` is wider than what can be
+          // signed.
+          body: body as string | Uint8Array | undefined,
+        }),
+      );
+    }
+
     const requestInit: RequestInit = {
-      method: init?.method || 'GET',
+      method,
       headers: headersObj,
     };
-    
+
     // Check if body is a stream (ReadableStream) that can't be reused
     // Note: Blob is reusable, so it's not included here
     const isStreamBody = init?.body instanceof ReadableStream ||

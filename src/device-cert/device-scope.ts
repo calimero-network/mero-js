@@ -18,7 +18,7 @@
  */
 import { concat, domainHash, fromHex, hex, u32le } from '../crypto/internal.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
-import { accountForRootKey, ACCOUNT_GENESIS_VERSION } from './device-cert.js';
+import { accountForRootPublicKey, ACCOUNT_GENESIS_VERSION } from './device-cert.js';
 
 const SCOPE_DOMAIN = new TextEncoder().encode('calimero.device.scope.v1');
 
@@ -91,7 +91,7 @@ export async function deviceScopePayload(input: {
 export async function signDeviceScope(input: DeviceScopeInput): Promise<string> {
   const signer = await resolveSigner(input.rootSecret, input.signer, 'rootSecret');
   const rootPublicKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
-  const account = await accountForRootKey(rootPublicKey);
+  const account = await accountForRootPublicKey(hex(rootPublicKey));
   const applications = input.applications ?? [];
   const scopeEpoch = input.scopeEpoch ?? 0;
   // `u32le` would wrap a negative or oversized value into a different epoch

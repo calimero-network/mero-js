@@ -1,4 +1,4 @@
-import { HttpClient, withRetry } from '../http-client/index.js';
+import { HttpClient, HTTPError, withRetry } from '../http-client/index.js';
 import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
@@ -79,6 +79,8 @@ import type {
   LinkAccountDeviceRequest,
   LinkAccountDeviceResponseData,
   RevokeAccountDeviceResponseData,
+  MemberDevicesEntry,
+  ListMemberDevicesOptions,
   GroupInfoResponseData,
   CreateGroupRequest,
   CreateGroupResponseData,
@@ -128,14 +130,103 @@ import type {
   IntentRelayInfo,
   QueryContextRequest,
   QueryContextResponseData,
-  ListMemberDevicesOptions,
   ListMemberDevicesResponseData,
   SealToAccountRequest,
   SealedEnvelope,
   AdmitJoinRequest,
   AdmitJoinResponseData,
+  WarrantNonceState,
 } from './admin-types.js';
 import { redeemInvitation, type RedeemOutcome } from './redeem-invitation.js';
+
+/**
+ * Thrown when a node answers the warrant-nonce route with a 404.
+ *
+ * Its own type because the meaning is unambiguous and not "not found": the
+ * handler never 404s — an unknown device is a `200` with `seen: false`, a
+ * malformed id is a `400` — so a 404 says the route is not mounted on this
+ * node. It is new on core and absent from `master` builds. A caller that sees
+ * this should fall back to its own counter (or refuse to write) rather than
+ * retry, because no amount of retrying adds a route to a running node.
+ */
+export class WarrantNonceRouteUnavailableError extends Error {
+  name = 'WarrantNonceRouteUnavailableError';
+
+  constructor(
+    /** The path that answered 404. */
+    public readonly path: string,
+    /** The underlying HTTP failure, kept for logs. */
+    public readonly cause: HTTPError,
+  ) {
+    super(
+      `this node does not serve warrant-nonce discovery (404 on ${path}); it predates the route, so a client must fall back to its own nonce counter`,
+    );
+  }
+}
+
+/**
+ * Recover a `u64` from the response bytes rather than from a parsed `number`.
+ *
+ * `JSON.parse` has already rounded anything past 2^53 by the time a value is
+ * handed over, and it rounds without complaint — so the digits are read back
+ * out of the source text and turned straight into a `bigint`.
+ *
+ * Matching on the quoted key is safe for exactly this response: its only two
+ * string fields are a context id and a device key, both of which are hex or
+ * base58 and so cannot contain a quote, a colon, or these field names. The
+ * parsed object still decides whether a field is *present*; the text is
+ * consulted only for its digits.
+ */
+function u64FromBody(body: string, parsed: Record<string, unknown>, field: string): bigint | undefined {
+  const value = parsed[field];
+  if (value === undefined || value === null) return undefined;
+  const digits = new RegExp(`"${field}"\\s*:\\s*(\\d+)`).exec(body);
+  if (digits) return BigInt(digits[1]);
+  // The field is present but not a bare integer literal in the body — a node
+  // that started sending it as a string, say. Accept a decimal string, and
+  // refuse anything else loudly instead of coercing a nonce into existence.
+  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value);
+  throw new Error(`warrant-nonce response field \`${field}\` is not a u64: ${JSON.stringify(value)}`);
+}
+
+/**
+ * Shape the node's answer into the union, which is where the exhausted case
+ * stops being a missing field and starts being something the compiler asks
+ * about.
+ *
+ * Exported for tests: it is the whole client-side contract of the route, and
+ * testing it needs no transport.
+ */
+export function parseWarrantNonce(body: string): WarrantNonceState {
+  const parsed = JSON.parse(body) as { data?: Record<string, unknown> };
+  const data = parsed?.data;
+  if (!data || typeof data !== 'object') {
+    throw new Error(`warrant-nonce response had no \`data\`: ${body.slice(0, 200)}`);
+  }
+
+  const common = {
+    contextId: String(data.contextId ?? ''),
+    authorDeviceKey: String(data.authorDeviceKey ?? ''),
+    seen: data.seen === true,
+    highWaterNonce: u64FromBody(body, data, 'highWaterNonce'),
+    // Not defaulted: a node that stopped sending it is a node whose window this
+    // client would be guessing at, and the window is not a nonce input anyway.
+    windowWidth: u64FromBody(body, data, 'windowWidth') ?? 0n,
+  };
+
+  const nextNonce = u64FromBody(body, data, 'nextNonce');
+  if (nextNonce === undefined) {
+    // The one absence with a meaning: `u64::MAX` is spent. The node omits the
+    // field rather than wrapping to `0`, and a client must not fill the gap.
+    return {
+      ...common,
+      kind: 'exhausted',
+      seen: true,
+      highWaterNonce: common.highWaterNonce ?? 0xffff_ffff_ffff_ffffn,
+    };
+  }
+  return { ...common, kind: 'open', nextNonce };
+}
 
 /**
  * Helper: server wraps most responses in `{ data: T }`.
@@ -1154,6 +1245,13 @@ export class AdminApiClient {
    * `namespaceId` names where to publish from, not the extent of the revocation:
    * a device belongs to the account, so every namespace holding a binding for it
    * is withdrawn from and reported back.
+   *
+   * **Revocation is forward-only.** It withdraws the device's authority from
+   * here on and does NOT retract past authorship: ops the device already signed
+   * keep verifying and stay in the DAG, because the certificate that authorised
+   * them was valid when the signature was made. Nothing in this system can
+   * un-author what a device wrote, so a UI built on this call must not offer
+   * that - "this device can no longer act" is the only claim it supports.
    */
   async revokeAccountDevice(
     namespaceId: string,
@@ -1241,6 +1339,160 @@ export class AdminApiClient {
       );
     }
     return response;
+  }
+
+  /**
+   * Account -> devices for the members of a group, as its live bindings record
+   * them.
+   *
+   * The join between a group member listing, which names accounts, and a
+   * context's identities, which name bare signing keys - both 64 hex, and
+   * nothing but the source tells them apart. Batch rather than per-account
+   * because the key -> account direction gets asked about arbitrary authors,
+   * which a per-account route would answer in N calls.
+   *
+   * What comes back is **caller-scoped by the node**: an admin of the group sees
+   * every member's devices, a plain member only its own entry. A single-entry
+   * answer is therefore a statement about this caller's role, not about the
+   * group's size.
+   *
+   * Only live bindings appear, so a revoked device is absent here - use
+   * {@link listAccountDevices} for the account's own devices, which keeps a
+   * revoked one with `revoked: true`. Absence here never means the device never
+   * acted: revocation is forward-only and its past ops remain in the DAG.
+   *
+   * Wrapped in `members` on the wire rather than `data`, unwrapped here for the
+   * same reason {@link listAccountDevices} unwraps `devices`.
+   */
+  async listGroupMemberDevices(
+    groupId: string,
+    options?: ListMemberDevicesOptions,
+  ): Promise<MemberDevicesEntry[]> {
+    // Both params are optional on the node, which clamps `limit` to its own
+    // maximum; sending them only when asked keeps the node's defaults authoritative
+    // rather than freezing today's values into this client.
+    const params = new URLSearchParams();
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const base = `/admin-api/groups/${encodeURIComponent(groupId)}/member-devices`;
+    const response = await this.httpClient.get<{ members: MemberDevicesEntry[] }>(
+      query ? `${base}?${query}` : base,
+    );
+    return response.members;
+  }
+
+  /**
+   * Where `authorDeviceKey` stands in its warrant-nonce sequence in `contextId`.
+   *
+   * # What this is for
+   *
+   * The nonce is the one input to a warrant that is stateful on the *client*.
+   * Everything else an author needs it either holds (its keys, the method, the
+   * args) or can read from the relay ({@link RelayClient.describe} gives the
+   * executor account and the grant). So an author that has lost its counter —
+   * a browser keyholder in partitioned or periodically cleared storage, which
+   * is its normal lifecycle rather than a fault — otherwise has exactly one
+   * strategy: guess upward and burn a refused round trip per wrong guess, with
+   * each refusal indistinguishable at the API from a genuinely spent nonce.
+   *
+   * Read {@link WarrantNonceOpen.nextNonce} and mint there. If you still hold
+   * your own counter, mint at `max(ownNext, nextNonce)`: nonce state folds per
+   * peer, so a node can only be BEHIND a client whose warrants it has not
+   * applied — never ahead of the truth. An author spread across several relays
+   * asks each and takes the highest answer. {@link createRecoveringNonceSource}
+   * does all of that.
+   *
+   * Purely a read. It spends nothing and advances nothing, so it may be called
+   * as often as you like.
+   *
+   * # Forward compatibility — this route is NEW
+   *
+   * It is not on core `master` yet, so a current node answers **404**, which
+   * this method surfaces as {@link WarrantNonceRouteUnavailableError} rather
+   * than as an opaque {@link HTTPError}. That distinction matters because the
+   * handler itself never 404s: a device with no row is a `200` with
+   * `seen: false`, and a malformed id is a `400`. So a 404 here means the node
+   * does not serve the route at all — an older build, or a deployment that has
+   * not re-mounted it — and the answer is to fall back to a local counter, not
+   * to retry.
+   *
+   * # Authentication
+   *
+   * On the PROTECTED admin router, unlike the two delegated-execution routes it
+   * sits beside: it takes another principal's device key as input and reports
+   * that principal's activity. A `--public-intents` deployment does not serve
+   * this anonymously, so an admin credential is required.
+   *
+   * @param authorDeviceKey the device's signing key, base58 (43-44 chars) or
+   *        hex (exactly 64). The node accepts either; the two never collide.
+   */
+  async getWarrantNonce(
+    contextId: string,
+    authorDeviceKey: string,
+  ): Promise<WarrantNonceState> {
+    const path = `/admin-api/contexts/${encodeURIComponent(contextId)}/warrant-nonce/${encodeURIComponent(authorDeviceKey)}`;
+    // Read as TEXT, not JSON. `JSON.parse` would turn the `u64` nonces into
+    // doubles before this code ever sees them, rounding anything past 2^53 into
+    // a value that looks ordinary and is refused forever. The digits have to be
+    // taken from the bytes.
+    let raw: string;
+    try {
+      raw = await this.httpClient.get<string>(path, { parse: 'text' });
+    } catch (error) {
+      if (error instanceof HTTPError && error.status === 404) {
+        throw new WarrantNonceRouteUnavailableError(path, error);
+      }
+      throw error;
+    }
+    return parseWarrantNonce(raw);
+  }
+
+  /**
+   * The same answer, asked for the way a delegated client has to ask.
+   *
+   * {@link getWarrantNonce} is on the protected admin router, so a keyholder
+   * writing through a relay — the client this whole facility exists for — is
+   * refused it: measured `403` for a session carrying exactly
+   * `context:intent`, `context:query`, `context:subscribe`. That client has no
+   * admin credential and cannot be given one without defeating the point of the
+   * delegated surface.
+   *
+   * What it does have is the credential proving the device is its own, which it
+   * already sends on every write. Presenting it here makes the request
+   * self-scoped: you learn a device's position only by proving, at call time,
+   * that the device is yours. So there is no oracle to protect against, and no
+   * reason for an admin gate.
+   *
+   * The device key is NOT a parameter. It is read from the verified
+   * certificate server-side, which is the only reading that cannot disagree
+   * with the signature — a key supplied alongside would be a second spelling of
+   * the same fact, and two spellings can differ.
+   *
+   * Returns the identical shape {@link getWarrantNonce} returns, so a caller can
+   * swap one for the other without touching what it does with the answer.
+   *
+   * @param authorProof hex-encoded borsh `AccountProof<DeviceCert>` — the same
+   *        value passed as `authorProof` to the relay client.
+   */
+  async getWarrantNonceAsAuthor(
+    contextId: string,
+    authorProof: string,
+  ): Promise<WarrantNonceState> {
+    const path = `/admin-api/contexts/${encodeURIComponent(contextId)}/warrant-nonce`;
+    // Text, not JSON, for the reason given in `getWarrantNonce`: `JSON.parse`
+    // rounds a u64 past 2^53 into a nonce that looks ordinary and is refused
+    // for ever.
+    let raw: string;
+    try {
+      raw = await this.httpClient.post<string>(path, { authorProof }, { parse: 'text' });
+    } catch (error) {
+      if (error instanceof HTTPError && error.status === 404) {
+        throw new WarrantNonceRouteUnavailableError(path, error);
+      }
+      throw error;
+    }
+    return parseWarrantNonce(raw);
   }
 
   /**
