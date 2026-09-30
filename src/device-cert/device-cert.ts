@@ -29,7 +29,6 @@ const CERT_DOMAIN = new TextEncoder().encode('calimero.device.cert.v1');
 const ACCOUNT_ID_DOMAIN = new TextEncoder().encode('calimero.account.genesis.v1');
 const DEVICE_ID_DOMAIN = new TextEncoder().encode('calimero.device.id.v1');
 
-/** `AccountGenesis::version`, which the credential's borsh encoding leads with. */
 /**
  * Core's `ACCOUNT_GENESIS_VERSION`. It is part of the `AccountId` preimage, so
  * this value decides which account a root key names — a mismatch does not fail
@@ -40,7 +39,7 @@ const DEVICE_ID_DOMAIN = new TextEncoder().encode('calimero.device.id.v1');
  * produced credentials current core rejects outright; the shape was already v2,
  * only the tag was stale.
  */
-const ACCOUNT_GENESIS_VERSION = 2;
+export const ACCOUNT_GENESIS_VERSION = 2;
 
 /** What a root certifies about one device. */
 export interface DeviceCertInput {
@@ -205,7 +204,14 @@ export async function signDeviceCert(input: DeviceCertInput): Promise<string> {
 
 /** The account this root owns — the content address of its genesis. */
 export async function accountForRoot(rootSecret: string): Promise<string> {
-  const rootPublicKey = await derivePublicKey(rootSecret);
+  return accountForRootKey(await derivePublicKey(rootSecret));
+}
+
+/**
+ * The account a root **public** key names, for a root held as a `Signer` whose
+ * secret this process never sees.
+ */
+export async function accountForRootKey(rootPublicKey: Uint8Array): Promise<string> {
   return hex(
     await domainHash(ACCOUNT_ID_DOMAIN, [
       concat(new Uint8Array([ACCOUNT_GENESIS_VERSION]), rootPublicKey),

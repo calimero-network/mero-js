@@ -4,6 +4,9 @@ export {
   mintDeviceId,
   deviceCertPayload,
   accountForRoot,
+  accountForRootKey,
   accountProofBytes,
 } from './device-cert.js';
 export type { DeviceCertInput } from './device-cert.js';
+export { signDeviceScope, deviceScopePayload } from './device-scope.js';
+export type { DeviceScopeInput } from './device-scope.js';

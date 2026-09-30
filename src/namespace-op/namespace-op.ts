@@ -14,6 +14,7 @@
  * op, which is what the e2e does.
  */
 import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
+import { encodeGroupInvitation } from '../invitation/invitation.js';
 import {
   concat,
   derivePublicKey,
@@ -66,14 +67,6 @@ const ROOT_OP = {
   MemberJoinedViaTeeAttestation: 10,
 } as const;
 
-/** A required `[u8; 32]`, as JSON carries it: 32 byte values. */
-function bytes32(value: readonly number[], label: string): Uint8Array {
-  if (value.length !== 32) {
-    throw new Error(`${label} must be 32 bytes, got ${value.length}`);
-  }
-  return new Uint8Array(value);
-}
-
 /**
  * Borsh `Option<[u8; 32]>` from the byte array JSON carries it as.
  *
@@ -113,22 +106,12 @@ function borshString(value: string): Uint8Array {
  */
 export function encodeSignedInvitation(signed: SignedGroupOpenInvitation): Uint8Array {
   const body = signed.invitation;
-  const admitters = body.admitters ?? [];
   const admitterAddrs = signed.admitter_addrs ?? [];
 
   return concat(
-    // GroupInvitationFromAdmin.
-    //
-    // `SignerId` and `ContextGroupId` cross JSON as 32 numbers; `AccountId`
-    // crosses as hex. Same width, different spelling, and reading either the
-    // wrong way yields 32 bytes that encode cleanly and verify as nothing.
-    bytes32(body.inviter_identity, 'inviter_identity'),
-    bytes32(body.group_id, 'group_id'),
-    u64le(body.expiration_timestamp),
-    bytes32(body.secret_salt, 'secret_salt'),
-    new Uint8Array([body.invited_role]),
-    u32le(admitters.length),
-    ...admitters.map((a, i) => fromHex(a, `admitters[${i}]`, 32)),
+    // GroupInvitationFromAdmin, from the one encoder the SDK's own invitation
+    // signer uses: the bytes signed and the bytes carried must not drift.
+    encodeGroupInvitation(body),
     // ...then the enclosing SignedGroupOpenInvitation, in declaration order.
     // `inviter_account` sits between the signature and the addresses; putting it
     // anywhere else still encodes 32 bytes and still verifies as nothing.
