@@ -20,6 +20,7 @@
  * `crates/governance-types/src/tests.rs` (`delegated_governance_op_vectors_are_stable`).
  */
 
+import { CAPABILITIES, hasCap } from '../capabilities.js';
 import { concat, domainHash, fromHex, fromHexUnsized, hex, u32le } from '../crypto/internal.js';
 
 /**
@@ -57,9 +58,6 @@ const GROUP_OP = {
   MemberRoleSet: 4,
   DefaultCapabilitiesSet: 6,
 } as const;
-
-/** `MemberCapabilities::CAN_AUTHOR_ON_BEHALF`: bit 9. Never changed through a relay. */
-const CAN_AUTHOR_ON_BEHALF = 1 << 9;
 
 /** `RootOp` discriminants, by position in core's enum. */
 const ROOT_OP = {
@@ -154,7 +152,8 @@ export function defaultCapabilitiesSetOp(capabilities: number): GovernanceOp {
   if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
     throw new Error(`capabilities must be a u32 bit mask, got ${String(capabilities)}`);
   }
-  if ((capabilities & CAN_AUTHOR_ON_BEHALF) !== 0) {
+  // Never changed through a relay.
+  if (hasCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
     throw new Error(
       'capabilities may not include CAN_AUTHOR_ON_BEHALF (512): a relay never carries a change to it',
     );

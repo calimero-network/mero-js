@@ -226,9 +226,12 @@ salt, so the relay can neither pick another id nor found it for anyone else. It
 posts to `POST /admin-api/groups/{namespaceId}/governance-intents`.
 
 ```typescript
+import { CAPABILITY_PRESETS } from '@calimero-network/mero-js';
+
 const { namespaceId, salt, teeEnabled, defaultCapabilitiesSet } = await relay.foundNamespace({
   executorAccount: relayAccount, // the namespace does not exist yet, so nothing to describe
-  defaultCapabilities: 231,      // optional: your app's default member mask
+  // optional: your app's default member mask (COLLABORATOR = 231; see Capabilities)
+  defaultCapabilities: CAPABILITY_PRESETS.COLLABORATOR,
 });
 ```
 

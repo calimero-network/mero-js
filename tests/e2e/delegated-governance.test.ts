@@ -30,6 +30,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { CAPABILITY_PRESETS } from '../../src/capabilities.js';
 import { IntentRefusedError, RelayClient } from '../../src/relay/relay-client.js';
 import { createMemoryNonceSource } from '../../src/relay/nonce-source.js';
 import { signerFromSecret } from '../../src/signer/index.js';
@@ -197,7 +198,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
 
   it('founds a namespace the author owns, and governs it through the same relay', async () => {
     // mero-chat's mask: core founds with a minimal default and the app names its own.
-    const MASK = 231;
+    const MASK = CAPABILITY_PRESETS.COLLABORATOR;
     const founded = await relay.foundNamespace({
       executorAccount: relayAccount,
       defaultCapabilities: MASK,
