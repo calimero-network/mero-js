@@ -1,3 +1,9 @@
+## [22.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.6.0...mero-js-v22.7.0) (2026-09-30)
+
+### Features
+
+* **relay:** found a namespace through a relay ([#218](https://github.com/calimero-network/mero-js/issues/218)) ([c730bca](https://github.com/calimero-network/mero-js/commit/c730bca5270ef55b16657199f002eab2c1c785c7))
+
 ## [22.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.5.1...mero-js-v22.6.0) (2026-09-30)
 
 ### Features
