@@ -20,6 +20,8 @@
  * `verifyQuote` supplied by the caller, and a mock quote (a dev-only format with
  * no signature at all) is refused unless `allowMock` is set.
  */
+import type { VerifyTransportQuote } from '../sealed/sealed.js';
+import type { DcapCollateral } from '../sealed/verify.js';
 import { hex } from '../crypto/internal.js';
 
 /** Core's `ATTEST_KEY_BINDING_DOMAIN`. */
@@ -50,6 +52,15 @@ export interface AttestRelayNodeKeyOptions {
    * against bytes nothing has authenticated.
    */
   readonly verifyQuote?: (quote: Uint8Array) => Promise<void>;
+  /**
+   * Verify a real quote the way a sealed transport does: a
+   * {@link VerifyTransportQuote}, such as `createSignedReleaseVerifier` (the
+   * relay's signed mero-tee release, Intel's chain, every register of its
+   * image). Called with our nonce and the node-key binding as the expected
+   * report data, and with the relay's collateral when it asks for it. Takes
+   * precedence over `verifyQuote`.
+   */
+  readonly verify?: VerifyTransportQuote;
   readonly fetch?: typeof fetch;
 }
 
@@ -114,15 +125,20 @@ export function reportDataOf(quote: Uint8Array): { reportData: Uint8Array; mock:
 export async function attestRelayNodeKey(opts: AttestRelayNodeKeyOptions): Promise<AttestedNodeKey> {
   const nonce = crypto.getRandomValues(new Uint8Array(32));
   const url = `${opts.relayUrl.replace(/\/+$/, '')}/admin-api/tee/attest`;
-  const body = JSON.stringify({ nonce: hex(nonce), bindNodeKey: true });
+  const body = JSON.stringify({
+    nonce: hex(nonce),
+    bindNodeKey: true,
+    ...(opts.verify?.includeCollateral ? { includeCollateral: true } : {}),
+  });
   const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
   const response = opts.fetch ? await opts.fetch(url, init) : await globalThis.fetch(url, init);
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`the relay would not attest (HTTP ${response.status})${text ? `: ${text}` : ''}`);
   }
-  const parsed = (await response.json()) as { data?: { quoteB64?: string; boundPublicKey?: string } };
-  const data = parsed.data ?? (parsed as { quoteB64?: string; boundPublicKey?: string });
+  type Attested = { quoteB64?: string; boundPublicKey?: string; collateral?: DcapCollateral };
+  const parsed = (await response.json()) as { data?: Attested };
+  const data = parsed.data ?? (parsed as Attested);
   if (typeof data.quoteB64 !== 'string') throw new Error('the relay returned no quote');
   const nodeKey = fromHex32(data.boundPublicKey, 'boundPublicKey');
 
@@ -132,11 +148,20 @@ export async function attestRelayNodeKey(opts: AttestRelayNodeKeyOptions): Promi
     if (!opts.allowMock) {
       throw new Error('the relay answered with a MOCK quote, which proves nothing about the hardware');
     }
-  } else {
-    if (!opts.verifyQuote) {
-      throw new Error('a real TDX quote needs a verifyQuote to check its signature and measurements');
+  } else if (opts.verify) {
+    const accepted = await opts.verify({
+      quoteB64: data.quoteB64,
+      nonce: hex(nonce),
+      reportDataSuffix: hex(await attestKeyBinding(nodeKey)),
+      ...(data.collateral ? { collateral: data.collateral } : {}),
+    });
+    if (!accepted) {
+      throw new Error("the relay's quote did not verify: not a trusted image, or not bound to this request");
     }
+  } else if (opts.verifyQuote) {
     await opts.verifyQuote(quote);
+  } else {
+    throw new Error('a real TDX quote needs a verify (or verifyQuote) to check its signature and measurements');
   }
 
   if (!equal(reportData.subarray(0, 32), nonce)) {

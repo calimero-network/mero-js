@@ -64,7 +64,7 @@ describe('attestRelayNodeKey', () => {
   it('refuses a real quote with no verifier, and runs the verifier when given one', async () => {
     await expect(
       attestRelayNodeKey({ relayUrl: 'http://r', fetch: relay({ mock: false }) }),
-    ).rejects.toThrow(/verifyQuote/);
+    ).rejects.toThrow(/verify/);
     let verified = false;
     const got = await attestRelayNodeKey({
       relayUrl: 'http://r',
@@ -75,6 +75,38 @@ describe('attestRelayNodeKey', () => {
     });
     expect(verified).toBe(true);
     expect(got).toEqual({ nodeKey: hex(KEY), mock: false });
+  });
+
+  it('checks a real quote with a transport verifier: our nonce, the key binding, the collateral', async () => {
+    let sentBody: Record<string, unknown> = {};
+    const inner = relay({ mock: false });
+    const withCollateral = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      sentBody = JSON.parse(String(init?.body));
+      const answer = await (await inner(url, init)).json();
+      answer.data.collateral = { pckCrlIssuerChain: 'x' };
+      return new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const seen: Array<Record<string, unknown>> = [];
+    const verify = Object.assign(async (args: Record<string, unknown>) => {
+      seen.push(args);
+      return true;
+    }, { includeCollateral: true as const });
+
+    const got = await attestRelayNodeKey({ relayUrl: 'http://r', fetch: withCollateral, verify });
+
+    expect(got).toEqual({ nodeKey: hex(KEY), mock: false });
+    expect(sentBody.includeCollateral).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].nonce).toBe(sentBody.nonce);
+    expect(seen[0].reportDataSuffix).toBe(hex(await attestKeyBinding(KEY)));
+    expect(seen[0].collateral).toEqual({ pckCrlIssuerChain: 'x' });
+  });
+
+  it('refuses when the transport verifier does not accept the quote', async () => {
+    const verify = async () => false;
+    await expect(
+      attestRelayNodeKey({ relayUrl: 'http://r', fetch: relay({ mock: false }), verify }),
+    ).rejects.toThrow(/did not verify/);
   });
 });
 
