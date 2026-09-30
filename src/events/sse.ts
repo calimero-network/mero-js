@@ -65,9 +65,23 @@ interface SseListeners {
   error: SseErrorHandler[];
 }
 
+/**
+ * How one request to the SSE endpoints is authenticated.
+ *
+ * A bearer token is one value reused across requests; a request proof commits to
+ * the method, the path and the body, so it must be produced per request. Both
+ * reduce to the same thing from this client's point of view — headers — so the
+ * stream takes the general form and {@link SseClient} adapts `getAuthToken` to it.
+ */
+export type SseAuthorizer = (request: {
+  method: string;
+  path: string;
+  body?: string;
+}) => Promise<Record<string, string>>;
+
 export class SseClient {
   private baseUrl: string;
-  private getAuthToken: () => Promise<string>;
+  private authorize: SseAuthorizer;
   private reconnectDelayMs: number;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
@@ -80,12 +94,26 @@ export class SseClient {
 
   constructor(opts: {
     baseUrl: string;
-    getAuthToken: () => Promise<string>;
+    /** A bearer token provider. The historical form, and still the default. */
+    getAuthToken?: () => Promise<string>;
+    /**
+     * Per-request authorization, for a credential that commits to the request —
+     * a device cert signing a request proof. Takes precedence over
+     * `getAuthToken`; one of the two is required.
+     */
+    authorize?: SseAuthorizer;
     reconnectDelayMs?: number;
     fetch?: typeof fetch;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
-    this.getAuthToken = opts.getAuthToken;
+    if (opts.authorize) {
+      this.authorize = opts.authorize;
+    } else if (opts.getAuthToken) {
+      const getAuthToken = opts.getAuthToken;
+      this.authorize = async () => ({ Authorization: `Bearer ${await getAuthToken()}` });
+    } else {
+      throw new Error('SseClient needs either `getAuthToken` or `authorize`');
+    }
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 3000;
     // globalThis.fetch must be called as a method on globalThis, not through a
     // variable, or browsers throw "Illegal invocation".
@@ -178,11 +206,10 @@ export class SseClient {
     this.abortController = new AbortController();
 
     try {
-      const token = await this.getAuthToken();
       const url = `${this.baseUrl}/sse`;
       const response = await this.fetchImpl(url, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await this.authorize({ method: 'GET', path: new URL(url).pathname })),
           'Accept': 'text/event-stream',
         },
         signal: this.abortController.signal,
@@ -378,21 +405,22 @@ export class SseClient {
     ids: { contextIds?: string[]; groupIds?: string[] },
   ): Promise<void> {
     try {
-      const token = await this.getAuthToken();
       const params: { contextIds?: string[]; groupIds?: string[] } = {};
       if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
       if (ids.groupIds && ids.groupIds.length > 0) params.groupIds = ids.groupIds;
-      const response = await this.fetchImpl(`${this.baseUrl}/sse/subscription`, {
+      const url = `${this.baseUrl}/sse/subscription`;
+      // Serialized once and both signed and sent, because a proof commits to the
+      // body: re-stringifying for the signature risks two byte sequences that
+      // differ in key order, which fails as a refused credential rather than as
+      // anything that names the real cause.
+      const body = JSON.stringify({ id: this.sessionId, method, params });
+      const response = await this.fetchImpl(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await this.authorize({ method: 'POST', path: new URL(url).pathname, body })),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: this.sessionId,
-          method,
-          params,
-        }),
+        body,
       });
       if (!response.ok) {
         // The subscribe path used to report only the status. On the one failure

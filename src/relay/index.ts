@@ -12,5 +12,15 @@ export type {
   FoundNamespaceInput,
   FoundedNamespace,
 } from './relay-client.js';
-export { createMemoryNonceSource, createLocalStorageNonceSource } from './nonce-source.js';
-export type { NonceSource } from './nonce-source.js';
+export {
+  createMemoryNonceSource,
+  createLocalStorageNonceSource,
+  createRecoveringNonceSource,
+  authorNonceLookup,
+  WarrantNonceExhaustedError,
+} from './nonce-source.js';
+export type {
+  NonceSource,
+  WarrantNonceLookup,
+  RecoveringNonceSourceOptions,
+} from './nonce-source.js';

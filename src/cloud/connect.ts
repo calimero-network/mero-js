@@ -19,6 +19,12 @@
  * function is that missing answer, which is why the login step it replaces is
  * the *node URL prompt* rather than the authentication.
  *
+ * `connectCloudWithAccount(...)` is the same connection reached by the other
+ * door: the caller holds an account root and signs in as the account itself,
+ * with no Google login anywhere in it. Identical from there on, deliberately —
+ * which login proved who you are changes nothing about how a relay is found or
+ * how a write is authorised.
+ *
  * # What it does not do
  *
  * # Sealing the relay
@@ -40,6 +46,11 @@ import type { CloudClientConfig, CloudNamespace, CloudRelay } from './cloud-clie
 import { RelayClient } from '../relay/relay-client.js';
 import type { IntentResult, NonceSource } from '../relay/index.js';
 import { createLocalStorageNonceSource, createMemoryNonceSource } from '../relay/nonce-source.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
+import { resolveRoot, type RootSource } from '../account/account.js';
+import { MeroClient } from '../transport/mero-client.js';
+import type { RelayObserveConfig } from '../transport/relay-observer.js';
+import type { Audience } from '../login/index.js';
 import { derivePublicKey, hex } from '../crypto/internal.js';
 import { createAttestedSealedFetch } from '../sealed/sealed.js';
 import type { VerifyTransportQuote } from '../sealed/sealed.js';
@@ -58,8 +69,24 @@ export interface ConnectCloudOptions {
   authorAccount: string;
   /** The author's `AccountProof<DeviceCert>`, hex-encoded borsh. */
   authorProof: string;
-  /** The author device's ed25519 signing secret, hex. Never transmitted. */
-  deviceSecret: string;
+  /**
+   * The author device's ed25519 signing secret, hex. Never transmitted.
+   *
+   * Mutually exclusive with {@link ConnectCloudOptions.signer}, and the weaker
+   * of the two in a browser — a secret that exists as a string can be read by
+   * anything on the origin.
+   */
+  deviceSecret?: string;
+  /**
+   * The author device's signer — use instead of
+   * {@link ConnectCloudOptions.deviceSecret}.
+   *
+   * A browser wallet holds its device key as a non-extractable `CryptoKey`,
+   * which has no hex form to pass. Without this, that wallet — the case this
+   * whole path was built for — had to hand-assemble the `RelayClient` the
+   * one-call path exists to build.
+   */
+  signer?: Signer;
 
   /**
    * Which namespace to write in.
@@ -94,6 +121,26 @@ export interface ConnectCloudOptions {
   seal?: VerifyTransportQuote;
   fetch?: typeof fetch;
   timeoutMs?: number;
+
+  /**
+   * The chosen relay node's device signing key, hex — if you know it.
+   *
+   * Supplying it makes `connection.client` able to *observe* as well as write:
+   * a relay is an ordinary node, and a keyholder with an account proof can log
+   * in to it and subscribe. The key has to come from somewhere the caller
+   * already trusts, which today means out of band, because the cloud does not
+   * publish it (mdma #312).
+   *
+   * Left unset, the key the cloud reported is used — `null` for now, which
+   * means `connection.client.canSubscribe === false` and nothing is guessed.
+   * When #312 lands, unchanged callers start observing.
+   */
+  relayNodeKey?: string;
+  /**
+   * The audience the observing session is bound to. Defaults to this runtime's
+   * own origin (or `cli`). See {@link RelayObserveConfig.audience}.
+   */
+  observeAudience?: Audience;
 }
 
 /** A signed-in cloud session with a relay ready to write through. */
@@ -113,6 +160,23 @@ export interface CloudConnection {
     method: string,
     argsJson?: unknown,
   ): Promise<IntentResult<T>>;
+  /**
+   * The same connection behind the transport-neutral surface.
+   *
+   * `client.rpc.execute({ contextId, method, argsJson })` is the call a
+   * node-backed app already writes, so an app reaching the cloud this way keeps
+   * every call site it has — signing in *is* the transport decision, and it
+   * happens here, once. `relay` and `execute` above are unchanged and remain
+   * the direct path for a caller that wants `IntentResult` in hand.
+   *
+   * Whether it can also *observe* depends on one input: the relay node's
+   * device signing key. A relay is an ordinary node and serves `/sse` and
+   * `/ws`, but a login statement must be signed against a key learned out of
+   * band. Pass {@link ConnectCloudOptions.relayNodeKey} if you have it; the
+   * cloud does not publish it yet (mdma #312), so by default
+   * `client.canSubscribe === false` and `client.events` throws saying so.
+   */
+  client: MeroClient;
 }
 
 /**
@@ -129,6 +193,11 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
   if (!options.sessionToken && !options.googleIdToken) {
     throw new Error('connectCloud needs either a sessionToken or a googleIdToken');
   }
+
+  // Resolved before the first network call: a missing or duplicated key is the
+  // caller's mistake to fix, and finding out after signing in leaves a session
+  // minted for a connection that was never going to be built.
+  const signer = await resolveSigner(options.deviceSecret, options.signer, 'deviceSecret');
 
   const cloud = new CloudClient({
     cloudBaseUrl: options.cloudBaseUrl,
@@ -163,8 +232,8 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     executorAccount: relayInfo.executorAccount as string,
     authorAccount: options.authorAccount,
     authorProof: options.authorProof,
-    deviceSecret: options.deviceSecret,
-    nonces: options.nonces ?? (await defaultNonceSource(options.deviceSecret)),
+    signer,
+    nonces: options.nonces ?? defaultNonceSource(signer.publicKey),
     ttlSeconds: options.ttlSeconds,
     // Only the relay is sealed: a sealed fetch is bound to one node and refuses
     // any other URL, and the cloud calls above carry no intent.
@@ -185,7 +254,94 @@ export async function connectCloud(options: ConnectCloudOptions): Promise<CloudC
     namespace,
     relayInfo,
     execute: (contextId, method, argsJson) => relay.execute(contextId, method, argsJson),
+    // Built from the same `relay`, not a second one: one nonce sequence, one
+    // warrant signer. Two clients over one relay would hand out the same nonce
+    // twice and have the network refuse the loser as a replay.
+    //
+    // `observe` is always passed, with whatever key is known — the caller's if
+    // they had one, otherwise the cloud's, which is `null` until mdma #312. One
+    // code path rather than two, so the hosted case starts observing the day
+    // the field appears, without a line changing here or at the call site.
+    client: new MeroClient({
+      transport: 'relay',
+      relay,
+      observe: {
+        nodeKey: options.relayNodeKey ?? relayInfo.nodeKey,
+        audience: options.observeAudience,
+        fetch: options.fetch,
+        timeoutMs: options.timeoutMs,
+      } satisfies RelayObserveConfig,
+    }),
   };
+}
+
+/** What {@link connectCloudWithAccount} needs on top of a root. */
+export interface ConnectCloudWithAccountOptions
+  extends Omit<ConnectCloudOptions, 'sessionToken' | 'googleIdToken' | 'authorAccount'> {
+  /**
+   * The account root — a 64-hex secret, or a `Signer` over a key that cannot be
+   * exported. The whole credential: no Google login is involved.
+   */
+  root: RootSource;
+  /**
+   * Whose writes these are, hex. Defaults to the account the root derives,
+   * which is the only account it can open a session as.
+   *
+   * Worth passing only when the device certificate was issued by a *different*
+   * root than the one signing in — which core accepts and nothing here needs to
+   * forbid, but which is rare enough that defaulting to the signing root is the
+   * safer shape.
+   */
+  authorAccount?: string;
+}
+
+/**
+ * The same connection, opened with an account root instead of a cloud session.
+ *
+ * The two sign-in paths end in the same place, and until now only one of them
+ * ended in a usable client: a caller signing in with a root had to open the
+ * session, read the relays and assemble a {@link RelayClient} by hand, which is
+ * three chances to pair the wrong author with the wrong executor.
+ *
+ * It is one call rather than one function: the session is minted here and
+ * everything after it is {@link connectCloud}, unchanged. Duplicating the
+ * namespace choice and the three no-relay diagnostics would mean two copies of
+ * the messages that tell a user what to go and do.
+ *
+ * The author defaults to the account the root derives. That is not a
+ * convenience — passing an account the root does not own is the mistake this
+ * shape removes, since the cloud would answer with that root's namespaces while
+ * every warrant claimed somebody else's authorship.
+ */
+export async function connectCloudWithAccount(
+  options: ConnectCloudWithAccountOptions,
+): Promise<CloudConnection> {
+  const { root, authorAccount, ...rest } = options;
+  // Both keys resolved before the sign-in, for the reason `connectCloud` gives:
+  // a session minted for a connection that cannot be built is a credential
+  // issued for nothing.
+  const signer = await resolveSigner(rest.deviceSecret, rest.signer, 'deviceSecret');
+  const resolved = await resolveRoot(root);
+
+  const cloud = new CloudClient({
+    cloudBaseUrl: options.cloudBaseUrl,
+    // Reported here as well as on the connection's own client: this is where
+    // the session is first minted, and a caller persisting it would otherwise
+    // only hear about the rolling refreshes of a token it never saw.
+    onSession: options.onSession,
+    fetch: options.fetch,
+    timeoutMs: options.timeoutMs,
+  });
+  const session = await cloud.signInWithAccount(resolved.signer);
+
+  return connectCloud({
+    ...rest,
+    // Already resolved above, and passing both forms on would be refused.
+    deviceSecret: undefined,
+    signer,
+    sessionToken: session.sessionToken,
+    authorAccount: authorAccount ?? resolved.accountId,
+  });
 }
 
 /** The one namespace to write in, or an error naming the actual ambiguity. */
@@ -264,16 +420,18 @@ function explainNoRelay(namespace: CloudNamespace, relays: CloudRelay[]): string
 /**
  * A persisted nonce source keyed by the author's device public key.
  *
- * The key is the *public* key, derived locally: a per-device key is required
- * (two devices of one account are independent replicas) and the secret must
- * never end up in a storage key an extension or another script can enumerate.
+ * The key is the *public* key: a per-device key is required (two devices of one
+ * account are independent replicas) and the secret must never end up in a
+ * storage key an extension or another script can enumerate. The signer names
+ * its own public key, which is also the only form available when the private
+ * half cannot be exported.
  *
  * Falls back to memory where there is no `localStorage` — Node, a worker, an
  * edge runtime. Those are processes that own their whole sequence, which is
  * exactly the case a memory counter is correct for.
  */
-async function defaultNonceSource(deviceSecret: string): Promise<NonceSource> {
-  const key = `mero-js:warrant-nonce:${hex(await derivePublicKey(deviceSecret))}`;
+function defaultNonceSource(devicePublicKey: string): NonceSource {
+  const key = `mero-js:warrant-nonce:${devicePublicKey}`;
   try {
     return createLocalStorageNonceSource(key);
   } catch {

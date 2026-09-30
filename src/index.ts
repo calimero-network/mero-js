@@ -33,6 +33,26 @@ export { RpcClient, RpcError } from "./rpc/index.js";
 export type { MigrateMyEntriesSummary } from "./rpc/index.js";
 export type { ExecuteParams } from "./rpc/index.js";
 
+// Transport — one client, two write paths, chosen at construction (node by default)
+export {
+  MeroClient,
+  createMeroClient,
+  RelayTransport,
+  // A relay is a node: given its signing key, a relay-transport client
+  // subscribes over the same `/sse` and `/ws` a node client uses.
+  RelayObserver,
+  defaultAudience,
+} from './transport/index.js';
+export type {
+  MeroClientConfig,
+  NodeTransportConfig,
+  RelayTransportConfig,
+  RelayObserveConfig,
+  ExecuteTransport,
+  ExecuteResult,
+  TransportKind,
+} from './transport/index.js';
+
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from "./events/index.js";
 export type {
@@ -59,6 +79,9 @@ export * from "./sealed/index.js";
 
 // Relay client — write through delegated execution, holding only a signing key
 export * from "./relay/index.js";
+
+// Request proofs — a caller's identity on the request itself, no session needed
+export * from "./request-proof/index.js";
 
 // Warrant signing — mint the author's consent for a relay to run one intent
 export {
@@ -90,22 +113,37 @@ export {
   generateAccountRoot,
   accountRootFromPhrase,
   accountRootFromSecret,
+  createAccountRootSigner,
+  accountRootSignerFromPhrase,
   signAccountLink,
   signAccountLogin,
+  // The two forms a root may be held in, and what resolves either. Exported
+  // because `RootSource` is already the parameter type of every cloud entry
+  // point that takes a root — a consumer writing a wrapper around one could
+  // name it in a signature only by re-declaring it.
+  resolveRoot,
+  resolveRootPair,
 } from "./account/index.js";
 export type {
   AccountRoot,
   RecoverableAccountRoot,
+  AccountRootSigner,
+  NewAccountRootSigner,
   AccountLinkInput,
   AccountLoginInput,
+  RootSource,
+  ResolvedRoot,
 } from "./account/index.js";
 export {
   signDeviceCert,
   mintDeviceId,
   deviceCertPayload,
   accountForRoot,
+  accountForRootPublicKey,
+  parseDeviceCredential,
+  verifyDeviceCredential,
 } from "./device-cert/index.js";
-export type { DeviceCertInput } from "./device-cert/index.js";
+export type { DeviceCertInput, DeviceCredential } from "./device-cert/index.js";
 export {
   signMemberJoinOp,
   encodeSignedInvitation,
@@ -160,3 +198,7 @@ export {
   discoverLocalNodes,
 } from "./nodeDiscovery.js";
 export type { DiscoverLocalNodesOptions } from "./nodeDiscovery.js";
+
+// A relay's node key, learned from its TEE attestation rather than pasted in.
+export { attestRelayNodeKey, attestKeyBinding, reportDataOf } from "./relay-attestation/index.js";
+export type { AttestedNodeKey, AttestRelayNodeKeyOptions } from "./relay-attestation/index.js";
