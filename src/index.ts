@@ -115,6 +115,7 @@ export {
   memberJoinedOpenOp,
   namespaceCreatedOp,
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
 } from "./warrant/index.js";
 // Who signs — a key's capability, separated from its material, so a

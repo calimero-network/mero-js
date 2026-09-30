@@ -41,6 +41,7 @@ export {
   memberJoinedOpenOp,
   namespaceCreatedOp,
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
 } from './governance-op.js';
 export type {
