@@ -11,7 +11,7 @@ function stubRelay(statuses: number[] = []) {
     presenceIntent: vi.fn(async (contextId: string, body: Sent['body']) => {
       calls.push({ contextId, body });
       const status = statuses.shift();
-      if (status) throw Object.assign(new Error(`HTTP ${status}`), { status });
+      if (status !== undefined) throw Object.assign(new Error(`HTTP ${status}`), { status });
     }),
   };
   return { relay, calls };
@@ -106,5 +106,55 @@ describe('RelayPresenceClient', () => {
     const p = new RelayPresenceClient({ relay, events, now: () => 1_000 });
     expect(events).not.toHaveBeenCalled();
     expect(() => p.subscribe(CTX, () => {})).toThrow(/no event stream/);
+  });
+
+  it('a retract made while an earlier set is in flight is not undone by it', async () => {
+    const { relay, calls } = stubRelay();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // The first POST hangs until released; later ones answer at once.
+    relay.presenceIntent.mockImplementationOnce(async (contextId: string, body: Sent['body']) => {
+      calls.push({ contextId, body });
+      await held;
+    });
+    const p = new RelayPresenceClient({ relay, events: noEvents, now: () => 1_000 });
+    const typing = p.set(CTX, { typing: true });
+    await vi.waitFor(() => expect(calls.length).toBe(1));
+    await p.set(CTX, null);
+    release();
+    await typing;
+    await settleAfter(10_000);
+    expect(calls.map((c) => c.body.state === null)).toEqual([false, true]);
+  });
+
+  it('two overlapping sets leave one heartbeat, which close() stops', async () => {
+    const { relay, calls } = stubRelay();
+    const p = new RelayPresenceClient({ relay, events: noEvents, now: () => 1_000 });
+    await Promise.all([p.set(CTX, { typing: true }), p.set(CTX, { typing: false })]);
+    p.close();
+    const sent = calls.length;
+    await settleAfter(10_000);
+    expect(calls.length).toBe(sent);
+  });
+
+  it('keeps resending after a transient failure of the first send', async () => {
+    for (const status of [503, 0]) {
+      const { relay, calls } = stubRelay([status]);
+      const p = new RelayPresenceClient({ relay, events: noEvents, now: () => 1_000 });
+      await p.set(CTX, { typing: true }); // not thrown: the resend covers it
+      await vi.advanceTimersByTimeAsync(2_500);
+      await vi.waitFor(() => expect(calls.length).toBe(2));
+      p.close();
+    }
+  });
+
+  it('stops resending on a 400, which resending cannot fix', async () => {
+    const { relay, calls } = stubRelay([undefined as unknown as number, 400]);
+    const p = new RelayPresenceClient({ relay, events: noEvents, now: () => 1_000 });
+    await p.set(CTX, { typing: true });
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.waitFor(() => expect(calls.length).toBe(2));
+    await settleAfter(10_000);
+    expect(calls.length).toBe(2);
   });
 });

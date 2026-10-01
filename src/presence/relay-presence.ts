@@ -28,6 +28,12 @@ export class RelayPresenceClient {
   private readonly timers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly lastSeq = new Map<string, number>();
   private readonly refused = new Set<string>();
+  /**
+   * Bumped by every `set` and `close`, per context. A `set` installs its
+   * resends only if nothing newer happened while its first send was in flight,
+   * so a retract (or a newer state) can never be overtaken by an older one.
+   */
+  private readonly generation = new Map<string, number>();
 
   /**
    * @param opts.events the relay's event stream, asked for only on `subscribe`:
@@ -47,19 +53,17 @@ export class RelayPresenceClient {
 
   /**
    * Set this account's presence in `contextId`, or retract it with `null`.
-   * Throws the relay's refusal of this first send; a 429 is not thrown, since
-   * the next resend covers it.
+   * Throws when the relay refuses this first send for good (a 4xx other than
+   * 429), which also stops the resends. A rate limit, a network failure or a
+   * 5xx is not thrown: the next resend covers it.
    */
   async set<T>(contextId: string, state: T | null, codec: Codec<T> = jsonCodec<T>()): Promise<void> {
-    this.stop(contextId);
+    const generation = this.bump(contextId);
     this.refused.delete(contextId);
-    if (state === null) {
-      await this.send(contextId, null);
-      return;
-    }
-    const bytes = new Uint8Array(codec.encode(state));
+    const bytes = state === null ? null : new Uint8Array(codec.encode(state));
     await this.send(contextId, bytes);
-    if (this.refused.has(contextId)) return;
+    if (bytes === null || this.refused.has(contextId)) return;
+    if (this.generation.get(contextId) !== generation) return; // a newer set or close won
     this.timers.set(
       contextId,
       setInterval(() => void this.send(contextId, bytes).catch(() => undefined), this.heartbeatMs),
@@ -76,7 +80,17 @@ export class RelayPresenceClient {
 
   /** Stop every resend. Entries expire on the relay and its peers within 7 s. */
   close(): void {
-    for (const contextId of [...this.timers.keys()]) this.stop(contextId);
+    for (const contextId of new Set([...this.timers.keys(), ...this.generation.keys()])) {
+      this.bump(contextId);
+    }
+  }
+
+  /** Stop the context's resends and invalidate any `set` still in flight. */
+  private bump(contextId: string): number {
+    this.stop(contextId);
+    const next = (this.generation.get(contextId) ?? 0) + 1;
+    this.generation.set(contextId, next);
+    return next;
   }
 
   private stop(contextId: string): void {
@@ -115,12 +129,13 @@ export class RelayPresenceClient {
       });
     } catch (err) {
       const status = (err as { status?: number }).status;
-      if (status === 429) return;
-      if (status === 403) {
-        // Not a member, or the device was revoked: resending cannot help.
-        this.refused.add(contextId);
-        this.stop(contextId);
-      }
+      // Rate limited, a network failure, or the relay unable right now (5xx,
+      // e.g. no current key mid-rotation): the next resend covers it.
+      if (status === undefined || status === 0 || status === 429 || status >= 500) return;
+      // Any other refusal (403: not a member or revoked; 400: malformed or a
+      // clock outside the relay's window) cannot be fixed by resending.
+      this.refused.add(contextId);
+      this.stop(contextId);
       throw err;
     }
   }
