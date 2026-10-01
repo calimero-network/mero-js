@@ -33,10 +33,10 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * `NamespaceCreatedV2`), and `GroupOp::FoundingRelayAttested` lets that relay
  * admit itself as the namespace's first TEE. Again no layout this module signs.
  *
- * 19: a TEE admission op carries its quote and a TEE authority evidence op the
+ * 22: a TEE admission op carries its quote and a TEE authority evidence op the
  * credential it was made for. Neither is an op this module signs either.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 19;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 22;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
