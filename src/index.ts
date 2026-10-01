@@ -144,6 +144,20 @@ export {
   verifyDeviceCredential,
 } from "./device-cert/index.js";
 export type { DeviceCertInput, DeviceCredential } from "./device-cert/index.js";
+// A device's scope — signed by the root beside its certificate, and what a relay
+// needs with it to bind the device of an account that has no node.
+export { signDeviceScope, deviceScopePayload } from "./device-cert/index.js";
+export type { DeviceScopeInput } from "./device-cert/index.js";
+// Invitations minted off-node, signed by a bound device key.
+export {
+  signGroupInvitation,
+  encodeGroupInvitation,
+  groupInvitationHash,
+  defaultAdmitters,
+  MAX_INVITATION_VALIDITY_SECS,
+  INVITED_ROLE,
+} from "./invitation/index.js";
+export type { GroupInvitationInput } from "./invitation/index.js";
 export {
   signMemberJoinOp,
   encodeSignedInvitation,

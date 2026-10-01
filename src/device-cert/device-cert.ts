@@ -30,7 +30,6 @@ const CERT_DOMAIN = new TextEncoder().encode('calimero.device.cert.v1');
 const ACCOUNT_ID_DOMAIN = new TextEncoder().encode('calimero.account.genesis.v1');
 const DEVICE_ID_DOMAIN = new TextEncoder().encode('calimero.device.id.v1');
 
-/** `AccountGenesis::version`, which the credential's borsh encoding leads with. */
 /**
  * Core's `ACCOUNT_GENESIS_VERSION`. It is part of the `AccountId` preimage, so
  * this value decides which account a root key names — a mismatch does not fail
@@ -41,7 +40,7 @@ const DEVICE_ID_DOMAIN = new TextEncoder().encode('calimero.device.id.v1');
  * produced credentials current core rejects outright; the shape was already v2,
  * only the tag was stale.
  */
-const ACCOUNT_GENESIS_VERSION = 2;
+export const ACCOUNT_GENESIS_VERSION = 2;
 
 /** Byte length of an `AccountProof<DeviceCert>` with an empty handoff chain. */
 const ACCOUNT_PROOF_BYTES = 237;
