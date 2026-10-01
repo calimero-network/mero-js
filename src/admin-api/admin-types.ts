@@ -886,7 +886,9 @@ export interface AccountPairInitResponseData {
    */
   signPublicKey: string;
   /**
-   * Ed25519 signature over the account, the device id and both keys above, hex.
+   * The time the device signed, then its Ed25519 signature over the account, the
+   * device id, both keys above and that time, hex (8 + 64 bytes). The holder's
+   * node refuses a statement older than a few minutes.
    *
    * Carried so the three values arrive as a statement by the device that minted
    * them rather than as assertions by whoever relayed them; `pair-complete`
