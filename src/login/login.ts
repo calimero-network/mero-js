@@ -34,14 +34,13 @@
 
 import {
   concat,
-  derivePublicKey,
   domainHash,
   fromHex,
   hex,
-  importSigningKey,
   u32le,
   u64le,
 } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 const SIGN_DOMAIN = new TextEncoder().encode('calimero.auth.login.v1');
 
@@ -158,8 +157,17 @@ export interface LoginStatementInput {
    *
    * Never sent anywhere. It signs locally and only the signature travels, which
    * is what lets a statement be minted by something holding no node.
+   *
+   * Mutually exclusive with {@link LoginStatementInput.signer}, and the weaker
+   * of the two in a browser: a secret that exists as a string can be read by
+   * anything running on the origin.
    */
-  deviceSecret: string;
+  deviceSecret?: string;
+  /**
+   * The device's signer — use instead of
+   * {@link LoginStatementInput.deviceSecret} when the key cannot be exported.
+   */
+  signer?: Signer;
 }
 
 /**
@@ -177,8 +185,12 @@ export async function signLoginStatement(
   const challenge = fromHex(input.challenge, 'challenge', 32);
   const sessionKey = fromHex(input.sessionKey, 'sessionKey', 32);
 
-  const key = await importSigningKey(input.deviceSecret);
-  const deviceKey = await derivePublicKey(input.deviceSecret);
+  const signer = await resolveSigner(
+    input.deviceSecret,
+    input.signer,
+    'deviceSecret',
+  );
+  const deviceKey = fromHex(signer.publicKey, 'signer.publicKey', 32);
 
   const issuedAt = u64le(input.issuedAt);
   const expiresAt = u64le(input.expiresAt);
@@ -193,9 +205,7 @@ export async function signLoginStatement(
     expiresAt,
   ]);
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, key, preimage),
-  );
+  const signature = await signer.sign(preimage);
 
   return hex(
     concat(

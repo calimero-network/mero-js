@@ -34,6 +34,7 @@
 import { HTTPError } from '../http-client/web-client.js';
 import { derivePublicKey, hex } from '../crypto/internal.js';
 import { signLoginStatement, type Audience } from './login.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 /** Seconds a statement stays valid unless told otherwise. */
 const DEFAULT_TTL_SECONDS = 300;
@@ -71,8 +72,18 @@ export interface LoginConfig {
    * module note.
    */
   node: string;
-  /** The device's ed25519 signing secret, hex (32 bytes). Never sent. */
-  deviceSecret: string;
+  /**
+   * The device's ed25519 signing secret, hex (32 bytes). Never sent.
+   *
+   * Mutually exclusive with {@link LoginConfig.signer}, and the weaker of the
+   * two in a browser — see {@link Signer}.
+   */
+  deviceSecret?: string;
+  /**
+   * The device's signer — use instead of {@link LoginConfig.deviceSecret} when
+   * the key cannot be exported to hex.
+   */
+  signer?: Signer;
   /**
    * The device's account proof, hex — the credential certifying that this
    * device belongs to its account.
@@ -85,9 +96,14 @@ export interface LoginConfig {
   /** The client surface this session is bound to. */
   audience: Audience;
   /**
-   * How this client names itself to the node. Defaults to the audience's own
-   * spelling, which is the honest answer: a session bound to an origin should
-   * say that origin.
+   * The token request's `client_name`. Defaults to {@link LoginConfig.nodeUrl}.
+   *
+   * mero-auth records this value as the session's `node_url` and, on every
+   * later request, refuses one whose Host is not that URL's host ("Token is not
+   * valid for this host"). So it must name the node being logged in to — which
+   * is what core's own clients send. The audience is not a substitute: a browser
+   * page's origin is a different host from the relay it talks to, and a token
+   * bound to the page's host is refused on the first call.
    */
   clientName?: string;
   /** Seconds the statement stays valid. Defaults to {@link DEFAULT_TTL_SECONDS}. */
@@ -110,18 +126,6 @@ export interface DelegatedSession {
   sessionSecret: string;
 }
 
-/** The audience's own spelling, used as the default client name. */
-function audienceLabel(audience: Audience): string {
-  switch (audience.kind) {
-    case 'webOrigin':
-      return audience.origin;
-    case 'codeSigningId':
-      return audience.id;
-    case 'cli':
-      return 'cli';
-  }
-}
-
 /**
  * Log in with a device key and return the session.
  *
@@ -140,9 +144,9 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
+      // Called as `globalThis.fetch(...)`, never through a detached reference:
+      // a browser's fetch throws "Illegal invocation" when its receiver is lost.
       const requestInit = { ...init, signal: controller.signal };
-      // globalThis.fetch must be called as a method on globalThis, not through a
-      // variable, or browsers throw "Illegal invocation".
       response = config.fetch
         ? await config.fetch(`${baseUrl}${path}`, requestInit)
         : await globalThis.fetch(`${baseUrl}${path}`, requestInit);
@@ -190,7 +194,9 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     sessionKey: session.publicKey,
     issuedAt,
     expiresAt: issuedAt + (config.ttlSeconds ?? DEFAULT_TTL_SECONDS),
-    deviceSecret: config.deviceSecret,
+    // Resolved once and handed on, so a config carrying a secret and a config
+    // carrying a `CryptoKey` take exactly the same path from here down.
+    signer: await resolveSigner(config.deviceSecret, config.signer, 'deviceSecret'),
   });
 
   // `timestamp` is required and the request refuses unknown fields, so a body
@@ -204,7 +210,7 @@ export async function login(config: LoginConfig): Promise<DelegatedSession> {
     body: JSON.stringify({
       auth_method: 'account_proof',
       public_key: session.publicKey,
-      client_name: config.clientName ?? audienceLabel(config.audience),
+      client_name: config.clientName ?? baseUrl,
       timestamp: issuedAt,
       provider_data: {
         challenge,

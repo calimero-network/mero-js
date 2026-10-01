@@ -30,6 +30,8 @@ import type {
   GroupMember,
   GroupMemberRole,
   GroupUpgradeStatus,
+  LinkAccountDeviceRequest,
+  LinkAccountDeviceResponseData,
   MemberMigrationReport,
   MemberMigrationStatusEntry,
   MigrationStatus,
@@ -98,6 +100,8 @@ const transferReq = key<TransferOwnershipRequest>();
 const adminReq = key<ChangeNamespaceAdminRequest>();
 const ownerDeleteReq = key<OwnerDeleteGroupRequest>();
 const groupInfo = key<GroupInfo>();
+const linkReq = key<LinkAccountDeviceRequest>();
+const linkRes = key<LinkAccountDeviceResponseData>();
 
 const NAMESPACE_REQUIRED = [
   namespace('namespaceId'),
@@ -360,6 +364,21 @@ const SPECS: Spec[] = [
     file: 'namespaces/list.res.json',
     path: 'data.0.founding',
     required: [founding('founderAccountId'), founding('salt')],
+    optional: [],
+  },
+  // A relay carrying a nodeless account's device link: both proofs are opaque
+  // hex, and the response names the account and the device it bound.
+  {
+    type: 'LinkAccountDeviceRequest',
+    file: 'namespaces/link_device.req.json',
+    required: [linkReq('credential'), linkReq('scope')],
+    optional: [],
+  },
+  {
+    type: 'LinkAccountDeviceResponseData',
+    file: 'namespaces/link_device.res.json',
+    path: 'data',
+    required: [linkRes('accountId'), linkRes('deviceId'), linkRes('alreadyBound')],
     optional: [],
   },
   {

@@ -14,15 +14,9 @@
  * op, which is what the e2e does.
  */
 import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
-import {
-  concat,
-  derivePublicKey,
-  fromHex,
-  hex,
-  importSigningKey,
-  u32le,
-  u64le,
-} from '../crypto/internal.js';
+import { encodeGroupInvitation } from '../invitation/invitation.js';
+import { concat, fromHex, hex, u32le, u64le } from '../crypto/internal.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 
 /**
  * Core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`. A node refuses any other value.
@@ -77,14 +71,6 @@ const ROOT_OP = {
   MemberJoinedViaTeeAttestation: 10,
 } as const;
 
-/** A required `[u8; 32]`, as JSON carries it: 32 byte values. */
-function bytes32(value: readonly number[], label: string): Uint8Array {
-  if (value.length !== 32) {
-    throw new Error(`${label} must be 32 bytes, got ${value.length}`);
-  }
-  return new Uint8Array(value);
-}
-
 /**
  * Borsh `Option<[u8; 32]>` from the byte array JSON carries it as.
  *
@@ -124,22 +110,12 @@ function borshString(value: string): Uint8Array {
  */
 export function encodeSignedInvitation(signed: SignedGroupOpenInvitation): Uint8Array {
   const body = signed.invitation;
-  const admitters = body.admitters ?? [];
   const admitterAddrs = signed.admitter_addrs ?? [];
 
   return concat(
-    // GroupInvitationFromAdmin.
-    //
-    // `SignerId` and `ContextGroupId` cross JSON as 32 numbers; `AccountId`
-    // crosses as hex. Same width, different spelling, and reading either the
-    // wrong way yields 32 bytes that encode cleanly and verify as nothing.
-    bytes32(body.inviter_identity, 'inviter_identity'),
-    bytes32(body.group_id, 'group_id'),
-    u64le(body.expiration_timestamp),
-    bytes32(body.secret_salt, 'secret_salt'),
-    new Uint8Array([body.invited_role]),
-    u32le(admitters.length),
-    ...admitters.map((a, i) => fromHex(a, `admitters[${i}]`, 32)),
+    // GroupInvitationFromAdmin, from the one encoder the SDK's own invitation
+    // signer uses: the bytes signed and the bytes carried must not drift.
+    encodeGroupInvitation(body),
     // ...then the enclosing SignedGroupOpenInvitation, in declaration order.
     // `inviter_account` sits between the signature and the addresses; putting it
     // anywhere else still encodes 32 bytes and still verifies as nothing.
@@ -177,8 +153,19 @@ export interface SignMemberJoinInput {
    * when applying the join and refuses otherwise.
    */
   readonly credential: string;
-  /** The device signing secret, 64 hex. Must match the credential's `sign_pk`. */
-  readonly deviceSecret: string;
+  /**
+   * The device signing secret, 64 hex. Must match the credential's `sign_pk`.
+   *
+   * Mutually exclusive with {@link SignMemberJoinInput.signer}. A browser should
+   * prefer the signer: joining is the one governance op a keyholder signs for
+   * itself, and it should not need the key in a form script can read.
+   */
+  readonly deviceSecret?: string;
+  /**
+   * The joiner's signer — use instead of
+   * {@link SignMemberJoinInput.deviceSecret} when the key cannot be exported.
+   */
+  readonly signer?: Signer;
   /**
    * Heads this op is written against. Empty means "signed against an empty head"
    * — which is NOT the same as genesis, and a node with a non-empty head will
@@ -235,22 +222,23 @@ export async function signMemberJoinOp(input: SignMemberJoinInput): Promise<stri
 
   const op = concat(new Uint8Array([NAMESPACE_OP_ROOT]), rootOp);
 
-  const key = await importSigningKey(input.deviceSecret);
-  const signer = await derivePublicKey(input.deviceSecret);
+  const signingKey = await resolveSigner(input.deviceSecret, input.signer, 'deviceSecret');
+  // Named apart from the signer itself: this is the public half the op carries
+  // as its `signer` field, which every peer compares with the credential's
+  // `sign_pk` before applying the join.
+  const signerPublicKey = fromHex(signingKey.publicKey, 'signer.publicKey', 32);
 
   const signable = concat(
     new Uint8Array([SIGNED_NAMESPACE_OP_SCHEMA_VERSION]),
     fromHex(input.namespaceId, 'namespaceId', 32),
     u32le(parents.length),
     ...parents.map((p, i) => fromHex(p, `parentOpHashes[${i}]`, 32)),
-    signer,
+    signerPublicKey,
     u64le(input.nonce),
     op,
   );
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign('Ed25519', key, concat(NAMESPACE_SIGN_DOMAIN, signable)),
-  );
+  const signature = await signingKey.sign(concat(NAMESPACE_SIGN_DOMAIN, signable));
 
   // The signed struct repeats the signable fields, then the signature, then the
   // admitter endorsement. The domain is a signing prefix only and is never part

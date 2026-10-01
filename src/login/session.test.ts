@@ -57,6 +57,19 @@ describe('generateSessionKey', () => {
 });
 
 describe('login', () => {
+  // mero-auth binds the session to `client_name` as its `node_url` and refuses
+  // any later request to another host. A browser page's origin is never the
+  // relay's host, so defaulting to the audience got every call refused.
+  it('names the node it logs in to as client_name, not the audience', async () => {
+    const { fetchImpl, calls } = stubNode();
+    await login({
+      ...config(fetchImpl),
+      audience: { kind: 'webOrigin', origin: 'http://localhost:5173' },
+    });
+    const token = calls.find((c) => c.url.endsWith('/auth/token'));
+    expect((token?.body as { client_name?: string }).client_name).toBe('https://node.example');
+  });
+
   it('returns both tokens and keeps the session secret', async () => {
     const { fetchImpl } = stubNode();
     const session = await login(config(fetchImpl));
