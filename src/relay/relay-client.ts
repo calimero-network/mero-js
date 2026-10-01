@@ -29,6 +29,7 @@
  */
 
 import { signWarrant } from '../warrant/warrant.js';
+import { resolveSigner, type Signer } from '../signer/signer.js';
 import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
 import {
@@ -39,7 +40,6 @@ import {
 } from '../warrant/governance-op.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { fromHex, hex } from '../crypto/internal.js';
-import { resolveSigner, type Signer } from '../signer/signer.js';
 import type { NonceSource } from './nonce-source.js';
 
 /** How long a freshly minted warrant stays presentable, in seconds. */
@@ -88,7 +88,13 @@ export interface RelayClientConfig {
    * (a non-extractable WebCrypto key, a passkey, a hardware or remote signer).
    */
   signer?: Signer;
-  /** Where nonces come from. See {@link NonceSource} — a reset replays. */
+  /**
+   * Where nonces come from. See {@link NonceSource} — a reset replays.
+   *
+   * A client whose storage may be cleared between sessions should wrap its
+   * counter in `createRecoveringNonceSource`, which asks the node where the
+   * sequence actually stands before the first mint instead of restarting at 1.
+   */
   nonces: NonceSource;
   /**
    * Seconds a minted warrant stays valid. Defaults to 300.
@@ -101,6 +107,14 @@ export interface RelayClientConfig {
   /** Injected for tests and non-browser runtimes. Defaults to global `fetch`. */
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * How many times a `429` is waited out before it reaches the caller.
+   * Defaults to 3; `0` surfaces rate limits immediately.
+   *
+   * Safe to retry because the relay's ingress limiter runs before the node sees
+   * the request, so a throttled warrant's nonce is not spent.
+   */
+  rateLimitRetries?: number;
 }
 
 /** What a relay says about its ability to run intents in one context. */
@@ -284,12 +298,33 @@ export class IntentRefusedError extends Error {
   }
 }
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `Retry-After`, as milliseconds — seconds or an HTTP date, per RFC 9110.
+ *
+ * Returns `null` when the header is absent or unusable, so the caller falls back
+ * to its own backoff rather than treating a malformed header as "retry now".
+ */
+function retryAfterMs(headers: Headers | undefined): number | null {
+  const raw = headers?.get?.('Retry-After');
+  if (!raw) return null;
+  const seconds = Number.parseInt(raw, 10);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const at = Date.parse(raw);
+  if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+  return null;
+}
+
 export class RelayClient {
   private readonly baseUrl: string;
   private executorAccount: string | undefined;
   private readonly config: RelayClientConfig;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  /** How many times a 429 is waited out before it is raised. */
+  private readonly rateLimitRetries: number;
 
   constructor(config: RelayClientConfig) {
     this.config = config;
@@ -300,12 +335,44 @@ export class RelayClient {
       ? (input: RequestInfo | URL, init?: RequestInit) => injected(input, init)
       : (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init);
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.rateLimitRetries = config.rateLimitRetries ?? 3;
   }
 
   /**
-   * The author device's signer, built from `deviceSecret` when that is what was
-   * configured. A {@link Signer} and never the secret, so no caller of a
-   * `RelayClient` gains the ability to read key material.
+   * The relay's origin, trailing slash stripped.
+   *
+   * Exposed because a relay **is a node**: the same origin that answers the
+   * intents routes also answers `/auth/challenge`, `/auth/token`, `/sse` and
+   * `/ws`. Anything building an observing session over this relay needs the
+   * URL, and asking the caller to pass it a second time is how the two drift.
+   */
+  get relayUrl(): string {
+    return this.baseUrl;
+  }
+
+  /** The author's account, hex — whose consent every warrant here carries. */
+  get authorAccount(): string {
+    return this.config.authorAccount;
+  }
+
+  /**
+   * The author's `AccountProof<DeviceCert>`, hex.
+   *
+   * The same credential `login()` wants, which is why it is readable: a caller
+   * that already handed it to this client should not have to hand an identical
+   * copy to the login as well, where the two could disagree.
+   */
+  get authorProof(): string {
+    return this.config.authorProof;
+  }
+
+  /**
+   * The author device's signer.
+   *
+   * A {@link Signer} and never the secret: this returns something that can
+   * *sign*, so no caller of a `RelayClient` gains the ability to read a key
+   * that was passed in as `deviceSecret`. That asymmetry is the point — the
+   * login needs a signature, not key material.
    */
   async authorSigner(): Promise<Signer> {
     return resolveSigner(this.config.deviceSecret, this.config.signer, 'deviceSecret');
@@ -646,7 +713,38 @@ export class RelayClient {
     return answered;
   }
 
+  /**
+   * One request, waiting out a rate limit rather than failing the caller.
+   *
+   * The relay's ingress limits the delegated-execution routes to 20 requests a
+   * second per source IP, burst 40 — tighter than everything else it serves,
+   * because those two routes are the ones it answers to anonymous callers.
+   *
+   * Retrying a 429 is safe here in a way retrying most refusals is not: the
+   * limiter sits *first* in the middleware chain, so a throttled request never
+   * reached the node and its warrant nonce was never spent. The same bytes can
+   * go again. Contrast the spent-nonce 403 below, which needs a fresh warrant.
+   *
+   * `Retry-After` is honoured when the ingress sends one; otherwise the wait
+   * doubles from a little over the limiter's own window, which is the shortest
+   * delay that can actually clear.
+   */
   private async json<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let wait = 250;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.jsonOnce<T>(method, path, body);
+      } catch (err) {
+        const limited = err instanceof HTTPError && err.status === 429;
+        if (!limited || attempt >= this.rateLimitRetries) throw err;
+        const after = retryAfterMs(err.headers);
+        await sleep(after ?? wait);
+        wait *= 2;
+      }
+    }
+  }
+
+  private async jsonOnce<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
 

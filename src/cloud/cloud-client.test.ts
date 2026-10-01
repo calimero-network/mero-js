@@ -31,6 +31,15 @@ const SESSION_BODY = {
 };
 
 describe('CloudClient sign-in', () => {
+  it('defaults to the manager API, not the host that serves the web app', async () => {
+    // `cloud.calimero.network` is the React app: it answers an API call with
+    // 405 and an HTML body, so the bare client failed at the first request
+    // with a parse error while the URL in the message looked perfectly right.
+    const { fetch, calls } = scriptedFetch([{ body: SESSION_BODY }]);
+    await new CloudClient({ fetch }).signInWithGoogle('google-id-token');
+    expect(calls[0].url).toBe('https://manager.cloud.calimero.network/api/auth/google');
+  });
+
   it('exchanges a Google ID token for a session and keeps it', async () => {
     const { fetch, calls } = scriptedFetch([{ body: SESSION_BODY }]);
     const cloud = new CloudClient({ cloudBaseUrl: 'https://cloud.example/', fetch });
@@ -150,6 +159,29 @@ describe('CloudClient relay discovery', () => {
     });
   }
 
+  it.each(['node_key', 'node_public_key'])(
+    'carries the relay node signing key through as `%s` when the cloud sends one',
+    async (field) => {
+      // Both spellings are accepted because mdma #312 has not fixed one. The
+      // point of parsing it before it exists: the hosted subscribe path needs
+      // no API change on the day it lands.
+      const { fetch } = scriptedFetch([
+        { body: { relays: [relayRow({ [field]: 'ab'.repeat(32) })] } },
+      ]);
+      const relays = await signedIn(fetch).getNamespaceRelays(NS);
+      expect(relays[0].nodeKey).toBe('ab'.repeat(32));
+    },
+  );
+
+  it('never substitutes peerId for the node signing key', async () => {
+    // peerId is a libp2p identity — a different key. Signing a login statement
+    // about it would authenticate nothing.
+    const { fetch } = scriptedFetch([{ body: { relays: [relayRow()] } }]);
+    const relays = await signedIn(fetch).getNamespaceRelays(NS);
+    expect(relays[0].nodeKey).toBeNull();
+    expect(relays[0].peerId).toBe('12D3KooWpeer');
+  });
+
   it('maps the cloud wire shape to the relay descriptor', async () => {
     const { fetch, calls } = scriptedFetch([{ body: { relays: [relayRow()] } }]);
 
@@ -161,6 +193,9 @@ describe('CloudClient relay discovery', () => {
         peerId: '12D3KooWpeer',
         relayUrl: 'https://relay.example',
         executorAccount: EXECUTOR,
+        // Parsed, and null until mdma #312 publishes it. Pinned so the day it
+        // starts arriving is a test change, not a silent behaviour change.
+        nodeKey: null,
         status: 'active',
         authorshipReady: true,
         teeRole: 'RelayTee',
