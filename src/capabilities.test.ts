@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { CAPABILITIES, hasCap, withCap, withoutCap } from './capabilities.js';
+import {
+  CAPABILITIES,
+  CAPABILITY_PRESETS,
+  capMask,
+  capNames,
+  hasCap,
+  withCap,
+  withoutCap,
+} from './capabilities.js';
 
 describe('capabilities', () => {
   it('exposes the expected capability bits as powers of two', () => {
@@ -53,5 +61,46 @@ describe('capabilities', () => {
     expect(b).toBeGreaterThanOrEqual(0);
     expect(a).toBe(0xffffffff);
     expect(b).toBe(0xfffffffe);
+  });
+
+  it('presets are the masks apps already pass by number', () => {
+    expect(CAPABILITY_PRESETS).toEqual({
+      NONE: 0,
+      JOIN_ONLY: 4,
+      CONTRIBUTOR: 7,
+      COLLABORATOR: 231,
+    });
+    for (const mask of Object.values(CAPABILITY_PRESETS)) {
+      expect(hasCap(mask, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)).toBe(false);
+    }
+  });
+
+  it('capMask combines names and bit values', () => {
+    expect(capMask()).toBe(0);
+    expect(capMask('CAN_CREATE_CONTEXT', 'CAN_INVITE_MEMBERS')).toBe(3);
+    expect(capMask('CAN_CREATE_CONTEXT', CAPABILITIES.CAN_CREATE_CONTEXT)).toBe(1);
+    expect(capMask(CAPABILITY_PRESETS.CONTRIBUTOR, 'CAN_CREATE_SUBGROUP')).toBe(39);
+    expect(capMask(1 << 31)).toBe(0x8000_0000);
+  });
+
+  it('capMask refuses an unknown name', () => {
+    expect(() => capMask('CAN_CREATE_CONTEXTS' as never)).toThrow(/unknown capability/);
+    expect(() => capMask('toString' as never)).toThrow(/unknown capability/);
+  });
+
+  it('capNames lists the assigned bits in a mask, in bit order', () => {
+    expect(capNames(0)).toEqual([]);
+    expect(capNames(CAPABILITY_PRESETS.COLLABORATOR)).toEqual([
+      'CAN_CREATE_CONTEXT',
+      'CAN_INVITE_MEMBERS',
+      'CAN_JOIN_OPEN_SUBGROUPS',
+      'CAN_CREATE_SUBGROUP',
+      'CAN_DELETE_SUBGROUP',
+      'CAN_MANAGE_VISIBILITY',
+    ]);
+    expect(capNames(withCap(CAPABILITIES.CAN_AUTHOR_ON_BEHALF, 1 << 31))).toEqual([
+      'CAN_AUTHOR_ON_BEHALF',
+    ]);
+    expect(capMask(...capNames(CAPABILITY_PRESETS.COLLABORATOR))).toBe(231);
   });
 });

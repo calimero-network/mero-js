@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createMemoryNonceSource, createLocalStorageNonceSource } from './nonce-source.js';
+import {
+  createMemoryNonceSource,
+  createLocalStorageNonceSource,
+  createRecoveringNonceSource,
+  authorNonceLookup,
+} from './nonce-source.js';
 
 /** A `localStorage` stand-in, so the tests run in any runtime. */
 function fakeStorage(initial: Record<string, string> = {}) {
@@ -86,5 +91,54 @@ describe('createLocalStorageNonceSource', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('authorNonceLookup', () => {
+  /**
+   * The adapter exists because the delegated route determines the device key
+   * from the credential rather than taking it as an argument. A test that only
+   * checked the happy path would not notice if someone "fixed" the ignored
+   * parameter by passing it through, so this asserts the credential is what
+   * travels.
+   */
+  it('asks with the credential, not with the device key handed to it', async () => {
+    const asked: Array<[string, string]> = [];
+    const lookup = authorNonceLookup({
+      client: {
+        getWarrantNonceAsAuthor: async (contextId, authorProof) => {
+          asked.push([contextId, authorProof]);
+          return {
+            kind: 'open', seen: true, contextId, authorDeviceKey: 'dd'.repeat(32),
+            highWaterNonce: 4n, nextNonce: 5n, windowWidth: 64n,
+          } as never;
+        },
+      },
+      authorProof: 'ab'.repeat(100),
+    });
+
+    const state = await lookup.getWarrantNonce('cc'.repeat(32), 'ee'.repeat(32));
+
+    expect(asked).toEqual([['cc'.repeat(32), 'ab'.repeat(100)]]);
+    expect(state.kind).toBe('open');
+  });
+
+  it('plugs into createRecoveringNonceSource as a lookup', async () => {
+    const lookup = authorNonceLookup({
+      client: {
+        getWarrantNonceAsAuthor: async (contextId) => ({
+          kind: 'open', seen: true, contextId, authorDeviceKey: 'dd'.repeat(32),
+          highWaterNonce: 6n, nextNonce: 7n, windowWidth: 64n,
+        }) as never,
+      },
+      authorProof: 'ab'.repeat(100),
+    });
+    let local = 0n;
+    const source = createRecoveringNonceSource({
+      lookups: [lookup], contextId: 'cc'.repeat(32), authorDeviceKey: 'ee'.repeat(32),
+      local: { next: async () => local++ },
+    });
+    // The node is ahead of a counter that restarted, so the node wins.
+    expect(await source.next()).toBe(7n);
   });
 });

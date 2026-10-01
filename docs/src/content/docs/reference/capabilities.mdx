@@ -1,6 +1,6 @@
 ---
 title: Capabilities
-description: The member-capability bitmask — the CAPABILITIES bit constants and the hasCap / withCap / withoutCap helpers for reading and building capability masks.
+description: The member-capability bitmask — the CAPABILITIES bit constants, the CAPABILITY_PRESETS masks, and the capMask / capNames / hasCap / withCap / withoutCap helpers for reading and building capability masks.
 sidebar:
   order: 8
 ---
@@ -104,9 +104,51 @@ Three limits, none of which the API can paper over:
   it was deliberately handed. It does gain the arguments in cleartext and the
   choice of when, or whether, to publish.
 
+## `CAPABILITY_PRESETS`
+
+Named masks for the defaults apps actually hand out, so a call reads as intent
+rather than a magic number:
+
+```typescript
+const CAPABILITY_PRESETS = {
+  NONE:         0,
+  JOIN_ONLY:    4,   // CAN_JOIN_OPEN_SUBGROUPS: what a namespace starts with
+  CONTRIBUTOR:  7,   // + CAN_CREATE_CONTEXT, CAN_INVITE_MEMBERS
+  COLLABORATOR: 231, // + CAN_CREATE_SUBGROUP, CAN_DELETE_SUBGROUP, CAN_MANAGE_VISIBILITY
+} as const;
+
+type CapabilityPreset = keyof typeof CAPABILITY_PRESETS;
+```
+
+<Aside type="caution">
+  Set a default when you create the namespace. A namespace's default mask does
+  not include `CAN_CREATE_CONTEXT`, and it is copied into a member's row when
+  they join, so without one every invited member is refused when they try to
+  create a context until an admin grants it per member.
+</Aside>
+
+```typescript
+await sdk.admin.setDefaultCapabilities(namespaceId, {
+  defaultCapabilities: CAPABILITY_PRESETS.COLLABORATOR,
+});
+```
+
+No preset includes `CAN_AUTHOR_ON_BEHALF`; that grant is always deliberate
+(see below).
+
 ## Helpers
 
-All three normalize to unsigned 32-bit (`>>> 0`), so high bits like `1 << 31`
+```typescript
+// A u32 mask from capability names and/or bit values. Throws on an unknown name.
+capMask(...caps: Array<CapabilityName | number>): number;
+capMask('CAN_CREATE_CONTEXT', 'CAN_INVITE_MEMBERS'); // 3
+
+// The names of the assigned bits set in `mask`, in bit order.
+capNames(mask: number): CapabilityName[];
+capNames(231); // ['CAN_CREATE_CONTEXT', 'CAN_INVITE_MEMBERS', …]
+```
+
+All of these normalize to unsigned 32-bit (`>>> 0`), so high bits like `1 << 31`
 behave correctly.
 
 ```typescript
