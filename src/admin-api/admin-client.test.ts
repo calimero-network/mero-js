@@ -1303,6 +1303,19 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', path)).toEqual({ deviceId: 'dv-1', proof: 'ab12' });
     });
 
+    it('linkAccountDevice names the namespace in the path and carries both proofs', async () => {
+      const path = `/admin-api/namespaces/${'5'.repeat(64)}/account/link-device`;
+      const linked = { accountId: '1'.repeat(64), deviceId: '2'.repeat(64), alreadyBound: false };
+      mock.setMockResponse('POST', path, { data: linked });
+      const result = await client.linkAccountDevice('5'.repeat(64), {
+        credential: '02aa',
+        scope: 'bb',
+      });
+      // Exactly the two keys core's `deny_unknown_fields` DTO accepts.
+      expect(mock.getRequestBody('POST', path)).toEqual({ credential: '02aa', scope: 'bb' });
+      expect(result).toEqual(linked);
+    });
+
     it('listAccountDevices keeps a revoked device in the list', async () => {
       // The node deliberately reports a revoked device as revoked rather than
       // hiding it, so the account holder can see a device they withdrew instead

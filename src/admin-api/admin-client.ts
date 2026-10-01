@@ -76,6 +76,8 @@ import type {
   AccountDeviceEntry,
   AccountApplicationEntry,
   RevokeAccountDeviceRequest,
+  LinkAccountDeviceRequest,
+  LinkAccountDeviceResponseData,
   RevokeAccountDeviceResponseData,
   MemberDevicesEntry,
   ListMemberDevicesOptions,
@@ -1258,6 +1260,33 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.post<{ data: RevokeAccountDeviceResponseData }>(
         `/admin-api/namespaces/${namespaceId}/account/revoke`,
+        request,
+      ),
+    );
+  }
+
+  /**
+   * Carry the device link of an account **this node does not hold**, so the
+   * namespace binds that device's key to the account.
+   *
+   * The relay half of a nodeless account minting invitations. An account added
+   * to a group by account holds its grants but has no device bound, so peers
+   * refuse whatever its device signs as "bound to no account". The credential
+   * and scope are root-signed and self-certifying; this node adds its own
+   * member endorsement and publishes the `AccountDeviceLinked`. After that the
+   * device signs invitations itself — see `signGroupInvitation`.
+   *
+   * Refusals: `400` when a proof does not verify or the scope does not reach
+   * this namespace (re-sign it), `403` when the device was revoked here or the
+   * account is a member of nothing in the namespace (add it first).
+   */
+  async linkAccountDevice(
+    namespaceId: string,
+    request: LinkAccountDeviceRequest,
+  ): Promise<LinkAccountDeviceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: LinkAccountDeviceResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/account/link-device`,
         request,
       ),
     );

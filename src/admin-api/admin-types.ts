@@ -1319,6 +1319,42 @@ export interface RevokeAccountDeviceResponseData {
   revokedIn: RevocationOutcome[];
 }
 
+/**
+ * Bind a device of an account the node does not hold, so what that device
+ * signs in the namespace resolves to its account.
+ *
+ * For an account with **no node**: its root certifies a device offline
+ * (`signDeviceCert`) and scopes it
+ * (`signDeviceScope`), and a relay that is a member of the namespace carries
+ * the link, endorsing the account with its own member key. Both proofs are
+ * root-signed, so the relay can carry them and cannot alter them.
+ */
+export interface LinkAccountDeviceRequest {
+  /**
+   * The device's credential: hex, borsh `AccountProof<DeviceCert>` — what
+   * `signDeviceCert` returns and `merod account sign-cert` prints.
+   */
+  credential: string;
+  /**
+   * The device's scope: hex, borsh `AccountProof<DeviceScope>` — what
+   * `signDeviceScope` returns. It must reach the namespace's application, or
+   * name none.
+   */
+  scope: string;
+}
+
+export interface LinkAccountDeviceResponseData {
+  /** The account the device speaks for, 64 hex. */
+  accountId: string;
+  /** The device now bound, 64 hex. */
+  deviceId: string;
+  /**
+   * The namespace already bound this device key, so nothing was published.
+   * A repeat call is harmless and answers `true`.
+   */
+  alreadyBound: boolean;
+}
+
 /** One device of one member account, as the group's live bindings record it. */
 export interface MemberDeviceEntry {
   /** The device id, 64 hex - the form {@link RevokeAccountDeviceRequest.deviceId} takes. */

@@ -1,3 +1,9 @@
+## [22.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.8.0...mero-js-v22.9.0) (2026-10-01)
+
+### Features
+
+* **invitation:** mint invitations and carry a device link for a nodeless account ([#221](https://github.com/calimero-network/mero-js/issues/221)) ([8fea916](https://github.com/calimero-network/mero-js/commit/8fea916018e188c006d446db1d14e3cc762c1635))
+
 ## [22.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.7.0...mero-js-v22.8.0) (2026-09-30)
 
 ### Features
