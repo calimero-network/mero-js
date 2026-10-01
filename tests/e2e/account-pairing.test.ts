@@ -26,7 +26,8 @@ const { username: USERNAME, password: PASSWORD } = resolveCreds();
 
 /** Every id and key on this surface is 64 hex characters. */
 const HEX_32_BYTES = /^[0-9a-f]{64}$/;
-const HEX_64_BYTES = /^[0-9a-f]{128}$/;
+/** A pairing statement: eight bytes of issue time, then the 64-byte signature. */
+const STATEMENT_HEX = /^[0-9a-f]{144}$/;
 
 let mero: MeroJs;
 let applicationId: string;
@@ -144,7 +145,7 @@ describe('Account devices & pairing E2E', () => {
     expect(offer.deviceId).toMatch(HEX_32_BYTES);
     expect(offer.kemPublicKey).toMatch(HEX_32_BYTES);
     expect(offer.signPublicKey).toMatch(HEX_32_BYTES);
-    expect(offer.statement).toMatch(HEX_64_BYTES);
+    expect(offer.statement).toMatch(STATEMENT_HEX);
     expect(offer.confirmationCode.trim()).not.toBe('');
     // One device however many namespaces were named, so the id is not derived
     // from the namespace it was asked about.
