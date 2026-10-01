@@ -433,6 +433,23 @@ export class RelayClient {
   }
 
   /**
+   * Publish one presence statement through the relay (`presence-intents`).
+   *
+   * Not retried on 429: presence resends every 2.5 s anyway, and a retry would
+   * only queue behind the next resend. A refusal throws with its `status`.
+   */
+  async presenceIntent(
+    contextId: string,
+    body: { state: string | null; seq: number; sentAtMs: number; signature: string; authorProof: string },
+  ): Promise<void> {
+    await this.jsonOnce<undefined>(
+      'POST',
+      `/admin-api/contexts/${encodeURIComponent(contextId)}/presence-intents`,
+      body,
+    );
+  }
+
+  /**
    * Ask the relay what it can do about creating contexts in `groupId`.
    *
    * Pass `author` (an account, hex) to also learn whether that account may
@@ -789,6 +806,8 @@ export class RelayClient {
       );
     }
 
+    // `presence-intents` answers an accepted update with no body.
+    if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
 }
