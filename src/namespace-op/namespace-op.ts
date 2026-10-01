@@ -43,8 +43,12 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * `RootOp::RootGuarded` are appended and carry a root-signed proof, and the bare
  * `TransferOwnership`, `AdminChanged`, `GroupDelete` and TEE policy ops are
  * refused. No layout this module signs changes; see `../owner-op` for the proof.
+ *
+ * 20: a TEE relay that creates a subgroup is seated in it with its attested
+ * role (core#4276). No layout this module signs changes. (19 was reserved for
+ * core#4269, which now lands after it, at 21.)
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 18;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 20;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
