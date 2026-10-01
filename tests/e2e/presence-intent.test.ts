@@ -1,15 +1,15 @@
 /**
  * An account's presence through a relay, against a live node.
  *
- * The node is the relay here: the account has no node, signs each update with
- * its device key, and posts it to `presence-intents`. The node owner watches
- * the context's events and must see the account's presence, attributed to the
- * account. A device whose account is not a member is refused.
+ * Against the relay core's SDK E2E boots for the delegated suites
+ * (`NODE_TEE_RELAY_URL`: delegated execution public, auth left to a proxy):
+ * the account has no node, signs each update with its device key, and posts it
+ * to `presence-intents`. The operator watches the context's events and must see
+ * the account's presence, attributed to the account. A device whose account is
+ * not a member is refused.
  *
- * Like `delegated-intent`, this needs `MEROD_BINARY` to mint an author device
- * offline. Against a merod that predates the route it asserts the route's
- * absence instead of skipping, so it hands over to the real assertions the
- * moment a release carries it.
+ * Like the other delegated suites, it needs `MEROD_BINARY` to mint an author
+ * device offline, and skips without a relay.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
@@ -24,19 +24,16 @@ import {
   MEROD_BINARY,
   ensureApplication,
   mintDevice,
-  resolveBaseUrl,
-  resolveCreds,
   runId,
   type MintedDevice,
 } from './harness.js';
 
-const NODE_URL = resolveBaseUrl();
-const { username: USERNAME, password: PASSWORD } = resolveCreds();
+const RELAY_URL = process.env.NODE_TEE_RELAY_URL;
 const RUN = runId();
 
 function presenceFor(device: MintedDevice, events: () => SseClient) {
   const relay = new RelayClient({
-    relayUrl: NODE_URL,
+    relayUrl: RELAY_URL as string,
     authorAccount: device.account,
     authorProof: device.credential,
     deviceSecret: device.secret,
@@ -70,81 +67,61 @@ async function strangerDevice(): Promise<MintedDevice> {
   return { credential, account: root.accountId, secret };
 }
 
-describe.skipIf(!MEROD_BINARY)('presence-intents E2E — an account publishes presence through a relay', () => {
-  let mero: MeroJs;
-  let contextId: string;
-  let namespaceId: string;
-  let member: MintedDevice;
-  /** `null` once the node serves the route; otherwise the status it refused with. */
-  let routeAbsentStatus: number | null = null;
-  const clients: RelayPresenceClient[] = [];
+describe.skipIf(!RELAY_URL || !MEROD_BINARY)(
+  'presence-intents E2E — an account publishes presence through a relay',
+  () => {
+    let operator: MeroJs;
+    let contextId: string;
+    let member: MintedDevice;
+    const clients: RelayPresenceClient[] = [];
 
-  beforeAll(async () => {
-    mero = new MeroJs({ baseUrl: NODE_URL });
-    await mero.authenticate({ username: USERNAME, password: PASSWORD });
+    beforeAll(async () => {
+      operator = new MeroJs({ baseUrl: RELAY_URL as string, timeoutMs: 60_000 });
+      const applicationId = await ensureApplication(operator);
+      const namespaceId = (
+        await operator.admin.createNamespace({ applicationId, name: `presence-${RUN}` })
+      ).namespaceId;
+      contextId = (await operator.admin.createContext({ applicationId, groupId: namespaceId }))
+        .contextId;
 
-    const applicationId = await ensureApplication(mero);
-    const ns = await mero.admin.createNamespace({ applicationId, name: `presence-${RUN}` });
-    namespaceId = ns.namespaceId;
-    contextId = (await mero.admin.createContext({ applicationId, groupId: namespaceId })).contextId;
+      member = mintDevice();
+      await operator.admin.addGroupMembers(namespaceId, {
+        members: [{ identity: member.account, role: 'Member' }],
+      });
+    }, 180_000);
 
-    member = mintDevice();
-    await mero.admin.addGroupMembers(namespaceId, {
-      members: [{ identity: member.account, role: 'Member' }],
+    afterAll(() => {
+      for (const client of clients) client.close();
+      operator?.close();
     });
 
-    // A merod that predates the route answers 404 (no route) or 405.
-    const probe = await fetch(
-      `${NODE_URL.replace(/\/+$/, '')}/admin-api/contexts/${contextId}/presence-intents`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
-    );
-    if (probe.status === 404 || probe.status === 405) {
-      routeAbsentStatus = probe.status;
-      console.warn(
-        `[presence-intent] this merod does not serve presence-intents (HTTP ${probe.status}); ` +
-          'asserting its absence instead, until a release carries it.',
-      );
-    }
-  }, 180_000);
+    it("shows a member account's presence to the operator, attributed to the account", async () => {
+      const presence = presenceFor(member, () => operator.events);
+      clients.push(presence);
 
-  afterAll(() => {
-    for (const client of clients) client.close();
-  });
+      const seen = new Promise<EphemeralEntry<{ typing: boolean }>>((resolve) => {
+        const stop = presence.subscribe<{ typing: boolean }>(contextId, (entry) => {
+          if (entry.account === member.account && !entry.removed) {
+            stop();
+            resolve(entry);
+          }
+        });
+      });
+      // Give the subscription a moment to register before the first update.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await presence.set(contextId, { typing: true });
 
-  it("shows a member account's presence to the node owner, attributed to the account", async () => {
-    const presence = presenceFor(member, () => mero.events);
-    clients.push(presence);
+      const entry = await seen;
+      expect(entry.state).toEqual({ typing: true });
+      expect(entry.account).toBe(member.account);
+    }, 60_000);
 
-    if (routeAbsentStatus !== null) {
+    it('refuses a device whose account is not a member', async () => {
+      const presence = presenceFor(await strangerDevice(), () => operator.events);
+      clients.push(presence);
       await expect(presence.set(contextId, { typing: true })).rejects.toMatchObject({
-        status: routeAbsentStatus,
+        status: 403,
       });
-      return;
-    }
-
-    const seen = new Promise<EphemeralEntry<{ typing: boolean }>>((resolve) => {
-      const stop = presence.subscribe<{ typing: boolean }>(contextId, (entry) => {
-        if (entry.account === member.account && !entry.removed) {
-          stop();
-          resolve(entry);
-        }
-      });
-    });
-    // Give the subscription a moment to register before the first update.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await presence.set(contextId, { typing: true });
-
-    const entry = await seen;
-    expect(entry.state).toEqual({ typing: true });
-    expect(entry.account).toBe(member.account);
-  }, 60_000);
-
-  it('refuses a device whose account is not a member', async () => {
-    const stranger = await strangerDevice();
-    const presence = presenceFor(stranger, () => mero.events);
-    clients.push(presence);
-    await expect(presence.set(contextId, { typing: true })).rejects.toMatchObject({
-      status: routeAbsentStatus ?? 403,
-    });
-  }, 60_000);
-});
+    }, 60_000);
+  },
+);
