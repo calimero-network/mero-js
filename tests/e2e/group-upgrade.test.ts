@@ -4,8 +4,12 @@
  *
  * `assets/kv-store.mpk` and `assets/kv-store-next.mpk` are the same app under
  * the same dev signer, so they share one application id, and their ABIs are
- * byte-identical; only the bytecode differs (core's rc.49 and rc.51
- * `kv-store-test-fixture.mpk`). Installing the second moves that id's row to
+ * byte-identical; only the bytecode differs. Both are built from core's
+ * `apps/kv-store` after its storage key change (#4266): `kv-store.mpk` as
+ * 0.11.0-rc.68, and `kv-store-next.mpk` as 0.11.0-rc.69 with `--profiling`,
+ * which skips wasm-opt so the same source yields different bytecode. A bundle
+ * built before #4266 cannot run on a current node: its `init` panics with
+ * `IndexNotFound`. Installing the second moves that id's row to
  * the new bytecode, and upgrading the group swaps its contexts onto it with no
  * migration. `next` must stay newer than the base bundle, or core refuses it
  * as a downgrade.
@@ -60,8 +64,8 @@ describe('Admin API E2E — Group upgrade', () => {
     }, 90000);
     // The install above already moved the application row to the new build, so
     // `fromVersion` is read from the bytecode the group ran before the upgrade.
-    expect(done.fromVersion).toBe('0.11.0-rc.49');
-    expect(done.toVersion).toBe('0.11.0-rc.51');
+    expect(done.fromVersion).toBe('0.11.0-rc.68');
+    expect(done.toVersion).toBe('0.11.0-rc.69');
     expect(done.initiatedAt).toBeGreaterThan(0);
 
     // A completed upgrade left nothing failed behind, so there is nothing to
