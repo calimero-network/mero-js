@@ -1,3 +1,13 @@
+## [23.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.9.0...mero-js-v23.0.0) (2026-10-01)
+
+### ⚠ BREAKING CHANGES
+
+* **warrant:** sign at schema 20, derive subgroup ids, and sign root proofs for owner ops (#219)
+
+### Features
+
+* **warrant:** sign at schema 20, derive subgroup ids, and sign root proofs for owner ops ([#219](https://github.com/calimero-network/mero-js/issues/219)) ([79187cf](https://github.com/calimero-network/mero-js/commit/79187cfa43e73961656fe65f7bf5583c0243a350))
+
 ## [22.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.8.0...mero-js-v22.9.0) (2026-10-01)
 
 ### Features
