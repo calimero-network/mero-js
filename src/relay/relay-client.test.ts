@@ -954,6 +954,14 @@ describe('targetApplicationSetOp', () => {
     );
   });
 
+  it("matches core's pinned vector (delegable_target_application_set_vector_is_stable)", async () => {
+    const op = targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'com.example.app', version: '1.2.3' });
+    expect(hexOf(op.bytes)).toBe(
+      '07000000000000000000000000000000000000000000000000000000000000000088888888888888888888888888888888888888888888888888888888888888880f000000636f6d2e6578616d706c652e61707005000000312e322e33',
+    );
+    expect(hexOf(await governanceOpHash(op))).toBe('904984c8f39e4172ea8864a65511faead68baa76af18d31e1d442a0b9fcb656b');
+  });
+
   it('refuses an empty package or version', () => {
     expect(() => targetApplicationSetOp({ applicationId: '88'.repeat(32), package: '', version: '1' })).toThrow(/package/);
     expect(() => targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'p', version: '' })).toThrow(/version/);
