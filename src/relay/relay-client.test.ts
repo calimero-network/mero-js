@@ -552,7 +552,13 @@ describe('RelayClient.govern', () => {
   it('signs a root op on the root plane, and returns the group it acted on', async () => {
     const created = 'c5'.repeat(32);
     const { fetch, calls } = scriptedFetch([described(), governed(created)]);
-    const op = groupCreatedOp({ groupId: created, parentId: GROUP, restricted: true, admin: AUTHOR });
+    const op = groupCreatedOp({
+      groupId: created,
+      parentId: GROUP,
+      restricted: true,
+      admin: AUTHOR,
+      salt: '00'.repeat(32),
+    });
 
     await expect(client(fetch).govern({ groupId: GROUP, op })).resolves.toEqual({ groupId: created });
 

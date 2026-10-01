@@ -26,6 +26,8 @@ export {
   memberLeftOp,
   memberRoleSetOp,
   groupCreatedOp,
+  createdSubgroupId,
+  subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
   namespaceCreatedOp,
@@ -37,5 +39,6 @@ export type {
   GovernanceOpKind,
   GovernanceMemberRole,
   GroupCreatedInput,
+  SubgroupCreation,
   NamespaceCreatedInput,
 } from './governance-op.js';
