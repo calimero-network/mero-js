@@ -44,14 +44,16 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * `TransferOwnership`, `AdminChanged`, `GroupDelete` and TEE policy ops are
  * refused. No layout this module signs changes; see `../owner-op` for the proof.
  *
- * 19 is reserved for calimero-network/core#4269.
+ * 19, 20: core's numbering (calimero-network/core#4269, #4276). No layout
+ * this module signs changes.
  *
- * 20: no layout change. A delegated `GroupCreated` whose executor is a TEE at
- * the namespace root now seats that TEE in the new subgroup
- * (calimero-network/core#4276), an apply-time rule older peers disagree on.
- * Core signs and checks at 20, so every op this module signs must too.
+ * 21: core 0.11.0-rc.68 shipped 20 without the salted `GroupCreated` (17) or
+ * the root guard (18), so one version number named two different rule sets.
+ * 21 is the first version that carries all of 17, 18 and 20, so an rc.68 node
+ * and a current one refuse each other outright instead of disagreeing about
+ * the same op. No layout change of its own.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 20;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 21;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
