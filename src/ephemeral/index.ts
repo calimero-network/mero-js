@@ -63,12 +63,27 @@ export class EphemeralClient {
     handler: (entry: EphemeralEntry<T>) => void,
     codec: Codec<T> = jsonCodec<T>(),
   ): () => void {
+    return subscribePresence(this.sse, contextId, handler, codec);
+  }
+}
+
+/**
+ * Presence for one context off an event stream: a typed filter over the SSE
+ * events that already carry `{ contextId, type, data }`. Shared by a node
+ * client and an account's relay client, which read presence the same way.
+ */
+export function subscribePresence<T>(
+  sse: SseClient,
+  contextId: string,
+  handler: (entry: EphemeralEntry<T>) => void,
+  codec: Codec<T> = jsonCodec<T>(),
+): () => void {
     const listener = (event: unknown): void => {
       const e = event as { contextId?: string; type?: string; data?: unknown };
       if (e.type !== 'Ephemeral' || e.contextId !== contextId) return;
 
       const data = e.data as
-        | { author?: string; state?: number[]; removed?: boolean; ageMs?: number }
+        | { author?: string; account?: string; state?: number[]; removed?: boolean; ageMs?: number }
         | undefined;
       if (!data?.author) return;
 
@@ -83,17 +98,17 @@ export class EphemeralClient {
       // `ageMs` is present only on a replayed seed entry; pass it through as-is
       // rather than defaulting a live delta to 0.
       if (data.ageMs !== undefined) entry.ageMs = data.ageMs;
+      if (data.account !== undefined) entry.account = data.account;
       handler(entry);
     };
 
-    this.sse.on('event', listener);
+    sse.on('event', listener);
     // Errors surface via the SSE client's own 'error' event; nothing more to
     // do with them here.
-    void this.sse.connect().catch(() => undefined);
-    void this.sse.subscribe([contextId]).catch(() => undefined);
+    void sse.connect().catch(() => undefined);
+    void sse.subscribe([contextId]).catch(() => undefined);
 
     return () => {
-      this.sse.off('event', listener);
+      sse.off('event', listener);
     };
-  }
 }
