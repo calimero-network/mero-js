@@ -287,7 +287,15 @@ describe('a relay client with no node key', () => {
     expect(() => client().events).toThrow(/never derived from its peerId/);
   });
 
-  it.each(['ephemeral', 'auth', 'node', 'cloud'] as const)(
+  it('serves `ephemeral` as an account presence client, which publishes without a node key', () => {
+    const presence = client().ephemeral;
+    expect(typeof presence.set).toBe('function');
+    expect(typeof presence.subscribe).toBe('function');
+    // Reading presence needs the relay's event stream, and so its node key.
+    expect(() => presence.subscribe('11'.repeat(32), () => {})).toThrow(/does serve \/sse and \/ws/);
+  });
+
+  it.each(['auth', 'node', 'cloud'] as const)(
     'still throws from `%s` rather than falling back to some other node',
     (surface) => {
       expect(() => client()[surface]).toThrow(/relay transport/);
