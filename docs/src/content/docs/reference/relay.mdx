@@ -189,16 +189,19 @@ add an admin, `CAN_CREATE_SUBGROUP` to create a subgroup). The relay needs only
 standing to act for members.
 
 ```typescript
-import { memberAddedOp, groupCreatedOp } from '@calimero-network/mero-js';
+import { memberAddedOp, subgroupCreation } from '@calimero-network/mero-js';
 
 // A group op, published on the group itself.
 await relay.govern({ groupId, op: memberAddedOp(otherAccount, 'Member') });
 
-// A root op, published on the NAMESPACE: the new subgroup's id comes back.
-const { groupId: channel } = await relay.govern({
-  groupId: namespaceId,
-  op: groupCreatedOp({ groupId: freshId, parentId: namespaceId, restricted: true, admin: myAccount }),
+// A root op, published on the NAMESPACE. A subgroup's id is derived from its
+// create (admin, parent, visibility and a random salt), so derive it first.
+const { groupId: channel, op } = await subgroupCreation({
+  parentId: namespaceId,
+  restricted: true,
+  admin: myAccount,
 });
+await relay.govern({ groupId: namespaceId, op });
 ```
 
 The op encoders produce each op in its **delegable form**: `memberRemovedOp`,

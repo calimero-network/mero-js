@@ -37,8 +37,8 @@ import { signerFromSecret } from '../../src/signer/index.js';
 import { generateAccountRoot } from '../../src/account/index.js';
 import {
   foundedNamespaceId,
-  groupCreatedOp,
   memberAddedOp,
+  subgroupCreation,
 } from '../../src/warrant/governance-op.js';
 import {
   MEROD_BINARY,
@@ -56,11 +56,6 @@ const MANAGE_MEMBERS = 8;
 const CAN_CREATE_SUBGROUP = 32;
 /** `MemberCapabilities::CAN_AUTHOR_ON_BEHALF`: bit 9. */
 const CAN_AUTHOR_ON_BEHALF = 512;
-
-const randomId = () =>
-  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
-    b.toString(16).padStart(2, '0'),
-  ).join('');
 
 describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance', () => {
   const relayUrl = RELAY_URL as string;
@@ -165,19 +160,16 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
   }, 120_000);
 
   it('creates a subgroup the author owns (root op, on the namespace)', async () => {
-    const subgroupId = randomId();
+    // The id is derived from the create, so it is the author's to name.
+    const { groupId: subgroupId, op } = await subgroupCreation({
+      parentId: namespaceId,
+      restricted: true,
+      admin: device.account,
+    });
 
-    await expect(
-      relay.govern({
-        groupId: namespaceId,
-        op: groupCreatedOp({
-          groupId: subgroupId,
-          parentId: namespaceId,
-          restricted: true,
-          admin: device.account,
-        }),
-      }),
-    ).resolves.toEqual({ groupId: subgroupId });
+    await expect(relay.govern({ groupId: namespaceId, op })).resolves.toEqual({
+      groupId: subgroupId,
+    });
 
     const groups = await operator.admin.listNamespaceGroups(namespaceId);
     expect(groups.map((g) => g.groupId)).toContain(subgroupId);
@@ -237,18 +229,14 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
       groupId: founded.namespaceId,
       canActOnBehalf: true,
     });
-    const subgroupId = randomId();
-    await expect(
-      relay.govern({
-        groupId: founded.namespaceId,
-        op: groupCreatedOp({
-          groupId: subgroupId,
-          parentId: founded.namespaceId,
-          restricted: true,
-          admin: device.account,
-        }),
-      }),
-    ).resolves.toEqual({ groupId: subgroupId });
+    const { groupId: subgroupId, op } = await subgroupCreation({
+      parentId: founded.namespaceId,
+      restricted: true,
+      admin: device.account,
+    });
+    await expect(relay.govern({ groupId: founded.namespaceId, op })).resolves.toEqual({
+      groupId: subgroupId,
+    });
 
     // The same salt names the same namespace, which is never founded twice.
     const again = await relay
