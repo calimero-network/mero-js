@@ -1,3 +1,9 @@
+## [23.4.3](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.2...mero-js-v23.4.3) (2026-10-02)
+
+### Bug Fixes
+
+* **ephemeral:** a presence listener added after the context is subscribed still gets its current presence ([#240](https://github.com/calimero-network/mero-js/issues/240)) ([ce618de](https://github.com/calimero-network/mero-js/commit/ce618de9533af1060fa186fd1609eb3d9f9da99f))
+
 ## [23.4.2](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.1...mero-js-v23.4.2) (2026-10-02)
 
 ### Bug Fixes
