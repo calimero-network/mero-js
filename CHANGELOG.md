@@ -1,3 +1,9 @@
+## [23.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.2.0...mero-js-v23.3.0) (2026-10-02)
+
+### Features
+
+* **presence:** an account publishes presence through its relay ([#230](https://github.com/calimero-network/mero-js/issues/230)) ([4aa5778](https://github.com/calimero-network/mero-js/commit/4aa57780b9dba1de33c79d2c1886288decd9c2e6))
+
 ## [23.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.1.0...mero-js-v23.2.0) (2026-10-02)
 
 ### Features
