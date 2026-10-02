@@ -1,3 +1,5 @@
+## [23.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.0...mero-js-v23.4.1) (2026-10-02)
+
 ## [23.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.3.0...mero-js-v23.4.0) (2026-10-02)
 
 ### Features
