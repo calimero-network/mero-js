@@ -53,7 +53,10 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  *
  * 21: no layout change. An op concurrent with its signer's removal is void
  * (calimero-network/core#4275), an apply-time rule older peers disagree on.
- * Core signs and checks at 21.
+ * Core signs and checks at 21 from 0.11.0-rc.75. 23.4.0 and 23.4.1 still sign
+ * at 20, so against rc.75 every namespace op an account signs with them (a
+ * join, a create, any governance op) is refused "schema version mismatch:
+ * expected 21, got 20".
  */
 export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 21;
 
