@@ -318,6 +318,39 @@ describe('SseClient', () => {
 
       expect(sendSpy).toHaveBeenCalledWith('subscribe', { contextIds: ['ctx-1'], groupIds: ['grp-1'] });
     });
+
+    it('emits connect only once the re-subscribe has landed', async () => {
+      let landed!: () => void;
+      vi.spyOn(client as any, 'sendSubscription').mockReturnValue(
+        new Promise<void>((resolve) => { landed = resolve; }),
+      );
+      const onConnect = vi.fn();
+      client.on('connect', onConnect);
+      (client as any).subscribedContextIds.add('ctx-1');
+
+      (client as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 'new-session' }));
+      await Promise.resolve();
+      expect(onConnect).not.toHaveBeenCalled();
+
+      landed();
+      await vi.waitFor(() => expect(onConnect).toHaveBeenCalledWith('new-session'));
+    });
+
+    it('drops a connect whose re-subscribe lands after the client closed', async () => {
+      let landed!: () => void;
+      vi.spyOn(client as any, 'sendSubscription').mockReturnValue(
+        new Promise<void>((resolve) => { landed = resolve; }),
+      );
+      const onConnect = vi.fn();
+      client.on('connect', onConnect);
+      (client as any).subscribedContextIds.add('ctx-1');
+
+      (client as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 'new-session' }));
+      client.close();
+      landed();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(onConnect).not.toHaveBeenCalled();
+    });
   });
 
   describe('group-membership events', () => {

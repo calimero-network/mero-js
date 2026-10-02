@@ -36,6 +36,7 @@ class SseClient {
     reconnectDelayMs?: number;   // default 3000
   });
 
+  // On a reconnect, fires once the new session is re-subscribed.
   on(event: 'connect', handler: (sessionId: string) => void): void;
   on(event: 'event', handler: (e: SseEventData) => void): void;
   on(event: 'error', handler: (err: Error) => void): void;
