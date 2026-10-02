@@ -326,18 +326,23 @@ export class SseClient {
 
       // Connection message
       if (msg.type === 'connect' && msg.session_id) {
-        this.sessionId = msg.session_id;
-        this.emit('connect', msg.session_id);
+        const sessionId: string = msg.session_id;
+        this.sessionId = sessionId;
         // A new connection gets a new replay when it re-subscribes; what the
         // old one said may name authors who have since gone.
         this.presence.clear();
-        // Re-subscribe after reconnect
-        if (this.subscribedContextIds.size > 0 || this.subscribedGroupIds.size > 0) {
-          this.sendSubscription('subscribe', {
-            contextIds: [...this.subscribedContextIds],
-            groupIds: [...this.subscribedGroupIds],
-          });
+        if (this.subscribedContextIds.size === 0 && this.subscribedGroupIds.size === 0) {
+          this.emit('connect', sessionId);
+          return;
         }
+        // A new session starts subscribed to nothing: announce it only once the
+        // re-subscribe lands, so a catch-up read on `connect` cannot miss a write.
+        void this.sendSubscription('subscribe', {
+          contextIds: [...this.subscribedContextIds],
+          groupIds: [...this.subscribedGroupIds],
+        }).then(() => {
+          if (!this.closed && this.sessionId === sessionId) this.emit('connect', sessionId);
+        });
         return;
       }
 
