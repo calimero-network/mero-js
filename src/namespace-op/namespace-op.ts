@@ -50,8 +50,12 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * the namespace root now seats that TEE in the new subgroup
  * (calimero-network/core#4276), an apply-time rule older peers disagree on.
  * Core signs and checks at 20, so every op this module signs must too.
+ *
+ * 21: no layout change. An op concurrent with its signer's removal is void
+ * (calimero-network/core#4275), an apply-time rule older peers disagree on.
+ * Core signs and checks at 21.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 20;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 21;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
