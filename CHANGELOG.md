@@ -1,3 +1,9 @@
+## [23.4.2](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.1...mero-js-v23.4.2) (2026-10-02)
+
+### Bug Fixes
+
+* **namespace-op:** release signing at schema 21, the version core 0.11.0-rc.75 verifies ([#239](https://github.com/calimero-network/mero-js/issues/239)) ([53f480f](https://github.com/calimero-network/mero-js/commit/53f480f4a25081295d6ea49dbe3118425e37ec21))
+
 ## [23.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.0...mero-js-v23.4.1) (2026-10-02)
 
 ## [23.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.3.0...mero-js-v23.4.0) (2026-10-02)
