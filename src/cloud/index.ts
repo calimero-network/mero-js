@@ -64,3 +64,5 @@ export type {
   CompleteDeviceEnrolmentOptions,
   EnrolledDevice,
 } from './enrol-redirect.js';
+export { signAccountOwnershipClaim } from './account-ownership.js';
+export type { AccountOwnershipProof, AccountOwnershipClaimInput } from './account-ownership.js';
