@@ -58,6 +58,7 @@ const GROUP_OP = {
   MemberRoleSet: 4,
   MemberCapabilitySet: 5,
   DefaultCapabilitiesSet: 6,
+  TargetApplicationSet: 7,
   ContextDetached: 9,
   SubgroupVisibilitySet: 10,
   GroupMetadataSet: 11,
@@ -186,6 +187,42 @@ export async function createdSubgroupId(
  * path, and no namespace starts with it in its default mask, so a mask that
  * sets it is refused here rather than burning a nonce on a certain 403.
  */
+/** A borsh `String`: a u32 byte length, then the UTF-8 bytes. */
+function borshString(value: string, what: string): Uint8Array {
+  if (value.length === 0) throw new Error(`${what} must not be empty`);
+  const bytes = new TextEncoder().encode(value);
+  return concat(u32le(bytes.length), bytes);
+}
+
+/**
+ * Choose the application a group runs (`GroupOp::TargetApplicationSet`), in
+ * its delegable form: `bytecode_id` is left for the relay to fill (32 zero
+ * bytes), resolved from `package@version` in the registry. The member signs
+ * the application id, package and version, so the relay can pick no other
+ * build; the application id binds package and signer, and every node checks
+ * the bundle's signature.
+ *
+ * Through a relay this is accepted only as a group's FIRST application, on a
+ * group that targets none yet (a namespace an account founded). Moving an
+ * existing target is an upgrade, which never goes through a relay.
+ */
+export function targetApplicationSetOp(input: {
+  applicationId: string;
+  package: string;
+  version: string;
+}): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(
+      tag(GROUP_OP.TargetApplicationSet),
+      CLEARED_HASH,
+      fromHex(input.applicationId, 'applicationId', 32),
+      borshString(input.package, 'package'),
+      borshString(input.version, 'version'),
+    ),
+  };
+}
+
 export function defaultCapabilitiesSetOp(capabilities: number): GovernanceOp {
   if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
     throw new Error(`capabilities must be a u32 bit mask, got ${String(capabilities)}`);
