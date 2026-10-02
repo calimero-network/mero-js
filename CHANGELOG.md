@@ -1,3 +1,9 @@
+## [23.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.3.0...mero-js-v23.4.0) (2026-10-02)
+
+### Features
+
+* **relay:** found a namespace with its application ([#222](https://github.com/calimero-network/mero-js/issues/222)) ([626ea1a](https://github.com/calimero-network/mero-js/commit/626ea1adfe16c5527fa1661f4d83b568c410d2ba))
+
 ## [23.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.2.0...mero-js-v23.3.0) (2026-10-02)
 
 ### Features
