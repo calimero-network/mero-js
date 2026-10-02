@@ -1,3 +1,9 @@
+## [23.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.1.0...mero-js-v23.2.0) (2026-10-02)
+
+### Features
+
+* **cloud:** enable HA for a namespace an account founded ([#225](https://github.com/calimero-network/mero-js/issues/225)) ([73b69af](https://github.com/calimero-network/mero-js/commit/73b69af58d6ea709ddd112ef9db519ad1b16097c)), closes [mdma#415](https://github.com/calimero-network/mdma/issues/415)
+
 ## [23.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.0.0...mero-js-v23.1.0) (2026-10-02)
 
 ### Features
