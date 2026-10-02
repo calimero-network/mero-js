@@ -103,6 +103,16 @@ export function subscribePresence<T>(
     };
 
     sse.on('event', listener);
+    // On a context this connection already holds, the node's one-time replay
+    // went to whichever listener came first: seed this one from what the
+    // client has kept, as the replay would have. (A context not held yet is
+    // replayed by the node on the subscribe below.) Optional: a test double
+    // or another event source may not keep presence.
+    if (sse.isSubscribed?.(contextId)) {
+      for (const data of sse.presenceSeed?.(contextId) ?? []) {
+        listener({ contextId, type: 'Ephemeral', data });
+      }
+    }
     // Errors surface via the SSE client's own 'error' event; nothing more to
     // do with them here.
     void sse.connect().catch(() => undefined);

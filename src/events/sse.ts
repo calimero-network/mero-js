@@ -88,6 +88,14 @@ export class SseClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribedContextIds: Set<string> = new Set();
   private subscribedGroupIds: Set<string> = new Set();
+  /**
+   * The current presence of each subscribed context, as the node's replay and
+   * its live deltas left it: author → that author's last `Ephemeral` data and
+   * when it arrived. The node replays a context's presence once, when the
+   * context is first subscribed on this connection, so a presence listener
+   * that comes later would never see it; {@link presenceSeed} gives it this.
+   */
+  private presence: Map<string, Map<string, { data: Record<string, unknown>; at: number }>> = new Map();
   private closed = false;
   private listeners: SseListeners = { connect: [], event: [], error: [] };
   private fetchImpl: typeof fetch;
@@ -320,6 +328,9 @@ export class SseClient {
       if (msg.type === 'connect' && msg.session_id) {
         this.sessionId = msg.session_id;
         this.emit('connect', msg.session_id);
+        // A new connection gets a new replay when it re-subscribes; what the
+        // old one said may name authors who have since gone.
+        this.presence.clear();
         // Re-subscribe after reconnect
         if (this.subscribedContextIds.size > 0 || this.subscribedGroupIds.size > 0) {
           this.sendSubscription('subscribe', {
@@ -346,6 +357,7 @@ export class SseClient {
 
       // Context event message
       if (msg.result.contextId) {
+        if (msg.result.type === 'Ephemeral') this.notePresence(msg.result.contextId, eventData);
         this.emit('event', {
           contextId: msg.result.contextId,
           // Forward the event tag (sibling of `data` in core's flattened
@@ -385,12 +397,41 @@ export class SseClient {
     }
   }
 
+  /** Whether this connection holds `contextId`'s events. */
+  isSubscribed(contextId: string): boolean {
+    return this.subscribedContextIds.has(contextId);
+  }
+
+  /**
+   * The presence currently known for `contextId`, as `Ephemeral` event data,
+   * each entry's `ageMs` advanced by how long ago it arrived. Empty for a
+   * context this connection does not hold.
+   */
+  presenceSeed(contextId: string): Array<Record<string, unknown>> {
+    const now = Date.now();
+    return [...(this.presence.get(contextId)?.values() ?? [])].map(({ data, at }) => ({
+      ...data,
+      ageMs: (typeof data.ageMs === 'number' ? data.ageMs : 0) + (now - at),
+    }));
+  }
+
+  private notePresence(contextId: string, data: unknown): void {
+    if (!this.subscribedContextIds.has(contextId)) return;
+    const d = data as { author?: unknown; removed?: unknown } | null;
+    if (!d || typeof d.author !== 'string') return;
+    let byAuthor = this.presence.get(contextId);
+    if (!byAuthor) this.presence.set(contextId, (byAuthor = new Map()));
+    if (d.removed) byAuthor.delete(d.author);
+    else byAuthor.set(d.author, { data: d as Record<string, unknown>, at: Date.now() });
+  }
+
   async unsubscribe(idsOrOpts: string[] | { contextIds?: string[]; groupIds?: string[] }): Promise<void> {
     const opts = Array.isArray(idsOrOpts) ? { contextIds: idsOrOpts } : idsOrOpts;
     const hadContextIds = (opts.contextIds ?? []).filter(id => this.subscribedContextIds.has(id));
     const hadGroupIds = (opts.groupIds ?? []).filter(id => this.subscribedGroupIds.has(id));
     for (const id of opts.contextIds ?? []) {
       this.subscribedContextIds.delete(id);
+      this.presence.delete(id);
     }
     for (const id of opts.groupIds ?? []) {
       this.subscribedGroupIds.delete(id);
