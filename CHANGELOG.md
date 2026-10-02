@@ -1,3 +1,9 @@
+## [23.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.0.0...mero-js-v23.1.0) (2026-10-02)
+
+### Features
+
+* **warrant:** encode the rest of the delegable governance ops ([#224](https://github.com/calimero-network/mero-js/issues/224)) ([4f67ce0](https://github.com/calimero-network/mero-js/commit/4f67ce01459a829304191a1645ac29c05c1b82be))
+
 ## [23.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.9.0...mero-js-v23.0.0) (2026-10-01)
 
 ### ⚠ BREAKING CHANGES
