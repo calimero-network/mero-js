@@ -57,8 +57,13 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * at 20, so against rc.75 every namespace op an account signs with them (a
  * join, a create, any governance op) is refused "schema version mismatch:
  * expected 21, got 20".
+ *
+ * 22: `GroupOp::SharedWritersRotated` is appended, a `SharedStorage` cell's
+ * writer-set step (calimero-network/core#4263), and a capability revoke voids
+ * the member's concurrent ops that needed a removed bit
+ * (calimero-network/core#4453). No layout this module signs changes.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 21;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 22;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
