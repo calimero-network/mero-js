@@ -1035,7 +1035,11 @@ export class CloudClient {
    * Pass merod's response object straight through. The cloud accepts core's
    * `signerPublicKey`/`signedPayload` casing as well as snake_case, so there is
    * no re-keying step — and getting that wrong used to surface as a `422`
-   * naming three missing fields.
+   * naming three missing fields. Passing it whole also carries the `founding`
+   * and `credential` merod attaches: the cloud accepts a namespace proof only
+   * from a node of the account that founded the namespace, checked with those
+   * two, and only when that account is linked to this login. A node that
+   * predates them, or an admin that did not found the namespace, gets a `422`.
    *
    * Idempotent for the same account. A namespace already claimed by someone
    * else is a `409`; a replayed proof nonce is a `403`.

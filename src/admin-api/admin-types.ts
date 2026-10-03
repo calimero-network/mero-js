@@ -1984,6 +1984,20 @@ export interface IssueOwnershipProofResponseData {
   signedPayload: string;
   /** Base64 64-byte ed25519 signature. */
   signature: string;
+  /**
+   * Namespace proofs only: what the namespace id was derived from. Not signed;
+   * the id commits to it. With {@link credential}, it is what lets the cloud
+   * check that the signer is a node of the account that FOUNDED the namespace
+   * (mdma refuses a namespace proof without both). Absent on nodes that predate
+   * it, and on context proofs.
+   */
+  founding?: NamespaceFounding;
+  /**
+   * Namespace proofs only: hex borsh `AccountProof<DeviceCert>` — the node's join
+   * credential, whose account root certifies `signerPublicKey`. See
+   * {@link founding}.
+   */
+  credential?: string;
 }
 
 // ---- Group Invitation & Join ----
