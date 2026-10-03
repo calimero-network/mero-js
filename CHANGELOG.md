@@ -1,3 +1,9 @@
+## [23.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.5.0...mero-js-v23.6.0) (2026-10-03)
+
+### Features
+
+* **cloud:** sign the founding relay into the account HA claim and type its refusals ([#242](https://github.com/calimero-network/mero-js/issues/242)) ([ab3b5fe](https://github.com/calimero-network/mero-js/commit/ab3b5fea20e910ca8313d266fb4344a9579ce3d7))
+
 ## [23.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.3...mero-js-v23.5.0) (2026-10-03)
 
 ### Features
