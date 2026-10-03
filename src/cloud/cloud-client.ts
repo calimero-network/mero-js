@@ -25,7 +25,7 @@
  * to involve it.
  */
 
-import type { AccountOwnershipProof } from './account-ownership.js';
+import { signAccountHaClaim, type AccountOwnershipProof } from './account-ownership.js';
 import {
   resolveRoot,
   resolveRootPair,
@@ -427,6 +427,84 @@ export interface DisableHAOptions {
   groupId: string;
   contextId: string;
   redirectUrl?: string;
+}
+
+/** Options for {@link CloudClient.enableHaAsAccount}. */
+export interface EnableHaAsAccountOptions {
+  /** The namespace, hex: the id `foundNamespace` returned. */
+  namespaceId: string;
+  /** The salt `foundNamespace` returned, hex (32 bytes). */
+  salt: string;
+  /** The founding account, hex. */
+  accountId: string;
+  /** The account's credential, hex `AccountProof<DeviceCert>`. */
+  credential: string;
+  /** The certified device's secret, hex. Give this or `signer`. */
+  deviceSecret?: string;
+  signer?: Signer;
+  /** The claim's lifetime in ms; default one minute, at most five. */
+  ttlMs?: number;
+}
+
+/**
+ * The cloud's two refusals of {@link CloudClient.enableHaAsAccount} that a
+ * person can do something about. Both are `409`s with `{"error": code}`.
+ *
+ * Extends {@link HTTPError}, so `instanceof HTTPError` handling still catches it.
+ */
+export class AccountHaRefusedError extends HTTPError {
+  name = 'AccountHaRefusedError';
+
+  constructor(
+    /** The cloud's `error` code, verbatim. */
+    public readonly code: string,
+    status: number,
+    statusText: string,
+    url: string,
+    headers: Headers,
+    bodyText?: string,
+  ) {
+    super(status, statusText, url, headers, bodyText);
+  }
+}
+
+/**
+ * `account_not_linked`: the account was never linked to a cloud user through
+ * the wallet, so the cloud has nobody to host the namespace for. Linking it
+ * fixes this; retrying does not.
+ */
+export class AccountNotLinkedError extends AccountHaRefusedError {
+  name = 'AccountNotLinkedError';
+  static readonly CODE = 'account_not_linked';
+}
+
+/**
+ * `account_linked_to_several_users`: more than one cloud user linked this
+ * account, so the cloud cannot tell whose quota hosts the namespace. Unlink it
+ * from all but one.
+ */
+export class AccountLinkedToSeveralUsersError extends AccountHaRefusedError {
+  name = 'AccountLinkedToSeveralUsersError';
+  static readonly CODE = 'account_linked_to_several_users';
+}
+
+/**
+ * The `error` code of a 409 body. Accepts `{"error": code}` (the contract) and
+ * FastAPI's `{"detail": code}` / `{"detail": {"error": code}}`, so how the
+ * route raises it does not change what a caller catches.
+ */
+function conflictCode(bodyText: string | undefined): string | undefined {
+  if (!bodyText) return undefined;
+  try {
+    const body = JSON.parse(bodyText) as { error?: unknown; detail?: unknown };
+    if (typeof body?.error === 'string') return body.error;
+    if (typeof body?.detail === 'string') return body.detail;
+    const nested = (body?.detail as { error?: unknown } | null)?.error;
+    if (typeof nested === 'string') return nested;
+  } catch {
+    // Not JSON: not one of ours.
+  }
+  return undefined;
 }
 
 /** Response headers MDMA uses to hand back a rolling-refreshed session. */
@@ -974,6 +1052,60 @@ export class CloudClient {
       `/api/cloud/me/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
       { body: { groups: [], ownership_proof: ownershipProof } },
     );
+  }
+
+  /**
+   * Enable HA for a namespace this account founded, with **no cloud session**.
+   *
+   * The anonymous sibling of {@link enableFoundedNamespaceHa}: it signs the
+   * founder's claim itself ({@link signAccountHaClaim} — no `subject`, its own
+   * audience) and posts it to
+   * `/api/cloud/accounts/{accountId}/namespaces/{namespaceId}/enable-ha`. The
+   * cloud bills the user the account is linked to through the wallet, so the
+   * account must be linked to exactly one:
+   *
+   * - not linked at all → {@link AccountNotLinkedError};
+   * - linked to several → {@link AccountLinkedToSeveralUsersError}.
+   *
+   * A claim that does not verify is a `403` `HTTPError`; quota and the rest
+   * answer as the session route does. Returns the cloud's response body, the
+   * same shape the session route's enable-ha returns.
+   */
+  async enableHaAsAccount(options: EnableHaAsAccountOptions): Promise<unknown> {
+    const proof = await signAccountHaClaim({
+      namespaceId: options.namespaceId,
+      accountId: options.accountId,
+      salt: options.salt,
+      credential: options.credential,
+      deviceSecret: options.deviceSecret,
+      signer: options.signer,
+      ttlMs: options.ttlMs,
+    });
+    // The path carries the ids as the claim does — lowercase hex — so a caller
+    // that kept them uppercase does not address a different resource.
+    const account = options.accountId.toLowerCase();
+    const namespace = options.namespaceId.toLowerCase();
+    try {
+      return await this.request<unknown>(
+        'POST',
+        `/api/cloud/accounts/${encodeURIComponent(account)}/namespaces/${encodeURIComponent(namespace)}/enable-ha`,
+        { body: { ownership_proof: proof }, anonymous: true },
+      );
+    } catch (err) {
+      if (err instanceof HTTPError && err.status === 409) {
+        const code = conflictCode(err.bodyText);
+        const Typed =
+          code === AccountNotLinkedError.CODE
+            ? AccountNotLinkedError
+            : code === AccountLinkedToSeveralUsersError.CODE
+              ? AccountLinkedToSeveralUsersError
+              : undefined;
+        if (Typed && code) {
+          throw new Typed(code, err.status, err.statusText, err.url, err.headers, err.bodyText);
+        }
+      }
+      throw err;
+    }
   }
 
   /**
