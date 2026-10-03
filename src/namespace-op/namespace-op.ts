@@ -57,8 +57,16 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * at 20, so against rc.75 every namespace op an account signs with them (a
  * join, a create, any governance op) is refused "schema version mismatch:
  * expected 21, got 20".
+ *
+ * 22 is claimed by calimero-network/core#4263 (a shared cell's writers rotate
+ * by a governance op).
+ *
+ * 23, the step after 22: a TEE admission op carries its quote and a TEE
+ * authority evidence op the credential it was made for
+ * (calimero-network/core#4265). Neither is an op this module signs, so only
+ * the version byte moves.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 21;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 23;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
