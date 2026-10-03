@@ -17,6 +17,11 @@ export interface Codec<T> {
  * machines is needed. Bounded above by the node's 7s presence TTL. */
 export interface EphemeralEntry<T> {
   author: string;
+  /**
+   * The account a relay-carried update's device certificate names, hex. Absent
+   * for a node's own presence.
+   */
+  account?: string;
   state?: T;
   removed?: boolean;
   ageMs?: number;

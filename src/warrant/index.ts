@@ -30,8 +30,18 @@ export {
   subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
+  memberCapabilitySetOp,
+  contextDetachedOp,
+  subgroupVisibilitySetOp,
+  groupMetadataSetOp,
+  memberMetadataSetOp,
+  contextMetadataSetOp,
+  contextCapabilityGrantedOp,
+  contextCapabilityRevokedOp,
+  memberJoinedOpenOp,
   namespaceCreatedOp,
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
 } from './governance-op.js';
 export type {

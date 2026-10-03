@@ -1,4 +1,13 @@
-export { CloudClient, admitterAddrsFromNetworkStatus } from './cloud-client.js';
+export {
+  CloudClient,
+  admitterAddrsFromNetworkStatus,
+  AccountHaRefusedError,
+  AccountNotLinkedError,
+  AccountLinkedToSeveralUsersError,
+  HaRequestPendingError,
+  UnknownRelayError,
+  RelayNotDialableError,
+} from './cloud-client.js';
 export type {
   CloudClientConfig,
   CloudSession,
@@ -20,6 +29,7 @@ export type {
   AccountLoginProof,
   EnableHAOptions,
   DisableHAOptions,
+  EnableHaAsAccountOptions,
 } from './cloud-client.js';
 export { connectCloud, connectCloudWithAccount } from './connect.js';
 export type {
@@ -64,3 +74,14 @@ export type {
   CompleteDeviceEnrolmentOptions,
   EnrolledDevice,
 } from './enrol-redirect.js';
+export {
+  signAccountOwnershipClaim,
+  signAccountHaClaim,
+  ACCOUNT_OWNERSHIP_AUDIENCE,
+  ACCOUNT_HA_AUDIENCE,
+} from './account-ownership.js';
+export type {
+  AccountOwnershipProof,
+  AccountOwnershipClaimInput,
+  AccountHaClaimInput,
+} from './account-ownership.js';

@@ -1,3 +1,59 @@
+## [23.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.6.0...mero-js-v23.7.0) (2026-10-03)
+
+### Features
+
+* **admin:** type the founder attachments of a namespace ownership proof ([#243](https://github.com/calimero-network/mero-js/issues/243)) ([af00194](https://github.com/calimero-network/mero-js/commit/af00194f28b9b345f6a99bb92e4afb9059bd0a58))
+
+## [23.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.5.0...mero-js-v23.6.0) (2026-10-03)
+
+### Features
+
+* **cloud:** sign the founding relay into the account HA claim and type its refusals ([#242](https://github.com/calimero-network/mero-js/issues/242)) ([ab3b5fe](https://github.com/calimero-network/mero-js/commit/ab3b5fea20e910ca8313d266fb4344a9579ce3d7))
+
+## [23.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.3...mero-js-v23.5.0) (2026-10-03)
+
+### Features
+
+* **cloud:** enable HA as an account with no cloud session ([#241](https://github.com/calimero-network/mero-js/issues/241)) ([c738357](https://github.com/calimero-network/mero-js/commit/c738357944d408aa059bb3526249d1fb12faa9a9))
+
+## [23.4.3](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.2...mero-js-v23.4.3) (2026-10-02)
+
+### Bug Fixes
+
+* **ephemeral:** a presence listener added after the context is subscribed still gets its current presence ([#240](https://github.com/calimero-network/mero-js/issues/240)) ([ce618de](https://github.com/calimero-network/mero-js/commit/ce618de9533af1060fa186fd1609eb3d9f9da99f))
+
+## [23.4.2](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.1...mero-js-v23.4.2) (2026-10-02)
+
+### Bug Fixes
+
+* **namespace-op:** release signing at schema 21, the version core 0.11.0-rc.75 verifies ([#239](https://github.com/calimero-network/mero-js/issues/239)) ([53f480f](https://github.com/calimero-network/mero-js/commit/53f480f4a25081295d6ea49dbe3118425e37ec21))
+
+## [23.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.0...mero-js-v23.4.1) (2026-10-02)
+
+## [23.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.3.0...mero-js-v23.4.0) (2026-10-02)
+
+### Features
+
+* **relay:** found a namespace with its application ([#222](https://github.com/calimero-network/mero-js/issues/222)) ([626ea1a](https://github.com/calimero-network/mero-js/commit/626ea1adfe16c5527fa1661f4d83b568c410d2ba))
+
+## [23.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.2.0...mero-js-v23.3.0) (2026-10-02)
+
+### Features
+
+* **presence:** an account publishes presence through its relay ([#230](https://github.com/calimero-network/mero-js/issues/230)) ([4aa5778](https://github.com/calimero-network/mero-js/commit/4aa57780b9dba1de33c79d2c1886288decd9c2e6))
+
+## [23.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.1.0...mero-js-v23.2.0) (2026-10-02)
+
+### Features
+
+* **cloud:** enable HA for a namespace an account founded ([#225](https://github.com/calimero-network/mero-js/issues/225)) ([73b69af](https://github.com/calimero-network/mero-js/commit/73b69af58d6ea709ddd112ef9db519ad1b16097c)), closes [mdma#415](https://github.com/calimero-network/mdma/issues/415)
+
+## [23.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.0.0...mero-js-v23.1.0) (2026-10-02)
+
+### Features
+
+* **warrant:** encode the rest of the delegable governance ops ([#224](https://github.com/calimero-network/mero-js/issues/224)) ([4f67ce0](https://github.com/calimero-network/mero-js/commit/4f67ce01459a829304191a1645ac29c05c1b82be))
+
 ## [23.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v22.9.0...mero-js-v23.0.0) (2026-10-01)
 
 ### ⚠ BREAKING CHANGES

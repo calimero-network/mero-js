@@ -7,6 +7,7 @@ import { creationInitHash, parseCreationWarrant } from '../warrant/creation-warr
 import { governanceOpHash, parseGovernanceWarrant } from '../warrant/governance-warrant.js';
 import {
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
   groupCreatedOp,
   memberAddedOp,
@@ -729,6 +730,62 @@ describe('RelayClient.foundNamespace', () => {
     expect(await nonces.next()).toBe(1n);
   });
 
+  describe('application', () => {
+    const APP = { applicationId: '88'.repeat(32), package: 'com.example.app', version: '1.2.3' };
+    const describedNs = (namespaceId: string) => ({
+      body: { data: { executorAccount: EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
+    });
+
+    it('sets the application right after founding, before the default mask', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const { fetch, calls } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: true }),
+        describedNs(namespaceId),
+        founded({ groupId: namespaceId }),
+        describedNs(namespaceId),
+        founded({ groupId: namespaceId }),
+      ]);
+
+      await expect(
+        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+          salt: SALT,
+          application: APP,
+          defaultCapabilities: 231,
+        }),
+      ).resolves.toEqual({
+        namespaceId,
+        salt: SALT,
+        teeEnabled: true,
+        applicationSet: true,
+        defaultCapabilitiesSet: true,
+      });
+
+      expect(calls.map((c) => c.init?.method)).toEqual(['POST', 'GET', 'POST', 'GET', 'POST']);
+      const appSent = JSON.parse(String(calls[2].init?.body)) as { warrant: string; op: string };
+      const op = targetApplicationSetOp(APP);
+      expect(appSent.op).toBe(hexOf(op.bytes));
+      const fields = parseGovernanceWarrant(appSent.warrant);
+      expect(fields.scope).toBe(namespaceId);
+      expect(fields.kind).toBe('group');
+      expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
+      const maskSent = JSON.parse(String(calls[4].init?.body)) as { op: string };
+      expect(maskSent.op).toBe('06e7000000');
+    });
+
+    it('reports a refused application without throwing: the namespace is founded either way', async () => {
+      const namespaceId = await foundedNamespaceId(AUTHOR, SALT);
+      const error = 'a delegated TargetApplicationSet may only choose a group\'s first application';
+      const { fetch } = scriptedFetch([
+        founded({ groupId: namespaceId, teeEnabled: true }),
+        describedNs(namespaceId),
+        { status: 403, text: JSON.stringify({ error }) },
+      ]);
+      const got = await client(fetch, { executorAccount: EXECUTOR }).foundNamespace({ salt: SALT, application: APP });
+      expect(got).toMatchObject({ namespaceId, applicationSet: false });
+      expect(got.applicationError).toContain('first application');
+    });
+    });
+
   describe('defaultCapabilities', () => {
     /** mero-chat's mask: create contexts, invite, join Open subgroups, and more. */
     const MASK = 231;
@@ -883,5 +940,30 @@ describe('RelayClient with a Signer in place of deviceSecret', () => {
       relay.govern({ groupId: GROUP, op: memberAddedOp(MEMBER, 'Member') }),
     ).rejects.toThrow(/not both/);
     expect(await nonces.next()).toBe(1n);
+  });
+});
+
+describe('targetApplicationSetOp', () => {
+  it('encodes the delegable form: variant 7, bytecode left for the relay', () => {
+    const op = targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'com.example.app', version: '1.2.3' });
+    expect(op.kind).toBe('group');
+    expect(hexOf(op.bytes)).toBe(
+      '07' + '00'.repeat(32) + '88'.repeat(32) +
+        '0f000000' + hexOf(new TextEncoder().encode('com.example.app')) +
+        '05000000' + hexOf(new TextEncoder().encode('1.2.3')),
+    );
+  });
+
+  it("matches core's pinned vector (delegable_target_application_set_vector_is_stable)", async () => {
+    const op = targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'com.example.app', version: '1.2.3' });
+    expect(hexOf(op.bytes)).toBe(
+      '07000000000000000000000000000000000000000000000000000000000000000088888888888888888888888888888888888888888888888888888888888888880f000000636f6d2e6578616d706c652e61707005000000312e322e33',
+    );
+    expect(hexOf(await governanceOpHash(op))).toBe('904984c8f39e4172ea8864a65511faead68baa76af18d31e1d442a0b9fcb656b');
+  });
+
+  it('refuses an empty package or version', () => {
+    expect(() => targetApplicationSetOp({ applicationId: '88'.repeat(32), package: '', version: '1' })).toThrow(/package/);
+    expect(() => targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'p', version: '' })).toThrow(/version/);
   });
 });

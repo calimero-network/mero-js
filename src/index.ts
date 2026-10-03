@@ -68,7 +68,9 @@ export type {
 } from "./events/index.js";
 
 // Ephemeral presence (cursors / typing / online)
-export { EphemeralClient, jsonCodec } from "./ephemeral/index.js";
+export { EphemeralClient, jsonCodec, subscribePresence } from "./ephemeral/index.js";
+export { RelayPresenceClient } from "./presence/relay-presence.js";
+export { presenceStatementBytes, stateHash, PRESENCE_DOMAIN } from "./presence/statement.js";
 export type { Codec, EphemeralEntry } from "./ephemeral/index.js";
 
 // Cloud client — namespaces, relays, HA, and the cloud sign-in path
@@ -102,8 +104,18 @@ export {
   subgroupCreation,
   groupReparentedOp,
   groupDeletedOp,
+  memberCapabilitySetOp,
+  contextDetachedOp,
+  subgroupVisibilitySetOp,
+  groupMetadataSetOp,
+  memberMetadataSetOp,
+  contextMetadataSetOp,
+  contextCapabilityGrantedOp,
+  contextCapabilityRevokedOp,
+  memberJoinedOpenOp,
   namespaceCreatedOp,
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
 } from "./warrant/index.js";
 // Who signs — a key's capability, separated from its material, so a

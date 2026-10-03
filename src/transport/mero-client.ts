@@ -65,6 +65,7 @@ import { SseClient } from '../events/sse.js';
 import type { AuthApiClient } from '../auth-api/index.js';
 import type { WsClient } from '../events/ws.js';
 import type { EphemeralClient } from '../ephemeral/index.js';
+import { RelayPresenceClient } from '../presence/relay-presence.js';
 import type { CloudClient } from '../cloud/cloud-client.js';
 import type { Signer } from '../signer/signer.js';
 
@@ -221,6 +222,7 @@ export class MeroClient {
   private readonly proofAuthorizer: RequestAuthorizer | null = null;
   private readonly relayUrl: string | null = null;
   private proofEvents: SseClient | null = null;
+  private relayPresence: RelayPresenceClient | null = null;
 
   constructor(config: MeroClientConfig) {
     if (config.transport === 'relay') {
@@ -416,26 +418,19 @@ export class MeroClient {
   /**
    * Ephemeral presence. Node transport only.
    *
-   * Not extended to the relay even though a logged-in session could reach both
-   * halves of it mechanically. Publishing resolves the author from an *owned
-   * context identity on the node*, and whether a delegated session has one has
-   * not been established — a presence client that silently published nothing,
-   * or published as the wrong identity, is worse than one that says it is not
-   * available. The read half is not lost: presence arrives on `client.events`
-   * like any other context event, and can be filtered there.
-   *
-   * The rejected alternative was to expose it over the relay session and let
-   * `set` fail at the node. That trades a clear construction-time answer for a
-   * runtime failure inside a UI that has already rendered.
+   * On a relay client this is an account's presence client
+   * ({@link RelayPresenceClient}): `set` signs each update with the device key
+   * and posts it to the relay's `presence-intents`, resending every 2.5 s, and
+   * `subscribe` reads the relay's event stream. The relay checks and forwards
+   * the update; other members verify the device's signature and certificate
+   * themselves, so it can drop or delay an account's presence but not invent or
+   * alter it. Only `subscribe` needs the relay's node key (for the event
+   * stream), so publishing works on any relay client.
    */
-  get ephemeral(): EphemeralClient {
-    if (!this.nodeClient) {
-      throw relayHasNo(
-        'ephemeral presence',
-        'publishing resolves the author from an owned context identity on the node, which a delegated session is not known to have — read presence off `client.events` instead',
-      );
-    }
-    return this.nodeClient.ephemeral;
+  get ephemeral(): EphemeralClient | RelayPresenceClient {
+    if (this.nodeClient) return this.nodeClient.ephemeral;
+    this.relayPresence ??= new RelayPresenceClient({ relay: this.relay, events: () => this.events });
+    return this.relayPresence;
   }
 
   /**

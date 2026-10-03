@@ -34,6 +34,7 @@ import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
 import {
   defaultCapabilitiesSetOp,
+  targetApplicationSetOp,
   foundedNamespaceId,
   namespaceCreatedOp,
   type GovernanceOp,
@@ -233,6 +234,13 @@ export interface FoundNamespaceInput {
    * signed.
    */
   defaultCapabilities?: number;
+  /**
+   * The application the namespace runs, set right after founding. Without one
+   * a founded namespace targets no application, and no context can be created
+   * in it. Set through the relay with a delegated `TargetApplicationSet`, which
+   * core accepts only as a group's first application.
+   */
+  application?: { applicationId: string; package: string; version: string };
 }
 
 /** A namespace founded through a relay. */
@@ -261,6 +269,14 @@ export interface FoundedNamespace {
   defaultCapabilitiesSet?: boolean;
   /** Why `defaultCapabilitiesSet` is `false`. */
   defaultCapabilitiesError?: string;
+  /**
+   * Present only when `application` was asked for: whether the namespace now
+   * runs it. `false` leaves it with no application; retry with
+   * `govern({ groupId: namespaceId, op: targetApplicationSetOp(application) })`.
+   */
+  applicationSet?: boolean;
+  /** Why `applicationSet` is `false`. */
+  applicationError?: string;
 }
 
 /** Where an accepted intent landed. */
@@ -430,6 +446,23 @@ export class RelayClient {
       { method, argsJson, warrant, authorProof: this.config.authorProof },
     );
     return { rootHash: body.data.rootHash, returns: body.data.returns ?? null };
+  }
+
+  /**
+   * Publish one presence statement through the relay (`presence-intents`).
+   *
+   * Not retried on 429: presence resends every 2.5 s anyway, and a retry would
+   * only queue behind the next resend. A refusal throws with its `status`.
+   */
+  async presenceIntent(
+    contextId: string,
+    body: { state: string | null; seq: number; sentAtMs: number; signature: string; authorProof: string },
+  ): Promise<void> {
+    await this.jsonOnce<undefined>(
+      'POST',
+      `/admin-api/contexts/${encodeURIComponent(contextId)}/presence-intents`,
+      body,
+    );
   }
 
   /**
@@ -642,6 +675,7 @@ export class RelayClient {
       input.defaultCapabilities === undefined
         ? undefined
         : defaultCapabilitiesSetOp(input.defaultCapabilities);
+    const applicationOp = input.application ? targetApplicationSetOp(input.application) : undefined;
 
     // Resolved before the nonce, so a misconfigured key burns none.
     const signer = await this.authorSigner();
@@ -664,22 +698,30 @@ export class RelayClient {
       teeEnabled: data.teeEnabled ?? false,
       ...(data.teeError ? { teeError: data.teeError } : {}),
     };
-    if (!capabilitiesOp) return founded;
-
-    // A second op, under its own warrant, on the namespace root: the founder is
-    // its admin and the relay was seated to act for members, so it goes through
-    // the ordinary `govern` path. The namespace exists whatever happens here, so
-    // a failure is reported rather than thrown.
-    try {
-      await this.govern({ groupId: founded.namespaceId, op: capabilitiesOp });
-      return { ...founded, defaultCapabilitiesSet: true };
-    } catch (err) {
-      return {
-        ...founded,
-        defaultCapabilitiesSet: false,
-        defaultCapabilitiesError: err instanceof Error ? err.message : String(err),
-      };
+    // Follow-up ops, each under its own warrant, on the namespace root: the
+    // founder is its admin and the relay was seated to act for members, so they
+    // go through the ordinary `govern` path. The namespace exists whatever
+    // happens here, so a failure is reported rather than thrown. The
+    // application first: without it the namespace can hold no context at all.
+    let result: FoundedNamespace = founded;
+    const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+    if (applicationOp) {
+      try {
+        await this.govern({ groupId: founded.namespaceId, op: applicationOp });
+        result = { ...result, applicationSet: true };
+      } catch (err) {
+        result = { ...result, applicationSet: false, applicationError: message(err) };
+      }
     }
+    if (capabilitiesOp) {
+      try {
+        await this.govern({ groupId: founded.namespaceId, op: capabilitiesOp });
+        result = { ...result, defaultCapabilitiesSet: true };
+      } catch (err) {
+        result = { ...result, defaultCapabilitiesSet: false, defaultCapabilitiesError: message(err) };
+      }
+    }
+    return result;
   }
 
   private async postGovernance(
@@ -789,6 +831,8 @@ export class RelayClient {
       );
     }
 
+    // `presence-intents` answers an accepted update with no body.
+    if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
 }

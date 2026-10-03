@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EphemeralClient, jsonCodec } from './index.js';
+import { EphemeralClient, jsonCodec, subscribePresence } from './index.js';
+import { SseClient } from '../events/sse.js';
 import type { EphemeralEntry } from './index.js';
 import { RpcError } from '../rpc/index.js';
 import type { HttpClient } from '../http-client/index.js';
@@ -188,5 +189,75 @@ describe('EphemeralClient.subscribe', () => {
 
     expect(seen[0].ageMs).toBeUndefined();
     expect('ageMs' in seen[0]).toBe(false);
+  });
+});
+
+// The node replays a context's presence once, when the context is first
+// subscribed on the connection. An app that mounts an event subscription
+// before its presence one on the same context (useSubscription, then
+// useEphemeral) subscribes once, so the replay reaches only the first
+// listener — and presence, which a later listener never sees again until
+// each author publishes, looked empty. The SseClient keeps what the replay
+// and the live deltas said, and seeds a late presence listener from it.
+describe('subscribePresence on a context the connection already holds', () => {
+  const encoded = (v: unknown) => Array.from(new TextEncoder().encode(JSON.stringify(v)));
+  const ephemeral = (data: Record<string, unknown>) =>
+    JSON.stringify({ result: { contextId: 'ctx-1', type: 'Ephemeral', data } });
+
+  function sseOnCtx1() {
+    const sse = new SseClient({ baseUrl: 'http://localhost:4001', getAuthToken: async () => 't' });
+    vi.spyOn(sse, 'connect').mockResolvedValue(undefined);
+    // An earlier event listener subscribed the context; no session yet, so
+    // nothing goes over the wire.
+    void sse.subscribe(['ctx-1']);
+    return sse;
+  }
+
+  it('a late listener gets the current presence: upserts kept, removals dropped, ages advanced', () => {
+    vi.useFakeTimers();
+    try {
+      const sse = sseOnCtx1();
+      (sse as any).handleMessage(ephemeral({ author: 'A', state: encoded({ x: 1 }), ageMs: 500 }));
+      (sse as any).handleMessage(ephemeral({ author: 'B', state: encoded({ x: 2 }) }));
+      (sse as any).handleMessage(ephemeral({ author: 'B', removed: true }));
+      vi.advanceTimersByTime(1000);
+
+      const seen: EphemeralEntry<{ x: number }>[] = [];
+      subscribePresence<{ x: number }>(sse, 'ctx-1', (e) => seen.push(e));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ author: 'A', state: { x: 1 }, removed: false });
+      expect(seen[0].ageMs).toBeGreaterThanOrEqual(1500);
+      sse.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a late listener then gets live deltas as before', () => {
+    const sse = sseOnCtx1();
+    const seen: EphemeralEntry<number>[] = [];
+    subscribePresence<number>(sse, 'ctx-1', (e) => seen.push(e));
+    (sse as any).handleMessage(ephemeral({ author: 'C', state: encoded(7) }));
+    expect(seen).toEqual([{ author: 'C', state: 7, removed: false }]);
+    sse.close();
+  });
+
+  it('a reconnect drops what the old connection said: the re-subscribe brings a fresh replay', () => {
+    const sse = sseOnCtx1();
+    (sse as any).handleMessage(ephemeral({ author: 'A', state: encoded(1) }));
+    (sse as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 's2' }));
+    const seen: unknown[] = [];
+    subscribePresence(sse, 'ctx-1', (e) => seen.push(e));
+    expect(seen).toEqual([]);
+    sse.close();
+  });
+
+  it('an unsubscribed context is forgotten', () => {
+    const sse = sseOnCtx1();
+    (sse as any).handleMessage(ephemeral({ author: 'A', state: encoded(1) }));
+    void sse.unsubscribe(['ctx-1']);
+    expect(sse.presenceSeed('ctx-1')).toEqual([]);
+    sse.close();
   });
 });

@@ -56,7 +56,16 @@ const GROUP_OP = {
   MemberRemoved: 2,
   MemberLeft: 3,
   MemberRoleSet: 4,
+  MemberCapabilitySet: 5,
   DefaultCapabilitiesSet: 6,
+  TargetApplicationSet: 7,
+  ContextDetached: 9,
+  SubgroupVisibilitySet: 10,
+  GroupMetadataSet: 11,
+  MemberMetadataSet: 12,
+  ContextMetadataSet: 13,
+  ContextCapabilityGranted: 16,
+  ContextCapabilityRevoked: 17,
 } as const;
 
 /** `RootOp` discriminants, by position in core's enum. */
@@ -64,6 +73,7 @@ const ROOT_OP = {
   GroupCreated: 0,
   GroupReparented: 1,
   GroupDeleted: 2,
+  MemberJoinedOpen: 7,
   NamespaceCreatedV2: 9,
 } as const;
 
@@ -177,6 +187,42 @@ export async function createdSubgroupId(
  * path, and no namespace starts with it in its default mask, so a mask that
  * sets it is refused here rather than burning a nonce on a certain 403.
  */
+/** A borsh `String`: a u32 byte length, then the UTF-8 bytes. */
+function borshString(value: string, what: string): Uint8Array {
+  if (value.length === 0) throw new Error(`${what} must not be empty`);
+  const bytes = new TextEncoder().encode(value);
+  return concat(u32le(bytes.length), bytes);
+}
+
+/**
+ * Choose the application a group runs (`GroupOp::TargetApplicationSet`), in
+ * its delegable form: `bytecode_id` is left for the relay to fill (32 zero
+ * bytes), resolved from `package@version` in the registry. The member signs
+ * the application id, package and version, so the relay can pick no other
+ * build; the application id binds package and signer, and every node checks
+ * the bundle's signature.
+ *
+ * Through a relay this is accepted only as a group's FIRST application, on a
+ * group that targets none yet (a namespace an account founded). Moving an
+ * existing target is an upgrade, which never goes through a relay.
+ */
+export function targetApplicationSetOp(input: {
+  applicationId: string;
+  package: string;
+  version: string;
+}): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(
+      tag(GROUP_OP.TargetApplicationSet),
+      CLEARED_HASH,
+      fromHex(input.applicationId, 'applicationId', 32),
+      borshString(input.package, 'package'),
+      borshString(input.version, 'version'),
+    ),
+  };
+}
+
 export function defaultCapabilitiesSetOp(capabilities: number): GovernanceOp {
   if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
     throw new Error(`capabilities must be a u32 bit mask, got ${String(capabilities)}`);
@@ -332,6 +378,135 @@ export function namespaceCreatedOp(input: NamespaceCreatedInput): GovernanceOp {
       fromHex(input.founder, 'founder', 32),
       credential,
       fromHex(input.salt, 'salt', 32),
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The rest of the delegable set. Layouts are pinned against core's
+// `delegable_governance_op_vectors_for_non_rust_encoders_are_stable`
+// (crates/governance-types/src/tests.rs, core#4272).
+
+/** A borsh `String`: a u32 byte length, then the UTF-8 bytes. */
+function str(value: string): Uint8Array {
+  const bytes = new TextEncoder().encode(value);
+  return concat(u32le(bytes.length), bytes);
+}
+
+/** A borsh `Option<String>`: 0, or 1 then the string. */
+function optionalStr(value: string | undefined): Uint8Array {
+  return value === undefined ? tag(0) : concat(tag(1), str(value));
+}
+
+/**
+ * A borsh `BTreeMap<String, String>`: a u32 count, then each entry in the
+ * map's own order, which is by key BYTES (not JS string order).
+ */
+function stringMap(data: Record<string, string> = {}): Uint8Array {
+  const enc = new TextEncoder();
+  const entries = Object.entries(data)
+    .map(([k, v]) => [enc.encode(k), v, k] as const)
+    .sort(([a], [b]) => {
+      for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
+      return a.length - b.length;
+    });
+  return concat(u32le(entries.length), ...entries.flatMap(([, v, k]) => [str(k), str(v)]));
+}
+
+/** Validate a u32 capability mask a relay may carry: never bit 9. */
+function relayableMask(capabilities: number, what: string): number {
+  if (!Number.isInteger(capabilities) || capabilities < 0 || capabilities > 0xffff_ffff) {
+    throw new Error(`${what} must be a u32 bit mask, got ${String(capabilities)}`);
+  }
+  if (hasCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
+    throw new Error(`${what} may not include CAN_AUTHOR_ON_BEHALF (512): a relay never carries a change to it`);
+  }
+  return capabilities;
+}
+
+/** Set `member`'s capabilities in the group (`GroupOp::MemberCapabilitySet`). Bit 9 is refused. */
+export function memberCapabilitySetOp(member: string, capabilities: number): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.MemberCapabilitySet), fromHex(member, 'member', 32), u32le(relayableMask(capabilities, 'capabilities'))),
+  };
+}
+
+/** Detach a context from the group (`GroupOp::ContextDetached`). */
+export function contextDetachedOp(contextId: string): GovernanceOp {
+  return { kind: 'group', bytes: concat(tag(GROUP_OP.ContextDetached), fromHex(contextId, 'contextId', 32)) };
+}
+
+/** Make a subgroup open (members of the parent may join it themselves) or restricted. */
+export function subgroupVisibilitySetOp(mode: 'open' | 'restricted'): GovernanceOp {
+  if (mode !== 'open' && mode !== 'restricted') throw new Error(`mode must be open or restricted, got ${String(mode)}`);
+  return { kind: 'group', bytes: concat(tag(GROUP_OP.SubgroupVisibilitySet), tag(mode === 'open' ? 0 : 1)) };
+}
+
+/** Name the group, with optional key/value data (`GroupOp::GroupMetadataSet`). */
+export function groupMetadataSetOp(input: { name?: string; data?: Record<string, string> } = {}): GovernanceOp {
+  return { kind: 'group', bytes: concat(tag(GROUP_OP.GroupMetadataSet), optionalStr(input.name), stringMap(input.data)) };
+}
+
+/** Name a member in the group (`GroupOp::MemberMetadataSet`). */
+export function memberMetadataSetOp(
+  member: string,
+  input: { name?: string; data?: Record<string, string> } = {},
+): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.MemberMetadataSet), fromHex(member, 'member', 32), optionalStr(input.name), stringMap(input.data)),
+  };
+}
+
+/** Name a context in the group (`GroupOp::ContextMetadataSet`). */
+export function contextMetadataSetOp(
+  contextId: string,
+  input: { name?: string; data?: Record<string, string> } = {},
+): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.ContextMetadataSet), fromHex(contextId, 'contextId', 32), optionalStr(input.name), stringMap(input.data)),
+  };
+}
+
+function contextCapability(capability: number): Uint8Array {
+  if (!Number.isInteger(capability) || capability < 1 || capability > 0xff) {
+    throw new Error(`capability must be a non-zero u8, got ${String(capability)}`);
+  }
+  return tag(capability);
+}
+
+/** Grant `member` a per-context capability (`GroupOp::ContextCapabilityGranted`). */
+export function contextCapabilityGrantedOp(contextId: string, member: string, capability: number): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.ContextCapabilityGranted), fromHex(contextId, 'contextId', 32), fromHex(member, 'member', 32), contextCapability(capability)),
+  };
+}
+
+/** Revoke a per-context capability from `member` (`GroupOp::ContextCapabilityRevoked`). */
+export function contextCapabilityRevokedOp(contextId: string, member: string, capability: number): GovernanceOp {
+  return {
+    kind: 'group',
+    bytes: concat(tag(GROUP_OP.ContextCapabilityRevoked), fromHex(contextId, 'contextId', 32), fromHex(member, 'member', 32), contextCapability(capability)),
+  };
+}
+
+/**
+ * Join an open subgroup yourself (`RootOp::MemberJoinedOpen`), a root op posted
+ * to the namespace. `member` must be the author; `credential` is the author's
+ * own `AccountProof<DeviceCert>`, hex, carried as-is. The author's
+ * `CAN_JOIN_OPEN_SUBGROUPS` and the open inheritance path are checked as usual.
+ */
+export function memberJoinedOpenOp(input: { member: string; groupId: string; credential: string }): GovernanceOp {
+  return {
+    kind: 'root',
+    bytes: concat(
+      tag(ROOT_OP.MemberJoinedOpen),
+      fromHex(input.member, 'member', 32),
+      fromHex(input.groupId, 'groupId', 32),
+      fromHexUnsized(input.credential, 'credential'),
     ),
   };
 }
