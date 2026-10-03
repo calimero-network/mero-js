@@ -130,6 +130,18 @@ describe('signAccountHaClaim', () => {
     await expect(signAccountHaClaim({ ...haBase, accountId: 'bb' })).rejects.toThrow(/accountId/);
   });
 
+  it('appends relay_url last when given, and omits the key otherwise', async () => {
+    const proof = await signAccountHaClaim({ ...haBase, relayUrl: 'https://node-abc.relay.cloud.test' });
+    const payload = JSON.parse(new TextDecoder().decode(unb64(proof.signed_payload)));
+    expect(Object.keys(payload).at(-1)).toBe('relay_url');
+    expect(payload.relay_url).toBe('https://node-abc.relay.cloud.test');
+    expect(await verifiesUnderDevice(proof)).toBe(true);
+    const plain = JSON.parse(new TextDecoder().decode(unb64((await signAccountHaClaim(haBase)).signed_payload)));
+    expect(plain).not.toHaveProperty('relay_url');
+    await expect(signAccountHaClaim({ ...haBase, relayUrl: '' })).rejects.toThrow(/relayUrl/);
+    await expect(signAccountHaClaim({ ...haBase, relayUrl: 'x'.repeat(1025) })).rejects.toThrow(/relayUrl/);
+  });
+
   it('cannot stand in for the session claim: the audiences differ', async () => {
     expect(ACCOUNT_OWNERSHIP_AUDIENCE).not.toBe(ACCOUNT_HA_AUDIENCE);
     const session = await signAccountOwnershipClaim(base);

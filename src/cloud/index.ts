@@ -4,6 +4,9 @@ export {
   AccountHaRefusedError,
   AccountNotLinkedError,
   AccountLinkedToSeveralUsersError,
+  HaRequestPendingError,
+  UnknownRelayError,
+  RelayNotDialableError,
 } from './cloud-client.js';
 export type {
   CloudClientConfig,

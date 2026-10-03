@@ -5,6 +5,9 @@ import {
   AccountLinkedToSeveralUsersError,
   AccountNotLinkedError,
   CloudClient,
+  HaRequestPendingError,
+  RelayNotDialableError,
+  UnknownRelayError,
 } from './cloud-client.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { signerFromSecret } from '../signer/signer.js';
@@ -147,5 +150,39 @@ describe('CloudClient.enableHaAsAccount', () => {
     await expect(cloud.enableHaAsAccount({ ...options, salt: 'nope' })).rejects.toThrow(/salt/);
     await expect(cloud.enableHaAsAccount({ ...options, ttlMs: 300_001 })).rejects.toThrow(/ttlMs/);
     expect(calls).toHaveLength(0);
+  });
+  it('signs the founding relay into the claim, not the body, when given', async () => {
+    const { fetch, calls } = scriptedFetch({ body: {} });
+    const cloud = new CloudClient({ cloudBaseUrl: BASE, fetch });
+    const relayUrl = 'https://node-abc.relay.cloud.test';
+    await cloud.enableHaAsAccount({ ...options, relayUrl });
+    const body = JSON.parse(String(calls[0].init?.body));
+    expect(Object.keys(body)).toEqual(['ownership_proof']);
+    const payload = JSON.parse(new TextDecoder().decode(unb64(body.ownership_proof.signed_payload)));
+    expect(payload.relay_url).toBe(relayUrl);
+  });
+
+  it('maps the refusals a founder can act on: 422 unknown_relay / relay_not_dialable, 409 ha_request_pending', async () => {
+    for (const [status, code, Typed] of [
+      [422, 'unknown_relay', UnknownRelayError],
+      [422, 'relay_not_dialable', RelayNotDialableError],
+      [409, 'ha_request_pending', HaRequestPendingError],
+    ] as const) {
+      const { fetch } = scriptedFetch({ status, body: { detail: { error: code, message: 'm' } } });
+      const cloud = new CloudClient({ cloudBaseUrl: BASE, fetch });
+      const err = await cloud.enableHaAsAccount(options).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Typed);
+      expect(err).toBeInstanceOf(AccountHaRefusedError);
+      expect((err as AccountHaRefusedError).code).toBe(code);
+      expect((err as AccountHaRefusedError).status).toBe(status);
+    }
+  });
+
+  it('leaves any other 422 as a plain HTTPError', async () => {
+    const { fetch } = scriptedFetch({ status: 422, body: { detail: [{ msg: 'field required' }] } });
+    const cloud = new CloudClient({ cloudBaseUrl: BASE, fetch });
+    const err = await cloud.enableHaAsAccount(options).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).not.toBeInstanceOf(AccountHaRefusedError);
   });
 });

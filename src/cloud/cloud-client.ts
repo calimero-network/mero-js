@@ -444,10 +444,16 @@ export interface EnableHaAsAccountOptions {
   signer?: Signer;
   /** The claim's lifetime in ms; default one minute, at most five. */
   ttlMs?: number;
+  /**
+   * The relay that founded the namespace (the delegated session's `relayUrl`).
+   * The cloud gives that relay to the fleet node as its admitter; without it
+   * the node has to find the relay by discovery.
+   */
+  relayUrl?: string;
 }
 
 /**
- * The cloud's two refusals of {@link CloudClient.enableHaAsAccount} that a
+ * The cloud's refusals of {@link CloudClient.enableHaAsAccount} that a
  * person can do something about. Both are `409`s with `{"error": code}`.
  *
  * Extends {@link HTTPError}, so `instanceof HTTPError` handling still catches it.
@@ -487,6 +493,40 @@ export class AccountLinkedToSeveralUsersError extends AccountHaRefusedError {
   name = 'AccountLinkedToSeveralUsersError';
   static readonly CODE = 'account_linked_to_several_users';
 }
+
+/**
+ * `ha_request_pending` (409): another namespace of this account is waiting for
+ * its first fleet node to be admitted. The route allows one at a time; it
+ * clears once that node is admitted, or by disabling HA on it from a cloud
+ * session. The claim was not spent.
+ */
+export class HaRequestPendingError extends AccountHaRefusedError {
+  name = 'HaRequestPendingError';
+  static readonly CODE = 'ha_request_pending';
+}
+
+/**
+ * `unknown_relay` (422): the cloud runs no relay at `relayUrl`. The claim was
+ * not spent.
+ */
+export class UnknownRelayError extends AccountHaRefusedError {
+  name = 'UnknownRelayError';
+  static readonly CODE = 'unknown_relay';
+}
+
+/**
+ * `relay_not_dialable` (422): the relay is the cloud's but has not reported
+ * its addresses yet. The claim was not spent; retrying later can succeed.
+ */
+export class RelayNotDialableError extends AccountHaRefusedError {
+  name = 'RelayNotDialableError';
+  static readonly CODE = 'relay_not_dialable';
+}
+
+const ACCOUNT_HA_REFUSALS: Record<number, ReadonlyArray<typeof AccountHaRefusedError & { CODE: string }>> = {
+  409: [AccountNotLinkedError, AccountLinkedToSeveralUsersError, HaRequestPendingError],
+  422: [UnknownRelayError, RelayNotDialableError],
+};
 
 /**
  * The `error` code of a 409 body. Accepts `{"error": code}` (the contract) and
@@ -1080,6 +1120,7 @@ export class CloudClient {
       deviceSecret: options.deviceSecret,
       signer: options.signer,
       ttlMs: options.ttlMs,
+      relayUrl: options.relayUrl,
     });
     // The path carries the ids as the claim does — lowercase hex — so a caller
     // that kept them uppercase does not address a different resource.
@@ -1092,14 +1133,9 @@ export class CloudClient {
         { body: { ownership_proof: proof }, anonymous: true },
       );
     } catch (err) {
-      if (err instanceof HTTPError && err.status === 409) {
+      if (err instanceof HTTPError && ACCOUNT_HA_REFUSALS[err.status]) {
         const code = conflictCode(err.bodyText);
-        const Typed =
-          code === AccountNotLinkedError.CODE
-            ? AccountNotLinkedError
-            : code === AccountLinkedToSeveralUsersError.CODE
-              ? AccountLinkedToSeveralUsersError
-              : undefined;
+        const Typed = ACCOUNT_HA_REFUSALS[err.status].find((t) => t.CODE === code);
         if (Typed && code) {
           throw new Typed(code, err.status, err.statusText, err.url, err.headers, err.bodyText);
         }
