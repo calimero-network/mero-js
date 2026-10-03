@@ -461,6 +461,89 @@ it and purge its local data and keys.
   a person to complete by hand — same feature, different surface.
 </Aside>
 
+## `enableHaAsAccount(options): Promise<unknown>`
+
+Enable HA for a namespace an **account** founded (through a relay, with
+`foundNamespace`), with **no cloud session**. A nodeless account holds no node
+that could issue an ownership proof, and no login either: it proves instead that
+it is the founder. A namespace id is derived from the founding account and the
+salt `foundNamespace` returned, so only that account reproduces it.
+
+```ts
+import {
+  CloudClient,
+  AccountNotLinkedError,
+  AccountLinkedToSeveralUsersError,
+} from '@calimero-network/mero-js';
+
+const cloud = new CloudClient({ cloudBaseUrl }); // no session needed
+try {
+  await cloud.enableHaAsAccount({
+    namespaceId, // what foundNamespace returned
+    salt,        // ditto, hex (32 bytes)
+    accountId,   // the founding account, hex
+    credential,  // hex AccountProof<DeviceCert>
+    deviceSecret, // or `signer`
+    // ttlMs: 60_000 (default; at most 300_000)
+  });
+} catch (err) {
+  if (err instanceof AccountNotLinkedError) {
+    // link this account to a cloud user in the wallet, then retry
+  } else if (err instanceof AccountLinkedToSeveralUsersError) {
+    // unlink it from all but one cloud user
+  } else throw err;
+}
+```
+
+It signs a claim with `signAccountHaClaim` and posts it, unauthenticated, to
+`POST /api/cloud/accounts/{accountId}/namespaces/{namespaceId}/enable-ha` with
+the body `{ ownership_proof }`. The 200 body is the session route's enable-ha
+response.
+
+The cloud bills the cloud user the account is **linked to through the wallet**,
+so the account must be linked to exactly one. The two `409`s for that are typed,
+because the fix is something a person does, not a retry:
+
+| Status | Body | Thrown |
+| --- | --- | --- |
+| `409` | `{"error":"account_not_linked"}` | `AccountNotLinkedError` |
+| `409` | `{"error":"account_linked_to_several_users"}` | `AccountLinkedToSeveralUsersError` |
+| `403` | `Ownership proof failed: …` | `HTTPError` |
+| other | quota, invites, … as the session route answers | `HTTPError` |
+
+Both typed errors extend `AccountHaRefusedError`, which extends `HTTPError` and
+carries the cloud's `code` verbatim.
+
+### `signAccountHaClaim(input)` and `signAccountOwnershipClaim(input)`
+
+The two founder's claims. Both produce
+`{ kind: 'account', credential, signed_payload, signature }`: `signed_payload` is
+base64 UTF-8 JSON, and `signature` is base64 ed25519 by the certified device key
+over `"calimero.mdma.account-ownership-claim.v1\0" ‖ payload`.
+
+```jsonc
+{
+  "v": 1,
+  "audience": "mdma:enable-ha-namespace-as-account", // ACCOUNT_HA_AUDIENCE
+  "group_id": "<namespace, hex>",
+  "account_id": "<account, hex>",
+  "salt": "<hex>",
+  "nonce": "<16 random bytes, hex>",
+  "issued_at_ms": 0,
+  "expires_at_ms": 0 // default issued + 60 s, at most + 300 s
+}
+```
+
+| | `signAccountHaClaim` | `signAccountOwnershipClaim` |
+| --- | --- | --- |
+| Route | `/api/cloud/accounts/{account}/namespaces/{ns}/enable-ha` (anonymous) | `/api/cloud/me/namespaces/{ns}/enable-ha` (session) |
+| `audience` | `mdma:enable-ha-namespace-as-account` | `mdma:enable-ha-namespace` |
+| `subject` | absent | the cloud login's email (required) |
+| Sent by | `enableHaAsAccount` | `enableFoundedNamespaceHa(namespaceId, proof)` |
+
+The audiences differ so a claim minted for one route can never be replayed on
+the other.
+
 ## `getMyNode(): Promise<object | null>`
 
 **Deprecated — use `getMyMachines()`.** This reads the cloud's retired
