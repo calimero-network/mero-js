@@ -1,3 +1,9 @@
+## [23.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.3...mero-js-v23.5.0) (2026-10-03)
+
+### Features
+
+* **cloud:** enable HA as an account with no cloud session ([#241](https://github.com/calimero-network/mero-js/issues/241)) ([c738357](https://github.com/calimero-network/mero-js/commit/c738357944d408aa059bb3526249d1fb12faa9a9))
+
 ## [23.4.3](https://github.com/calimero-network/mero-js/compare/mero-js-v23.4.2...mero-js-v23.4.3) (2026-10-02)
 
 ### Bug Fixes
