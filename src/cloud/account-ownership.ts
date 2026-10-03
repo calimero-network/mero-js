@@ -62,7 +62,18 @@ export interface AccountOwnershipClaimInput extends AccountClaimBase {
  * Input for {@link signAccountHaClaim}: the same as the session claim, minus
  * `subject` — there is no login to bind it to.
  */
-export type AccountHaClaimInput = AccountClaimBase;
+export interface AccountHaClaimInput extends AccountClaimBase {
+  /**
+   * The relay that founded the namespace (the delegated session's `relayUrl`).
+   * Signed into the claim so nobody forwarding it can swap it: the cloud
+   * resolves it to one of its own fleet relays and hands that relay's
+   * addresses to the fleet node as its admitter. Leave it out when unknown.
+   */
+  relayUrl?: string;
+}
+
+/** The cloud's limit on `relay_url`. */
+const MAX_RELAY_URL = 1024;
 
 /** The audience of the session route's claim (`/api/cloud/me/...`). */
 export const ACCOUNT_OWNERSHIP_AUDIENCE = 'mdma:enable-ha-namespace';
@@ -89,7 +100,11 @@ async function signClaim(
   input: AccountClaimBase,
   audience: string,
   subject: string | undefined,
+  relayUrl?: string,
 ): Promise<AccountOwnershipProof> {
+  if (relayUrl !== undefined && !(relayUrl.length > 0 && relayUrl.length <= MAX_RELAY_URL)) {
+    throw new Error(`relayUrl must be a non-empty string of at most ${MAX_RELAY_URL} characters`);
+  }
   const ttl = input.ttlMs ?? DEFAULT_TTL_MS;
   if (!(ttl > 0 && ttl <= MAX_TTL_MS)) throw new Error(`ttlMs must be in (0, ${MAX_TTL_MS}]`);
   const groupId = hex32(input.namespaceId, 'namespaceId');
@@ -109,6 +124,7 @@ async function signClaim(
       nonce,
       issued_at_ms: issued,
       expires_at_ms: issued + ttl,
+      ...(relayUrl === undefined ? {} : { relay_url: relayUrl }),
     }),
   );
   const signature = await signer.sign(concat(DOMAIN, payload));
@@ -129,5 +145,5 @@ export async function signAccountOwnershipClaim(input: AccountOwnershipClaimInpu
  * through the account's wallet link instead.
  */
 export async function signAccountHaClaim(input: AccountHaClaimInput): Promise<AccountOwnershipProof> {
-  return signClaim(input, ACCOUNT_HA_AUDIENCE, undefined);
+  return signClaim(input, ACCOUNT_HA_AUDIENCE, undefined, input.relayUrl);
 }
