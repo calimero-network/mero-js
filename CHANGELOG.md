@@ -1,3 +1,9 @@
+## [23.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.6.0...mero-js-v23.7.0) (2026-10-03)
+
+### Features
+
+* **admin:** type the founder attachments of a namespace ownership proof ([#243](https://github.com/calimero-network/mero-js/issues/243)) ([af00194](https://github.com/calimero-network/mero-js/commit/af00194f28b9b345f6a99bb92e4afb9059bd0a58))
+
 ## [23.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.5.0...mero-js-v23.6.0) (2026-10-03)
 
 ### Features
