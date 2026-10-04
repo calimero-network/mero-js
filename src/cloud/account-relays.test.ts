@@ -79,7 +79,15 @@ describe('getAccountRelays', () => {
     expect(headerOf(calls[1].init, 'X-Calimero-Nonce')).toBe(NONCE);
     expect(headerOf(calls[1].init, 'X-Calimero-Signature')).toBe(expected['X-Calimero-Signature']);
 
-    expect(out).toEqual([{ peerId: 'peer-a', relayUrl: 'https://a.example', fresh: true }]);
+    expect(out).toEqual([
+      {
+        peerId: 'peer-a',
+        relayUrl: 'https://a.example',
+        fresh: true,
+        executorAccount: null,
+        assigned: false,
+      },
+    ]);
   });
 
   it('throws without a credential rather than reading unproven', async () => {
@@ -98,7 +106,15 @@ describe('getAccountRelays', () => {
       { body: { relays: [{ peer_id: 'peer-a', relay_url: 'https://a.example', fresh: false }] } },
     ]);
     const out = await client(fetch).getAccountRelays(ACCOUNT);
-    expect(out).toEqual([{ peerId: 'peer-a', relayUrl: 'https://a.example', fresh: false }]);
+    expect(out).toEqual([
+      {
+        peerId: 'peer-a',
+        relayUrl: 'https://a.example',
+        fresh: false,
+        executorAccount: null,
+        assigned: false,
+      },
+    ]);
   });
 
   it('keeps a missing relay_url as null rather than an empty string', async () => {
@@ -108,8 +124,105 @@ describe('getAccountRelays', () => {
       { body: { relays: [{ peer_id: 'peer-a', fresh: true }] } },
     ]);
     expect(await client(fetch).getAccountRelays(ACCOUNT)).toEqual([
-      { peerId: 'peer-a', relayUrl: null, fresh: true },
+      {
+        peerId: 'peer-a',
+        relayUrl: null,
+        fresh: true,
+        executorAccount: null,
+        assigned: false,
+      },
     ]);
+  });
+
+  it('carries the executor account and the assigned flag from a current server', async () => {
+    // A brand-new account gets a relay assigned on this read; the executor is
+    // what lets it found a namespace through that relay with nothing typed in.
+    const executor = 'ab'.repeat(32);
+    const { fetch } = scriptedFetch([
+      { body: challengeBody },
+      {
+        body: {
+          account_id: ACCOUNT,
+          relays: [
+            {
+              peer_id: 'peer-a',
+              relay_url: 'https://a.example',
+              fresh: true,
+              executor_account: executor,
+              assigned: true,
+            },
+            {
+              peer_id: 'peer-b',
+              relay_url: 'https://b.example',
+              fresh: true,
+              executor_account: null,
+              assigned: false,
+            },
+          ],
+        },
+      },
+    ]);
+    expect(await client(fetch).getAccountRelays(ACCOUNT)).toEqual([
+      {
+        peerId: 'peer-a',
+        relayUrl: 'https://a.example',
+        fresh: true,
+        executorAccount: executor,
+        assigned: true,
+      },
+      {
+        peerId: 'peer-b',
+        relayUrl: 'https://b.example',
+        fresh: true,
+        executorAccount: null,
+        assigned: false,
+      },
+    ]);
+  });
+
+  it('drops an executor account that is not 64 lowercase hex', async () => {
+    // A malformed executor would only fail later at the node; null is checkable.
+    const bad = [
+      'AB'.repeat(32), // uppercase
+      'ab'.repeat(31), // too short
+      'ab'.repeat(33), // too long
+      'zz'.repeat(32), // not hex
+      ` ${'ab'.repeat(32)}`, // padded
+      42,
+      { id: 'ab'.repeat(32) },
+    ];
+    const { fetch } = scriptedFetch([
+      { body: challengeBody },
+      {
+        body: {
+          relays: bad.map((executor_account, i) => ({
+            peer_id: `peer-${i}`,
+            relay_url: 'https://a.example',
+            fresh: true,
+            executor_account,
+          })),
+        },
+      },
+    ]);
+    const out = await client(fetch).getAccountRelays(ACCOUNT);
+    expect(out).toHaveLength(bad.length);
+    for (const row of out) expect(row.executorAccount).toBeNull();
+  });
+
+  it('treats only a literal true as assigned', async () => {
+    const { fetch } = scriptedFetch([
+      { body: challengeBody },
+      {
+        body: {
+          relays: [
+            { peer_id: 'a', fresh: true, assigned: 'true' },
+            { peer_id: 'b', fresh: true, assigned: 1 },
+          ],
+        },
+      },
+    ]);
+    const out = await client(fetch).getAccountRelays(ACCOUNT);
+    expect(out.map((r) => r.assigned)).toEqual([false, false]);
   });
 
   it('reports no relays as an empty list, not a failure', async () => {
