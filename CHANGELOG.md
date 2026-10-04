@@ -1,3 +1,9 @@
+## [23.8.1](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.0...mero-js-v23.8.1) (2026-10-04)
+
+### Bug Fixes
+
+* **presence:** step the resend test one heartbeat at a time so its seq order is deterministic ([#246](https://github.com/calimero-network/mero-js/issues/246)) ([6979277](https://github.com/calimero-network/mero-js/commit/6979277be483f8f9c93d16e436c931bf6aa0d80d))
+
 ## [23.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.7.0...mero-js-v23.8.0) (2026-10-04)
 
 ### Features
