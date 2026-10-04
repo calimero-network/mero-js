@@ -42,9 +42,16 @@ describe('RelayPresenceClient', () => {
     const { relay, calls } = stubRelay();
     const p = new RelayPresenceClient({ relay, events: noEvents, now: () => 1_000 });
     await p.set(CTX, { typing: true });
-    await vi.advanceTimersByTimeAsync(5_000);
-    // Each resend hashes with WebCrypto, which fake timers do not drive.
-    await vi.waitFor(() => expect(calls.length).toBe(3));
+    // One heartbeat at a time, each waited for before the next fires. Each
+    // resend hashes with real WebCrypto, which fake timers do not drive, so
+    // jumping 5 s at once starts two resends together: they take their seqs
+    // in order, but the hashing can finish in either order, recording them
+    // as 1000, 1002, 1001. That is a harmless race (the relay drops the older
+    // seq, and real heartbeats are 2.5 s apart), not what this test checks.
+    for (const sent of [2, 3]) {
+      await vi.advanceTimersByTimeAsync(2_500);
+      await vi.waitFor(() => expect(calls.length).toBe(sent));
+    }
     expect(calls[1]!.body.seq).toBeGreaterThan(calls[0]!.body.seq);
     expect(calls[2]!.body.seq).toBeGreaterThan(calls[1]!.body.seq);
     await p.set(CTX, null);
