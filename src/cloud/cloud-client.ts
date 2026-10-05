@@ -223,6 +223,27 @@ export interface CloudAccountRelay {
   peerId: string;
   relayUrl: string | null;
   fresh: boolean;
+  /**
+   * The relay's own account id: 64 lowercase hex, the executor a delegated
+   * write through this relay names.
+   *
+   * Null when the server did not say (older servers omit it) or sent anything
+   * that is not 64 lowercase hex — an executor that cannot be named is the
+   * same as none, and a malformed one would only fail later, at the node.
+   */
+  executorAccount: string | null;
+  /**
+   * True when the cloud has just assigned this relay to an account that had
+   * none (the assignment is sticky); false for relays the account already
+   * used, and on older servers that omit the field.
+   */
+  assigned: boolean;
+}
+
+const ACCOUNT_HEX = /^[0-9a-f]{64}$/;
+
+function accountHexOrNull(value: unknown): string | null {
+  return typeof value === 'string' && ACCOUNT_HEX.test(value) ? value : null;
 }
 
 export interface CloudNamespaceNode {
@@ -947,6 +968,8 @@ export class CloudClient {
       peerId: String(row.peer_id ?? ''),
       relayUrl: (row.relay_url as string | null | undefined) ?? null,
       fresh: row.fresh === true,
+      executorAccount: accountHexOrNull(row.executor_account),
+      assigned: row.assigned === true,
     }));
   }
 
