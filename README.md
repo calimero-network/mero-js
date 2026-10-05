@@ -154,6 +154,101 @@ See the [cloud client](https://calimero-network.github.io/mero-js/reference/clou
 [connectCloud](https://calimero-network.github.io/mero-js/reference/connect-cloud/)
 references — including why a warrant nonce must never restart.
 
+## Account (delegated) layer
+
+`connectCloud` is the shape for an account that already belongs somewhere. The
+account layer is everything around it for an account that owns nothing yet: it
+has a device the wallet certified and no relay, and it has to found a namespace
+or be invited into one before it can write. It is framework-free — plain TS over
+`sessionStorage`/`localStorage` — and `@calimero-network/mero-react` re-exports
+every name below unchanged (its hooks are built on it), so an app may import
+them from either package.
+
+- **Session** — `DelegatedCredential` (what the wallet certified: account,
+  certificate, device secret) and `DelegatedAccountSession` (that plus the relay
+  to write through, `null` until the account is a member of something).
+  `readDelegatedSession` / `saveDelegatedSession` / `clearDelegatedSession`,
+  `readDelegatedCredential` / `saveDelegatedCredential` /
+  `clearDelegatedCredential`; `readRelayMap`, `rememberRelay`,
+  `relayForContext`, `knownRelays`, `listDelegatedContexts`,
+  `listDelegatedNamespaces`, `carryExecutorAccount`.
+- **The relay's node key** — `learnRelayNodeKey` (attests the relay: its signed
+  mero-tee release from the cloud mirror, Intel's chain, every register; retries
+  the transport, refuses a bad quote), `attemptRelayNodeKey`,
+  `resolveRelayNodeKey`, `pinRelayNodeKey`, `readPinnedRelayNodeKey`,
+  `RELAY_NODE_KEY_RETRY_MS`. `@phala/dcap-qvl` is loaded on the first real quote
+  and is external to the bundles: a consumer that never meets a real relay never
+  downloads the verifier.
+- **Client** — `buildDelegatedClient(session, contextId)`: a `MeroClient` over
+  the relay transport, or `null` while there is no relay (a logged-in state, not
+  a broken one). `forgetMethodKinds`, `persistedNonces`, `markContextNonceSpent`.
+- **Admin, one shape on both transports** — `createAccountAdmin({ session,
+  read, app })` returns an `AdminApiClient` whose writes are governance and
+  creation warrants signed by the account and whose reads go through the relay;
+  `createNodeAdmin({ admin, app })` is the same `AdminApiClient` for a node, with
+  `createNamespace` installing the package first. Refusals: `NoRelayError`,
+  `NotForAccountError`, `InvitationNotClaimableError`.
+- **Founding and creating** — `foundDelegatedNamespace`,
+  `createDelegatedContext`, `createDelegatedPrivateContext`,
+  `delegatedGovernance`, `governGroup`, `governRoot`, `namespaceOfGroup`,
+  `rememberGroupNamespace`; `HA_REFUSAL_MESSAGES`,
+  `HA_ACCOUNT_NOT_LINKED_MESSAGE` for the cloud's HA answers.
+- **Which application** — `applicationIdForBundle`, `selectLatestBundle`,
+  `fetchRegistryBundles`, `resolveApplicationIdFromRegistry`,
+  `latestPublishedVersion` (the registry's answer for a package).
+- **Joining from an invitation** — `resolveRelayFromInvitation` (which relay
+  admits, from the invitation's signed admitters and the cloud), `joinWithNode`,
+  `bootstrapFromInvitation` (both steps, as a result rather than a throw),
+  `joinAsAccount` (the same, switching the session onto the relay that admitted),
+  `normaliseAccount`.
+
+```typescript
+import {
+  beginDeviceEnrolment, readEnrolmentCallback, completeDeviceEnrolment,
+  saveDelegatedSession, learnRelayNodeKey, pinRelayNodeKey, buildDelegatedClient,
+  createAccountAdmin, joinAsAccount, resolveApplicationIdFromRegistry, type DelegatedAccountSession,
+} from '@calimero-network/mero-js';
+
+// 1. Enrol: the wallet certifies a device key this app generated and keeps.
+//    (first visit)  beginDeviceEnrolment({ walletUrl, devicePublicKey, kemPublicKey, returnTo, state });
+//    (on return)
+const callback = readEnrolmentCallback(window.location.href);
+const enrolled = await completeDeviceEnrolment({ ...callback, expectState: state });
+let session: DelegatedAccountSession = {
+  account: enrolled.account, credential: enrolled.credential, deviceSecret, relayUrl: null,
+};
+saveDelegatedSession(session);
+
+// 2. Found a namespace, or join one. A new account has no relay; either gives it one.
+const registryUrl = 'https://apps.calimero.network';
+const app = await resolveApplicationIdFromRegistry(registryUrl, 'com.example.kv');
+const admin = createAccountAdmin(
+  { session, read: null, app: { packageName: 'com.example.kv', packageVersion: app.version, registryUrl } },
+  { join: (namespaceId, invitation) => joinAsAccount(session, namespaceId, invitation, {
+      onJoined: (next) => { session = next; saveDelegatedSession(next); },
+    }) },
+);
+const { namespaceId } = await admin.createNamespace({ applicationId: app.applicationId, name: 'my-notes' });
+//   or:  await admin.joinNamespace(namespaceId, { invitation });
+
+// 3. Attest the relay before trusting a session on it, then write through it.
+const nodeKey = await learnRelayNodeKey(session.relayUrl!);
+if (nodeKey) pinRelayNodeKey(session.relayUrl!, nodeKey);
+const client = buildDelegatedClient(session, null)!;
+const { contextId } = await admin.createContext({ groupId: namespaceId, applicationId: app.applicationId, serviceName: 'kv' });
+await client.execute(contextId, 'set', { key: 'greeting', value: 'hello' });
+
+// 4. Invite another account; they claim it with `admin.joinNamespace` on their side.
+const { invitation } = await admin.createNamespaceInvitation(namespaceId);
+```
+
+`createNamespace` founds through the relay and enables HA on the cloud for the
+account; `createContext` signs a creation warrant naming the bundle service it
+is for; `createNamespaceInvitation` names the relays that admit, so an invitee
+with no node of their own can be admitted by one of them. The `read` client is
+`null` until the relay's node key is attested, which is why the session is
+built in that order.
+
 ## Lower-level HTTP client
 
 If you need raw HTTP against a node (without the `MeroJs` facade), the SDK
