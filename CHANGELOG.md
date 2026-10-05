@@ -1,3 +1,9 @@
+## [23.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.2...mero-js-v23.9.0) (2026-10-05)
+
+### Features
+
+* **account:** the delegated account layer lives in mero-js ([#247](https://github.com/calimero-network/mero-js/issues/247)) ([9ff5a7b](https://github.com/calimero-network/mero-js/commit/9ff5a7b2c3ce4cc7cbb9a916449509856cef5cff))
+
 ## [23.8.2](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.1...mero-js-v23.8.2) (2026-10-05)
 
 ### Bug Fixes
