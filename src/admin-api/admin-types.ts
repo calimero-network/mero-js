@@ -478,6 +478,27 @@ export interface Namespace {
    * this is absent only on nodes that predate it.
    */
   founding?: NamespaceFounding;
+  /**
+   * Group ops this node logged but holds unapplied, because their group's
+   * history is sealed under a key it lacks: their effects are missing here until
+   * that key arrives. What explains a subgroup that looks stale on this node and
+   * current on another. Absent when nothing is held, and on nodes that predate it.
+   */
+  heldOps?: NamespaceHeldOps;
+}
+
+/** The group ops a namespace holds unapplied on the node that answered. */
+export interface NamespaceHeldOps {
+  ops: NamespaceHeldOp[];
+  /** Holds past the node's listing bound, counted but not listed. */
+  untracked: number;
+}
+
+export interface NamespaceHeldOp {
+  /** Hex id of the namespace op in the governance DAG. */
+  deltaId: string;
+  /** Hex id of the group whose sealed history it waits on. */
+  groupId: string;
 }
 
 /**
