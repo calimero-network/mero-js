@@ -249,7 +249,7 @@ export interface GroupCreatedInput {
   groupId: string;
   /** The group it is nested under, hex: the namespace root or an existing subgroup. */
   parentId: string;
-  /** `true` for a Restricted subgroup (the usual default), `false` for born-Open. */
+  /** `true` for a Restricted subgroup, `false` for born-Open (the default). */
   restricted: boolean;
   /**
    * The subgroup's founding admin, hex: the **author's** account. The node
