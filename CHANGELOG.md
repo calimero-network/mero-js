@@ -1,3 +1,9 @@
+## [24.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.0.0...mero-js-v24.1.0) (2026-10-06)
+
+### Features
+
+* **cloud:** carry a relay's admission state and join report on CloudRelay ([#248](https://github.com/calimero-network/mero-js/issues/248)) ([462f07a](https://github.com/calimero-network/mero-js/commit/462f07a53ada9b1dc89ef14717f3ec03a9a4fa0a))
+
 ## [24.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.9.0...mero-js-v24.0.0) (2026-10-06)
 
 ### ⚠ BREAKING CHANGES
