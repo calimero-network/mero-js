@@ -348,11 +348,7 @@ describe('connectCloud', () => {
     expect(calls).toEqual([]);
   });
 
-  /**
-   * The cloud names the relay's account but not its signing key, which the
-   * warrant must name too, so the first write asks the relay once.
-   */
-  // The cloud reports no key or release, and the release moves with each upgrade.
+  /** The cloud reports no key or release, and the release moves with each upgrade. */
   it('asks the relay before every write for the key and release the cloud does not report', async () => {
     const { fetch, calls } = routedFetch({
       '/api/cloud/me/namespaces': [namespaceRow(NS)],

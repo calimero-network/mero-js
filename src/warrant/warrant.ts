@@ -305,7 +305,7 @@ export interface WarrantFields {
  * Exists because v2's offsets are no longer constants: `method` is a string and
  * the head lists are vectors, so everything after `releaseBytecodeId` moves with
  * the release version's and the method's lengths. Anything reading a warrant by
- * fixed offset — a test, a client inspecting one it was handed — silently reads
+ * fixed offset - a test, a client inspecting one it was handed - silently reads
  * the wrong field instead of failing, which is how the three call sites that did
  * so passed while comparing the method's length prefix to a nonce.
  *
