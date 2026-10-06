@@ -68,8 +68,13 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * (calimero-network/core#4265). Neither is an op this module signs, so only
  * the version byte moves. Core signs and checks at 23 from 0.11.0-rc.81, the
  * first release with both 22 and 23.
+ *
+ * 24: no layout change. Only a subgroup's creator may open it - flip it to
+ * `Open` (calimero-network/core#4522) - an apply-time rule older peers
+ * disagree on, since they let any of its admins open it. A UI that offers
+ * "make public" should offer it to the creator alone.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 23;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 24;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
