@@ -1,3 +1,34 @@
+## [24.1.2](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.1...mero-js-v24.1.2) (2026-10-06)
+
+## [24.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.0...mero-js-v24.1.1) (2026-10-06)
+
+### Bug Fixes
+
+* **device-cert:** mint device ids bound to their account ([#249](https://github.com/calimero-network/mero-js/issues/249)) ([60c13f7](https://github.com/calimero-network/mero-js/commit/60c13f703631d8c8850113b57f24e21d9d9097e6))
+* **sse:** announce a reconnect only once the new session is re-subscribed ([#237](https://github.com/calimero-network/mero-js/issues/237)) ([e1c8fd1](https://github.com/calimero-network/mero-js/commit/e1c8fd1f45f18737f33421a6ec4a9c27693ce806))
+
+## [24.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.0.0...mero-js-v24.1.0) (2026-10-06)
+
+### Features
+
+* **cloud:** carry a relay's admission state and join report on CloudRelay ([#248](https://github.com/calimero-network/mero-js/issues/248)) ([462f07a](https://github.com/calimero-network/mero-js/commit/462f07a53ada9b1dc89ef14717f3ec03a9a4fa0a))
+
+## [24.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.9.0...mero-js-v24.0.0) (2026-10-06)
+
+### ⚠ BREAKING CHANGES
+
+* **account:** create a subgroup Open unless Restricted is asked for (#251)
+
+### Bug Fixes
+
+* **account:** create a subgroup Open unless Restricted is asked for ([#251](https://github.com/calimero-network/mero-js/issues/251)) ([9d0bf49](https://github.com/calimero-network/mero-js/commit/9d0bf49f07d021c0abb651dd35417cd10a7db869))
+
+## [23.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.2...mero-js-v23.9.0) (2026-10-05)
+
+### Features
+
+* **account:** the delegated account layer lives in mero-js ([#247](https://github.com/calimero-network/mero-js/issues/247)) ([9ff5a7b](https://github.com/calimero-network/mero-js/commit/9ff5a7b2c3ce4cc7cbb9a916449509856cef5cff))
+
 ## [23.8.2](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.1...mero-js-v23.8.2) (2026-10-05)
 
 ### Bug Fixes

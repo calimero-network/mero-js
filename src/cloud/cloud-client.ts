@@ -201,6 +201,72 @@ export interface CloudRelay {
   canExecute: boolean;
   lastSeenAt?: string | null;
   confirmedAt?: string | null;
+  /**
+   * How far along this relay's admission is, as the cloud judges it:
+   * `'confirmed'` (in), `'pending'` (trying), `'refused'` (alive and turned
+   * away), `'absent'` (stopped talking before getting in). `null` from a cloud
+   * that predates the field. A string, not a closed union, so a verdict the
+   * cloud adds later is passed through rather than dropped.
+   */
+  admission: string | null;
+  /** The cloud's one-line explanation of `admission`, for a person; `null` when none. */
+  admissionHint: string | null;
+  /**
+   * What the relay itself reported about its latest attempt to join, reasons
+   * included — or `null` when it has reported nothing (an older fleet node or
+   * cloud, or a relay assigned since its last report).
+   */
+  join: CloudRelayJoin | null;
+}
+
+/**
+ * A fleet node's own account of its latest attempt to join a namespace.
+ *
+ * A refusal happens peer to peer, between the node and the namespace's
+ * admitters, so this is the only place a client learns WHY a relay is stuck:
+ * the node forwards what each admitter it asked directly answered.
+ */
+export interface CloudRelayJoin {
+  /**
+   * `'admitted'` (in, or an admitter said yes and the key is on its way),
+   * `'refused'` (every admitter asked declined; see `refusals`), `'waiting'`
+   * (nobody answered directly yet), or `'error'` (the attempt itself failed;
+   * see `error`). Passed through as sent.
+   */
+  state: string;
+  /** Consecutive attempts without admission, as the node counts them. */
+  attempts: number;
+  /**
+   * Each directly-asked admitter that declined: its libp2p peer id and its
+   * reason, verbatim. Text to show a person, never to parse — the most useful
+   * one is "was removed from group … and cannot rejoin; an admin must re-add
+   * them", which the namespace owner can fix by re-adding the node.
+   */
+  refusals: Array<{ peer: string; reason: string }>;
+  /** Why the attempt itself failed, when `state` is `'error'`. */
+  error: string | null;
+  /** When the node reported this, ISO 8601 (UTC, no offset), or `null`. */
+  reportedAt: string | null;
+}
+
+/** `join` from a relay row, or `null` when absent or not an object. */
+function joinOf(row: Record<string, unknown>): CloudRelayJoin | null {
+  const raw = row.join;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const join = raw as Record<string, unknown>;
+  if (typeof join.state !== 'string') return null;
+  const refusals = Array.isArray(join.refusals)
+    ? join.refusals
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+        .map((r) => ({ peer: String(r.peer ?? ''), reason: String(r.reason ?? '') }))
+    : [];
+  return {
+    state: join.state,
+    attempts: typeof join.attempts === 'number' ? join.attempts : 0,
+    refusals,
+    error: typeof join.error === 'string' ? join.error : null,
+    reportedAt: typeof join.reported_at === 'string' ? join.reported_at : null,
+  };
 }
 
 /**
@@ -788,6 +854,9 @@ export class CloudClient {
         ),
         lastSeenAt: (row.last_seen_at as string | null | undefined) ?? null,
         confirmedAt: (row.confirmed_at as string | null | undefined) ?? null,
+        admission: typeof row.admission === 'string' ? row.admission : null,
+        admissionHint: typeof row.admission_hint === 'string' ? row.admission_hint : null,
+        join: joinOf(row),
       };
     });
   }

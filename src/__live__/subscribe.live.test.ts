@@ -17,7 +17,7 @@ import { execFile } from 'node:child_process';
 import { describe, expect, it, beforeAll } from 'vitest';
 
 import { login } from '../login/session.js';
-import { signDeviceCert } from '../device-cert/device-cert.js';
+import { accountForRoot, mintDeviceId, signDeviceCert } from '../device-cert/device-cert.js';
 import { signerFromSecret } from '../signer/signer.js';
 
 const NODE = process.env.LIVE_NODE_URL;
@@ -40,7 +40,10 @@ live('a device-key session can subscribe', () => {
     const device = await signerFromSecret(DEVICE_SECRET);
     const accountProof = await signDeviceCert({
       rootSecret: ROOT_SECRET,
-      device: 'cc'.repeat(32),
+      device: await mintDeviceId(
+        await accountForRoot(ROOT_SECRET),
+        new Uint8Array(16).fill(0xcc),
+      ),
       signPublicKey: device.publicKey,
       kemPublicKey: 'dd'.repeat(32),
       deviceEpoch: 1,

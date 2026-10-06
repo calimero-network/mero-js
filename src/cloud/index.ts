@@ -13,6 +13,7 @@ export type {
   CloudSession,
   CloudNamespace,
   CloudRelay,
+  CloudRelayJoin,
   CloudAccountRelay,
   CloudNamespaceNode,
   CloudNamespaceRouting,
