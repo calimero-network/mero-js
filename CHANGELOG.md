@@ -1,3 +1,9 @@
+## [24.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.3...mero-js-v24.2.0) (2026-10-06)
+
+### Features
+
+* **warrant:** name and sign the executor device key in every warrant ([#250](https://github.com/calimero-network/mero-js/issues/250)) ([5a8b742](https://github.com/calimero-network/mero-js/commit/5a8b742f8ca37ae326e4e97fcd5ba735b523debc))
+
 ## [24.1.3](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.2...mero-js-v24.1.3) (2026-10-06)
 
 ### Bug Fixes
