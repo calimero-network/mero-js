@@ -585,10 +585,10 @@ export interface PerformIntentResponseData {
  * What a node says about running intents in one context — read before minting a
  * warrant, not after being refused one.
  *
- * Every input to a warrant is something the author already holds except two:
- * whose account and key go in `executor` and `executor_key`, and whether that
- * node may act here at all. Both belong to the node, so both are answered here,
- * on the path the intent will be presented to.
+ * Every input to a warrant is something the author already holds except three:
+ * whose account and key go in `executor` and `executor_key`, which release it
+ * pins, and whether that node may act here at all. The node knows them, so they
+ * are answered here, on the path the intent will be presented to.
  *
  * Reading it first is what lets a client fail before signing. A warrant spends a
  * nonce from a monotonic per-device sequence, and one naming the wrong executor
@@ -614,6 +614,14 @@ export interface IntentRelayInfo {
   canAuthorOnBehalf: boolean;
   /** The group whose admin must grant that capability, 64 hex. */
   groupId: string;
+  /**
+   * The blob id of the release that group names, 64 hex: what a warrant for this
+   * node must pin as `release_bytecode_id`. The route answers 404 while the group
+   * names no release.
+   */
+  releaseBytecodeId: string;
+  /** That release's semver, for the warrant's `release_version`. */
+  releaseVersion: string;
 }
 
 export interface NodeIdentity {

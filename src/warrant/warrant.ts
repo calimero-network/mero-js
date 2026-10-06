@@ -40,8 +40,8 @@ const INTENT_DOMAIN = new TextEncoder().encode('calimero.warrant.intent.v1');
  */
 const MAX_CITED_HEADS = 64;
 
-/** 32 zero bytes — the `appVersion` default. See {@link WarrantInput.appVersion}. */
-const UNPINNED_APP = '00'.repeat(32);
+/** core's `MAX_WARRANT_RELEASE_VERSION_LEN`, in UTF-8 bytes; a node refuses a longer one before any signature work. */
+const MAX_RELEASE_VERSION_LEN = 256;
 
 /** Ed25519 PKCS#8 prefix, so a raw 32-byte seed can be imported by WebCrypto. */
 /** What a warrant authorises. */
@@ -65,21 +65,19 @@ export interface WarrantInput {
    */
   executorKey: string;
   /**
-   * The application build this warrant is signed against, hex (32 bytes).
+   * The blob id of the release the context's group names, hex (32 bytes): the
+   * relay's `releaseBytecodeId` from discovery.
    *
-   * Pins the code rather than a version string, so a relay cannot wait for an
-   * upgrade that widens what `method` does and then spend a warrant signed
-   * against the narrower one. Read it from the context
-   * (`GET /admin-api/contexts/{id}` → `applicationId`); a value guessed here
-   * pins the wrong build, which is worse than not pinning.
-   *
-   * Defaults to 32 zero bytes, matching `merod account sign-warrant`'s
-   * `--app-version` default. Nothing verifies the field yet — core#3933 landed
-   * the field set ahead of its enforcement so a signer is written once against
-   * the final bytes — but a warrant minted with the default will be refused once
-   * pinning lands, so pass the real value for anything meant to outlive it.
+   * Pins the code, so a relay cannot wait for an upgrade that widens what
+   * `method` does and then spend a warrant signed against the narrower one. The
+   * relay refuses a warrant pinning any release other than the one it runs.
    */
-  appVersion?: string;
+  releaseBytecodeId: string;
+  /**
+   * That release's semver, discovery's `releaseVersion`: signed, never compared,
+   * at most 256 bytes of UTF-8. Defaults to empty, as `merod account warrant` does.
+   */
+  releaseVersion?: string;
   /**
    * The method the relay may run.
    *
@@ -171,11 +169,8 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
   const authorAccount = fromHex(input.authorAccount, 'authorAccount', 32);
   const executor = fromHex(input.executor, 'executor', 32);
   const executorKey = fromHex(input.executorKey, 'executorKey', 32);
-  const appVersion = fromHex(
-    input.appVersion ?? UNPINNED_APP,
-    'appVersion',
-    32,
-  );
+  const releaseBytecodeId = fromHex(input.releaseBytecodeId, 'releaseBytecodeId', 32);
+  const releaseVersion = releaseVersionBytes(input.releaseVersion ?? '');
   const accountHeads = citedHeads(input.accountHeads, 'accountHeads');
   const governanceFloor = citedHeads(input.governanceFloor, 'governanceFloor');
 
@@ -198,7 +193,8 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
     publicKey,
     executor,
     executorKey,
-    appVersion,
+    releaseBytecodeId,
+    releaseVersion,
     method,
     commitment,
     u64le(accountHeads.length),
@@ -220,7 +216,9 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
       publicKey,
       executor,
       executorKey,
-      appVersion,
+      releaseBytecodeId,
+      u32le(releaseVersion.length),
+      releaseVersion,
       u32le(method.length),
       method,
       commitment,
@@ -254,6 +252,21 @@ export function checkedSignature(signature: Uint8Array): Uint8Array {
   return signature;
 }
 
+/** A release version as UTF-8, refused past what a node accepts. Shared with `RelayClient`; internal. */
+export function releaseVersionBytes(version: string): Uint8Array {
+  const bytes = new TextEncoder().encode(version);
+  checkReleaseVersionLength(bytes.length);
+  return bytes;
+}
+
+function checkReleaseVersionLength(len: number): void {
+  if (len > MAX_RELEASE_VERSION_LEN) {
+    throw new Error(
+      `releaseVersion is ${len} bytes, over the ${MAX_RELEASE_VERSION_LEN} a node accepts`,
+    );
+  }
+}
+
 export function citedHeads(heads: string[] | undefined, label: string): Uint8Array[] {
   const list = heads ?? [];
   if (list.length > MAX_CITED_HEADS) {
@@ -272,7 +285,9 @@ export interface WarrantFields {
   deviceKey: string;
   executor: string;
   executorKey: string;
-  appVersion: string;
+  releaseBytecodeId: string;
+  /** UTF-8, as hex like `method`. */
+  releaseVersion: string;
   method: string;
   intentHash: string;
   accountHeads: string[];
@@ -288,11 +303,11 @@ export interface WarrantFields {
  * Decode a hex warrant back into its fields.
  *
  * Exists because v2's offsets are no longer constants: `method` is a string and
- * the head lists are vectors, so everything after `appVersion` moves with the
- * method's length. Anything reading a warrant by fixed offset — a test, a client
- * inspecting one it was handed — silently reads the wrong field instead of
- * failing, which is how the three call sites that did so passed while comparing
- * the method's length prefix to a nonce.
+ * the head lists are vectors, so everything after `releaseBytecodeId` moves with
+ * the release version's and the method's lengths. Anything reading a warrant by
+ * fixed offset — a test, a client inspecting one it was handed — silently reads
+ * the wrong field instead of failing, which is how the three call sites that did
+ * so passed while comparing the method's length prefix to a nonce.
  *
  * One copy of the layout, beside the encoder that produces it, so the two cannot
  * drift. Internal: not exported from the package root, because a client that
@@ -317,7 +332,11 @@ export function parseWarrant(warrant: string): WarrantFields {
   const deviceKey = take(32);
   const executor = take(32);
   const executorKey = take(32);
-  const appVersion = take(32);
+  const releaseBytecodeId = take(32);
+  const releaseVersionLen = u32At(o);
+  o += 4;
+  checkReleaseVersionLength(releaseVersionLen);
+  const releaseVersion = take(releaseVersionLen);
   const methodLen = u32At(o);
   o += 4;
   const method = take(methodLen);
@@ -346,7 +365,8 @@ export function parseWarrant(warrant: string): WarrantFields {
     deviceKey,
     executor,
     executorKey,
-    appVersion,
+    releaseBytecodeId,
+    releaseVersion,
     method,
     intentHash: intentHashField,
     accountHeads,
