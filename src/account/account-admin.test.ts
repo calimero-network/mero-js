@@ -341,6 +341,22 @@ describe('createAccountAdmin', () => {
     await expect(admin.syncGroup(NS)).resolves.toBeDefined();
   });
 
+  // GroupCreated: tag, groupId (32), parentId (32), then the restricted flag.
+  const restrictedFlag = (call: unknown[] | undefined) =>
+    (call?.[2] as { bytes: Uint8Array }).bytes[1 + 32 + 32];
+
+  it('creates a subgroup Open when no visibility is named', async () => {
+    const { admin, govern } = rig();
+    await admin.createGroupInNamespace(NS, { groupName: 'general' });
+    expect(restrictedFlag(govern.root.mock.calls.at(-1))).toBe(0);
+  });
+
+  it('creates a subgroup Restricted only when asked', async () => {
+    const { admin, govern } = rig();
+    await admin.createGroupInNamespace(NS, { visibility: 'restricted' });
+    expect(restrictedFlag(govern.root.mock.calls.at(-1))).toBe(1);
+  });
+
   it('a subgroup created in the second of two namespaces is written to that namespace', async () => {
     const { admin, govern } = rig();
     const NS2 = '09'.repeat(32);

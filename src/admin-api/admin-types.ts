@@ -790,7 +790,12 @@ export interface JoinNamespaceResponseData {
 
 export interface CreateGroupInNamespaceRequest {
   groupName?: string;
-  /** Subgroup visibility at birth. Absent means `'restricted'`. */
+  /**
+   * Subgroup visibility at birth. Absent means `'open'` (core 0.11 and later;
+   * older nodes default to `'restricted'`). Pass `'restricted'` for a private
+   * subgroup, and choose here rather than flipping it afterwards: a subgroup
+   * created Restricted and flipped Open strands namespace members outside it.
+   */
   visibility?: 'open' | 'restricted';
 }
 
