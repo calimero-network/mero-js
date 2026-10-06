@@ -21,6 +21,9 @@ const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
  */
 const TERMINAL_AUTH_STATUSES = new Set([401, 403]);
 
+/** How long a subscription POST may take before it counts as failed. */
+export const SUBSCRIPTION_TIMEOUT_MS = 10_000;
+
 /**
  * Whether a failed response means the whole token family is gone, so the caller
  * must re-authenticate and the client must stop reconnecting.
@@ -326,18 +329,25 @@ export class SseClient {
 
       // Connection message
       if (msg.type === 'connect' && msg.session_id) {
-        this.sessionId = msg.session_id;
-        this.emit('connect', msg.session_id);
+        const sessionId: string = msg.session_id;
+        this.sessionId = sessionId;
         // A new connection gets a new replay when it re-subscribes; what the
         // old one said may name authors who have since gone.
         this.presence.clear();
-        // Re-subscribe after reconnect
-        if (this.subscribedContextIds.size > 0 || this.subscribedGroupIds.size > 0) {
-          this.sendSubscription('subscribe', {
-            contextIds: [...this.subscribedContextIds],
-            groupIds: [...this.subscribedGroupIds],
-          });
+        if (this.subscribedContextIds.size === 0 && this.subscribedGroupIds.size === 0) {
+          this.emit('connect', sessionId);
+          return;
         }
+        // A new session starts subscribed to nothing, so announce it once the re-subscribe
+        // lands; a failed one still announces, then reports the error, as consumers saw before.
+        void this.postSubscription('subscribe', {
+          contextIds: [...this.subscribedContextIds],
+          groupIds: [...this.subscribedGroupIds],
+        }).then((failure) => {
+          if (this.closed || this.sessionId !== sessionId) return;
+          this.emit('connect', sessionId);
+          if (failure) this.emit('error', failure);
+        });
         return;
       }
 
@@ -445,6 +455,20 @@ export class SseClient {
     method: 'subscribe' | 'unsubscribe',
     ids: { contextIds?: string[]; groupIds?: string[] },
   ): Promise<void> {
+    const failure = await this.postSubscription(method, ids);
+    if (failure) this.emit('error', failure);
+  }
+
+  /** Sends one subscription change and returns why it failed, or `null`. */
+  private async postSubscription(
+    method: 'subscribe' | 'unsubscribe',
+    ids: { contextIds?: string[]; groupIds?: string[] },
+  ): Promise<Error | null> {
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new DOMException(`SSE ${method} timed out`, 'TimeoutError')),
+      SUBSCRIPTION_TIMEOUT_MS,
+    );
     try {
       const params: { contextIds?: string[]; groupIds?: string[] } = {};
       if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
@@ -462,6 +486,7 @@ export class SseClient {
           'Content-Type': 'application/json',
         },
         body,
+        signal: timeout.signal,
       });
       if (!response.ok) {
         // The subscribe path used to report only the status. On the one failure
@@ -472,28 +497,28 @@ export class SseClient {
         // does carry a body.
         const terminal = isTerminalAuthFailure(response);
         const bodyText = await response.text().catch(() => undefined);
-        this.emit(
-          'error',
-          terminal
-            ? new AuthRevokedError(
-                terminal,
-                response.status,
-                response.statusText,
-                `${this.baseUrl}/sse/subscription`,
-                response.headers,
-                bodyText,
-              )
-            : new HTTPError(
-                response.status,
-                response.statusText,
-                `${this.baseUrl}/sse/subscription`,
-                response.headers,
-                bodyText,
-              ),
-        );
+        return terminal
+          ? new AuthRevokedError(
+              terminal,
+              response.status,
+              response.statusText,
+              `${this.baseUrl}/sse/subscription`,
+              response.headers,
+              bodyText,
+            )
+          : new HTTPError(
+              response.status,
+              response.statusText,
+              `${this.baseUrl}/sse/subscription`,
+              response.headers,
+              bodyText,
+            );
       }
+      return null;
     } catch (err) {
-      this.emit('error', err instanceof Error ? err : new Error(`SSE ${method} failed`));
+      return err instanceof Error ? err : new Error(`SSE ${method} failed`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
