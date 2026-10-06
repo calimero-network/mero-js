@@ -1,3 +1,5 @@
+## [24.1.2](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.1...mero-js-v24.1.2) (2026-10-06)
+
 ## [24.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.0...mero-js-v24.1.1) (2026-10-06)
 
 ### Bug Fixes
