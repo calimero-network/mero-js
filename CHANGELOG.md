@@ -1,3 +1,10 @@
+## [24.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.0...mero-js-v24.1.1) (2026-10-06)
+
+### Bug Fixes
+
+* **device-cert:** mint device ids bound to their account ([#249](https://github.com/calimero-network/mero-js/issues/249)) ([60c13f7](https://github.com/calimero-network/mero-js/commit/60c13f703631d8c8850113b57f24e21d9d9097e6))
+* **sse:** announce a reconnect only once the new session is re-subscribed ([#237](https://github.com/calimero-network/mero-js/issues/237)) ([e1c8fd1](https://github.com/calimero-network/mero-js/commit/e1c8fd1f45f18737f33421a6ec4a9c27693ce806))
+
 ## [24.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.0.0...mero-js-v24.1.0) (2026-10-06)
 
 ### Features
