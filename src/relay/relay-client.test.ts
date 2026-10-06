@@ -21,6 +21,8 @@ const EXECUTOR = '4d'.repeat(32);
 /** The relay's signing key, as discovery answers it. */
 const EXECUTOR_KEY = 'ec'.repeat(32);
 const RELAY_EXECUTOR = { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY };
+/** The release the context's group names, as discovery answers it. */
+const RELEASE = { releaseBytecodeId: 'b1'.repeat(32), releaseVersion: '1.2.0' };
 const GROUP = 'ab'.repeat(32);
 /** Any 32-byte seed; the signature is not what these tests are about. */
 const DEVICE_SECRET = '77'.repeat(32);
@@ -58,9 +60,9 @@ function client(fetchImpl: typeof fetch, overrides: Record<string, unknown> = {}
 }
 
 describe('RelayClient.describe', () => {
-  it('reads the executor account, its key and the grant from the intents route', async () => {
+  it('reads the executor account, its key, the grant and the release from the intents route', async () => {
     const { fetch, calls } = scriptedFetch([
-      { body: { data: { ...RELAY_EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: true, groupId: GROUP } } },
     ]);
 
     const described = await client(fetch).describe(CONTEXT);
@@ -70,6 +72,8 @@ describe('RelayClient.describe', () => {
       executorKey: EXECUTOR_KEY,
       canAuthorOnBehalf: true,
       groupId: GROUP,
+      releaseBytecodeId: RELEASE.releaseBytecodeId,
+      releaseVersion: RELEASE.releaseVersion,
     });
     expect(calls[0].url).toBe(`https://relay.example/admin-api/contexts/${CONTEXT}/intents`);
     expect(calls[0].init?.method).toBe('GET');
@@ -83,7 +87,7 @@ describe('RelayClient.describe', () => {
    */
   it('reports a missing grant as an answer, not a failure', async () => {
     const { fetch } = scriptedFetch([
-      { body: { data: { ...RELAY_EXECUTOR, canAuthorOnBehalf: false, groupId: GROUP } } },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: false, groupId: GROUP } } },
     ]);
     await expect(client(fetch).describe(CONTEXT)).resolves.toMatchObject({
       canAuthorOnBehalf: false,
@@ -95,11 +99,11 @@ describe('RelayClient.describe', () => {
 describe('RelayClient.execute', () => {
   const described = {
     body: {
-      data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, canAuthorOnBehalf: true, groupId: GROUP },
+      data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: true, groupId: GROUP },
     },
   };
 
-  it('mints a warrant naming the executor account and key discovery answered', async () => {
+  it('mints a warrant naming the executor account, key and release discovery answered', async () => {
     const { fetch, calls } = scriptedFetch([
       described,
       { body: { data: { rootHash: 'root-1', returns: 'ok' } } },
@@ -121,6 +125,9 @@ describe('RelayClient.execute', () => {
     expect(sent.warrant).toMatch(/^[0-9a-f]+$/);
     expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
     expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
+    expect(parseWarrant(sent.warrant).releaseBytecodeId).toBe(RELEASE.releaseBytecodeId);
+    // "1.2.0" in ASCII.
+    expect(parseWarrant(sent.warrant).releaseVersion).toBe('312e322e30');
   });
 
   // A configured account says nothing of which key may spend the warrant, and
@@ -171,7 +178,7 @@ describe('RelayClient.execute', () => {
     const { fetch, calls } = scriptedFetch([
       described,
       { status: 403, text: JSON.stringify({ error }) },
-      { body: { data: { ...RELAY_EXECUTOR, executorKey: rekeyed, canAuthorOnBehalf: true, groupId: GROUP } } },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, executorKey: rekeyed, canAuthorOnBehalf: true, groupId: GROUP } } },
       { body: { data: { rootHash: 'r', returns: null } } },
     ]);
 
@@ -198,10 +205,14 @@ describe('RelayClient.execute', () => {
     expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'GET', 'POST']);
   });
 
-  it('does not re-discover once the executor is known', async () => {
+  // The release moves with every upgrade of the group, and a warrant pinning the
+  // one before is refused, so each write pins what discovery answers now.
+  it('asks the relay before every write, so each warrant pins the current release', async () => {
+    const upgraded = 'b2'.repeat(32);
     const { fetch, calls } = scriptedFetch([
       described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      { body: { data: { ...described.body.data, releaseBytecodeId: upgraded, releaseVersion: '1.3.0' } } },
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
@@ -209,7 +220,52 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', {});
     await relay.execute(CONTEXT, 'set', {});
 
-    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST', 'GET', 'POST']);
+    const pinned = (call: (typeof calls)[number]) =>
+      parseWarrant((JSON.parse(String(call.init?.body)) as { warrant: string }).warrant).releaseBytecodeId;
+    expect(pinned(calls[1])).toBe(RELEASE.releaseBytecodeId);
+    expect(pinned(calls[3])).toBe(upgraded);
+  });
+
+  it('refuses a relay that names no release, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { ...RELAY_EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+    ]);
+
+    await expect(client(fetch, { nonces }).execute(CONTEXT, 'set', {})).rejects.toThrow(
+      /the relay's releaseBytecodeId must be 64 hex characters, got 0/,
+    );
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it('refuses a release version a node would refuse, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { ...described.body.data, releaseVersion: 'x'.repeat(257) } } },
+    ]);
+
+    await expect(client(fetch, { nonces }).execute(CONTEXT, 'set', {})).rejects.toThrow(
+      /releaseVersion is 257 bytes, over the 256 a node accepts/,
+    );
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it("surfaces discovery's 404 for a group that names no release, before taking a nonce", async () => {
+    const nonces = createMemoryNonceSource(1);
+    const error = "this context's group names no release yet, so no warrant can pin one";
+    const { fetch, calls } = scriptedFetch([{ status: 404, text: JSON.stringify({ error }) }]);
+
+    const err = await client(fetch, { nonces })
+      .execute(CONTEXT, 'set', {})
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).toMatchObject({ status: 404, explanation: error });
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
   });
 
   /**
@@ -222,6 +278,7 @@ describe('RelayClient.execute', () => {
     const { fetch, calls } = scriptedFetch([
       described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      described,
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
@@ -229,19 +286,21 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', {});
     await relay.execute(CONTEXT, 'set', {});
 
+    expect(calls).toHaveLength(4);
     // Nonce is a u64 little-endian, read by name rather than by offset.
     const nonceOf = (call: (typeof calls)[number]) =>
       parseWarrant(
         (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
       ).nonce;
     expect(nonceOf(calls[1])).toBe('0100000000000000');
-    expect(nonceOf(calls[2])).toBe('0200000000000000');
+    expect(nonceOf(calls[3])).toBe('0200000000000000');
   });
 
   it('commits to the arguments, so two different args differ in the warrant', async () => {
     const { fetch, calls } = scriptedFetch([
       described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      described,
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
@@ -249,11 +308,12 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', { key: 'a' });
     await relay.execute(CONTEXT, 'set', { key: 'b' });
 
+    expect(calls).toHaveLength(4);
     const intentHashOf = (call: (typeof calls)[number]) =>
       parseWarrant(
         (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
       ).intentHash;
-    expect(intentHashOf(calls[1])).not.toBe(intentHashOf(calls[2]));
+    expect(intentHashOf(calls[1])).not.toBe(intentHashOf(calls[3]));
   });
 
   /**

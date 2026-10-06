@@ -29,22 +29,24 @@ const EXPECTED_INTENT_HASH =
   'dc066cc8524c74dc21714174009df536376e3151f5b92f0a676defde599dbae5';
 const EXPECTED_DEVICE_KEY =
   'ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c';
-const APP_VERSION = '44'.repeat(32);
+const RELEASE_BYTECODE_ID = '44'.repeat(32);
+const RELEASE_VERSION = '1.0.0';
 const ACCOUNT_HEAD = '55'.repeat(32);
 const GOVERNANCE_HEAD = '66'.repeat(32);
 const EXPECTED_PREIMAGE =
-  'f7ebb6c7645c551a7148866d7b2268f7e62fe79685e05ae82d131a2fbde75e34';
+  'f38e2c9eb7e78025f8797bb34168fe48da95a20320fc62fc2da41e3efd30607c';
 const EXPECTED_SIGNATURE =
-  '317e0f841ded54b75e227d66abd819b95892218a6c70cb92d6a94fb0fb74ea81' +
-  'cf0063bc163f528c67a3a4ed68278152985f6d14afa2024c33932f23d61ea006';
-/** core's 383-byte wire encoding, field by field. */
+  'e42f753e1a30657fe036b0c0a07030f3f6d92ea56749921c5a6ae07eb966cb50' +
+  '1ed439f7a8007dfce0ccb6b5a8b94bdda9f48db9c84f181e9fbaa0d208726b02';
+/** core's 392-byte wire encoding, field by field. */
 const EXPECTED_WIRE = [
   CONTEXT,
   AUTHOR_ACCOUNT,
   EXPECTED_DEVICE_KEY,
   EXECUTOR,
   EXECUTOR_KEY,
-  APP_VERSION,
+  RELEASE_BYTECODE_ID,
+  '05000000' + '312e302e30', // release_version: "1.0.0"
   '03000000' + '736574', // method: "set"
   EXPECTED_INTENT_HASH,
   '01000000' + ACCOUNT_HEAD,
@@ -68,7 +70,8 @@ describe('warrant signing conformance', () => {
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       executorKey: EXECUTOR_KEY,
-      appVersion: APP_VERSION,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
+      releaseVersion: RELEASE_VERSION,
       method: METHOD,
       argsJson: ARGS,
       accountHeads: [ACCOUNT_HEAD],
@@ -78,10 +81,10 @@ describe('warrant signing conformance', () => {
       deviceSecret: DEVICE_SECRET,
     });
 
-    // 383 bytes for these inputs: no longer a constant of the format, since a
+    // 392 bytes for these inputs: no longer a constant of the format, since a
     // method of another length moves everything after it. Pinned anyway: it is
     // the cheapest signal that a field changed shape again.
-    expect(warrant.length).toBe(766);
+    expect(warrant.length).toBe(784);
     expect(warrant).toBe(EXPECTED_WIRE);
 
     const fields = parse(warrant);
@@ -90,7 +93,9 @@ describe('warrant signing conformance', () => {
     expect(fields.deviceKey).toBe(EXPECTED_DEVICE_KEY);
     expect(fields.executor).toBe(EXECUTOR);
     expect(fields.executorKey).toBe(EXECUTOR_KEY);
-    expect(fields.appVersion).toBe(APP_VERSION);
+    expect(fields.releaseBytecodeId).toBe(RELEASE_BYTECODE_ID);
+    // u32 LE length 5, then "1.0.0" in ASCII.
+    expect(fields.releaseVersion).toBe('312e302e30');
     // u32 LE length 3, then "set" in ASCII.
     expect(fields.method).toBe('736574');
     expect(fields.intentHash).toBe(EXPECTED_INTENT_HASH);
@@ -132,6 +137,7 @@ describe('warrant signing conformance', () => {
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
       nonce: 1,
@@ -160,6 +166,7 @@ describe('warrant signing conformance', () => {
         authorAccount: AUTHOR_ACCOUNT,
         executor: EXECUTOR,
         executorKey: EXECUTOR_KEY,
+        releaseBytecodeId: RELEASE_BYTECODE_ID,
         method: METHOD,
         argsJson: ARGS,
         accountHeads: Array.from({ length: 65 }, () => ACCOUNT_HEAD),
@@ -171,27 +178,53 @@ describe('warrant signing conformance', () => {
   });
 
   /**
-   * `appVersion` is optional and defaults to zeros, matching `merod account
-   * sign-warrant`'s own `--app-version` default, so a caller that has nothing to
-   * read it from produces the same bytes merod would.
+   * core's `MAX_WARRANT_RELEASE_VERSION_LEN`, counted in UTF-8 bytes: 129
+   * two-byte characters are 258 bytes, so a count of characters would let it through.
    */
-  it('defaults appVersion to zeros rather than demanding one', async () => {
-    const warrant = await signWarrant({
+  it('refuses a release version over 256 bytes before signing', async () => {
+    const terms = {
       context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
-      nonce: 42,
-      notAfter: 1_700_000_000,
+      nonce: 1,
+      notAfter: 1,
+      deviceSecret: DEVICE_SECRET,
+    };
+
+    await expect(signWarrant({ ...terms, releaseVersion: 'x'.repeat(256) })).resolves.toMatch(
+      /^[0-9a-f]+$/,
+    );
+    await expect(signWarrant({ ...terms, releaseVersion: '\u00e9'.repeat(129) })).rejects.toThrow(
+      /releaseVersion is 258 bytes, over the 256 a node accepts/,
+    );
+  });
+
+  it('refuses to decode a release version over 256 bytes', async () => {
+    const at256 = await signWarrant({
+      context: CONTEXT,
+      authorAccount: AUTHOR_ACCOUNT,
+      executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
+      releaseVersion: 'x'.repeat(256),
+      method: METHOD,
+      argsJson: ARGS,
+      nonce: 1,
+      notAfter: 1,
       deviceSecret: DEVICE_SECRET,
     });
+    // Same bytes with one more character and its length prefix bumped to 257,
+    // so only the cap can refuse it.
+    const lengthAt = 6 * 32 * 2;
+    const at257 =
+      at256.slice(0, lengthAt) + '01010000' + '78' + at256.slice(lengthAt + 8);
 
-    const fields = parse(warrant);
-    expect(fields.appVersion).toBe('00'.repeat(32));
-    expect(fields.accountHeads).toEqual([]);
-    expect(fields.governanceFloor).toEqual([]);
+    expect(parse(at256).releaseVersion).toBe('78'.repeat(256));
+    expect(() => parse(at257)).toThrow(/releaseVersion is 257 bytes, over the 256 a node accepts/);
   });
 
   it('derives the device key rather than trusting a caller', async () => {
@@ -202,6 +235,7 @@ describe('warrant signing conformance', () => {
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
       executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
       nonce: 42,
@@ -218,6 +252,7 @@ describe('input encodings', () => {
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
     executorKey: EXECUTOR_KEY,
+    releaseBytecodeId: RELEASE_BYTECODE_ID,
     method: METHOD,
     argsJson: ARGS,
     nonce: 1,
@@ -270,6 +305,7 @@ describe('the intent it authorises', () => {
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
     executorKey: EXECUTOR_KEY,
+    releaseBytecodeId: RELEASE_BYTECODE_ID,
     nonce: 7,
     notAfter: 1_700_000_000,
     deviceSecret: DEVICE_SECRET,

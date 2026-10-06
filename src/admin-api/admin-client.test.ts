@@ -741,22 +741,18 @@ describe('AdminApiClient', () => {
       ).toEqual(argsJson);
     });
 
-    it('getIntentRelay reads the executor account and the grant off the same path', async () => {
-      mock.setMockResponse('GET', '/admin-api/contexts/ctx-3/intents', {
-        data: {
-          executorAccount: '4d'.repeat(32),
-          canAuthorOnBehalf: true,
-          groupId: 'ab'.repeat(32),
-        },
-      });
-
-      const relay = await client.getIntentRelay('ctx-3');
-
-      expect(relay).toEqual({
+    it('getIntentRelay reads the executor, the grant and the release off the same path', async () => {
+      const data = {
         executorAccount: '4d'.repeat(32),
+        executorKey: 'ec'.repeat(32),
         canAuthorOnBehalf: true,
         groupId: 'ab'.repeat(32),
-      });
+        releaseBytecodeId: 'b1'.repeat(32),
+        releaseVersion: '1.2.0',
+      };
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-3/intents', { data });
+
+      await expect(client.getIntentRelay('ctx-3')).resolves.toEqual(data);
     });
 
     it('getIntentRelay reports a missing grant as an answer, not a failure', async () => {

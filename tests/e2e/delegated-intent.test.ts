@@ -60,6 +60,8 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
   let namespaceId: string;
   let relayAccount: string;
   let relayKey: string;
+  /** The release a warrant must pin, as discovery reports it. */
+  let release: { releaseBytecodeId: string; releaseVersion: string };
   let device: MintedDevice;
   /** One warrant, presented three times: refused, accepted, refused. */
   let warrant: string;
@@ -105,7 +107,7 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
     // failure is a real one and is rethrown, or this branch becomes a way for
     // the descriptor to break unnoticed.
     try {
-      await mero.admin.getIntentRelay(contextId);
+      release = await mero.admin.getIntentRelay(contextId);
     } catch (err) {
       const status = (err as { status?: number }).status;
       if (status !== 404 && status !== 405) throw err;
@@ -153,6 +155,9 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
     expect(relay.canAuthorOnBehalf).toBe(false);
     // The group whose admin has to grant it — which is the namespace root here.
     expect(relay.groupId).toBe(namespaceId);
+    // The release a warrant pins is the bytecode the group names, read the way
+    // core's own scenarios read it.
+    expect(relay.releaseBytecodeId).toBe((await mero.admin.getGroupInfo(namespaceId)).appKey);
   }, 60_000);
 
   it('refuses the intent before the relay is granted authorship', async () => {
@@ -331,6 +336,8 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
       authorAccount: device.account,
       executor: relayAccount,
       executorKey: relayKey,
+      releaseBytecodeId: release.releaseBytecodeId,
+      releaseVersion: release.releaseVersion,
       method: 'set',
       argsJson: ARGS,
       nonce,
@@ -359,6 +366,10 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
       relayAccount,
       '--executor-key',
       relayKey,
+      '--release-bytecode-id',
+      release.releaseBytecodeId,
+      '--release-version',
+      release.releaseVersion,
       '--nonce',
       String(nonce),
       '--not-after',
