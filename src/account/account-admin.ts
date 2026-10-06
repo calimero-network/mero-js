@@ -245,7 +245,9 @@ export function createAccountAdmin(
       return { namespaceId, haEnabled, ...(haError !== undefined ? { haError } : {}) };
     },
     async createGroupInNamespace(namespaceId: string, req: { groupName?: string; visibility?: 'open' | 'restricted' } = {}) {
-      const { op } = await subgroupCreation({ parentId: namespaceId, restricted: req.visibility !== 'open', admin: s.account });
+      // Absent ⇒ Open, as on a node: a subgroup created Restricted and flipped
+      // Open strands every namespace member outside it.
+      const { op } = await subgroupCreation({ parentId: namespaceId, restricted: req.visibility === 'restricted', admin: s.account });
       const { groupId } = await root(s, namespaceId, op);
       rememberGroupNamespace(s.account, groupId, namespaceId);
       if (req.groupName) await group(s, groupId, groupMetadataSetOp({ name: req.groupName }));
