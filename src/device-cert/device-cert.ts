@@ -329,6 +329,14 @@ export async function verifyDeviceCredential(
     );
   }
 
+  const nonce = fromHex(parsed.device, 'device', 32).subarray(0, 16);
+  if ((await mintDeviceId(parsed.account, nonce)) !== parsed.device) {
+    throw new Error(
+      `this credential names device ${parsed.device}, which was not minted for ` +
+        `account ${parsed.account}; core refuses it`,
+    );
+  }
+
   const signed = await verifySignature(
     parsed.rootPublicKey,
     fromHex(parsed.signature, 'signature', 64),
