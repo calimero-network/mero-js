@@ -65,6 +65,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('Sealed delegated execution E2E (TE
   let device: MintedDevice;
   let contextId: string;
   let relayAccount: string;
+  let relayKey: string;
   let sealedFetch: typeof fetch;
   let relay: RelayClient;
   const secret = `sealed-intent-${RUN}`;
@@ -74,7 +75,9 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('Sealed delegated execution E2E (TE
     const applicationId = await ensureApplication(operator);
     const { namespaceId } = await operator.admin.createNamespace({ applicationId, name: `sealed-relay-${RUN}` });
     contextId = (await operator.admin.createContext({ applicationId, groupId: namespaceId })).contextId;
-    relayAccount = (await operator.admin.getNodeIdentity()).accountId;
+    const identity = await operator.admin.getNodeIdentity();
+    relayAccount = identity.accountId;
+    relayKey = identity.publicKey;
 
     device = mintDevice();
     await operator.admin.addGroupMembers(namespaceId, {
@@ -108,6 +111,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('Sealed delegated execution E2E (TE
   it('reads the relay descriptor through the sealed session', async () => {
     const described = await relay.describe(contextId);
     expect(described.executorAccount).toBe(relayAccount);
+    expect(described.executorKey).toBe(relayKey);
     expect(described.canAuthorOnBehalf).toBe(true);
   }, 60_000);
 

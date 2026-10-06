@@ -23,8 +23,16 @@ import {
 import {
   RelayClient,
   type NonceSource,
+  type RelayExecutor,
 } from '../relay/index.js';
-import { knownRelays, markContextNonceSpent, readRelayMap, rememberRelay, type DelegatedSession } from './session.js';
+import {
+  attemptRelayNodeKey,
+  knownRelays,
+  markContextNonceSpent,
+  readRelayMap,
+  rememberRelay,
+  type DelegatedSession,
+} from './session.js';
 import { fetchRegistryBundles, selectLatestBundle } from './application-id.js';
 
 /**
@@ -175,10 +183,8 @@ export async function createDelegatedPrivateContext(
  * TEE relay admits itself as its first TEE), so contexts can be created in it
  * through the same relay straight away.
  *
- * The relay's executor account cannot be asked about a namespace that does
- * not exist yet, so it is the session's `executorAccount` when the app named
- * one, else learned from a namespace the account already has on that relay. A
- * brand-new account with neither is told how to get one.
+ * The relay's executor account and key cannot be asked about a namespace that
+ * does not exist yet; see {@link foundingExecutor} for where they come from.
  */
 export async function foundDelegatedNamespace(
   s: DelegatedSession,
@@ -196,24 +202,12 @@ export async function foundDelegatedNamespace(
   const relays = knownRelays(s).map((u) => u.replace(/\/+$/, ''));
   const relay = relays[0];
   if (!relay) throw new Error('no relay is known for this account, so there is nowhere to found a namespace');
-  const known = Object.entries(readRelayMap(s.account).namespaces).find(
-    ([, url]) => url.replace(/\/+$/, '') === relay,
-  )?.[0];
-  // The session's relay may come with its account (the cloud names it), which
-  // is all founding needs; otherwise it is learned from a namespace on it.
-  const named = s.executorAccount && s.relayUrl && s.relayUrl.replace(/\/+$/, '') === relay ? s.executorAccount : null;
-  if (!named && !known) {
-    throw new Error(
-      "the executor account of this relay is not known: join a namespace on it first, or connect with the relay's executor account (the cloud shows it beside the relay)",
-    );
-  }
-  const executorAccount =
-    named ?? (await client(s, relay, governanceNonce(relay, known!), deps.fetch).describeGovernance(known!)).executorAccount;
+  const executor = await foundingExecutor(s, relay, deps.fetch);
   // The founding warrant and, with a default mask, a second one are both spent
   // in the NEW namespace's window, which is empty: any rising pair will do.
   let next = BigInt(Date.now());
   const founded = await client(s, relay, { next: async () => next++ }, deps.fetch).foundNamespace({
-    executorAccount,
+    executor,
     ...(req.defaultCapabilities !== undefined ? { defaultCapabilities: req.defaultCapabilities } : {}),
     ...(req.application ? { application: req.application } : {}),
   });
@@ -241,6 +235,47 @@ export async function foundDelegatedNamespace(
         haError: `the relay did not attest the founding, so no fleet node could be admitted for HA${founded.teeError ? `: ${founded.teeError}` : ''}`,
       };
   return { namespaceId: founded.namespaceId, teeEnabled: founded.teeEnabled, ...ha };
+}
+
+/**
+ * The relay's pinned or attested node key, which is the key it signs with, and
+ * its account: the session's (the cloud names it), else a remembered namespace's.
+ */
+async function foundingExecutor(
+  s: DelegatedSession,
+  relay: string,
+  fetch?: typeof globalThis.fetch,
+): Promise<RelayExecutor> {
+  const named = s.executorAccount && s.relayUrl?.replace(/\/+$/, '') === relay ? s.executorAccount : null;
+  if (named) return { executorAccount: named, executorKey: await attestedNodeKey(relay) };
+  const known = Object.entries(readRelayMap(s.account).namespaces).find(
+    ([, url]) => url.replace(/\/+$/, '') === relay,
+  )?.[0];
+  if (!known) {
+    throw new Error(
+      "the executor account of this relay is not known: join a namespace on it first, or connect with the relay's executor account (the cloud shows it beside the relay)",
+    );
+  }
+  const executorKey = await attestedNodeKey(relay);
+  // Discovery is unauthenticated: it may name the account, never the key.
+  const described = await client(s, relay, governanceNonce(relay, known), fetch).describeGovernance(known);
+  if (described.executorKey?.toLowerCase() !== executorKey) {
+    throw new Error(
+      `the relay's discovery names signing key ${described.executorKey}, not the relay's node key ${executorKey}: refusing to found through it`,
+    );
+  }
+  return { executorAccount: described.executorAccount, executorKey };
+}
+
+/** The relay's pinned or attested node key; any failed attestation throws. */
+async function attestedNodeKey(relay: string): Promise<string> {
+  const key = await attemptRelayNodeKey(relay);
+  if (key.kind === 'learned') return key.nodeKey;
+  throw new Error(
+    key.kind === 'unavailable'
+      ? "the relay's signing key could not be learned: its attestation did not answer, try again"
+      : "the relay's attestation was refused, so founding through it is not possible (only a key from its operator, pinned with pinRelayNodeKey, can stand in)",
+  );
 }
 
 /** What {@link foundDelegatedNamespace} returns. */

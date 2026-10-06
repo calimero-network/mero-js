@@ -306,6 +306,7 @@ const connection = await connectCloud({
     { from: 0, to: 3, label: 'POST /tee/attest (unsealed): quote + transport key + collateral' },
     { from: 0, to: 0, label: 'verify the quote in the page: Intel, TCB, image, binding', color: '#a5ff11' },
     { from: 0, to: 3, label: 'open a sealed session to the attested key' },
+    { from: 0, to: 3, label: 'sealed GET .../intents: executor account + key' },
     { from: 0, to: 2, label: 'POST /sealed/v2 [warrant + args, opaque]' },
     { from: 2, to: 3, label: 'forward, cannot read it', color: '#8b949e' },
     { from: 3, to: 3, label: 'open, verify the warrant, run as the author' },

@@ -60,8 +60,8 @@ await sdk.admin.grantAuthorship(groupId, relayAccount);
 ```
 
 Note the subject is the relay's **account**, not its signing key — which is what
-lets the relay rotate keys without the grant, or any warrant already issued
-against it, needing to be reissued.
+lets the relay rotate keys without the grant needing to be reissued.
+Warrants name the key as well, so a re-key voids the ones it has not spent, and their authors sign new ones.
 
 `grantAuthorship` is read-modify-write, and that is the point: `setMemberCapabilities`
 **replaces** the mask, so adding this bit by hand means re-passing every flag the

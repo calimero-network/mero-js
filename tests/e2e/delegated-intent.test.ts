@@ -59,6 +59,7 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
   let contextId: string;
   let namespaceId: string;
   let relayAccount: string;
+  let relayKey: string;
   let device: MintedDevice;
   /** One warrant, presented three times: refused, accepted, refused. */
   let warrant: string;
@@ -94,7 +95,9 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
     const ctx = await mero.admin.createContext({ applicationId, groupId: namespaceId });
     contextId = ctx.contextId;
 
-    relayAccount = (await mero.admin.getNodeIdentity()).accountId;
+    const identity = await mero.admin.getNodeIdentity();
+    relayAccount = identity.accountId;
+    relayKey = identity.publicKey;
     device = mintDevice();
 
     // Only 404/405 means "this merod predates the route" — 405 from one that
@@ -142,6 +145,7 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
     const relay = await mero.admin.getIntentRelay(contextId);
 
     expect(relay.executorAccount).toBe(relayAccount);
+    expect(relay.executorKey).toBe(relayKey);
     // Not an error — the default state of every context, since the capability
     // is implied by neither membership nor admin. A client has to be able to
     // *get* this answer in order to say "ask an admin" rather than presenting a
@@ -198,6 +202,7 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
     if (descriptorAbsentStatus === null) {
       await expect(mero.admin.getIntentRelay(contextId)).resolves.toMatchObject({
         executorAccount: relayAccount,
+        executorKey: relayKey,
         canAuthorOnBehalf: true,
       });
     } else {
@@ -325,6 +330,7 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
       context: contextId,
       authorAccount: device.account,
       executor: relayAccount,
+      executorKey: relayKey,
       method: 'set',
       argsJson: ARGS,
       nonce,
@@ -351,6 +357,8 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
       JSON.stringify(ARGS),
       '--executor',
       relayAccount,
+      '--executor-key',
+      relayKey,
       '--nonce',
       String(nonce),
       '--not-after',

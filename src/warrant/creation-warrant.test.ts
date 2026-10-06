@@ -31,6 +31,7 @@ const GROUP = '11'.repeat(32);
 const SEED = '12'.repeat(32);
 const AUTHOR_ACCOUNT = '22'.repeat(32);
 const EXECUTOR = '33'.repeat(32);
+const EXECUTOR_KEY = '77'.repeat(32);
 const APPLICATION_ID = '44'.repeat(32);
 const ACCOUNT_HEAD = '55'.repeat(32);
 const GOVERNANCE_HEAD = '66'.repeat(32);
@@ -40,19 +41,20 @@ const INIT_ARGS = { name: 'general' };
 const EXPECTED_INIT_HASH =
   '074dc4be8c7abe685532a48947430edd0301b42f60222e715a834e723d2a055e';
 const EXPECTED_PREIMAGE =
-  'f838cd94995573a7fea9768a82b6207632c4a89ce37c860e0d05febf5609644f';
+  '7e1126b215a794e565bb59c630cb1a36e43590c4bd8f62c6111792f77c231598';
 const EXPECTED_DEVICE_KEY =
   'ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c';
 const EXPECTED_SIGNATURE =
-  '7e47c0655b1b0ef65a420ef301f6888328579abc153b122d9e7f6396c8757aa5' +
-  '14d8a4e65ff85912dfb20f6858fcdbfc60818214ca2e6adcbfbf4dae3d9fd906';
-/** core's 389-byte wire encoding, field by field. */
+  '19103d73752d052f747911b4b36e423221d89d120bf6f4d32122d3c4fd1fb030' +
+  '9add40f3f3b80a5e5d6fefa02de5f4d6bb914c85c5c8b10a3a0e3a0e22c08400';
+/** core's 421-byte wire encoding, field by field. */
 const EXPECTED_WIRE = [
   GROUP,
   SEED,
   AUTHOR_ACCOUNT,
   EXPECTED_DEVICE_KEY,
   EXECUTOR,
+  EXECUTOR_KEY,
   APPLICATION_ID,
   '00', // service_name: None
   '01' + '07000000' + '67656e6572616c', // name: Some("general")
@@ -72,6 +74,7 @@ const FIXTURE: CreationWarrantInput = {
   seed: SEED,
   authorAccount: AUTHOR_ACCOUNT,
   executor: EXECUTOR,
+  executorKey: EXECUTOR_KEY,
   applicationId: APPLICATION_ID,
   name: 'general',
   initArgs: INIT_ARGS,
@@ -95,6 +98,7 @@ describe('creation warrant conformance', () => {
       authorAccount: fromHex(AUTHOR_ACCOUNT, 'authorAccount', 32),
       deviceKey: fromHex(EXPECTED_DEVICE_KEY, 'deviceKey', 32),
       executor: fromHex(EXECUTOR, 'executor', 32),
+      executorKey: fromHex(EXECUTOR_KEY, 'executorKey', 32),
       applicationId: fromHex(APPLICATION_ID, 'applicationId', 32),
       serviceName: null,
       name: new TextEncoder().encode('general'),
@@ -107,11 +111,11 @@ describe('creation warrant conformance', () => {
     expect(hex(preimage)).toBe(EXPECTED_PREIMAGE);
   });
 
-  it('produces the exact 389 bytes core produces', async () => {
+  it('produces the exact 421 bytes core produces', async () => {
     const { warrant, seed } = await signCreationWarrant(FIXTURE);
 
     expect(seed).toBe(SEED);
-    expect(warrant.length).toBe(389 * 2);
+    expect(warrant.length).toBe(421 * 2);
     expect(warrant).toBe(EXPECTED_WIRE);
   });
 
@@ -144,6 +148,7 @@ describe('parseCreationWarrant', () => {
       authorAccount: AUTHOR_ACCOUNT,
       deviceKey: EXPECTED_DEVICE_KEY,
       executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
       applicationId: APPLICATION_ID,
       serviceName: 'chat',
       name: 'general',
@@ -165,11 +170,11 @@ describe('parseCreationWarrant', () => {
 
   it('refuses truncated and trailing bytes', () => {
     expect(() => parse(EXPECTED_WIRE.slice(0, -2))).toThrow(/ends inside signature/);
-    expect(() => parse(EXPECTED_WIRE + '00')).toThrow(/390 bytes but its fields account for 389/);
+    expect(() => parse(EXPECTED_WIRE + '00')).toThrow(/422 bytes but its fields account for 421/);
   });
 
   it('refuses a bad option tag', () => {
-    const tampered = EXPECTED_WIRE.slice(0, 192 * 2) + '02' + EXPECTED_WIRE.slice(193 * 2);
+    const tampered = EXPECTED_WIRE.slice(0, 224 * 2) + '02' + EXPECTED_WIRE.slice(225 * 2);
     expect(() => parse(tampered)).toThrow(/serviceName has option tag 2/);
   });
 });
@@ -183,6 +188,7 @@ describe('what the signature covers', () => {
     ['seed', { seed: 'a2'.repeat(32) }],
     ['authorAccount', { authorAccount: 'a3'.repeat(32) }],
     ['executor', { executor: 'a4'.repeat(32) }],
+    ['executorKey', { executorKey: 'a6'.repeat(32) }],
     ['applicationId', { applicationId: 'a5'.repeat(32) }],
     ['serviceName', { serviceName: 'chat' }],
     ['name', { name: 'other' }],

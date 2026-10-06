@@ -46,8 +46,10 @@ export interface CreationWarrantInput {
   seed?: string;
   /** The author's account, hex — whose consent this is, and who runs `init`. */
   authorAccount: string;
-  /** The relay authorised to act, hex. An account, not a key. */
+  /** The relay's account, hex: the subject its authorship grant is held by. */
   executor: string;
+  /** The one signing key of `executor` that may carry it out, hex: discovery's `executorKey`. */
+  executorKey: string;
   /** The application the context is created with, hex (32 bytes). */
   applicationId: string;
   /**
@@ -115,6 +117,7 @@ export interface CreationWarrantFields {
   /** The author device key: the signer's public key. */
   deviceKey: string;
   executor: string;
+  executorKey: string;
   applicationId: string;
   /** `null` when absent — distinct from `""`. */
   serviceName: string | null;
@@ -146,6 +149,7 @@ export interface CreationPreimageParts {
   authorAccount: Uint8Array;
   deviceKey: Uint8Array;
   executor: Uint8Array;
+  executorKey: Uint8Array;
   applicationId: Uint8Array;
   serviceName: Uint8Array | null;
   name: Uint8Array | null;
@@ -171,6 +175,7 @@ export async function creationWarrantPreimage(
     p.authorAccount,
     p.deviceKey,
     p.executor,
+    p.executorKey,
     p.applicationId,
     new Uint8Array([p.serviceName === null ? 0 : 1]),
     p.serviceName ?? new Uint8Array(0),
@@ -202,6 +207,7 @@ export async function signCreationWarrant(
       : fromHex(input.seed, 'seed', 32);
   const authorAccount = fromHex(input.authorAccount, 'authorAccount', 32);
   const executor = fromHex(input.executor, 'executor', 32);
+  const executorKey = fromHex(input.executorKey, 'executorKey', 32);
   const applicationId = fromHex(input.applicationId, 'applicationId', 32);
   const serviceName = label(input.serviceName, 'serviceName');
   const name = label(input.name, 'name');
@@ -218,6 +224,7 @@ export async function signCreationWarrant(
     authorAccount,
     deviceKey,
     executor,
+    executorKey,
     applicationId,
     serviceName,
     name,
@@ -236,6 +243,7 @@ export async function signCreationWarrant(
       authorAccount,
       deviceKey,
       executor,
+      executorKey,
       applicationId,
       borshOption(serviceName),
       borshOption(name),
@@ -304,6 +312,7 @@ export function parseCreationWarrant(warrant: string): CreationWarrantFields {
     authorAccount: hex(take(32, 'authorAccount')),
     deviceKey: hex(take(32, 'deviceKey')),
     executor: hex(take(32, 'executor')),
+    executorKey: hex(take(32, 'executorKey')),
     applicationId: hex(take(32, 'applicationId')),
     serviceName: option('serviceName'),
     name: option('name'),

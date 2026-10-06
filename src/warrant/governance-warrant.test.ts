@@ -48,24 +48,26 @@ const PKCS8_ED25519_PREFIX = new Uint8Array([
 const SCOPE = '11'.repeat(32);
 const AUTHOR_ACCOUNT = '22'.repeat(32);
 const EXECUTOR = '33'.repeat(32);
+const EXECUTOR_KEY = '77'.repeat(32);
 const ACCOUNT_HEAD = '55'.repeat(32);
 const GOVERNANCE_HEAD = '66'.repeat(32);
 /** A stand-in for an op's bytes: the commitment treats them as opaque. */
 const OP: GovernanceOp = { kind: 'root', bytes: new Uint8Array([1, 2, 3]) };
 
 const EXPECTED_OP_HASH = 'd6bc121f9fcf7b85bea94d356d620c14dd8e1ae5fa2317cbcfc2c486cf04dfb3';
-const EXPECTED_PREIMAGE = '23110c9012218d6996c33991173280928db4cc030a77164a31a2b1e47946bf80';
+const EXPECTED_PREIMAGE = 'b71a40cfbbe50e40d3423e8729a9ca8359e69f2762396922e6b314a971c5f720';
 const EXPECTED_DEVICE_KEY = 'ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c';
 const EXPECTED_SIGNATURE =
-  '27a7c779c5d7aef80dcf7125c2ef733bb0f4bbe20d84a75d0b132516d3b2a1a0' +
-  '0e292b674f927df135d6f631dc7768f2e40a0c1c1040f5fc923385d2b5b05e07';
-/** core's 313-byte wire encoding, field by field. */
+  '03ce6c011f565924099b2c776032a1cfe540d1c4c09fad0b470723f8ee76138d' +
+  '1d685a20948edf4dee2901d3f9187e3363a16e3b141b0bc94553f5948becae07';
+/** core's 345-byte wire encoding, field by field. */
 const EXPECTED_WIRE = [
   SCOPE,
   '01', // kind: Root
   AUTHOR_ACCOUNT,
   EXPECTED_DEVICE_KEY,
   EXECUTOR,
+  EXECUTOR_KEY,
   EXPECTED_OP_HASH,
   '01000000' + ACCOUNT_HEAD,
   '01000000' + GOVERNANCE_HEAD,
@@ -82,6 +84,7 @@ const FIXTURE: GovernanceWarrantInput = {
   op: OP,
   authorAccount: AUTHOR_ACCOUNT,
   executor: EXECUTOR,
+  executorKey: EXECUTOR_KEY,
   accountHeads: [ACCOUNT_HEAD],
   governanceFloor: [GOVERNANCE_HEAD],
   nonce: 42,
@@ -101,6 +104,7 @@ describe('governance warrant conformance', () => {
       authorAccount: fromHex(AUTHOR_ACCOUNT, 'authorAccount', 32),
       deviceKey: fromHex(EXPECTED_DEVICE_KEY, 'deviceKey', 32),
       executor: fromHex(EXECUTOR, 'executor', 32),
+      executorKey: fromHex(EXECUTOR_KEY, 'executorKey', 32),
       opHash: fromHex(EXPECTED_OP_HASH, 'opHash', 32),
       accountHeads: [fromHex(ACCOUNT_HEAD, 'head', 32)],
       governanceFloor: [fromHex(GOVERNANCE_HEAD, 'head', 32)],
@@ -110,9 +114,9 @@ describe('governance warrant conformance', () => {
     expect(hex(preimage)).toBe(EXPECTED_PREIMAGE);
   });
 
-  it('produces the exact 313 bytes core produces', async () => {
+  it('produces the exact 345 bytes core produces', async () => {
     const warrant = await signGovernanceWarrant(FIXTURE);
-    expect(warrant.length).toBe(313 * 2);
+    expect(warrant.length).toBe(345 * 2);
     expect(warrant).toBe(EXPECTED_WIRE);
   });
 
@@ -228,6 +232,7 @@ describe('parseGovernanceWarrant', () => {
       authorAccount: AUTHOR_ACCOUNT,
       deviceKey: EXPECTED_DEVICE_KEY,
       executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
       opHash: EXPECTED_OP_HASH,
       accountHeads: [ACCOUNT_HEAD],
       governanceFloor: [GOVERNANCE_HEAD],
@@ -239,7 +244,7 @@ describe('parseGovernanceWarrant', () => {
 
   it('refuses truncated and trailing bytes', () => {
     expect(() => parse(EXPECTED_WIRE.slice(0, -2))).toThrow(/ends inside signature/);
-    expect(() => parse(EXPECTED_WIRE + '00')).toThrow(/314 bytes but its fields account for 313/);
+    expect(() => parse(EXPECTED_WIRE + '00')).toThrow(/346 bytes but its fields account for 345/);
   });
 
   it('refuses an unknown kind', () => {
@@ -258,6 +263,7 @@ describe('what the signature covers', () => {
     ['op kind', { op: { kind: 'group', bytes: OP.bytes } }],
     ['authorAccount', { authorAccount: 'a3'.repeat(32) }],
     ['executor', { executor: 'a4'.repeat(32) }],
+    ['executorKey', { executorKey: 'a6'.repeat(32) }],
     ['accountHeads', { accountHeads: [] }],
     ['governanceFloor', { governanceFloor: [] }],
     ['nonce', { nonce: 43 }],
@@ -370,15 +376,15 @@ describe('signing through a Signer', () => {
  * and the signed warrant.
  *
  * Core pins no vector for a delegated `NamespaceCreatedV2`, so these were
- * produced by a scratch program against core's own crates at the commit that
- * merged #4212 (`calimero-account`'s `DeviceCert::sign`, `AccountProof`,
- * `founded_namespace_id` and `GovernanceWarrant::sign`/`op_hash`;
- * `calimero-governance-types`' `RootOp::NamespaceCreatedV2` and its
- * `delegable_form`), with these fixed inputs: root secret 0x77.., device secret
- * 0x07.., device id 0x33.., KEM key 0x55.., device epoch 1, salt 0x5c..,
- * executor 0x33.., nonce 1, not_after 1_700_000_000. The program asserted the
- * delegable form is the op itself, that it decodes back as the genesis and as a
- * `NamespaceOp`, and that the warrant covers it.
+ * produced by a scratch program against core's own crates (`calimero-account`'s
+ * `DeviceCert::sign`, `AccountProof`, `founded_namespace_id` and
+ * `GovernanceWarrant::sign`/`op_hash`; `calimero-governance-types`'
+ * `RootOp::NamespaceCreatedV2` and its `delegable_form`), with these fixed
+ * inputs: root secret 0x77.., device secret 0x07.., device id 0x33.., KEM key
+ * 0x55.., device epoch 1, salt 0x5c.., executor 0x33.., executor key 0x77..,
+ * nonce 1, not_after 1_700_000_000. The program asserted the delegable form is
+ * the op itself, that it decodes back as the genesis and as a `NamespaceOp`,
+ * and that the warrant covers it.
  */
 describe('namespace genesis conformance', () => {
   const CREDENTIAL =
@@ -399,10 +405,11 @@ describe('namespace genesis conformance', () => {
     '01161e0b241fdac4166b442a199cb689e0b438938bbb30e31baca7f1403095fe' +
     'ffea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d2' +
     '2c33333333333333333333333333333333333333333333333333333333333333' +
-    '33eec5a1ad4daa778659cbde6395cd6cd5839a5ac97966e88f4affdd88b83137' +
-    '6e0000000000000000010000000000000000f1536500000000f864c24c356d77' +
-    '6caab4082bf9e51bd7b1aa74cc1a1ea0a637cc4570d4b339e46ac7c5f639be7d' +
-    'c8e239b5625a7f140c35d60c1da9132e7e9e37e5dd78d75a04';
+    '3377777777777777777777777777777777777777777777777777777777777777' +
+    '77eec5a1ad4daa778659cbde6395cd6cd5839a5ac97966e88f4affdd88b83137' +
+    '6e0000000000000000010000000000000000f15365000000001087244bdc6743' +
+    '869f074896b30a22be0a19c4c2ed999454aff7c7f479d7f9bdab2eda608d8621' +
+    'd61091c0fd79dec6d923cdc1d1d581733be3d51134e00f480e';
 
   it('mints the credential core mints from the same keys', async () => {
     const credential = await signDeviceCert({
@@ -449,6 +456,7 @@ describe('namespace genesis conformance', () => {
       op: namespaceCreatedOp({ founder: FOUNDER, credential: CREDENTIAL, salt: SALT }),
       authorAccount: FOUNDER,
       executor: '33'.repeat(32),
+      executorKey: '77'.repeat(32),
       nonce: 1,
       notAfter: 1_700_000_000,
       deviceSecret: DEVICE_SECRET,
