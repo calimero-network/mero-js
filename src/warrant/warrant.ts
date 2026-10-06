@@ -57,8 +57,13 @@ export interface WarrantInput {
   context: string;
   /** The author's account, hex — whose consent this is. */
   authorAccount: string;
-  /** The relay authorised to act, hex. An account, not a key. */
+  /** The relay's account, hex: the subject its authorship grant is held by. */
   executor: string;
+  /**
+   * The one signing key of `executor` that may spend this warrant, hex: the
+   * relay's `executorKey` from discovery. Any other key of the account is refused.
+   */
+  executorKey: string;
   /**
    * The application build this warrant is signed against, hex (32 bytes).
    *
@@ -165,6 +170,7 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
   const context = fromHex(input.context, 'context', 32);
   const authorAccount = fromHex(input.authorAccount, 'authorAccount', 32);
   const executor = fromHex(input.executor, 'executor', 32);
+  const executorKey = fromHex(input.executorKey, 'executorKey', 32);
   const appVersion = fromHex(
     input.appVersion ?? UNPINNED_APP,
     'appVersion',
@@ -191,6 +197,7 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
     authorAccount,
     publicKey,
     executor,
+    executorKey,
     appVersion,
     method,
     commitment,
@@ -212,6 +219,7 @@ export async function signWarrant(input: WarrantInput): Promise<string> {
       authorAccount,
       publicKey,
       executor,
+      executorKey,
       appVersion,
       u32le(method.length),
       method,
@@ -263,6 +271,7 @@ export interface WarrantFields {
   /** The author device key `signWarrant` derived from the secret. */
   deviceKey: string;
   executor: string;
+  executorKey: string;
   appVersion: string;
   method: string;
   intentHash: string;
@@ -307,6 +316,7 @@ export function parseWarrant(warrant: string): WarrantFields {
   const authorAccount = take(32);
   const deviceKey = take(32);
   const executor = take(32);
+  const executorKey = take(32);
   const appVersion = take(32);
   const methodLen = u32At(o);
   o += 4;
@@ -335,6 +345,7 @@ export function parseWarrant(warrant: string): WarrantFields {
     authorAccount,
     deviceKey,
     executor,
+    executorKey,
     appVersion,
     method,
     intentHash: intentHashField,

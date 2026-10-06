@@ -1,6 +1,7 @@
 export { RelayClient, IntentRefusedError } from './relay-client.js';
 export type {
   RelayClientConfig,
+  RelayExecutor,
   RelayDescription,
   IntentResult,
   CreationDescription,

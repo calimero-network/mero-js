@@ -18,10 +18,10 @@
  * # The three preconditions, and why they are checked in this order
  *
  * `describe()` answers the first two in one call, before anything is signed:
- * the relay's executor account (which the warrant must name) and whether it
- * holds `CAN_AUTHOR_ON_BEHALF` on the owning group. The third — that the
- * author's account is a member — only the group knows, and it surfaces as a
- * refusal.
+ * the relay's executor account and signing key (which the warrant must name)
+ * and whether it holds `CAN_AUTHOR_ON_BEHALF` on the owning group. The third,
+ * that the author's account is a member, only the group knows, and it surfaces
+ * as a refusal.
  *
  * Checking before signing is not politeness. A warrant consumes a nonce from a
  * monotonic per-device sequence, and one minted against the wrong executor is
@@ -58,9 +58,8 @@ export interface RelayClientConfig {
   /**
    * The account the relay writes as, hex — a warrant's `executor`.
    *
-   * An account rather than a key, so one of the relay's processes rotating its
-   * signing key does not void warrants already issued to it. Left unset, the
-   * first `execute` learns it from {@link RelayClient.describe}.
+   * Only checked against what the relay answers: a warrant also names the
+   * relay's signing key, which only discovery reports, so the first call asks.
    */
   executorAccount?: string;
   /** The author's account, hex — whose consent the warrant carries. */
@@ -118,10 +117,16 @@ export interface RelayClientConfig {
   rateLimitRetries?: number;
 }
 
-/** What a relay says about its ability to run intents in one context. */
-export interface RelayDescription {
+/** The relay a warrant names: its account, and the one key of it that may spend the warrant. */
+export interface RelayExecutor {
   /** The account a warrant must name as `executor`, hex. */
   executorAccount: string;
+  /** The signing key a warrant must name as `executor_key`, hex. */
+  executorKey: string;
+}
+
+/** What a relay says about its ability to run intents in one context. */
+export interface RelayDescription extends RelayExecutor {
   /** Whether the relay holds `CAN_AUTHOR_ON_BEHALF` on the owning group. */
   canAuthorOnBehalf: boolean;
   /** The group whose admin grants that capability, hex. */
@@ -129,9 +134,7 @@ export interface RelayDescription {
 }
 
 /** What a relay says about its ability to create contexts in one group. */
-export interface CreationDescription {
-  /** The account a creation warrant must name as `executor`, hex. */
-  executorAccount: string;
+export interface CreationDescription extends RelayExecutor {
   /** The group, hex. */
   groupId: string;
   /**
@@ -177,9 +180,7 @@ export interface CreatedContext {
 }
 
 /** What a relay says about publishing governance ops for members of one group. */
-export interface GovernanceDescription {
-  /** The account a governance warrant must name as `executor`, hex. */
-  executorAccount: string;
+export interface GovernanceDescription extends RelayExecutor {
   /** The group asked about, hex. */
   groupId: string;
   /**
@@ -216,11 +217,10 @@ export interface FoundNamespaceInput {
    */
   salt?: string;
   /**
-   * The relay's account, hex: the warrant's `executor`. The namespace does not
-   * exist yet, so there is nothing to ask `describeGovernance` about. Falls back
-   * to the client's configured or already-learned `executorAccount`.
+   * The relay's account and node key (pinned, or from `resolveRelayNodeKey`). Never
+   * a discovery answer: that key is unauthenticated, and no namespace exists yet.
    */
-  executorAccount?: string;
+  executor: RelayExecutor;
   /**
    * The namespace root's default capability mask (`MemberCapabilities` bits),
    * set right after founding. A namespace is founded with core's minimal
@@ -335,7 +335,7 @@ function retryAfterMs(headers: Headers | undefined): number | null {
 
 export class RelayClient {
   private readonly baseUrl: string;
-  private executorAccount: string | undefined;
+  private executor: RelayExecutor | undefined;
   private readonly config: RelayClientConfig;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
@@ -345,7 +345,6 @@ export class RelayClient {
   constructor(config: RelayClientConfig) {
     this.config = config;
     this.baseUrl = config.relayUrl.replace(/\/+$/, '');
-    this.executorAccount = config.executorAccount;
     const injected = config.fetch;
     this.fetchImpl = injected
       ? (input: RequestInfo | URL, init?: RequestInit) => injected(input, init)
@@ -402,12 +401,13 @@ export class RelayClient {
    * as diagnostics after a failure.
    */
   async describe(contextId: string): Promise<RelayDescription> {
-    const body = await this.json<{
-      data: { executorAccount: string; canAuthorOnBehalf: boolean; groupId: string };
-    }>('GET', `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`);
+    const body = await this.json<{ data: RelayDescription }>(
+      'GET',
+      `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
+    );
     // Learned, not merely returned: a client that called `describe` should not
-    // then have to pass the account back in to `execute`.
-    this.executorAccount = body.data.executorAccount;
+    // then have to pass the executor back in to `execute`.
+    this.checkedExecutor(body.data);
     return body.data;
   }
 
@@ -423,7 +423,7 @@ export class RelayClient {
     method: string,
     argsJson: unknown = {},
   ): Promise<IntentResult<T>> {
-    const executor = this.executorAccount ?? (await this.describe(contextId)).executorAccount;
+    const executor = this.executor ?? this.checkedExecutor(await this.describe(contextId));
 
     // Resolved before the nonce, so a misconfigured key burns none.
     const signer = await this.authorSigner();
@@ -432,7 +432,8 @@ export class RelayClient {
     const warrant = await signWarrant({
       context: contextId,
       authorAccount: this.config.authorAccount,
-      executor,
+      executor: executor.executorAccount,
+      executorKey: executor.executorKey,
       method,
       argsJson,
       nonce,
@@ -444,7 +445,11 @@ export class RelayClient {
       'POST',
       `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
       { method, argsJson, warrant, authorProof: this.config.authorProof },
-    );
+    ).catch((err: unknown) => {
+      // A relay that re-keyed refuses every warrant naming its old key, so ask again next time.
+      if (err instanceof IntentRefusedError) this.executor = undefined;
+      throw err;
+    });
     return { rootHash: body.data.rootHash, returns: body.data.returns ?? null };
   }
 
@@ -526,7 +531,7 @@ export class RelayClient {
         403,
       );
     }
-    const executor = this.checkedExecutor(described.executorAccount);
+    const executor = this.checkedExecutor(described);
 
     const initArgs = input.initArgs ?? {};
     // Resolved before the nonce, so a misconfigured key burns none.
@@ -537,7 +542,8 @@ export class RelayClient {
       group: input.groupId,
       seed: input.seed,
       authorAccount: this.config.authorAccount,
-      executor,
+      executor: executor.executorAccount,
+      executorKey: executor.executorKey,
       applicationId: input.applicationId,
       serviceName: input.serviceName,
       name: input.name,
@@ -561,7 +567,7 @@ export class RelayClient {
 
   /**
    * Ask the relay whether it may publish governance ops for members of
-   * `groupId`, and which account a warrant must name.
+   * `groupId`, and which account and key a warrant must name.
    */
   async describeGovernance(groupId: string): Promise<GovernanceDescription> {
     const body = await this.json<{ data: GovernanceDescription }>(
@@ -598,7 +604,7 @@ export class RelayClient {
         403,
       );
     }
-    const executor = this.checkedExecutor(described.executorAccount);
+    const executor = this.checkedExecutor(described);
 
     // Resolved before the nonce, so a misconfigured key burns none.
     const signer = await this.authorSigner();
@@ -608,7 +614,8 @@ export class RelayClient {
       scope: input.groupId,
       op: input.op,
       authorAccount: this.config.authorAccount,
-      executor,
+      executor: executor.executorAccount,
+      executorKey: executor.executorKey,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
       signer,
@@ -636,9 +643,7 @@ export class RelayClient {
    *
    * The executor cannot be learned from the relay first: the namespace does not
    * exist, so `describeGovernance` has nothing to answer about. It comes from
-   * `input.executorAccount`, the configured one, or one an earlier call learned
-   * (`describe`, `createContext`, `govern`), and without any of them this
-   * throws before taking a nonce.
+   * `input.executor` only, and without it this throws before taking a nonce.
    * The nonce is spent in the new namespace's ledger.
    *
    * With `defaultCapabilities`, the founder then sets the namespace's default
@@ -649,16 +654,14 @@ export class RelayClient {
    * Refusals (`400`/`403`) come back as {@link IntentRefusedError}; a salt
    * that names an existing namespace is a `409`, an `HTTPError`.
    */
-  async foundNamespace(input: FoundNamespaceInput = {}): Promise<FoundedNamespace> {
-    const executor = input.executorAccount
-      ? this.checkedExecutor(input.executorAccount)
-      : this.executorAccount;
-    if (!executor) {
+  async foundNamespace(input: FoundNamespaceInput): Promise<FoundedNamespace> {
+    if (!input?.executor) {
       throw new Error(
-        "foundNamespace needs the relay's account: pass executorAccount or configure it " +
+        "foundNamespace needs the relay's account and signing key: pass executor " +
           '(checked before signing, no nonce was spent)',
       );
     }
+    const executor = this.checkedExecutor(input.executor);
     const salt = input.salt
       ? hex(fromHex(input.salt, 'salt', 32))
       : hex(crypto.getRandomValues(new Uint8Array(32)));
@@ -685,7 +688,8 @@ export class RelayClient {
       scope: namespaceId,
       op,
       authorAccount: this.config.authorAccount,
-      executor,
+      executor: executor.executorAccount,
+      executorKey: executor.executorKey,
       nonce,
       notAfter: BigInt(Math.floor(Date.now() / 1000)) + BigInt(ttl),
       signer,
@@ -740,19 +744,23 @@ export class RelayClient {
   }
 
   /**
-   * The executor a warrant must name: the one the relay answered with, which a
-   * configured account must agree with. Remembered for later calls.
+   * The relay's answer, checked against a configured account and remembered.
+   * Decoded here so a relay naming no key is refused before a nonce is taken.
    */
-  private checkedExecutor(answered: string): string {
+  private checkedExecutor(answered: RelayExecutor): RelayExecutor {
+    const executor = {
+      executorAccount: hex(fromHex(answered.executorAccount ?? '', "the relay's executorAccount", 32)),
+      executorKey: hex(fromHex(answered.executorKey ?? '', "the relay's executorKey", 32)),
+    };
     const configured = this.config.executorAccount;
-    if (configured && configured.toLowerCase() !== answered.toLowerCase()) {
+    if (configured && configured.toLowerCase() !== executor.executorAccount) {
       throw new Error(
         `configured executorAccount ${configured} is not the relay's account ` +
-          `${answered}; a warrant naming it would be unspendable`,
+          `${executor.executorAccount}; a warrant naming it would be unspendable`,
       );
     }
-    this.executorAccount = answered;
-    return answered;
+    this.executor = executor;
+    return executor;
   }
 
   /**
