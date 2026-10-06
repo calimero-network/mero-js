@@ -442,6 +442,7 @@ describe('createAttestedSealedFetch', () => {
   const baseUrl = StandInNode.baseUrl;
   const CONTEXT = '01'.repeat(32);
   const EXECUTOR = '4d'.repeat(32);
+  const EXECUTOR_KEY = 'ec'.repeat(32);
 
   /**
    * The stand-in node, plus the one unsealed route a client needs first:
@@ -504,8 +505,14 @@ describe('createAttestedSealedFetch', () => {
    * ingress, where TLS ends) carries opaque envelopes.
    */
   it('carries a RelayClient intent to the relay sealed, warrant and arguments included', async () => {
-    const { node, fetch: fetchImpl } = await attestingNode(() =>
-      ok('{"data":{"rootHash":"root-1","returns":"ok"}}'),
+    const { node, fetch: fetchImpl } = await attestingNode((head) =>
+      head.method === 'GET'
+        ? ok(
+            JSON.stringify({
+              data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, canAuthorOnBehalf: true, groupId: 'ab'.repeat(32) },
+            }),
+          )
+        : ok('{"data":{"rootHash":"root-1","returns":"ok"}}'),
     );
     const relay = new RelayClient({
       relayUrl: baseUrl,
@@ -520,13 +527,16 @@ describe('createAttestedSealedFetch', () => {
     const result = await relay.execute(CONTEXT, 'transfer_secret_amount', { to: 'bob', amount: 4242 });
 
     expect(result).toEqual({ rootHash: 'root-1', returns: 'ok' });
-    const [intent] = node.requests;
+    // Discovery first, sealed like the write: it names the key the warrant carries.
+    const [discovery, intent] = node.requests;
+    expect(discovery.head.method).toBe('GET');
     expect(intent.head.method).toBe('POST');
     expect(intent.head.path).toBe(`/admin-api/contexts/${CONTEXT}/intents`);
     const sent = JSON.parse(intent.body) as { method: string; argsJson: unknown; warrant: string };
     expect(sent.method).toBe('transfer_secret_amount');
     expect(sent.argsJson).toEqual({ to: 'bob', amount: 4242 });
     expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
+    expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
 
     const wire = node.fetch.mock.calls
       .map(([, init]) => new TextDecoder('latin1').decode(init.body as Uint8Array))

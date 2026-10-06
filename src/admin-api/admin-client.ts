@@ -882,12 +882,12 @@ export class AdminApiClient {
    * anything.
    *
    * The two facts {@link performIntent} needs and a client cannot derive: whose
-   * account goes in the warrant's `executor`, and whether this node holds
-   * `CAN_AUTHOR_ON_BEHALF` on the owning group. `canAuthorOnBehalf: false` comes
-   * back as an answer rather than an error — it is the default state of every
-   * context — so a caller can say "an admin of `groupId` must grant it to
-   * `executorAccount`" instead of presenting a warrant that will be refused
-   * after the author has spent a nonce on it.
+   * account and key go in the warrant's `executor` and `executor_key`, and
+   * whether this node holds `CAN_AUTHOR_ON_BEHALF` on the owning group.
+   * `canAuthorOnBehalf: false` comes back as an answer rather than an error, as
+   * it is the default state of every context, so a caller can say "an admin of
+   * `groupId` must grant it to `executorAccount`" instead of presenting a
+   * warrant that will be refused after the author has spent a nonce on it.
    *
    * `404` means the context belongs to no group, or this node holds no account
    * yet; either way it can be named as no warrant's executor.

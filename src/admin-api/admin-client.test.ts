@@ -695,8 +695,7 @@ describe('AdminApiClient', () => {
 
       expect(result).toEqual({ rootHash: 'root-1', returns: null });
       // Only the author's half goes out. The node attaches its own credential,
-      // so a caller never has to learn which of its processes runs the intent —
-      // and a re-key on its side does not void a warrant already issued.
+      // which must match the warrant's `executor` and `executor_key`.
       expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/intents')).toEqual({
         method: 'set',
         argsJson: { key: 'k', value: 'v' },
