@@ -509,7 +509,14 @@ describe('createAttestedSealedFetch', () => {
       head.method === 'GET'
         ? ok(
             JSON.stringify({
-              data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, canAuthorOnBehalf: true, groupId: 'ab'.repeat(32) },
+              data: {
+                executorAccount: EXECUTOR,
+                executorKey: EXECUTOR_KEY,
+                canAuthorOnBehalf: true,
+                groupId: 'ab'.repeat(32),
+                releaseBytecodeId: 'b1'.repeat(32),
+                releaseVersion: '1.2.0',
+              },
             }),
           )
         : ok('{"data":{"rootHash":"root-1","returns":"ok"}}'),
@@ -537,6 +544,7 @@ describe('createAttestedSealedFetch', () => {
     expect(sent.argsJson).toEqual({ to: 'bob', amount: 4242 });
     expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
     expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
+    expect(parseWarrant(sent.warrant).releaseBytecodeId).toBe('b1'.repeat(32));
 
     const wire = node.fetch.mock.calls
       .map(([, init]) => new TextDecoder('latin1').decode(init.body as Uint8Array))

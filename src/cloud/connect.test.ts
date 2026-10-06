@@ -28,6 +28,7 @@ const EXECUTOR = '4d'.repeat(32);
 /** The relay's signing key, which only the relay's own discovery reports. */
 const EXECUTOR_KEY = 'ec'.repeat(32);
 const GROUP = 'ab'.repeat(32);
+const RELEASE = { releaseBytecodeId: 'b1'.repeat(32), releaseVersion: '1.2.0' };
 const DEVICE_SECRET = '77'.repeat(32);
 
 /**
@@ -66,7 +67,7 @@ const namespaceRow = (id: string, haStatus = 'enabled') => ({
 });
 
 /** What the relay's own discovery answers for {@link CONTEXT}. */
-const described = { data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, canAuthorOnBehalf: true, groupId: GROUP } };
+const described = { data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, canAuthorOnBehalf: true, groupId: GROUP, ...RELEASE } };
 
 const readyRelay = {
   peer_id: '12D3KooWready',
@@ -290,11 +291,12 @@ describe('connectCloud', () => {
     await connection.execute(CONTEXT, 'set', {});
 
     // context (32) ‖ author account (32) ‖ author device key (32) ‖ executor (32)
-    // ‖ executor key (32)
+    // ‖ executor key (32) ‖ release bytecode id (32)
     expect(sentWarrant.slice(0, 32 * 2)).toBe(CONTEXT);
     expect(sentWarrant.slice(32 * 2, 64 * 2)).toBe(AUTHOR);
     expect(sentWarrant.slice(96 * 2, 128 * 2)).toBe(EXECUTOR);
     expect(sentWarrant.slice(128 * 2, 160 * 2)).toBe(EXECUTOR_KEY);
+    expect(sentWarrant.slice(160 * 2, 192 * 2)).toBe(RELEASE.releaseBytecodeId);
   });
 
   /**
@@ -346,11 +348,8 @@ describe('connectCloud', () => {
     expect(calls).toEqual([]);
   });
 
-  /**
-   * The cloud names the relay's account but not its signing key, which the
-   * warrant must name too, so the first write asks the relay once.
-   */
-  it("asks the relay once for the key the cloud does not report", async () => {
+  /** The cloud reports no key or release, and the release moves with each upgrade. */
+  it('asks the relay before every write for the key and release the cloud does not report', async () => {
     const { fetch, calls } = routedFetch({
       '/api/cloud/me/namespaces': [namespaceRow(NS)],
       [`/api/cloud/me/namespaces/${NS}/relays`]: { relays: [readyRelay] },
@@ -363,6 +362,7 @@ describe('connectCloud', () => {
     await connection.execute(CONTEXT, 'set', {});
 
     expect(calls.filter((c) => c.startsWith('GET https://relay.example'))).toEqual([
+      `GET https://relay.example/admin-api/contexts/${CONTEXT}/intents`,
       `GET https://relay.example/admin-api/contexts/${CONTEXT}/intents`,
     ]);
   });
@@ -380,6 +380,7 @@ describe('connectCloud', () => {
       executorKey: EXECUTOR_KEY,
       canAuthorOnBehalf: true,
       groupId: GROUP,
+      ...RELEASE,
     });
   });
 

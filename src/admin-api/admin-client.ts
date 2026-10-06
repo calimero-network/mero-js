@@ -881,16 +881,18 @@ export class AdminApiClient {
    * Ask what this node can do for a member in `contextId`, before they sign
    * anything.
    *
-   * The two facts {@link performIntent} needs and a client cannot derive: whose
-   * account and key go in the warrant's `executor` and `executor_key`, and
-   * whether this node holds `CAN_AUTHOR_ON_BEHALF` on the owning group.
+   * The facts {@link performIntent} needs and a client cannot derive: whose
+   * account and key go in the warrant's `executor` and `executor_key`, which
+   * release it pins, and whether this node holds `CAN_AUTHOR_ON_BEHALF` on the
+   * owning group.
    * `canAuthorOnBehalf: false` comes back as an answer rather than an error, as
    * it is the default state of every context, so a caller can say "an admin of
    * `groupId` must grant it to `executorAccount`" instead of presenting a
    * warrant that will be refused after the author has spent a nonce on it.
    *
-   * `404` means the context belongs to no group, or this node holds no account
-   * yet; either way it can be named as no warrant's executor.
+   * `404` means the context belongs to no group, this node holds no account or
+   * identity in it yet, or its group names no release yet; no warrant can be
+   * spent here until that changes.
    *
    * For a caller with no credential on the node at all — a browser tab holding
    * one signing key — use `RelayClient`, which reads this same route on a node

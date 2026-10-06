@@ -576,9 +576,10 @@ cloud.disableHA({ groupId, contextId });
 
 ## What this client never sees
 
-Discovery goes through the cloud, except the relay's signing key, which the
-relay itself reports before the first write; the **write goes straight from
-your client to the relay**. The cloud is handed an address and a public account id, and never a
-warrant, a device secret, or an intent. A cloud that proxied intents would read
+Discovery goes through the cloud, except the relay's signing key and the
+release a warrant pins, which the relay itself reports before each write; the
+**write goes straight from your client to the relay**. The cloud is handed an
+address and a public account id, and never a warrant, a device secret, or an
+intent. A cloud that proxied intents would read
 the method and arguments of every write its users make — the plaintext is the
 whole point of that hop — and would put itself on the critical path of each one.

@@ -89,23 +89,34 @@ Every warrant names the relay twice: `executor`, its **account**, and
 `executor_key`, the one signing key of that account that may spend it.
 A relay refuses a warrant naming any other key, so one warrant is spent by one
 relay node, once.
-Only the relay can report its key, so the first call asks it (`describe`,
+Only the relay can report its key, so the client asks it (`describe`,
 `describeCreation` or `describeGovernance`), even when `executorAccount` is
 configured, and refuses before taking a nonce when a configured account
 disagrees or the relay names no key.
 A relay that re-keys voids the warrants it has not spent yet.
 
+An intent warrant also pins the **release** the context's group names:
+`release_bytecode_id`, the blob id of its bytecode, and `release_version`, its
+semver (signed, never compared, at most 256 bytes of UTF-8).
+The relay refuses a warrant pinning any other release, before it runs anything,
+so a warrant signed against one build cannot be spent after an upgrade widens
+what the method does.
+`describe` reports both, and rejects with discovery's `404` while the group names no release.
+
 In all three warrants `executor_key` (32 bytes) comes right after `executor`,
 in the signed preimage and in the borsh encoding alike:
 
 ```text
-intent:     context ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ app_version ‖ …
+intent:     context ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ release_bytecode_id ‖ release_version ‖ method ‖ …
 creation:   group ‖ seed ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ application_id ‖ …
 governance: scope ‖ kind ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ op_hash ‖ …
 ```
 
-`signWarrant`, `signCreationWarrant` and `signGovernanceWarrant` take it as
-`executorKey` (hex), and core pins the bytes in
+`release_version` is a borsh `String` in the encoding (a u32 little-endian
+length, then the UTF-8) and its own length-prefixed part in the preimage.
+`signWarrant`, `signCreationWarrant` and `signGovernanceWarrant` take the key as
+`executorKey` (hex), `signWarrant` takes the release as `releaseBytecodeId`
+(hex) and `releaseVersion`, and core pins the bytes in
 `crates/account/src/tests/{warrant,creation,governance}_wire_fixture.rs`.
 
 ## `describe(contextId): Promise<RelayDescription>`
@@ -118,6 +129,8 @@ interface RelayDescription {
   executorKey: string;        // what its `executor_key` must name: the relay's signing key
   canAuthorOnBehalf: boolean; // does the relay hold the grant on the owning group?
   groupId: string;            // whose admin grants it
+  releaseBytecodeId: string;  // the release the group names: what the warrant pins
+  releaseVersion: string;     // its semver, signed alongside it
 }
 ```
 
@@ -146,9 +159,10 @@ One intent, once. The warrant authorizes exactly this method and these arguments
 in exactly this context, and its nonce is spent by the network on apply —
 nothing accumulates and nothing is reusable.
 
-The first call runs `describe` and remembers the executor it answers; later
-calls go straight to the write.
-A refusal forgets it, so the next call asks again and follows a relay that re-keyed.
+Every call runs `describe` first and signs what it answers, so a warrant pins
+the release the group names now and follows a relay that re-keyed.
+A group that names no release yet surfaces as discovery's `404` `HTTPError`,
+before a nonce is taken.
 
 ## `describeCreation(groupId, { author? }): Promise<CreationDescription>`
 

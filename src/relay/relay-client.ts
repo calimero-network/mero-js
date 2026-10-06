@@ -18,8 +18,9 @@
  * # The three preconditions, and why they are checked in this order
  *
  * `describe()` answers the first two in one call, before anything is signed:
- * the relay's executor account and signing key (which the warrant must name)
- * and whether it holds `CAN_AUTHOR_ON_BEHALF` on the owning group. The third,
+ * the relay's executor account and signing key and the release the context's
+ * group names (which the warrant must name), and whether it holds
+ * `CAN_AUTHOR_ON_BEHALF` on the owning group. The third,
  * that the author's account is a member, only the group knows, and it surfaces
  * as a refusal.
  *
@@ -28,7 +29,7 @@
  * unspendable: the number is gone and the write never happened.
  */
 
-import { signWarrant } from '../warrant/warrant.js';
+import { releaseVersionBytes, signWarrant } from '../warrant/warrant.js';
 import { resolveSigner, type Signer } from '../signer/signer.js';
 import { signCreationWarrant } from '../warrant/creation-warrant.js';
 import { signGovernanceWarrant } from '../warrant/governance-warrant.js';
@@ -59,7 +60,7 @@ export interface RelayClientConfig {
    * The account the relay writes as, hex — a warrant's `executor`.
    *
    * Only checked against what the relay answers: a warrant also names the
-   * relay's signing key, which only discovery reports, so the first call asks.
+   * relay's signing key and the release, which only discovery reports, so every write asks.
    */
   executorAccount?: string;
   /** The author's account, hex — whose consent the warrant carries. */
@@ -99,9 +100,9 @@ export interface RelayClientConfig {
   /**
    * Seconds a minted warrant stays valid. Defaults to 300.
    *
-   * Checked by the relay against its own clock and deliberately never by peers,
-   * so this bounds how long *this* request may sit in flight — not how long the
-   * network will accept the delta.
+   * Checked by the relay against its own clock, and by peers against the
+   * delta's own signed stamp, never their clocks: this bounds how long *this*
+   * request may sit in flight before the relay runs it.
    */
   ttlSeconds?: number;
   /** Injected for tests and non-browser runtimes. Defaults to global `fetch`. */
@@ -131,6 +132,13 @@ export interface RelayDescription extends RelayExecutor {
   canAuthorOnBehalf: boolean;
   /** The group whose admin grants that capability, hex. */
   groupId: string;
+  /**
+   * The blob id of the release the group names, hex: what a warrant must pin
+   * as `release_bytecode_id`. Discovery answers 404 while the group names none.
+   */
+  releaseBytecodeId: string;
+  /** That release's semver, signed as the warrant's `release_version`. */
+  releaseVersion: string;
 }
 
 /** What a relay says about its ability to create contexts in one group. */
@@ -335,7 +343,6 @@ function retryAfterMs(headers: Headers | undefined): number | null {
 
 export class RelayClient {
   private readonly baseUrl: string;
-  private executor: RelayExecutor | undefined;
   private readonly config: RelayClientConfig;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
@@ -405,9 +412,6 @@ export class RelayClient {
       'GET',
       `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
     );
-    // Learned, not merely returned: a client that called `describe` should not
-    // then have to pass the executor back in to `execute`.
-    this.checkedExecutor(body.data);
     return body.data;
   }
 
@@ -423,7 +427,15 @@ export class RelayClient {
     method: string,
     argsJson: unknown = {},
   ): Promise<IntentResult<T>> {
-    const executor = this.executor ?? this.checkedExecutor(await this.describe(contextId));
+    // Asked on every write: the release moves with each upgrade of the group, and a
+    // warrant pinning the one before is refused. All of it is checked before the nonce.
+    const described = await this.describe(contextId);
+    const executor = this.checkedExecutor(described);
+    const releaseBytecodeId = hex(
+      fromHex(described.releaseBytecodeId ?? '', "the relay's releaseBytecodeId", 32),
+    );
+    const releaseVersion = described.releaseVersion ?? '';
+    releaseVersionBytes(releaseVersion);
 
     // Resolved before the nonce, so a misconfigured key burns none.
     const signer = await this.authorSigner();
@@ -434,6 +446,8 @@ export class RelayClient {
       authorAccount: this.config.authorAccount,
       executor: executor.executorAccount,
       executorKey: executor.executorKey,
+      releaseBytecodeId,
+      releaseVersion,
       method,
       argsJson,
       nonce,
@@ -445,11 +459,7 @@ export class RelayClient {
       'POST',
       `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
       { method, argsJson, warrant, authorProof: this.config.authorProof },
-    ).catch((err: unknown) => {
-      // A relay that re-keyed refuses every warrant naming its old key, so ask again next time.
-      if (err instanceof IntentRefusedError) this.executor = undefined;
-      throw err;
-    });
+    );
     return { rootHash: body.data.rootHash, returns: body.data.returns ?? null };
   }
 
@@ -744,7 +754,7 @@ export class RelayClient {
   }
 
   /**
-   * The relay's answer, checked against a configured account and remembered.
+   * The relay's answer, checked against a configured account.
    * Decoded here so a relay naming no key is refused before a nonce is taken.
    */
   private checkedExecutor(answered: RelayExecutor): RelayExecutor {
@@ -759,7 +769,6 @@ export class RelayClient {
           `${executor.executorAccount}; a warrant naming it would be unspendable`,
       );
     }
-    this.executor = executor;
     return executor;
   }
 

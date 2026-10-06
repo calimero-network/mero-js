@@ -43,7 +43,8 @@ const WARRANT_TERMS = {
   authorAccount: '22'.repeat(32),
   executor: '33'.repeat(32),
   executorKey: '77'.repeat(32),
-  appVersion: '44'.repeat(32),
+  releaseBytecodeId: '44'.repeat(32),
+  releaseVersion: '1.0.0',
   method: 'set',
   argsJson: { key: 'k', value: 'v' },
   accountHeads: ['55'.repeat(32)],
@@ -115,7 +116,7 @@ describe('a CryptoKey signs exactly what the same secret signs', () => {
     // Ed25519 is deterministic, so identical output means identical preimage —
     // and this is the signature `warrant_wire_fixture.rs` asserts.
     expect(fromKey).toContain(
-      '317e0f841ded54b75e227d66abd819b95892218a6c70cb92d6a94fb0fb74ea81',
+      'e42f753e1a30657fe036b0c0a07030f3f6d92ea56749921c5a6ae07eb966cb50',
     );
   });
 });
