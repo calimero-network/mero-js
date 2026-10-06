@@ -85,8 +85,8 @@ export interface DeviceCertInput {
  * Mint a device id: `nonce ‖ H(DEVICE_ID_DOMAIN, account ‖ nonce)[..16]`.
  *
  * Derived from the account and a fresh nonce rather than from the device's keys,
- * so rotating a keypair keeps the replica identity — and with it the counter
- * slots and HLC lineage — intact. The hash half binds the id to its account:
+ * so rotating a keypair keeps the replica identity - and with it the counter
+ * slots and HLC lineage - intact. The hash half binds the id to its account:
  * core refuses a certificate naming an id minted for another account.
  */
 export async function mintDeviceId(

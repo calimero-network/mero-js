@@ -2,8 +2,10 @@
  * Vectors produced by core's own code — `DeviceScope::signing_payload`,
  * `DeviceScope::sign` and `borsh::to_vec(&AccountProof<DeviceScope>)` — from a
  * scratch program run against core at the commit that added
- * `POST /admin-api/namespaces/{namespace_id}/account/link-device`. Ed25519 is
- * deterministic, so the whole proof, signature included, is pinned.
+ * `POST /admin-api/namespaces/{namespace_id}/account/link-device`, then
+ * re-derived for the account-bound device id by an independent transcription
+ * that first reproduced the earlier vectors. Ed25519 is deterministic, so the
+ * whole proof, signature included, is pinned.
  */
 import { describe, it, expect } from 'vitest';
 
