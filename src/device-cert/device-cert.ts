@@ -82,11 +82,12 @@ export interface DeviceCertInput {
 }
 
 /**
- * Mint a device id: `H(DEVICE_ID_DOMAIN, account ‖ nonce)`.
+ * Mint a device id: `nonce ‖ H(DEVICE_ID_DOMAIN, account ‖ nonce)[..16]`.
  *
  * Derived from the account and a fresh nonce rather than from the device's keys,
  * so rotating a keypair keeps the replica identity — and with it the counter
- * slots and HLC lineage — intact.
+ * slots and HLC lineage — intact. The hash half binds the id to its account:
+ * core refuses a certificate naming an id minted for another account.
  */
 export async function mintDeviceId(
   account: string,
@@ -96,7 +97,8 @@ export async function mintDeviceId(
     throw new Error(`nonce must be 16 bytes, got ${nonce.length}`);
   }
   const accountBytes = fromHex(account, 'account', 32);
-  return hex(await domainHash(DEVICE_ID_DOMAIN, [accountBytes, nonce]));
+  const binding = await domainHash(DEVICE_ID_DOMAIN, [accountBytes, nonce]);
+  return hex(concat(nonce, binding.subarray(0, 16)));
 }
 
 /**
