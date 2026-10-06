@@ -1,3 +1,9 @@
+## [24.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.2.0...mero-js-v24.3.0) (2026-10-06)
+
+### Features
+
+* **warrant:** pin each data warrant to the release it is signed against ([#255](https://github.com/calimero-network/mero-js/issues/255)) ([b2abb95](https://github.com/calimero-network/mero-js/commit/b2abb955abaf52265a9b65a220cfc3fff79defc2))
+
 ## [24.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.3...mero-js-v24.2.0) (2026-10-06)
 
 ### Features
