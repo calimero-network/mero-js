@@ -22,6 +22,7 @@ import {
   verifyDeviceCredential,
 } from './device-cert.js';
 import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
+import { derivePublicKey, hex } from '../crypto/internal.js';
 
 const PKCS8_ED25519_PREFIX = new Uint8Array([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
@@ -42,13 +43,33 @@ const ACCOUNT = '11'.repeat(32);
 const DEVICE = '33'.repeat(32);
 const SIGN_PK = '44'.repeat(32);
 const KEM_PK = '55'.repeat(32);
+/** Copied from core's `sdk_credential_fixture.rs`, which core verifies. */
+const CORE_SDK_CREDENTIAL =
+  '02ed6a47a39da869b5446155e40b2d93f1e3f0167be26732bae7a3ef9d8e3a3fd300000000ca999783990fd7f4ea0c192135f78c17ac77745bf580b2ed20fea455a8133845a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1044305da225179a277d6d96e07ff21ea8b237d788e8eaaef550c6d125823fa45f1fd5fc29b2c88bdf871119471fc13123a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a00000000000000004ba6c450e21f28d01b03c2fcb10a5c188a388ef6298fcb1ec23d381b7acc8f3386f08d81672c9089d2ad7bf0ff180ccad61163baa852a021c6773e625aed8a00';
 
 describe('device certificate', () => {
   it('mints the device id core mints', async () => {
     const nonce = new Uint8Array(16).fill(0x22);
     await expect(mintDeviceId(ACCOUNT, nonce)).resolves.toBe(
-      '7042c913b557a30a2cbabcaccdbecd1014bc0cb3fe594c0d82f95d2887312ab4',
+      '222222222222222222222222222222227042c913b557a30a2cbabcaccdbecd10',
     );
+  });
+
+  it('signs the credential core pins for the SDK', async () => {
+    const rootSecret = '5c'.repeat(32);
+    const device = await mintDeviceId(
+      await accountForRoot(rootSecret),
+      new Uint8Array(16).fill(0xa1),
+    );
+    await expect(
+      signDeviceCert({
+        rootSecret,
+        device,
+        signPublicKey: hex(await derivePublicKey('6d'.repeat(32))),
+        kemPublicKey: '3a'.repeat(32),
+        deviceEpoch: 0,
+      }),
+    ).resolves.toBe(CORE_SDK_CREDENTIAL);
   });
 
   it('refuses a nonce that is not 16 bytes', async () => {
