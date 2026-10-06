@@ -202,8 +202,77 @@ describe('CloudClient relay discovery', () => {
         canExecute: true,
         lastSeenAt: '2026-01-01T00:00:00',
         confirmedAt: '2026-01-01T00:00:00',
+        // A cloud that sends none of these leaves them null, not guessed.
+        admission: null,
+        admissionHint: null,
+        join: null,
       },
     ]);
+  });
+
+  it('carries why a relay is not joining, in the admitters own words', async () => {
+    // The case that motivated it: a node an HA disable had removed, refused on
+    // every attempt while the owner saw only `assigned`.
+    const reason =
+      'identity d8c5 was removed from group b42f and cannot rejoin; an admin must re-add them';
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          relays: [
+            relayRow({
+              status: 'assigned',
+              admission: 'refused',
+              admission_hint: 'The node is alive and still trying, but the namespace owner has not admitted it.',
+              join: {
+                state: 'refused',
+                attempts: 4,
+                refusals: [{ peer: '12D3KooWowner', reason }],
+                error: null,
+                reported_at: '2026-10-06T02:58:25',
+              },
+            }),
+          ],
+        },
+      },
+    ]);
+
+    const [relay] = await signedIn(fetch).getNamespaceRelays(NS);
+
+    expect(relay.admission).toBe('refused');
+    expect(relay.admissionHint).toContain('namespace owner');
+    expect(relay.join).toEqual({
+      state: 'refused',
+      attempts: 4,
+      refusals: [{ peer: '12D3KooWowner', reason }],
+      error: null,
+      reportedAt: '2026-10-06T02:58:25',
+    });
+  });
+
+  it('reads a malformed join as no report rather than throwing', async () => {
+    const { fetch } = scriptedFetch([
+      {
+        body: {
+          relays: [
+            relayRow({ peer_id: 'a', join: 'refused' }),
+            relayRow({ peer_id: 'b', join: { attempts: 3 } }),
+            relayRow({ peer_id: 'c', join: { state: 'error', refusals: 'x', error: 'fleet-join failed: timed out after 90s' } }),
+          ],
+        },
+      },
+    ]);
+
+    const [a, b, c] = await signedIn(fetch).getNamespaceRelays(NS);
+
+    expect(a.join).toBeNull();
+    expect(b.join).toBeNull();
+    expect(c.join).toEqual({
+      state: 'error',
+      attempts: 0,
+      refusals: [],
+      error: 'fleet-join failed: timed out after 90s',
+      reportedAt: null,
+    });
   });
 
   it("takes the cloud's can_execute over the grant, both ways", async () => {
