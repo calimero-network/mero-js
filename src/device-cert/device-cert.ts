@@ -307,7 +307,8 @@ export function parseDeviceCredential(credential: string): DeviceCredential {
  * genesis root consented to these exact keys; the account derivation says the
  * certificate cannot have been re-pointed at a different account while keeping a
  * signature that verifies. A caller that checked only the first would accept a
- * certificate naming an account whose root never signed anything.
+ * certificate naming an account whose root never signed anything. The third
+ * stops a root claiming a device id minted for another account.
  *
  * What it does **not** establish is that the account is one the caller wanted.
  * Anyone can mint a root offline and certify any public key with it, so a

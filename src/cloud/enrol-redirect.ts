@@ -34,9 +34,9 @@
  * - the credential certifies **the key this app asked about** — otherwise the
  *   app stores a credential it cannot sign for, and every warrant it mints is
  *   refused somewhere far from here;
- * - the credential is **internally consistent** — the root signed it and the
- *   account it names is the one that root derives ({@link
- *   verifyDeviceCredential});
+ * - the credential is **internally consistent** — the root signed it, the
+ *   account it names is the one that root derives, and its device id was
+ *   minted for that account ({@link verifyDeviceCredential});
  * - the account reported beside it is **the account the credential names** —
  *   the app shows that id to a person and keys state by it, so a mismatch is a
  *   credential filed under someone else's name.
