@@ -97,10 +97,8 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
   });
 
   it('describes itself as unable to author before the grant', async () => {
-    // The read a client makes BEFORE signing. Two things it cannot derive: whose
-    // account goes in the warrant's `executor`, and whether this node may act
-    // here. Both come from one call, on the path the intent will be presented
-    // to.
+    // The read a client makes BEFORE signing: the executor, the release to pin
+    // and whether this node may act here, from the path the intent goes to.
     const relay = await mero.admin.getIntentRelay(contextId);
 
     expect(relay.executorAccount).toBe(relayAccount);

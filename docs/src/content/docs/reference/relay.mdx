@@ -101,7 +101,7 @@ semver (signed, never compared, at most 256 bytes of UTF-8).
 The relay refuses a warrant pinning any other release, before it runs anything,
 so a warrant signed against one build cannot be spent after an upgrade widens
 what the method does.
-`describe` reports both, and answers `404` while the group names no release.
+`describe` reports both, and rejects with discovery's `404` while the group names no release.
 
 In all three warrants `executor_key` (32 bytes) comes right after `executor`,
 in the signed preimage and in the borsh encoding alike:

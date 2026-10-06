@@ -131,7 +131,7 @@ describe('RelayClient.execute', () => {
   });
 
   // A configured account says nothing of which key may spend the warrant, and
-  // only the relay can, so the first write still asks.
+  // only the relay can, so every write asks.
 
   it('asks the relay for its key even when the account is configured', async () => {
     const { fetch, calls } = scriptedFetch([
@@ -172,7 +172,7 @@ describe('RelayClient.execute', () => {
     expect(await nonces.next()).toBe(1n);
   });
 
-  it('asks again after a refusal, so it follows a relay that re-keyed', async () => {
+  it('follows a relay that re-keyed between two writes', async () => {
     const rekeyed = 'ed'.repeat(32);
     const error = `this warrant names executor key ${EXECUTOR_KEY}, not this node's signing key ${rekeyed}`;
     const { fetch, calls } = scriptedFetch([
@@ -191,7 +191,7 @@ describe('RelayClient.execute', () => {
     expect(parseWarrant(sent.warrant).executorKey).toBe(rekeyed);
   });
 
-  it('does not keep a discovery answer it refused', async () => {
+  it('recovers on the next write after refusing a discovery answer', async () => {
     const { fetch, calls } = scriptedFetch([
       { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
       described,
