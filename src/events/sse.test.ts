@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SseClient } from './sse.js';
+import { SseClient, SUBSCRIPTION_TIMEOUT_MS } from './sse.js';
 import { AuthRevokedError, HTTPError } from '../http-client/index.js';
 import type { GroupMigrationEventData } from './group.js';
 
@@ -304,7 +304,7 @@ describe('SseClient', () => {
     });
 
     it('re-subscribes after reconnect', () => {
-      const sendSpy = vi.spyOn(client as any, 'sendSubscription').mockResolvedValue(undefined);
+      const sendSpy = vi.spyOn(client as any, 'postSubscription').mockResolvedValue(null);
 
       // Pre-populate subscriptions
       (client as any).subscribedContextIds.add('ctx-1');
@@ -317,6 +317,77 @@ describe('SseClient', () => {
       }));
 
       expect(sendSpy).toHaveBeenCalledWith('subscribe', { contextIds: ['ctx-1'], groupIds: ['grp-1'] });
+    });
+
+    it('emits connect only once the re-subscribe has landed', async () => {
+      let landed!: () => void;
+      vi.spyOn(client as any, 'postSubscription').mockReturnValue(
+        new Promise<null>((resolve) => { landed = () => resolve(null); }),
+      );
+      const onConnect = vi.fn();
+      client.on('connect', onConnect);
+      (client as any).subscribedContextIds.add('ctx-1');
+
+      (client as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 'new-session' }));
+      await Promise.resolve();
+      expect(onConnect).not.toHaveBeenCalled();
+
+      landed();
+      await vi.waitFor(() => expect(onConnect).toHaveBeenCalledWith('new-session'));
+    });
+
+    it('drops a connect whose re-subscribe lands after the client closed', async () => {
+      let landed!: () => void;
+      vi.spyOn(client as any, 'postSubscription').mockReturnValue(
+        new Promise<null>((resolve) => { landed = () => resolve(null); }),
+      );
+      const onConnect = vi.fn();
+      client.on('connect', onConnect);
+      (client as any).subscribedContextIds.add('ctx-1');
+
+      (client as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 'new-session' }));
+      client.close();
+      landed();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(onConnect).not.toHaveBeenCalled();
+    });
+
+    const reconnectWith = (fetchImpl: typeof fetch) => {
+      const reconnecting = new SseClient({
+        baseUrl: 'http://localhost:4001',
+        getAuthToken: async () => 'test-token',
+        fetch: fetchImpl,
+      });
+      const seen: string[] = [];
+      reconnecting.on('connect', () => seen.push('connect'));
+      reconnecting.on('error', (err) => seen.push(`error:${err.name}`));
+      (reconnecting as any).subscribedContextIds.add('ctx-1');
+      (reconnecting as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 'new-session' }));
+      return { reconnecting, seen };
+    };
+
+    it('announces a refused re-subscribe as connect, then its error', async () => {
+      const { reconnecting, seen } = reconnectWith(async () => new Response('busy', { status: 500 }));
+      await vi.waitFor(() => expect(seen).toEqual(['connect', 'error:HTTPError']));
+      reconnecting.close();
+    });
+
+    it('gives up on a re-subscribe that never answers, so connect is not withheld', async () => {
+      vi.useFakeTimers();
+      try {
+        const hanging: typeof fetch = (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          });
+        const { reconnecting, seen } = reconnectWith(hanging);
+        await vi.advanceTimersByTimeAsync(SUBSCRIPTION_TIMEOUT_MS - 1);
+        expect(seen).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(seen).toEqual(['connect', 'error:TimeoutError']);
+        reconnecting.close();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
