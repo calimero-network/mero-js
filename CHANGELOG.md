@@ -1,3 +1,13 @@
+## [24.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.9.0...mero-js-v24.0.0) (2026-10-06)
+
+### ⚠ BREAKING CHANGES
+
+* **account:** create a subgroup Open unless Restricted is asked for (#251)
+
+### Bug Fixes
+
+* **account:** create a subgroup Open unless Restricted is asked for ([#251](https://github.com/calimero-network/mero-js/issues/251)) ([9d0bf49](https://github.com/calimero-network/mero-js/commit/9d0bf49f07d021c0abb651dd35417cd10a7db869))
+
 ## [23.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v23.8.2...mero-js-v23.9.0) (2026-10-05)
 
 ### Features
