@@ -569,7 +569,7 @@ describe('the admin surface on the relay transport', () => {
     const client = createMeroClient({
       transport: 'relay',
       relay: new RelayClient({
-        relayUrl: 'http://relay.example',
+        relayUrl: 'https://relay.example',
         authorAccount: 'aa'.repeat(32),
         authorProof: 'bb'.repeat(32),
         deviceSecret: 'cc'.repeat(32),
@@ -595,5 +595,35 @@ describe('the admin surface on the relay transport', () => {
     expect(message).toMatch(/warrant/i);
     // and it must still not suggest the caller is one admin grant away
     expect(message).not.toMatch(/permission denied|grant .* admin/i);
+  });
+});
+
+describe('a relay client over cleartext http', () => {
+  const insecure = (extra: Record<string, unknown> = {}) =>
+    createMeroClient({
+      transport: 'relay',
+      relay: {
+        relayUrl: 'http://relay.example',
+        authorAccount: AUTHOR,
+        authorProof: 'aa',
+        deviceSecret: DEVICE_SECRET,
+        nonces: createMemoryNonceSource(1),
+        fetch: fakeRelayFetch(null).fetch,
+      },
+      ...extra,
+    });
+
+  it('refuses a non-loopback relayUrl unless allowInsecureHttp is set', () => {
+    expect(() => insecure()).toThrow(/cleartext/);
+    expect(() => insecure({ allowInsecureHttp: true })).not.toThrow();
+  });
+
+  it('refuses a cleartext observed node, which has its own url', () => {
+    const observe = { ...OBSERVE, nodeUrl: 'http://node.example' };
+    const secureRelay = relayClient(fakeRelayNodeFetch().fetch);
+    const build = (extra: Record<string, unknown> = {}) =>
+      createMeroClient({ transport: 'relay', relay: secureRelay, observe, ...extra });
+    expect(() => build().events).toThrow(/cleartext/);
+    expect(() => build({ allowInsecureHttp: true }).events).not.toThrow();
   });
 });

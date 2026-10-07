@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { WebHttpClient, HTTPError, assertSecureBaseUrl } from './web-client.js';
+import { WebHttpClient, HTTPError, AuthRevokedError, assertSecureBaseUrl } from './web-client.js';
 import type { Transport } from './http-types.js';
 
 describe('assertSecureBaseUrl', () => {
@@ -8,8 +8,14 @@ describe('assertSecureBaseUrl', () => {
     expect(() => assertSecureBaseUrl('ws://node.example.com')).toThrow(/cleartext/);
   });
 
+  it('does not treat lookalike hosts as loopback', () => {
+    for (const url of ['http://app.localhost', 'http://localhost@evil.com', 'http://localhost.:2528']) {
+      expect(() => assertSecureBaseUrl(url), url).toThrow(/cleartext/);
+    }
+  });
+
   it('allows loopback http, https anywhere, and an explicit opt-in', () => {
-    for (const url of ['http://localhost:2528', 'http://app.localhost', 'http://127.0.0.1:2528', 'http://[::1]:2528']) {
+    for (const url of ['http://localhost:2528', 'http://127.0.0.1:2528', 'http://[::1]:2528']) {
       expect(() => assertSecureBaseUrl(url), url).not.toThrow();
     }
     expect(() => assertSecureBaseUrl('https://node.example.com')).not.toThrow();
@@ -63,5 +69,91 @@ describe('WebHttpClient credentials on absolute URLs', () => {
     expect(sent().Authorization).toBeUndefined();
     expect(sent()['x-proof']).toBeUndefined();
     expect(authorizeRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebHttpClient construction', () => {
+  const make = (extra: Partial<Transport>) =>
+    new WebHttpClient({ fetch: vi.fn() as unknown as Transport['fetch'], baseUrl: 'http://remote', ...extra });
+
+  it('refuses a cleartext non-loopback baseUrl unless allowInsecureHttp is set', () => {
+    expect(() => make({})).toThrow(/cleartext/);
+    expect(() => make({ allowInsecureHttp: true })).not.toThrow();
+  });
+});
+
+describe('WebHttpClient foreign-origin responses and headers', () => {
+  function setup(response: Response, extra: Partial<Transport> = {}) {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => response.clone());
+    const onAuthRevoked = vi.fn();
+    const refreshToken = vi.fn(async () => 'fresh');
+    const client = new WebHttpClient({
+      fetch: fetch as unknown as Transport['fetch'],
+      baseUrl: 'https://api.example.com',
+      getAuthToken: async () => 'secret-token',
+      defaultHeaders: { 'X-Tenant': 'acme' },
+      onAuthRevoked,
+      refreshToken,
+      ...extra,
+    });
+    return { client, fetch, onAuthRevoked, refreshToken };
+  }
+  const denied = (authError: string) =>
+    new Response('no', { status: 401, headers: { 'x-auth-error': authError } });
+
+  it('ignores token_revoked from another origin: plain HTTPError, tokens kept', async () => {
+    const { client, onAuthRevoked } = setup(denied('token_revoked'));
+    const err = await client.get('https://evil.example.net/x').catch((e) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).not.toBeInstanceOf(AuthRevokedError);
+    expect(onAuthRevoked).not.toHaveBeenCalled();
+  });
+
+  it('still revokes on token_revoked from the node itself', async () => {
+    const { client, onAuthRevoked } = setup(denied('token_revoked'));
+    await expect(client.get('/x')).rejects.toBeInstanceOf(AuthRevokedError);
+    expect(onAuthRevoked).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh and retry on token_expired from another origin', async () => {
+    const { client, fetch, refreshToken } = setup(denied('token_expired'));
+    await expect(client.get('https://evil.example.net/x')).rejects.toBeInstanceOf(HTTPError);
+    expect(refreshToken).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends defaultHeaders to the node but not to another origin', async () => {
+    const { client, fetch } = setup(new Response('{}', { status: 200 }));
+    await client.get('/x');
+    await client.get('https://other.example.net/x');
+    expect((fetch.mock.calls[0][1]!.headers as Record<string, string>)['X-Tenant']).toBe('acme');
+    expect((fetch.mock.calls[1][1]!.headers as Record<string, string>)['X-Tenant']).toBeUndefined();
+  });
+
+  describe('redirects', () => {
+    const ok = () => new Response('{}', { status: 200 });
+    const redirectOf = (fetch: ReturnType<typeof vi.fn>) => fetch.mock.calls[0][1]!.redirect;
+
+    it('does not follow redirects once a request authorization is attached', async () => {
+      const { client, fetch } = setup(ok(), { authorizeRequest: async () => ({ 'x-proof': 'p' }) });
+      await client.get('/x');
+      expect(redirectOf(fetch)).toBe('manual');
+    });
+
+    it('does not follow redirects once a proof is attached', async () => {
+      const { client, fetch } = setup(ok(), { getProof: async () => 'proof' });
+      await client.get('/x');
+      expect(redirectOf(fetch)).toBe('manual');
+    });
+
+    it('leaves redirect alone for an unsigned request, and honours an explicit one', async () => {
+      const unsigned = setup(ok());
+      await unsigned.client.get('/x');
+      expect(redirectOf(unsigned.fetch)).toBeUndefined();
+
+      const explicit = setup(ok(), { getProof: async () => 'proof' });
+      await explicit.client.get('/x', { redirect: 'error' });
+      expect(redirectOf(explicit.fetch)).toBe('error');
+    });
   });
 });

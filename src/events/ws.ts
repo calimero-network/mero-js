@@ -1,5 +1,7 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 
+import { assertSecureBaseUrl } from '../http-client/index.js';
+
 export type { GroupMembershipEventData, GroupMigrationEventData };
 
 export interface WsEventData {
@@ -42,8 +44,10 @@ export class WsClient {
 
   constructor(opts: {
     baseUrl: string;
+    allowInsecureHttp?: boolean;
     getAuthToken: () => Promise<string>;
   }) {
+    assertSecureBaseUrl(opts.baseUrl, opts.allowInsecureHttp);
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.getAuthToken = opts.getAuthToken;
   }

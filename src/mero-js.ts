@@ -197,6 +197,7 @@ export class MeroJs {
 
     this.httpClient = createBrowserHttpClient({
       baseUrl: this.config.baseUrl,
+      allowInsecureHttp: this.config.allowInsecureHttp,
       fetch: this.config.fetch,
       getProof,
       getAuthToken: async () => {
@@ -279,6 +280,7 @@ export class MeroJs {
     if (!this.sseClient) {
       this.sseClient = new SseClient({
         baseUrl: this.config.baseUrl,
+        allowInsecureHttp: this.config.allowInsecureHttp,
         fetch: this.config.fetch,
         getAuthToken: async () => {
           const token = await this.getValidToken();
@@ -334,6 +336,7 @@ export class MeroJs {
     if (!this.wsClient) {
       this.wsClient = new WsClient({
         baseUrl: this.config.baseUrl,
+        allowInsecureHttp: this.config.allowInsecureHttp,
         getAuthToken: async () => {
           const token = await this.getValidToken();
           return token?.access_token || '';

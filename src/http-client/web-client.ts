@@ -162,7 +162,6 @@ export function assertSecureBaseUrl(baseUrl: string, allowInsecureHttp = false):
 function isLoopbackHost(hostname: string): boolean {
   return (
     hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
     hostname === '127.0.0.1' ||
     hostname === '[::1]'
   );
@@ -205,7 +204,9 @@ export class WebHttpClient implements HttpClient {
   // Cache for concurrent onTokenRefresh calls to prevent duplicate callbacks
   private onTokenRefreshPromise: Promise<void> | null = null;
   
-  constructor(private transport: Transport) {}
+  constructor(private transport: Transport) {
+    assertSecureBaseUrl(transport.baseUrl, transport.allowInsecureHttp);
+  }
 
   async get<T>(path: string, init?: RequestOptions): Promise<T> {
     return this.request<T>(path, { ...init, method: 'GET' });
@@ -300,6 +301,7 @@ export class WebHttpClient implements HttpClient {
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
     const headers = await this.buildHeaders(init?.headers, withCredentials);
+    let signed = false;
     let headersObj: Record<string, string>;
     if (headers instanceof Headers) {
       headersObj = {};
@@ -317,6 +319,7 @@ export class WebHttpClient implements HttpClient {
     // from the URL rather than from `path`, because a base URL may carry a prefix
     // (`…/admin-api`) that the node sees and a bare relative path would not sign.
     if (this.transport.authorizeRequest && withCredentials) {
+      signed = true;
       const body = init?.body;
       if (body !== undefined && typeof body !== 'string' && !(body instanceof Uint8Array)) {
         throw new Error(
@@ -423,7 +426,13 @@ export class WebHttpClient implements HttpClient {
       });
       if (proof) {
         headersObj['X-Calimero-Proof'] = proof;
+        signed = true;
       }
+    }
+
+    // A redirect would replay the proof to wherever it points.
+    if (signed && init?.redirect === undefined) {
+      requestInit.redirect = 'manual';
     }
 
     try {
@@ -445,6 +454,7 @@ export class WebHttpClient implements HttpClient {
         // onAuthRevoked hook and surface a distinguishable error.
         const authError = response.headers.get('x-auth-error');
         if (
+          withCredentials &&
           (response.status === 401 || response.status === 403) &&
           authError &&
           TERMINAL_AUTH_ERRORS.has(authError)
@@ -474,6 +484,7 @@ export class WebHttpClient implements HttpClient {
         // Handle 401 with token_expired - attempt automatic token refresh
         const userAborted = init?.signal?.aborted === true;
         if (
+          withCredentials &&
           response.status === 401 &&
           this.transport.refreshToken &&
           authError === 'token_expired' &&
@@ -625,9 +636,9 @@ export class WebHttpClient implements HttpClient {
     initHeaders: HeadersInit | undefined,
     withCredentials: boolean,
   ): Promise<Record<string, string>> {
-    const headers: Record<string, string> = {
-      ...this.transport.defaultHeaders,
-    };
+    const headers: Record<string, string> = withCredentials
+      ? { ...this.transport.defaultHeaders }
+      : {};
 
     // Add auth token if available and not empty
     if (this.transport.getAuthToken && withCredentials) {

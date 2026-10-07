@@ -9,6 +9,7 @@ export function createHttpClient(transport: Transport): HttpClient {
 // Factory function for browser environments
 export function createBrowserHttpClient(options: {
   baseUrl: string;
+  allowInsecureHttp?: boolean;
   fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
   getProof?: Transport['getProof'];
@@ -36,6 +37,7 @@ export function createBrowserHttpClient(options: {
     fetch: (url: RequestInfo | URL, init?: RequestInit) =>
       options.fetch ? options.fetch(url, init) : globalThis.fetch(url, init),
     baseUrl: options.baseUrl,
+    allowInsecureHttp: options.allowInsecureHttp,
     getAuthToken: options.getAuthToken,
     getProof: options.getProof,
     onTokenRefresh: options.onTokenRefresh,
@@ -53,6 +55,7 @@ export function createBrowserHttpClient(options: {
 // Factory function for Node.js environments
 export function createNodeHttpClient(options: {
   baseUrl: string;
+  allowInsecureHttp?: boolean;
   fetch?: typeof fetch; // Allow injection of undici.fetch or other fetch implementations
   getAuthToken?: () => Promise<string | undefined>;
   getProof?: Transport['getProof'];
@@ -97,6 +100,7 @@ export function createNodeHttpClient(options: {
       ? (url: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(url, init)
       : (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
     baseUrl: options.baseUrl,
+    allowInsecureHttp: options.allowInsecureHttp,
     getAuthToken: options.getAuthToken,
     getProof: options.getProof,
     onTokenRefresh: options.onTokenRefresh,
@@ -114,6 +118,7 @@ export function createNodeHttpClient(options: {
 // Universal factory that works in both environments
 export function createUniversalHttpClient(options: {
   baseUrl: string;
+  allowInsecureHttp?: boolean;
   fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
   getProof?: Transport['getProof'];

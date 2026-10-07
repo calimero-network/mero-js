@@ -59,9 +59,9 @@ const mockAdminClient = {
   getApplication: vi.fn(),
 };
 
-vi.mock('./http-client/index.js', () => ({
+vi.mock('./http-client/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./http-client/index.js')>()),
   createBrowserHttpClient: vi.fn(() => mockHttpClient),
-  assertSecureBaseUrl: vi.fn(),
 }));
 
 vi.mock('./auth-api/index.js', () => ({
@@ -95,6 +95,11 @@ describe('MeroJs SDK', () => {
       expect(meroJs.auth).toBeDefined();
       expect(meroJs.admin).toBeDefined();
       expect(meroJs.isAuthenticated()).toBe(false);
+    });
+
+    it('refuses a cleartext non-loopback baseUrl unless allowInsecureHttp is set', () => {
+      expect(() => new MeroJs({ baseUrl: 'http://remote' })).toThrow(/cleartext/);
+      expect(() => new MeroJs({ baseUrl: 'http://remote', allowInsecureHttp: true })).not.toThrow();
     });
 
     it('should create MeroJs instance with custom config', () => {

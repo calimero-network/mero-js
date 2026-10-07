@@ -995,3 +995,13 @@ describe('CloudClient namespace routing', () => {
     expect(routing.servable).toBe(false);
   });
 });
+
+describe('CloudClient baseUrl guard', () => {
+  it('refuses a cleartext non-loopback cloudBaseUrl unless allowInsecureHttp is set', () => {
+    expect(() => new CloudClient({ cloudBaseUrl: 'http://cloud.example' })).toThrow(/cleartext/);
+    expect(
+      () => new CloudClient({ cloudBaseUrl: 'http://cloud.example', allowInsecureHttp: true }),
+    ).not.toThrow();
+    expect(() => new CloudClient({ cloudBaseUrl: 'http://localhost:8080' })).not.toThrow();
+  });
+});

@@ -1,6 +1,6 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
-import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+import { AuthRevokedError, HTTPError, assertSecureBaseUrl } from '../http-client/index.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone, mirroring
@@ -109,6 +109,7 @@ export class SseClient {
 
   constructor(opts: {
     baseUrl: string;
+    allowInsecureHttp?: boolean;
     /** A bearer token provider. The historical form, and still the default. */
     getAuthToken?: () => Promise<string>;
     /**
@@ -120,6 +121,7 @@ export class SseClient {
     reconnectDelayMs?: number;
     fetch?: typeof fetch;
   }) {
+    assertSecureBaseUrl(opts.baseUrl, opts.allowInsecureHttp);
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     if (opts.authorize) {
       this.authorize = opts.authorize;
@@ -263,7 +265,6 @@ export class SseClient {
       if (!response.body) {
         throw new Error('SSE response has no body');
       }
-      this.reconnectAttempt = 0;
 
       this.readStream(response.body).catch((err) => {
         if (this.closed) return;
@@ -336,6 +337,7 @@ export class SseClient {
       if (msg.type === 'connect' && msg.session_id) {
         const sessionId: string = msg.session_id;
         this.sessionId = sessionId;
+        this.reconnectAttempt = 0;
         // A new connection gets a new replay when it re-subscribes; what the
         // old one said may name authors who have since gone.
         this.presence.clear();
@@ -553,6 +555,7 @@ export class SseClient {
 
   close(): void {
     this.closed = true;
+    this.reconnectAttempt = 0;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
