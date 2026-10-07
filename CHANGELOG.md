@@ -1,3 +1,9 @@
+## [24.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.4.1...mero-js-v24.5.0) (2026-10-07)
+
+### Features
+
+* **namespace-op:** sign at schema 24 (only a subgroup's creator may open it) ([#257](https://github.com/calimero-network/mero-js/issues/257)) ([76d03a3](https://github.com/calimero-network/mero-js/commit/76d03a3f75e5ca0c0ec01059906368ad96db8517))
+
 ## [24.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.4.0...mero-js-v24.4.1) (2026-10-07)
 
 ### Bug Fixes
