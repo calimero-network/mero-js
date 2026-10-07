@@ -13,8 +13,8 @@
  * can settle is everything around it - the two listings, the half that mints
  * (which needs no second party), and the refusals, which are asserted by status
  * because a typed status is the thing this surface added: a client used to get a
- * 500 for every one of them. The two-node happy path lives in core's own
- * scenarios, which build merod from the branch.
+ * 500 for every one of them. The two-node happy path lives in
+ * account-pairing-two-node.test.ts.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
@@ -201,5 +201,25 @@ describe('Account devices & pairing E2E', () => {
     // that refusal and not a missing route - `beforeAll` already established the
     // routes are served.
     await expect(mero.admin.relinkAccountDevice('0'.repeat(64))).rejects.toMatchObject({ status: 404 });
+  });
+
+  // Revoke's refusals; the happy path needs a paired device and lives in
+  // account-pairing-two-node.test.ts. Both fail validation, so the 400 is deterministic.
+  it('refuses a revocation whose device id is not 32 hex bytes', async (ctx) => {
+    if (routesMissing) return ctx.skip();
+    for (const deviceId of ['', 'abc', 'z'.repeat(64), 'a'.repeat(63)]) {
+      await expect(
+        mero.admin.revokeAccountDevice(namespaceId, { deviceId }),
+        `deviceId ${JSON.stringify(deviceId)} was not refused`,
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
+
+  it('refuses an empty proof rather than reading it as absent', async (ctx) => {
+    if (routesMissing) return ctx.skip();
+    // Omitting `proof` means "mint one, or revoke as an admin"; an empty string is a caller mistake.
+    await expect(
+      mero.admin.revokeAccountDevice(namespaceId, { deviceId: 'a'.repeat(64), proof: '' }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });
