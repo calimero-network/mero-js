@@ -38,6 +38,8 @@ import type {
   MigrationStatusRollup,
   Namespace,
   NamespaceFounding,
+  NamespaceHeldOp,
+  NamespaceHeldOps,
   NodeIdentity,
   ReparentGroupRequest,
   ReparentGroupResponseData,
@@ -95,6 +97,8 @@ const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
 const namespace = key<Namespace>();
 const founding = key<NamespaceFounding>();
+const heldOps = key<NamespaceHeldOps>();
+const heldOp = key<NamespaceHeldOp>();
 const member = key<GroupMember>();
 const teePolicyReq = key<SignedReleaseTeeAdmissionPolicyRequest>();
 const teePolicyRes = key<GetTeeAdmissionPolicyResponseData>();
@@ -119,6 +123,7 @@ const NAMESPACE_OPTIONAL = [
   namespace('name'),
   namespace('appVersion'),
   namespace('founding'),
+  namespace('heldOps'),
 ];
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
@@ -367,6 +372,20 @@ const SPECS: Spec[] = [
     file: 'namespaces/get.res.json',
     path: 'data.founding',
     required: [founding('founderAccountId'), founding('salt')],
+    optional: [],
+  },
+  {
+    type: 'NamespaceHeldOps',
+    file: 'namespaces/get.res.json',
+    path: 'data.heldOps',
+    required: [heldOps('ops'), heldOps('untracked')],
+    optional: [],
+  },
+  {
+    type: 'NamespaceHeldOp',
+    file: 'namespaces/get.res.json',
+    path: 'data.heldOps.ops.0',
+    required: [heldOp('deltaId'), heldOp('groupId')],
     optional: [],
   },
   {
