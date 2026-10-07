@@ -62,7 +62,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
   let operator: MeroJs;
   let namespaceId: string;
   let relayAccount: string;
-  /** The relay's signing key, which a refusal of the AUTHOR's authority must not name. */
+  /** The relay's signing key: every warrant names it, and a refusal of the AUTHOR's authority must not. */
   let relayKey: string;
   let device: MintedDevice;
   let relay: RelayClient;
@@ -98,6 +98,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
   it('describes the relay as unable to act before the grant', async () => {
     await expect(relay.describeGovernance(namespaceId)).resolves.toEqual({
       executorAccount: relayAccount,
+      executorKey: relayKey,
       groupId: namespaceId,
       canActOnBehalf: false,
     });
@@ -118,6 +119,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
 
     await expect(relay.describeGovernance(namespaceId)).resolves.toEqual({
       executorAccount: relayAccount,
+      executorKey: relayKey,
       groupId: namespaceId,
       canActOnBehalf: true,
     });
@@ -191,8 +193,10 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
   it('founds a namespace the author owns, and governs it through the same relay', async () => {
     // mero-chat's mask: core founds with a minimal default and the app names its own.
     const MASK = CAPABILITY_PRESETS.COLLABORATOR;
+    // The founding names the relay's key from `/admin-api/identity`: there is no
+    // namespace yet to ask discovery about.
     const founded = await relay.foundNamespace({
-      executorAccount: relayAccount,
+      executor: { executorAccount: relayAccount, executorKey: relayKey },
       defaultCapabilities: MASK,
     });
     expect(founded.namespaceId).toBe(await foundedNamespaceId(device.account, founded.salt));
@@ -226,6 +230,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
     // namespace through the relay with no grant from anyone.
     await expect(relay.describeGovernance(founded.namespaceId)).resolves.toEqual({
       executorAccount: relayAccount,
+      executorKey: relayKey,
       groupId: founded.namespaceId,
       canActOnBehalf: true,
     });
@@ -240,7 +245,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('govern E2E: delegated governance',
 
     // The same salt names the same namespace, which is never founded twice.
     const again = await relay
-      .foundNamespace({ salt: founded.salt, executorAccount: relayAccount })
+      .foundNamespace({ salt: founded.salt, executor: { executorAccount: relayAccount, executorKey: relayKey } })
       .catch((e: unknown) => e);
     expect(again).toBeInstanceOf(Error);
   }, 180_000);

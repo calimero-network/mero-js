@@ -541,9 +541,8 @@ export interface PerformIntentRequest {
    * Hex-encoded borsh of the author's `AccountProof<DeviceCert>`, proving the
    * key that signed the warrant is a device of the account it names.
    *
-   * Only the author's own half. The node attaches its own credential, so a
-   * caller never learns which of the node's processes runs the intent — and a
-   * re-key on its side does not void a warrant already issued.
+   * Only the author's own half. The node attaches its own credential, which must
+   * match the `executor` and `executor_key` the warrant names.
    */
   authorProof: string;
 }
@@ -586,23 +585,23 @@ export interface PerformIntentResponseData {
  * What a node says about running intents in one context — read before minting a
  * warrant, not after being refused one.
  *
- * Every input to a warrant is something the author already holds except two:
- * whose name goes in `executor`, and whether that node may act here at all. Both
- * belong to the node, so both are answered here, on the path the intent will be
- * presented to.
+ * Every input to a warrant is something the author already holds except three:
+ * whose account and key go in `executor` and `executor_key`, which release it
+ * pins, and whether that node may act here at all. The node knows them, so they
+ * are answered here, on the path the intent will be presented to.
  *
  * Reading it first is what lets a client fail before signing. A warrant spends a
  * nonce from a monotonic per-device sequence, and one naming the wrong executor
  * is unspendable — the number is gone and the write never happened.
  */
 export interface IntentRelayInfo {
-  /**
-   * The account a warrant for this node must name as its `executor`, 64 hex.
-   *
-   * An account, not the node's signing key: one of its processes re-keying must
-   * not void warrants already issued to it.
-   */
+  /** The account a warrant for this node must name as its `executor`, 64 hex. */
   executorAccount: string;
+  /**
+   * The signing key a warrant for this node must name as its `executor_key`, 64
+   * hex: the one device that may spend it. A re-key voids unspent warrants.
+   */
+  executorKey: string;
   /**
    * Whether this node holds `CAN_AUTHOR_ON_BEHALF` on the group owning the
    * context.
@@ -615,6 +614,14 @@ export interface IntentRelayInfo {
   canAuthorOnBehalf: boolean;
   /** The group whose admin must grant that capability, 64 hex. */
   groupId: string;
+  /**
+   * The blob id of the release that group names, 64 hex: what a warrant for this
+   * node must pin as `release_bytecode_id`. The route answers 404 while the group
+   * names no release.
+   */
+  releaseBytecodeId: string;
+  /** That release's semver, for the warrant's `release_version`. */
+  releaseVersion: string;
 }
 
 export interface NodeIdentity {

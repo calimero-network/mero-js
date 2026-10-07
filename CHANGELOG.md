@@ -1,3 +1,21 @@
+## [24.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.2.0...mero-js-v24.3.0) (2026-10-06)
+
+### Features
+
+* **warrant:** pin each data warrant to the release it is signed against ([#255](https://github.com/calimero-network/mero-js/issues/255)) ([b2abb95](https://github.com/calimero-network/mero-js/commit/b2abb955abaf52265a9b65a220cfc3fff79defc2))
+
+## [24.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.3...mero-js-v24.2.0) (2026-10-06)
+
+### Features
+
+* **warrant:** name and sign the executor device key in every warrant ([#250](https://github.com/calimero-network/mero-js/issues/250)) ([5a8b742](https://github.com/calimero-network/mero-js/commit/5a8b742f8ca37ae326e4e97fcd5ba735b523debc))
+
+## [24.1.3](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.2...mero-js-v24.1.3) (2026-10-06)
+
+### Bug Fixes
+
+* **namespace-op:** sign namespace ops at schema version 23 ([#220](https://github.com/calimero-network/mero-js/issues/220)) ([efcc79d](https://github.com/calimero-network/mero-js/commit/efcc79d7e77108ccfe918228d0ae54ff8e536298))
+
 ## [24.1.2](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.1...mero-js-v24.1.2) (2026-10-06)
 
 ## [24.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.1.0...mero-js-v24.1.1) (2026-10-06)

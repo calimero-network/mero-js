@@ -49,8 +49,10 @@ export interface GovernanceWarrantInput {
   op: GovernanceOp;
   /** The author's account, hex: whose authority the op is applied under. */
   authorAccount: string;
-  /** The relay authorised to publish it, hex. An account, not a key. */
+  /** The relay's account, hex: the subject its authorship grant is held by. */
   executor: string;
+  /** The one signing key of `executor` that may publish it, hex: discovery's `executorKey`. */
+  executorKey: string;
   /**
    * Monotonic per author **device**, spent in a per-group ledger. The same
    * nonce source `RelayClient` uses for every other warrant is correct.
@@ -87,6 +89,7 @@ export interface GovernanceWarrantFields {
   /** The author device key: the signer's public key. */
   deviceKey: string;
   executor: string;
+  executorKey: string;
   opHash: string;
   accountHeads: string[];
   governanceFloor: string[];
@@ -110,6 +113,7 @@ export interface GovernancePreimageParts {
   authorAccount: Uint8Array;
   deviceKey: Uint8Array;
   executor: Uint8Array;
+  executorKey: Uint8Array;
   opHash: Uint8Array;
   accountHeads: Uint8Array[];
   governanceFloor: Uint8Array[];
@@ -132,6 +136,7 @@ export async function governanceWarrantPreimage(
     p.authorAccount,
     p.deviceKey,
     p.executor,
+    p.executorKey,
     p.opHash,
     u64le(p.accountHeads.length),
     ...p.accountHeads,
@@ -150,6 +155,7 @@ export async function signGovernanceWarrant(input: GovernanceWarrantInput): Prom
   const scope = fromHex(input.scope, 'scope', 32);
   const authorAccount = fromHex(input.authorAccount, 'authorAccount', 32);
   const executor = fromHex(input.executor, 'executor', 32);
+  const executorKey = fromHex(input.executorKey, 'executorKey', 32);
   const accountHeads = citedHeads(input.accountHeads, 'accountHeads');
   const governanceFloor = citedHeads(input.governanceFloor, 'governanceFloor');
   const kind = kindByte(input.op.kind);
@@ -164,6 +170,7 @@ export async function signGovernanceWarrant(input: GovernanceWarrantInput): Prom
     authorAccount,
     deviceKey,
     executor,
+    executorKey,
     opHash,
     accountHeads,
     governanceFloor,
@@ -179,6 +186,7 @@ export async function signGovernanceWarrant(input: GovernanceWarrantInput): Prom
       authorAccount,
       deviceKey,
       executor,
+      executorKey,
       opHash,
       u32le(accountHeads.length),
       ...accountHeads,
@@ -239,6 +247,7 @@ export function parseGovernanceWarrant(warrant: string): GovernanceWarrantFields
     authorAccount: hex(take(32, 'authorAccount')),
     deviceKey: hex(take(32, 'deviceKey')),
     executor: hex(take(32, 'executor')),
+    executorKey: hex(take(32, 'executorKey')),
     opHash: hex(take(32, 'opHash')),
     accountHeads: heads('accountHeads'),
     governanceFloor: heads('governanceFloor'),

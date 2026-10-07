@@ -52,6 +52,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('createContext E2E: delegated creat
   let applicationId: string;
   let namespaceId: string;
   let relayAccount: string;
+  let relayKey: string;
   let device: MintedDevice;
   let relay: RelayClient;
   let created: { contextId: string; memberPublicKey: string };
@@ -62,7 +63,9 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('createContext E2E: delegated creat
     namespaceId = (
       await operator.admin.createNamespace({ applicationId, name: `deleg-create-${RUN}` })
     ).namespaceId;
-    relayAccount = (await operator.admin.getNodeIdentity()).accountId;
+    const identity = await operator.admin.getNodeIdentity();
+    relayAccount = identity.accountId;
+    relayKey = identity.publicKey;
 
     // By ACCOUNT: the minted device is in no binding row, which is the case a
     // certificate exists for.
@@ -90,6 +93,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('createContext E2E: delegated creat
     // neither membership nor admin, so a fresh namespace says no.
     const described = await relay.describeCreation(namespaceId, { author: device.account });
     expect(described.executorAccount).toBe(relayAccount);
+    expect(described.executorKey).toBe(relayKey);
     expect(described.groupId).toBe(namespaceId);
     expect(described.canCreateOnBehalf).toBe(false);
 
@@ -113,6 +117,7 @@ describe.skipIf(!RELAY_URL || !MEROD_BINARY)('createContext E2E: delegated creat
       relay.describeCreation(namespaceId, { author: device.account }),
     ).resolves.toEqual({
       executorAccount: relayAccount,
+      executorKey: relayKey,
       groupId: namespaceId,
       canCreateOnBehalf: true,
       authorMayCreate: true,

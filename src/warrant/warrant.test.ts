@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { intentHash, parseWarrant as parse, signWarrant } from './warrant.js';
+import { fromHex } from '../crypto/internal.js';
 
 const DEVICE_SECRET = '07'.repeat(32);
 /** 32 bytes of 0x11 — the same bytes core's fixture uses, now spelled in hex. */
@@ -20,6 +21,7 @@ const CONTEXT = '11'.repeat(32);
 const CONTEXT_B58 = '29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2';
 const AUTHOR_ACCOUNT = '22'.repeat(32);
 const EXECUTOR = '33'.repeat(32);
+const EXECUTOR_KEY = '77'.repeat(32);
 const METHOD = 'set';
 const ARGS = { key: 'k', value: 'v' };
 
@@ -27,12 +29,32 @@ const EXPECTED_INTENT_HASH =
   'dc066cc8524c74dc21714174009df536376e3151f5b92f0a676defde599dbae5';
 const EXPECTED_DEVICE_KEY =
   'ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c';
-const APP_VERSION = '44'.repeat(32);
+const RELEASE_BYTECODE_ID = '44'.repeat(32);
+const RELEASE_VERSION = '1.0.0';
 const ACCOUNT_HEAD = '55'.repeat(32);
 const GOVERNANCE_HEAD = '66'.repeat(32);
+const EXPECTED_PREIMAGE =
+  'f38e2c9eb7e78025f8797bb34168fe48da95a20320fc62fc2da41e3efd30607c';
 const EXPECTED_SIGNATURE =
-  '4007d4164a6a15f4b6b251b45e9afad623c274451127afc1453e35667d4ec6fe' +
-  '7aa8daa223c5320823c61612058c8053dcff9b361ced58bed5f05f4114099a06';
+  'e42f753e1a30657fe036b0c0a07030f3f6d92ea56749921c5a6ae07eb966cb50' +
+  '1ed439f7a8007dfce0ccb6b5a8b94bdda9f48db9c84f181e9fbaa0d208726b02';
+/** core's 392-byte wire encoding, field by field. */
+const EXPECTED_WIRE = [
+  CONTEXT,
+  AUTHOR_ACCOUNT,
+  EXPECTED_DEVICE_KEY,
+  EXECUTOR,
+  EXECUTOR_KEY,
+  RELEASE_BYTECODE_ID,
+  '05000000' + '312e302e30', // release_version: "1.0.0"
+  '03000000' + '736574', // method: "set"
+  EXPECTED_INTENT_HASH,
+  '01000000' + ACCOUNT_HEAD,
+  '01000000' + GOVERNANCE_HEAD,
+  '2a00000000000000', // nonce 42
+  '00f1536500000000', // not_after 1_700_000_000
+  EXPECTED_SIGNATURE,
+].join('');
 
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -47,7 +69,9 @@ describe('warrant signing conformance', () => {
       context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
-      appVersion: APP_VERSION,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
+      releaseVersion: RELEASE_VERSION,
       method: METHOD,
       argsJson: ARGS,
       accountHeads: [ACCOUNT_HEAD],
@@ -57,17 +81,21 @@ describe('warrant signing conformance', () => {
       deviceSecret: DEVICE_SECRET,
     });
 
-    // 351 bytes for these inputs — no longer a constant of the format, since a
+    // 392 bytes for these inputs: no longer a constant of the format, since a
     // method of another length moves everything after it. Pinned anyway: it is
     // the cheapest signal that a field changed shape again.
-    expect(warrant.length).toBe(702);
+    expect(warrant.length).toBe(784);
+    expect(warrant).toBe(EXPECTED_WIRE);
 
     const fields = parse(warrant);
     expect(fields.context).toBe(CONTEXT);
     expect(fields.authorAccount).toBe(AUTHOR_ACCOUNT);
     expect(fields.deviceKey).toBe(EXPECTED_DEVICE_KEY);
     expect(fields.executor).toBe(EXECUTOR);
-    expect(fields.appVersion).toBe(APP_VERSION);
+    expect(fields.executorKey).toBe(EXECUTOR_KEY);
+    expect(fields.releaseBytecodeId).toBe(RELEASE_BYTECODE_ID);
+    // u32 LE length 5, then "1.0.0" in ASCII.
+    expect(fields.releaseVersion).toBe('312e302e30');
     // u32 LE length 3, then "set" in ASCII.
     expect(fields.method).toBe('736574');
     expect(fields.intentHash).toBe(EXPECTED_INTENT_HASH);
@@ -77,6 +105,23 @@ describe('warrant signing conformance', () => {
     expect(fields.nonce).toBe('2a00000000000000');
     expect(fields.notAfter).toBe('00f1536500000000');
     expect(fields.signature).toBe(EXPECTED_SIGNATURE);
+  });
+
+  it("signs core's preimage with the derived device key", async () => {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      fromHex(EXPECTED_DEVICE_KEY, 'deviceKey', 32),
+      { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+    const ok = await crypto.subtle.verify(
+      { name: 'Ed25519' },
+      key,
+      fromHex(EXPECTED_SIGNATURE, 'signature', 64),
+      fromHex(EXPECTED_PREIMAGE, 'preimage', 32),
+    );
+    expect(ok).toBe(true);
   });
 
   /**
@@ -91,6 +136,8 @@ describe('warrant signing conformance', () => {
       context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
       nonce: 1,
@@ -118,6 +165,8 @@ describe('warrant signing conformance', () => {
         context: CONTEXT,
         authorAccount: AUTHOR_ACCOUNT,
         executor: EXECUTOR,
+        executorKey: EXECUTOR_KEY,
+        releaseBytecodeId: RELEASE_BYTECODE_ID,
         method: METHOD,
         argsJson: ARGS,
         accountHeads: Array.from({ length: 65 }, () => ACCOUNT_HEAD),
@@ -129,26 +178,53 @@ describe('warrant signing conformance', () => {
   });
 
   /**
-   * `appVersion` is optional and defaults to zeros, matching `merod account
-   * sign-warrant`'s own `--app-version` default, so a caller that has nothing to
-   * read it from produces the same bytes merod would.
+   * core's `MAX_WARRANT_RELEASE_VERSION_LEN`, counted in UTF-8 bytes: 129
+   * two-byte characters are 258 bytes, so a count of characters would let it through.
    */
-  it('defaults appVersion to zeros rather than demanding one', async () => {
-    const warrant = await signWarrant({
+  it('refuses a release version over 256 bytes before signing', async () => {
+    const terms = {
       context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
-      nonce: 42,
-      notAfter: 1_700_000_000,
+      nonce: 1,
+      notAfter: 1,
+      deviceSecret: DEVICE_SECRET,
+    };
+
+    await expect(signWarrant({ ...terms, releaseVersion: 'x'.repeat(256) })).resolves.toMatch(
+      /^[0-9a-f]+$/,
+    );
+    await expect(signWarrant({ ...terms, releaseVersion: '\u00e9'.repeat(129) })).rejects.toThrow(
+      /releaseVersion is 258 bytes, over the 256 a node accepts/,
+    );
+  });
+
+  it('refuses to decode a release version over 256 bytes', async () => {
+    const at256 = await signWarrant({
+      context: CONTEXT,
+      authorAccount: AUTHOR_ACCOUNT,
+      executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
+      releaseVersion: 'x'.repeat(256),
+      method: METHOD,
+      argsJson: ARGS,
+      nonce: 1,
+      notAfter: 1,
       deviceSecret: DEVICE_SECRET,
     });
+    // Same bytes with one more character and its length prefix bumped to 257,
+    // so only the cap can refuse it.
+    const lengthAt = 6 * 32 * 2;
+    const at257 =
+      at256.slice(0, lengthAt) + '01010000' + '78' + at256.slice(lengthAt + 8);
 
-    const fields = parse(warrant);
-    expect(fields.appVersion).toBe('00'.repeat(32));
-    expect(fields.accountHeads).toEqual([]);
-    expect(fields.governanceFloor).toEqual([]);
+    expect(parse(at256).releaseVersion).toBe('78'.repeat(256));
+    expect(() => parse(at257)).toThrow(/releaseVersion is 257 bytes, over the 256 a node accepts/);
   });
 
   it('derives the device key rather than trusting a caller', async () => {
@@ -158,6 +234,8 @@ describe('warrant signing conformance', () => {
       context: CONTEXT,
       authorAccount: AUTHOR_ACCOUNT,
       executor: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
+      releaseBytecodeId: RELEASE_BYTECODE_ID,
       method: METHOD,
       argsJson: ARGS,
       nonce: 42,
@@ -173,6 +251,8 @@ describe('input encodings', () => {
     context: CONTEXT,
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
+    executorKey: EXECUTOR_KEY,
+    releaseBytecodeId: RELEASE_BYTECODE_ID,
     method: METHOD,
     argsJson: ARGS,
     nonce: 1,
@@ -206,6 +286,12 @@ describe('input encodings', () => {
     ).rejects.toThrow(/authorAccount must be 64 hex/);
   });
 
+  it('refuses an executor key that is not 32 bytes of hex', async () => {
+    await expect(
+      signWarrant({ ...base, executorKey: EXECUTOR_KEY.slice(2) }),
+    ).rejects.toThrow(/executorKey must be 64 hex/);
+  });
+
   it('refuses a device secret of the wrong length', async () => {
     await expect(
       signWarrant({ ...base, deviceSecret: '07'.repeat(16) }),
@@ -218,6 +304,8 @@ describe('the intent it authorises', () => {
     context: CONTEXT,
     authorAccount: AUTHOR_ACCOUNT,
     executor: EXECUTOR,
+    executorKey: EXECUTOR_KEY,
+    releaseBytecodeId: RELEASE_BYTECODE_ID,
     nonce: 7,
     notAfter: 1_700_000_000,
     deviceSecret: DEVICE_SECRET,
@@ -256,6 +344,18 @@ describe('the intent it authorises', () => {
     const warrant = await signWarrant({ ...base, method, argsJson });
 
     expect(commitmentOf(warrant)).toBe(hex(await intentHash(method, argsJson)));
+  });
+
+  it('signs the executor key, so another device of the relay cannot spend it', async () => {
+    const mine = await signWarrant({ ...base, method: METHOD, argsJson: ARGS });
+    const other = await signWarrant({
+      ...base,
+      method: METHOD,
+      argsJson: ARGS,
+      executorKey: 'a4'.repeat(32),
+    });
+
+    expect(parse(mine).signature).not.toBe(parse(other).signature);
   });
 
   it('a different nonce is a different warrant', async () => {

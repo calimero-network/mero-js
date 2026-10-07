@@ -32,7 +32,7 @@ import {
 
 const relay = new RelayClient({
   relayUrl: 'https://relay-01.tee.calimero.network',
-  executorAccount,          // optional — discovered on first use
+  executorAccount,          // optional; checked against what the relay answers
   authorAccount,
   authorProof,
   deviceSecret,
@@ -43,7 +43,7 @@ const { rootHash, returns } = await relay.execute(contextId, 'set', { key: 'k', 
 ```
 
 For the hosted tier, [`connectCloud`](/reference/connect-cloud/) builds this for
-you from a cloud sign-in — it finds the relay, learns the executor account, and
+you from a cloud sign-in: it finds the relay and its executor account, and
 picks a persisted nonce source.
 
 ## Constructor
@@ -51,7 +51,7 @@ picks a persisted nonce source.
 ```typescript
 interface RelayClientConfig {
   relayUrl: string;              // the node's origin, not a path
-  executorAccount?: string;      // hex; discovered via describe() when omitted
+  executorAccount?: string;      // hex; checked against the relay's answer
   authorAccount: string;         // hex — whose consent the warrant carries
   authorProof: string;           // hex borsh AccountProof<DeviceCert>
   deviceSecret?: string;         // hex ed25519 seed; NEVER transmitted
@@ -63,8 +63,7 @@ interface RelayClientConfig {
 }
 ```
 
-`executorAccount` is an **account**, not the relay's signing key, so one of the
-relay's processes rotating its key does not void warrants already issued to it.
+`executorAccount` is only a check; see [what a warrant names](#what-a-warrant-names).
 
 `deviceSecret` signs in your process and only the signature leaves. That is the
 whole reason a keyholder can author without a node.
@@ -84,6 +83,42 @@ const relay = new RelayClient({
 });
 ```
 
+## What a warrant names
+
+Every warrant names the relay twice: `executor`, its **account**, and
+`executor_key`, the one signing key of that account that may spend it.
+A relay refuses a warrant naming any other key, so one warrant is spent by one
+relay node, once.
+Only the relay can report its key, so the client asks it (`describe`,
+`describeCreation` or `describeGovernance`), even when `executorAccount` is
+configured, and refuses before taking a nonce when a configured account
+disagrees or the relay names no key.
+A relay that re-keys voids the warrants it has not spent yet.
+
+An intent warrant also pins the **release** the context's group names:
+`release_bytecode_id`, the blob id of its bytecode, and `release_version`, its
+semver (signed, never compared, at most 256 bytes of UTF-8).
+The relay refuses a warrant pinning any other release, before it runs anything,
+so a warrant signed against one build cannot be spent after an upgrade widens
+what the method does.
+`describe` reports both, and rejects with discovery's `404` while the group names no release.
+
+In all three warrants `executor_key` (32 bytes) comes right after `executor`,
+in the signed preimage and in the borsh encoding alike:
+
+```text
+intent:     context ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ release_bytecode_id ‖ release_version ‖ method ‖ …
+creation:   group ‖ seed ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ application_id ‖ …
+governance: scope ‖ kind ‖ author_account ‖ author_device_key ‖ executor ‖ executor_key ‖ op_hash ‖ …
+```
+
+`release_version` is a borsh `String` in the encoding (a u32 little-endian
+length, then the UTF-8) and its own length-prefixed part in the preimage.
+`signWarrant`, `signCreationWarrant` and `signGovernanceWarrant` take the key as
+`executorKey` (hex), `signWarrant` takes the release as `releaseBytecodeId`
+(hex) and `releaseVersion`, and core pins the bytes in
+`crates/account/src/tests/{warrant,creation,governance}_wire_fixture.rs`.
+
 ## `describe(contextId): Promise<RelayDescription>`
 
 What the relay can do here — read this *before* signing anything.
@@ -91,8 +126,11 @@ What the relay can do here — read this *before* signing anything.
 ```typescript
 interface RelayDescription {
   executorAccount: string;    // what the warrant's `executor` must name
+  executorKey: string;        // what its `executor_key` must name: the relay's signing key
   canAuthorOnBehalf: boolean; // does the relay hold the grant on the owning group?
   groupId: string;            // whose admin grants it
+  releaseBytecodeId: string;  // the release the group names: what the warrant pins
+  releaseVersion: string;     // its semver, signed alongside it
 }
 ```
 
@@ -121,8 +159,10 @@ One intent, once. The warrant authorizes exactly this method and these arguments
 in exactly this context, and its nonce is spent by the network on apply —
 nothing accumulates and nothing is reusable.
 
-When `executorAccount` was not configured, the first call runs `describe` and
-remembers the answer; later calls go straight to the write.
+Every call runs `describe` first and signs what it answers, so a warrant pins
+the release the group names now and follows a relay that re-keyed.
+A group that names no release yet surfaces as discovery's `404` `HTTPError`,
+before a nonce is taken.
 
 ## `describeCreation(groupId, { author? }): Promise<CreationDescription>`
 
@@ -132,6 +172,7 @@ What the relay can do about **creating** contexts in a group —
 ```typescript
 interface CreationDescription {
   executorAccount: string;     // what the creation warrant's `executor` must name
+  executorKey: string;         // and its `executor_key`
   groupId: string;
   canCreateOnBehalf: boolean;  // relay standing: RelayTee role or CAN_AUTHOR_ON_BEHALF
   authorMayCreate?: boolean;   // only with `author`: CAN_CREATE_CONTEXT or admin
@@ -174,6 +215,7 @@ Whether the relay may publish **governance** ops for members of a group:
 ```typescript
 interface GovernanceDescription {
   executorAccount: string;  // what the governance warrant's `executor` must name
+  executorKey: string;      // and its `executor_key`
   groupId: string;
   canActOnBehalf: boolean;  // relay standing: RelayTee role or CAN_AUTHOR_ON_BEHALF
 }
@@ -232,7 +274,9 @@ posts to `POST /admin-api/groups/{namespaceId}/governance-intents`.
 import { CAPABILITY_PRESETS } from '@calimero-network/mero-js';
 
 const { namespaceId, salt, teeEnabled, defaultCapabilitiesSet } = await relay.foundNamespace({
-  executorAccount: relayAccount, // the namespace does not exist yet, so nothing to describe
+  // The namespace does not exist yet, so there is nothing to describe: the key
+  // is the relay's node key, pinned or from `resolveRelayNodeKey(relayUrl)`.
+  executor: { executorAccount: relayAccount, executorKey: relayKey },
   // optional: your app's default member mask (COLLABORATOR = 231; see Capabilities)
   defaultCapabilities: CAPABILITY_PRESETS.COLLABORATOR,
 });
@@ -241,7 +285,7 @@ const { namespaceId, salt, teeEnabled, defaultCapabilitiesSet } = await relay.fo
 ```typescript
 interface FoundNamespaceInput {
   salt?: string;            // 32 bytes hex; random when absent
-  executorAccount?: string; // falls back to the configured or learned account
+  executor: { executorAccount: string; executorKey: string }; // the relay's node key, never a discovery answer
   defaultCapabilities?: number; // MemberCapabilities bits, set right after founding
 }
 interface FoundedNamespace {
@@ -270,8 +314,8 @@ warrant and nonce, applied as you, the admin. It may not include
 failure there does not throw, since the namespace already exists:
 `defaultCapabilitiesSet` is `false` and `defaultCapabilitiesError` says why.
 
-There is no `describe` step: without an executor account from the input or the
-config, it throws before taking a nonce. A salt that names an existing
+There is no `describe` step: without `executor` it throws before taking a
+nonce. A salt that names an existing
 namespace comes back as an `HTTPError` with status `409`.
 
 ## `IntentRefusedError`

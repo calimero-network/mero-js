@@ -62,8 +62,14 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * writer-set step (calimero-network/core#4263), and a capability revoke voids
  * the member's concurrent ops that needed a removed bit
  * (calimero-network/core#4453). No layout this module signs changes.
+ *
+ * 23: a TEE admission op carries the quote it was admitted on and a TEE
+ * authority evidence op the credential it was made for
+ * (calimero-network/core#4265). Neither is an op this module signs, so only
+ * the version byte moves. Core signs and checks at 23 from 0.11.0-rc.81, the
+ * first release with both 22 and 23.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 22;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 23;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');

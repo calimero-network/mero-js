@@ -18,6 +18,11 @@ import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
 const EXECUTOR = '4d'.repeat(32);
+/** The relay's signing key, as discovery answers it. */
+const EXECUTOR_KEY = 'ec'.repeat(32);
+const RELAY_EXECUTOR = { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY };
+/** The release the context's group names, as discovery answers it. */
+const RELEASE = { releaseBytecodeId: 'b1'.repeat(32), releaseVersion: '1.2.0' };
 const GROUP = 'ab'.repeat(32);
 /** Any 32-byte seed; the signature is not what these tests are about. */
 const DEVICE_SECRET = '77'.repeat(32);
@@ -55,17 +60,20 @@ function client(fetchImpl: typeof fetch, overrides: Record<string, unknown> = {}
 }
 
 describe('RelayClient.describe', () => {
-  it('reads the executor account and the grant from the intents route', async () => {
+  it('reads the executor account, its key, the grant and the release from the intents route', async () => {
     const { fetch, calls } = scriptedFetch([
-      { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: true, groupId: GROUP } } },
     ]);
 
     const described = await client(fetch).describe(CONTEXT);
 
     expect(described).toEqual({
       executorAccount: EXECUTOR,
+      executorKey: EXECUTOR_KEY,
       canAuthorOnBehalf: true,
       groupId: GROUP,
+      releaseBytecodeId: RELEASE.releaseBytecodeId,
+      releaseVersion: RELEASE.releaseVersion,
     });
     expect(calls[0].url).toBe(`https://relay.example/admin-api/contexts/${CONTEXT}/intents`);
     expect(calls[0].init?.method).toBe('GET');
@@ -79,7 +87,7 @@ describe('RelayClient.describe', () => {
    */
   it('reports a missing grant as an answer, not a failure', async () => {
     const { fetch } = scriptedFetch([
-      { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: false, groupId: GROUP } } },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: false, groupId: GROUP } } },
     ]);
     await expect(client(fetch).describe(CONTEXT)).resolves.toMatchObject({
       canAuthorOnBehalf: false,
@@ -89,22 +97,24 @@ describe('RelayClient.describe', () => {
 });
 
 describe('RelayClient.execute', () => {
-  it('mints a warrant naming the configured executor and posts it with the intent', async () => {
+  const described = {
+    body: {
+      data: { ...RELAY_EXECUTOR, ...RELEASE, canAuthorOnBehalf: true, groupId: GROUP },
+    },
+  };
+
+  it('mints a warrant naming the executor account, key and release discovery answered', async () => {
     const { fetch, calls } = scriptedFetch([
+      described,
       { body: { data: { rootHash: 'root-1', returns: 'ok' } } },
     ]);
 
-    const result = await client(fetch, { executorAccount: EXECUTOR }).execute<string>(
-      CONTEXT,
-      'set',
-      { key: 'k', value: 'v' },
-    );
+    const result = await client(fetch).execute<string>(CONTEXT, 'set', { key: 'k', value: 'v' });
 
     expect(result).toEqual({ rootHash: 'root-1', returns: 'ok' });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].init?.method).toBe('POST');
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST']);
 
-    const sent = JSON.parse(String(calls[0].init?.body)) as Record<string, string>;
+    const sent = JSON.parse(String(calls[1].init?.body)) as Record<string, string>;
     expect(sent.method).toBe('set');
     expect(sent.authorProof).toBe('aa');
     // The encoding IS the canonical form — the signature covers exactly these
@@ -114,30 +124,95 @@ describe('RelayClient.execute', () => {
     // which would find a neighbouring field instead of failing.
     expect(sent.warrant).toMatch(/^[0-9a-f]+$/);
     expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
+    expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
+    expect(parseWarrant(sent.warrant).releaseBytecodeId).toBe(RELEASE.releaseBytecodeId);
+    // "1.2.0" in ASCII.
+    expect(parseWarrant(sent.warrant).releaseVersion).toBe('312e322e30');
   });
 
-  /**
-   * A client that was handed the relay's URL but not its account must not have
-   * to make the discovery call itself — and must not guess. One `describe`,
-   * then the write.
-   */
-  it('discovers the executor account when none was configured', async () => {
+  // A configured account says nothing of which key may spend the warrant, and
+  // only the relay can, so every write asks.
+
+  it('asks the relay for its key even when the account is configured', async () => {
     const { fetch, calls } = scriptedFetch([
-      { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+      described,
       { body: { data: { rootHash: 'root-2', returns: null } } },
     ]);
 
-    await client(fetch).execute(CONTEXT, 'set', {});
+    await client(fetch, { executorAccount: EXECUTOR }).execute(CONTEXT, 'set', {});
 
     expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST']);
     const sent = JSON.parse(String(calls[1].init?.body)) as Record<string, string>;
-    expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
+    expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
   });
 
-  it('does not re-discover once the account is known', async () => {
+  it('refuses a configured executor the relay does not answer to, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([described]);
+
+    const err = await client(fetch, { executorAccount: 'ee'.repeat(32), nonces })
+      .execute(CONTEXT, 'set', {})
+      .catch((e: unknown) => e);
+
+    expect(String(err)).toMatch(/would be unspendable/);
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it('refuses a relay that names no executor key, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
     const { fetch, calls } = scriptedFetch([
       { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+    ]);
+
+    await expect(client(fetch, { nonces }).execute(CONTEXT, 'set', {})).rejects.toThrow(
+      /the relay's executorKey must be 64 hex characters, got 0/,
+    );
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it('follows a relay that re-keyed between two writes', async () => {
+    const rekeyed = 'ed'.repeat(32);
+    const error = `this warrant names executor key ${EXECUTOR_KEY}, not this node's signing key ${rekeyed}`;
+    const { fetch, calls } = scriptedFetch([
+      described,
+      { status: 403, text: JSON.stringify({ error }) },
+      { body: { data: { ...RELAY_EXECUTOR, ...RELEASE, executorKey: rekeyed, canAuthorOnBehalf: true, groupId: GROUP } } },
+      { body: { data: { rootHash: 'r', returns: null } } },
+    ]);
+
+    const relay = client(fetch);
+    await expect(relay.execute(CONTEXT, 'set', {})).rejects.toBeInstanceOf(IntentRefusedError);
+    await relay.execute(CONTEXT, 'set', {});
+
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST', 'GET', 'POST']);
+    const sent = JSON.parse(String(calls[3].init?.body)) as { warrant: string };
+    expect(parseWarrant(sent.warrant).executorKey).toBe(rekeyed);
+  });
+
+  it('recovers on the next write after refusing a discovery answer', async () => {
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { executorAccount: EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+      described,
+      { body: { data: { rootHash: 'r', returns: null } } },
+    ]);
+
+    const relay = client(fetch);
+    await expect(relay.execute(CONTEXT, 'set', {})).rejects.toThrow(/executorKey/);
+    await relay.execute(CONTEXT, 'set', {});
+
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'GET', 'POST']);
+  });
+
+  // The release moves with every upgrade of the group, and a warrant pinning the
+  // one before is refused, so each write pins what discovery answers now.
+  it('asks the relay before every write, so each warrant pins the current release', async () => {
+    const upgraded = 'b2'.repeat(32);
+    const { fetch, calls } = scriptedFetch([
+      described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      { body: { data: { ...described.body.data, releaseBytecodeId: upgraded, releaseVersion: '1.3.0' } } },
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
@@ -145,7 +220,52 @@ describe('RelayClient.execute', () => {
     await relay.execute(CONTEXT, 'set', {});
     await relay.execute(CONTEXT, 'set', {});
 
-    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(calls.map((c) => c.init?.method)).toEqual(['GET', 'POST', 'GET', 'POST']);
+    const pinned = (call: (typeof calls)[number]) =>
+      parseWarrant((JSON.parse(String(call.init?.body)) as { warrant: string }).warrant).releaseBytecodeId;
+    expect(pinned(calls[1])).toBe(RELEASE.releaseBytecodeId);
+    expect(pinned(calls[3])).toBe(upgraded);
+  });
+
+  it('refuses a relay that names no release, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { ...RELAY_EXECUTOR, canAuthorOnBehalf: true, groupId: GROUP } } },
+    ]);
+
+    await expect(client(fetch, { nonces }).execute(CONTEXT, 'set', {})).rejects.toThrow(
+      /the relay's releaseBytecodeId must be 64 hex characters, got 0/,
+    );
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it('refuses a release version a node would refuse, before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { ...described.body.data, releaseVersion: 'x'.repeat(257) } } },
+    ]);
+
+    await expect(client(fetch, { nonces }).execute(CONTEXT, 'set', {})).rejects.toThrow(
+      /releaseVersion is 257 bytes, over the 256 a node accepts/,
+    );
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
+  });
+
+  it("surfaces discovery's 404 for a group that names no release, before taking a nonce", async () => {
+    const nonces = createMemoryNonceSource(1);
+    const error = "this context's group names no release yet, so no warrant can pin one";
+    const { fetch, calls } = scriptedFetch([{ status: 404, text: JSON.stringify({ error }) }]);
+
+    const err = await client(fetch, { nonces })
+      .execute(CONTEXT, 'set', {})
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).toMatchObject({ status: 404, explanation: error });
+    expect(calls).toHaveLength(1);
+    expect(await nonces.next()).toBe(1n);
   });
 
   /**
@@ -156,38 +276,44 @@ describe('RelayClient.execute', () => {
    */
   it('spends a fresh nonce per intent', async () => {
     const { fetch, calls } = scriptedFetch([
+      described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      described,
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
-    const relay = client(fetch, { executorAccount: EXECUTOR });
+    const relay = client(fetch);
     await relay.execute(CONTEXT, 'set', {});
     await relay.execute(CONTEXT, 'set', {});
 
+    expect(calls).toHaveLength(4);
     // Nonce is a u64 little-endian, read by name rather than by offset.
     const nonceOf = (call: (typeof calls)[number]) =>
       parseWarrant(
         (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
       ).nonce;
-    expect(nonceOf(calls[0])).toBe('0100000000000000');
-    expect(nonceOf(calls[1])).toBe('0200000000000000');
+    expect(nonceOf(calls[1])).toBe('0100000000000000');
+    expect(nonceOf(calls[3])).toBe('0200000000000000');
   });
 
   it('commits to the arguments, so two different args differ in the warrant', async () => {
     const { fetch, calls } = scriptedFetch([
+      described,
       { body: { data: { rootHash: 'r1', returns: null } } },
+      described,
       { body: { data: { rootHash: 'r2', returns: null } } },
     ]);
 
-    const relay = client(fetch, { executorAccount: EXECUTOR });
+    const relay = client(fetch);
     await relay.execute(CONTEXT, 'set', { key: 'a' });
     await relay.execute(CONTEXT, 'set', { key: 'b' });
 
+    expect(calls).toHaveLength(4);
     const intentHashOf = (call: (typeof calls)[number]) =>
       parseWarrant(
         (JSON.parse(String(call.init?.body)) as { warrant: string }).warrant,
       ).intentHash;
-    expect(intentHashOf(calls[0])).not.toBe(intentHashOf(calls[1]));
+    expect(intentHashOf(calls[1])).not.toBe(intentHashOf(calls[3]));
   });
 
   /**
@@ -198,6 +324,7 @@ describe('RelayClient.execute', () => {
    */
   it('surfaces a missing grant as a non-retryable refusal', async () => {
     const { fetch } = scriptedFetch([
+      described,
       {
         status: 403,
         text: JSON.stringify({
@@ -207,7 +334,7 @@ describe('RelayClient.execute', () => {
       },
     ]);
 
-    const err = await client(fetch, { executorAccount: EXECUTOR })
+    const err = await client(fetch)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -227,9 +354,9 @@ describe('RelayClient.execute', () => {
     "this node's role in this context is read-only (ReadOnly), so it does not relay writes",
     "the author's role in this context is read-only",
   ])('surfaces a role refusal as non-retryable: %s', async (error) => {
-    const { fetch } = scriptedFetch([{ status: 403, text: JSON.stringify({ error }) }]);
+    const { fetch } = scriptedFetch([described, { status: 403, text: JSON.stringify({ error }) }]);
 
-    const err = await client(fetch, { executorAccount: EXECUTOR })
+    const err = await client(fetch)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -241,6 +368,7 @@ describe('RelayClient.execute', () => {
 
   it('surfaces a spent nonce as retryable', async () => {
     const { fetch } = scriptedFetch([
+      described,
       {
         status: 403,
         text: JSON.stringify({
@@ -249,7 +377,7 @@ describe('RelayClient.execute', () => {
       },
     ]);
 
-    const err = await client(fetch, { executorAccount: EXECUTOR })
+    const err = await client(fetch)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -259,10 +387,11 @@ describe('RelayClient.execute', () => {
 
   it('treats a malformed request (400) as a refusal too, never retryable', async () => {
     const { fetch } = scriptedFetch([
+      described,
       { status: 400, text: JSON.stringify({ error: 'authorProof is not hex' }) },
     ]);
 
-    const err = await client(fetch, { executorAccount: EXECUTOR })
+    const err = await client(fetch)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -272,9 +401,9 @@ describe('RelayClient.execute', () => {
   });
 
   it('leaves a server fault as an HTTPError, not a refusal', async () => {
-    const { fetch } = scriptedFetch([{ status: 500, text: 'boom' }]);
+    const { fetch } = scriptedFetch([described, { status: 500, text: 'boom' }]);
 
-    const err = await client(fetch, { executorAccount: EXECUTOR })
+    const err = await client(fetch)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -287,7 +416,7 @@ describe('RelayClient.execute', () => {
       throw new TypeError('network down');
     }) as unknown as typeof fetch;
 
-    const err = await client(failing, { executorAccount: EXECUTOR })
+    const err = await client(failing)
       .execute(CONTEXT, 'set', {})
       .catch((e: unknown) => e);
 
@@ -305,7 +434,7 @@ describe('RelayClient.execute', () => {
     const failing = (async () => {
       throw new Error(reason);
     }) as unknown as typeof fetch;
-    const relay = client(failing, { executorAccount: EXECUTOR });
+    const relay = client(failing);
 
     for (const call of [
       () => relay.describe(CONTEXT),
@@ -324,15 +453,12 @@ describe('RelayClient.execute', () => {
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     try {
       const { fetch, calls } = scriptedFetch([
+        described,
         { body: { data: { rootHash: 'r', returns: null } } },
       ]);
-      await client(fetch, { executorAccount: EXECUTOR, ttlSeconds: 60 }).execute(
-        CONTEXT,
-        'set',
-        {},
-      );
+      await client(fetch, { ttlSeconds: 60 }).execute(CONTEXT, 'set', {});
 
-      const warrant = (JSON.parse(String(calls[0].init?.body)) as { warrant: string }).warrant;
+      const warrant = (JSON.parse(String(calls[1].init?.body)) as { warrant: string }).warrant;
       const notAfterLe = parseWarrant(warrant).notAfter;
       const bytes = notAfterLe.match(/../g) as string[];
       const notAfter = bytes
@@ -348,7 +474,7 @@ describe('RelayClient.execute', () => {
 describe('RelayClient.describeCreation', () => {
   it('reads the group route, with the author when given', async () => {
     const data = {
-      executorAccount: EXECUTOR,
+      ...RELAY_EXECUTOR,
       groupId: GROUP,
       canCreateOnBehalf: true,
       authorMayCreate: true,
@@ -381,7 +507,7 @@ describe('RelayClient.createContext', () => {
   const described = (over: Record<string, unknown> = {}) => ({
     body: {
       data: {
-        executorAccount: EXECUTOR,
+        ...RELAY_EXECUTOR,
         groupId: GROUP,
         canCreateOnBehalf: true,
         authorMayCreate: true,
@@ -423,6 +549,7 @@ describe('RelayClient.createContext', () => {
     expect(fields.group).toBe(GROUP);
     expect(fields.authorAccount).toBe(AUTHOR);
     expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.executorKey).toBe(EXECUTOR_KEY);
     expect(fields.applicationId).toBe(APPLICATION);
     expect(fields.name).toBe('general');
     expect(fields.serviceName).toBeNull();
@@ -500,7 +627,7 @@ describe('RelayClient.createContext', () => {
 
 describe('RelayClient.describeGovernance', () => {
   it('reads the group governance route', async () => {
-    const data = { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true };
+    const data = { ...RELAY_EXECUTOR, groupId: GROUP, canActOnBehalf: true };
     const { fetch, calls } = scriptedFetch([{ body: { data } }]);
 
     await expect(client(fetch).describeGovernance(GROUP)).resolves.toEqual(data);
@@ -519,7 +646,7 @@ describe('RelayClient.describeGovernance', () => {
 describe('RelayClient.govern', () => {
   const MEMBER = '44'.repeat(32);
   const described = (over: Record<string, unknown> = {}) => ({
-    body: { data: { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true, ...over } },
+    body: { data: { ...RELAY_EXECUTOR, groupId: GROUP, canActOnBehalf: true, ...over } },
   });
   const governed = (groupId = GROUP) => ({ body: { data: { groupId } } });
 
@@ -545,6 +672,7 @@ describe('RelayClient.govern', () => {
     expect(fields.kind).toBe('group');
     expect(fields.authorAccount).toBe(AUTHOR);
     expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.executorKey).toBe(EXECUTOR_KEY);
     expect(fields.nonce).toBe(1n);
     expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
     expect(fields.notAfter).toBeGreaterThan(BigInt(Math.floor(Date.now() / 1000)));
@@ -615,7 +743,7 @@ describe('RelayClient.foundNamespace', () => {
     ]);
 
     await expect(
-      client(fetch, { executorAccount: EXECUTOR }).foundNamespace({ salt: SALT.toUpperCase() }),
+      client(fetch).foundNamespace({ executor: RELAY_EXECUTOR, salt: SALT.toUpperCase() }),
     ).resolves.toEqual({ namespaceId, salt: SALT, teeEnabled: true });
 
     // No describe: the namespace does not exist yet, so there is nothing to ask.
@@ -638,6 +766,7 @@ describe('RelayClient.foundNamespace', () => {
     expect(fields.kind).toBe('root');
     expect(fields.authorAccount).toBe(AUTHOR);
     expect(fields.executor).toBe(EXECUTOR);
+    expect(fields.executorKey).toBe(EXECUTOR_KEY);
     expect(fields.nonce).toBe(1n);
     expect(fields.opHash).toBe(hexOf(await governanceOpHash(op)));
   });
@@ -648,15 +777,15 @@ describe('RelayClient.foundNamespace', () => {
       founded({ groupId: 'f2'.repeat(32), teeEnabled: false }),
       founded({ groupId: 'f3'.repeat(32) }),
     ]);
-    const relay = client(fetch, { executorAccount: EXECUTOR });
-    await expect(relay.foundNamespace()).resolves.toMatchObject({
+    const relay = client(fetch);
+    await expect(relay.foundNamespace({ executor: RELAY_EXECUTOR })).resolves.toMatchObject({
       teeEnabled: false,
       teeError: 'no quote',
     });
-    const plain = await relay.foundNamespace();
+    const plain = await relay.foundNamespace({ executor: RELAY_EXECUTOR });
     expect(plain.teeEnabled).toBe(false);
     expect(plain).not.toHaveProperty('teeError');
-    await expect(relay.foundNamespace()).resolves.toMatchObject({ teeEnabled: false });
+    await expect(relay.foundNamespace({ executor: RELAY_EXECUTOR })).resolves.toMatchObject({ teeEnabled: false });
   });
 
   it('draws a fresh random salt each time, and derives the id from it', async () => {
@@ -664,9 +793,9 @@ describe('RelayClient.foundNamespace', () => {
       founded({ groupId: 'f1'.repeat(32) }),
       founded({ groupId: 'f2'.repeat(32) }),
     ]);
-    const relay = client(fetch, { executorAccount: EXECUTOR });
-    const a = await relay.foundNamespace();
-    const b = await relay.foundNamespace();
+    const relay = client(fetch);
+    const a = await relay.foundNamespace({ executor: RELAY_EXECUTOR });
+    const b = await relay.foundNamespace({ executor: RELAY_EXECUTOR });
     expect(a.salt).toMatch(/^[0-9a-f]{64}$/);
     expect(a.salt).not.toBe(b.salt);
 
@@ -679,25 +808,53 @@ describe('RelayClient.foundNamespace', () => {
 
   it('takes the executor from the input, and refuses one the configured account contradicts', async () => {
     const { fetch, calls } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
-    await client(fetch).foundNamespace({ executorAccount: EXECUTOR });
+    await client(fetch).foundNamespace({ executor: RELAY_EXECUTOR });
     const sent = JSON.parse(String(calls[0].init?.body)) as { warrant: string };
     expect(parseGovernanceWarrant(sent.warrant).executor).toBe(EXECUTOR);
+    expect(parseGovernanceWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
 
     const err = await client(scriptedFetch([]).fetch, { executorAccount: 'ee'.repeat(32) })
-      .foundNamespace({ executorAccount: EXECUTOR })
+      .foundNamespace({ executor: RELAY_EXECUTOR })
       .catch((e: unknown) => e);
     expect(String(err)).toMatch(/would be unspendable/);
   });
 
-  it('refuses before taking a nonce when it does not know the relay\'s account', async () => {
+  // A key learned from discovery is unauthenticated, so it never names a founding's executor.
+  it('never founds with the executor an earlier call learned', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([
+      { body: { data: { ...RELAY_EXECUTOR, groupId: GROUP, canActOnBehalf: true } } },
+      { body: { data: { groupId: GROUP } } },
+    ]);
+    const relay = client(fetch, { nonces });
+    await relay.govern({ groupId: GROUP, op: memberAddedOp('44'.repeat(32), 'Member') });
+    await expect(relay.foundNamespace({} as never)).rejects.toThrow(/needs the relay's account and signing key/);
+    expect(calls).toHaveLength(2);
+    expect(await nonces.next()).toBe(2n);
+  });
+
+  it('refuses before taking a nonce when it does not know the relay\'s account and key', async () => {
     const nonces = createMemoryNonceSource(1);
     const next = vi.spyOn(nonces, 'next');
     const { fetch, calls } = scriptedFetch([]);
-    await expect(client(fetch, { nonces }).foundNamespace()).rejects.toThrow(
-      /needs the relay's account/,
+    // A configured account is not enough: it names no key.
+    await expect(client(fetch, { executorAccount: EXECUTOR, nonces }).foundNamespace({} as never)).rejects.toThrow(
+      /needs the relay's account and signing key/,
     );
     expect(next).not.toHaveBeenCalled();
     expect(calls).toHaveLength(0);
+  });
+
+  it('refuses an executor key that is not 32 bytes of hex before taking a nonce', async () => {
+    const nonces = createMemoryNonceSource(1);
+    const { fetch, calls } = scriptedFetch([]);
+    await expect(
+      client(fetch, { nonces }).foundNamespace({
+        executor: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY.slice(2) },
+      }),
+    ).rejects.toThrow(/the relay's executorKey must be 64 hex characters, got 62/);
+    expect(calls).toHaveLength(0);
+    expect(await nonces.next()).toBe(1n);
   });
 
   it('signs with a configured signer, and refuses a config naming both before taking a nonce', async () => {
@@ -713,7 +870,7 @@ describe('RelayClient.foundNamespace', () => {
       vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
       try {
         const { fetch, calls } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
-        await client(fetch, { executorAccount: EXECUTOR, ...overrides }).foundNamespace({ salt: SALT });
+        await client(fetch, overrides).foundNamespace({ executor: RELAY_EXECUTOR, salt: SALT });
         return (JSON.parse(String(calls[0].init?.body)) as { warrant: string }).warrant;
       } finally {
         vi.useRealTimers();
@@ -724,7 +881,7 @@ describe('RelayClient.foundNamespace', () => {
     const nonces = createMemoryNonceSource(1);
     const { fetch, calls } = scriptedFetch([]);
     await expect(
-      client(fetch, { executorAccount: EXECUTOR, signer, nonces }).foundNamespace(),
+      client(fetch, { signer, nonces }).foundNamespace({ executor: RELAY_EXECUTOR }),
     ).rejects.toThrow(/not both/);
     expect(calls).toHaveLength(0);
     expect(await nonces.next()).toBe(1n);
@@ -733,7 +890,7 @@ describe('RelayClient.foundNamespace', () => {
   describe('application', () => {
     const APP = { applicationId: '88'.repeat(32), package: 'com.example.app', version: '1.2.3' };
     const describedNs = (namespaceId: string) => ({
-      body: { data: { executorAccount: EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
+      body: { data: { ...RELAY_EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
     });
 
     it('sets the application right after founding, before the default mask', async () => {
@@ -747,7 +904,8 @@ describe('RelayClient.foundNamespace', () => {
       ]);
 
       await expect(
-        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+        client(fetch).foundNamespace({
+          executor: RELAY_EXECUTOR,
           salt: SALT,
           application: APP,
           defaultCapabilities: 231,
@@ -780,7 +938,7 @@ describe('RelayClient.foundNamespace', () => {
         describedNs(namespaceId),
         { status: 403, text: JSON.stringify({ error }) },
       ]);
-      const got = await client(fetch, { executorAccount: EXECUTOR }).foundNamespace({ salt: SALT, application: APP });
+      const got = await client(fetch).foundNamespace({ executor: RELAY_EXECUTOR, salt: SALT, application: APP });
       expect(got).toMatchObject({ namespaceId, applicationSet: false });
       expect(got.applicationError).toContain('first application');
     });
@@ -790,7 +948,7 @@ describe('RelayClient.foundNamespace', () => {
     /** mero-chat's mask: create contexts, invite, join Open subgroups, and more. */
     const MASK = 231;
     const describedNs = (namespaceId: string) => ({
-      body: { data: { executorAccount: EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
+      body: { data: { ...RELAY_EXECUTOR, groupId: namespaceId, canActOnBehalf: true } },
     });
 
     it('sets the mask through the relay right after founding, as the founder', async () => {
@@ -802,7 +960,8 @@ describe('RelayClient.foundNamespace', () => {
       ]);
 
       await expect(
-        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+        client(fetch).foundNamespace({
+          executor: RELAY_EXECUTOR,
           salt: SALT,
           defaultCapabilities: MASK,
         }),
@@ -832,7 +991,8 @@ describe('RelayClient.foundNamespace', () => {
         { status: 403, text: JSON.stringify({ error }) },
       ]);
       await expect(
-        client(fetch, { executorAccount: EXECUTOR }).foundNamespace({
+        client(fetch).foundNamespace({
+          executor: RELAY_EXECUTOR,
           salt: SALT,
           defaultCapabilities: MASK,
         }),
@@ -848,19 +1008,20 @@ describe('RelayClient.foundNamespace', () => {
     it('refuses a mask it could never set before founding anything', async () => {
       const nonces = createMemoryNonceSource(1);
       const { fetch, calls } = scriptedFetch([]);
-      const relay = client(fetch, { executorAccount: EXECUTOR, nonces });
-      await expect(relay.foundNamespace({ defaultCapabilities: MASK | 512 })).rejects.toThrow(
+      const relay = client(fetch, { nonces });
+      const executor = RELAY_EXECUTOR;
+      await expect(relay.foundNamespace({ executor, defaultCapabilities: MASK | 512 })).rejects.toThrow(
         /CAN_AUTHOR_ON_BEHALF/,
       );
-      await expect(relay.foundNamespace({ defaultCapabilities: -1 })).rejects.toThrow(/u32/);
-      await expect(relay.foundNamespace({ defaultCapabilities: 1.5 })).rejects.toThrow(/u32/);
+      await expect(relay.foundNamespace({ executor, defaultCapabilities: -1 })).rejects.toThrow(/u32/);
+      await expect(relay.foundNamespace({ executor, defaultCapabilities: 1.5 })).rejects.toThrow(/u32/);
       expect(calls).toHaveLength(0);
       expect(await nonces.next()).toBe(1n);
     });
 
     it('omits the fields when no mask was asked for', async () => {
       const { fetch } = scriptedFetch([founded({ groupId: 'f1'.repeat(32) })]);
-      const out = await client(fetch, { executorAccount: EXECUTOR }).foundNamespace();
+      const out = await client(fetch).foundNamespace({ executor: RELAY_EXECUTOR });
       expect(out).not.toHaveProperty('defaultCapabilitiesSet');
       expect(out).not.toHaveProperty('defaultCapabilitiesError');
     });
@@ -871,11 +1032,13 @@ describe('RelayClient.foundNamespace', () => {
       { status: 409, text: JSON.stringify({ error: 'group already exists' }) },
       { status: 403, text: JSON.stringify({ error: 'not authorized' }) },
     ]);
-    const relay = client(fetch, { executorAccount: EXECUTOR });
-    const conflict = await relay.foundNamespace({ salt: SALT }).catch((e: unknown) => e);
+    const relay = client(fetch);
+    const conflict = await relay
+      .foundNamespace({ executor: RELAY_EXECUTOR, salt: SALT })
+      .catch((e: unknown) => e);
     expect(conflict).toBeInstanceOf(HTTPError);
     expect((conflict as HTTPError).status).toBe(409);
-    const refused = await relay.foundNamespace({ salt: SALT }).catch((e: unknown) => e);
+    const refused = await relay.foundNamespace({ executor: RELAY_EXECUTOR, salt: SALT }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(IntentRefusedError);
   });
 });
@@ -888,14 +1051,14 @@ describe('RelayClient with a Signer in place of deviceSecret', () => {
   const MEMBER = '44'.repeat(32);
   const describedCreation = {
     body: {
-      data: { executorAccount: EXECUTOR, groupId: GROUP, canCreateOnBehalf: true, authorMayCreate: true },
+      data: { ...RELAY_EXECUTOR, groupId: GROUP, canCreateOnBehalf: true, authorMayCreate: true },
     },
   };
   const created = {
     body: { data: { contextId: 'c0'.repeat(32), groupId: GROUP, memberPublicKey: 'd1'.repeat(32) } },
   };
   const describedGovernance = {
-    body: { data: { executorAccount: EXECUTOR, groupId: GROUP, canActOnBehalf: true } },
+    body: { data: { ...RELAY_EXECUTOR, groupId: GROUP, canActOnBehalf: true } },
   };
   const governed = { body: { data: { groupId: GROUP } } };
 

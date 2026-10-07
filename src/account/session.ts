@@ -105,8 +105,9 @@ export interface DelegatedSession extends DelegatedCredential {
    * The relay's executor account, hex, when the app knows it — the cloud's
    * machine page names it beside the relay's address.
    *
-   * Founding a namespace through a relay names the relay's account in the
-   * warrant, and a namespace that does not exist yet cannot be asked for it.
+   * Founding a namespace through a relay names the relay's account (and its
+   * node key) in the warrant, and a namespace that does not exist yet cannot be
+   * asked for them.
    * Without this the account learns it from a namespace it is already in, so a
    * brand-new account would have to join one first; with it, the account founds
    * on `relayUrl` directly.

@@ -18,6 +18,8 @@ import type { ExecuteTransport } from './types.js';
 const CONTEXT = '01'.repeat(32);
 const AUTHOR = '0e'.repeat(32);
 const EXECUTOR = '4d'.repeat(32);
+const EXECUTOR_KEY = 'ec'.repeat(32);
+const RELEASE = { releaseBytecodeId: 'b1'.repeat(32), releaseVersion: '1.2.0' };
 const DEVICE_SECRET = '77'.repeat(32);
 
 /** The app. Notice it names no transport and reads no transport-specific field. */
@@ -43,7 +45,10 @@ function fakeNodeFetch(result: unknown): { fetch: typeof fetch; bodies: unknown[
   return { fetch: impl, bodies };
 }
 
-/** A fake relay: answers the intents route with the `IntentResult` envelope. */
+/**
+ * A fake relay: answers discovery on the intents route with its executor, and
+ * a write there with the `IntentResult` envelope.
+ */
 function fakeRelayFetch(
   returns: unknown,
   rootHash = 'ff'.repeat(32),
@@ -51,6 +56,12 @@ function fakeRelayFetch(
   const bodies: unknown[] = [];
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     expect(String(input)).toContain(`/admin-api/contexts/${CONTEXT}/intents`);
+    if (init?.method === 'GET') {
+      return new Response(JSON.stringify({ data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, ...RELEASE } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     bodies.push(init?.body ? JSON.parse(String(init.body)) : null);
     return new Response(JSON.stringify({ data: { rootHash, returns } }), {
       status: 200,
@@ -368,6 +379,9 @@ function fakeRelayNodeFetch(): { fetch: typeof fetch; paths: string[]; bodies: u
     }
     if (url.pathname === '/auth/token') {
       return Response.json({ data: { access_token: 'sess-token', refresh_token: 'refresh-1' } });
+    }
+    if (init?.method === 'GET' && url.pathname.endsWith('/intents')) {
+      return Response.json({ data: { executorAccount: EXECUTOR, executorKey: EXECUTOR_KEY, ...RELEASE } });
     }
     return Response.json({ data: { rootHash: 'ff'.repeat(32), returns: null } });
   }) as unknown as typeof fetch;
