@@ -1,5 +1,7 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 
+import { assertSecureBaseUrl } from '../http-client/index.js';
+
 export type { GroupMembershipEventData, GroupMigrationEventData };
 
 export interface WsEventData {
@@ -42,8 +44,10 @@ export class WsClient {
 
   constructor(opts: {
     baseUrl: string;
+    allowInsecureHttp?: boolean;
     getAuthToken: () => Promise<string>;
   }) {
+    assertSecureBaseUrl(opts.baseUrl, opts.allowInsecureHttp);
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.getAuthToken = opts.getAuthToken;
   }
@@ -242,10 +246,12 @@ export class WsClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
-    const delay = Math.min(
+    const capped = Math.min(
       1000 * Math.pow(2, this.reconnectAttempt),
       WsClient.MAX_BACKOFF_MS,
     );
+    // Half-jitter, so a fleet of clients does not reconnect in lockstep.
+    const delay = capped / 2 + Math.random() * (capped / 2);
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

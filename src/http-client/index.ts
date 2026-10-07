@@ -3,7 +3,7 @@ export * from './http-types.js';
 export * from './api-response.js';
 
 // Web Standards HTTP client implementation
-export { WebHttpClient, HTTPError, AuthRevokedError } from './web-client.js';
+export { WebHttpClient, HTTPError, AuthRevokedError, assertSecureBaseUrl } from './web-client.js';
 
 // Factory functions for easy client creation
 export {

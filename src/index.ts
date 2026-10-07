@@ -31,7 +31,7 @@ export type { TokenStore } from "./token-store/index.js";
 // RPC client
 export { RpcClient, RpcError } from "./rpc/index.js";
 export type { MigrateMyEntriesSummary } from "./rpc/index.js";
-export type { ExecuteParams } from "./rpc/index.js";
+export type { ExecuteParams, SyncState, SyncStatus } from "./rpc/index.js";
 
 // Transport — one client, two write paths, chosen at construction (node by default)
 export {

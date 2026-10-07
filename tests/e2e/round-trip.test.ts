@@ -257,3 +257,15 @@ describe('Round-trip E2E — Groups', () => {
     expect(info).toBeTruthy();
   });
 });
+
+describe('Round-trip E2E - RPC', () => {
+  it('syncStatus returns a typed status for the context', async () => {
+    const status = await mero.rpc.syncStatus(contextId);
+    expect(status.contextId).toBe(contextId);
+    expect(typeof status.isInitialized).toBe('boolean');
+    expect(typeof status.failureCount).toBe('number');
+    expect(['idle', 'waitingForPeers', 'syncing', 'receivingSnapshot', 'backingOff']).toContain(
+      status.syncState.state,
+    );
+  });
+});

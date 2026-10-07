@@ -7,6 +7,8 @@ export type FetchLike = (
 export interface Transport {
   fetch: FetchLike;
   baseUrl: string;
+  /** Permit a cleartext `http://` base URL on a non-loopback host. */
+  allowInsecureHttp?: boolean;
   defaultHeaders?: Record<string, string>;
   getAuthToken?: () => Promise<string | undefined>;
   /**

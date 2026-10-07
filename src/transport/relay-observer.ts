@@ -105,6 +105,7 @@ export interface ResolvedObserveConfig {
   ttlSeconds?: number;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  allowInsecureHttp?: boolean;
 }
 
 /**
@@ -221,6 +222,7 @@ export class RelayObserver {
     if (!this.sseClient) {
       this.sseClient = new SseClient({
         baseUrl: this.config.nodeUrl,
+        allowInsecureHttp: this.config.allowInsecureHttp,
         getAuthToken: () => this.accessToken(),
       });
     }
@@ -232,6 +234,7 @@ export class RelayObserver {
     if (!this.wsClient) {
       this.wsClient = new WsClient({
         baseUrl: this.config.nodeUrl,
+        allowInsecureHttp: this.config.allowInsecureHttp,
         getAuthToken: () => this.accessToken(),
       });
     }

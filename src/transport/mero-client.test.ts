@@ -93,7 +93,7 @@ describe('one call site, two transports', () => {
 
     const node = fakeNodeFetch(payload);
     vi.stubGlobal('fetch', node.fetch);
-    const nodeClient = createMeroClient({ baseUrl: 'http://node.example' });
+    const nodeClient = createMeroClient({ baseUrl: 'https://node.example' });
     const fromNode = await appCode(nodeClient);
 
     const relay = fakeRelayFetch(payload);
@@ -109,7 +109,7 @@ describe('one call site, two transports', () => {
   it('sends the same method and arguments on both transports', async () => {
     const node = fakeNodeFetch(null);
     vi.stubGlobal('fetch', node.fetch);
-    await appCode(createMeroClient({ baseUrl: 'http://node.example' }));
+    await appCode(createMeroClient({ baseUrl: 'https://node.example' }));
 
     const relay = fakeRelayFetch(null);
     await appCode(createMeroClient({ transport: 'relay', relay: relayClient(relay.fetch) }));
@@ -124,7 +124,7 @@ describe('one call site, two transports', () => {
   it('defaults `argsJson` to {} on both transports', async () => {
     const node = fakeNodeFetch(null);
     vi.stubGlobal('fetch', node.fetch);
-    await createMeroClient({ baseUrl: 'http://node.example' }).rpc.execute({
+    await createMeroClient({ baseUrl: 'https://node.example' }).rpc.execute({
       contextId: CONTEXT,
       method: 'noop',
     });
@@ -146,7 +146,7 @@ describe('one call site, two transports', () => {
     // have made the two disagree — in the exact case this adapter unifies.
     const node = fakeNodeFetch(null);
     vi.stubGlobal('fetch', node.fetch);
-    const fromNode = await appCode(createMeroClient({ baseUrl: 'http://node.example' }));
+    const fromNode = await appCode(createMeroClient({ baseUrl: 'https://node.example' }));
 
     const relay = fakeRelayFetch(null);
     const fromRelay = await appCode(
@@ -163,7 +163,7 @@ describe('one call site, two transports', () => {
     const node = fakeNodeFetch(summary);
     vi.stubGlobal('fetch', node.fetch);
     const fromNode = await createMeroClient({
-      baseUrl: 'http://node.example',
+      baseUrl: 'https://node.example',
     }).rpc.migrateMyEntries(CONTEXT);
 
     const relay = fakeRelayFetch(summary);
@@ -208,7 +208,7 @@ describe('the relay metadata the canonical shape has no room for', () => {
     const node = fakeNodeFetch({ ok: true });
     vi.stubGlobal('fetch', node.fetch);
     const detailed = await createMeroClient({
-      baseUrl: 'http://node.example',
+      baseUrl: 'https://node.example',
     }).rpc.executeWithMetadata<{ ok: boolean }>({ contextId: CONTEXT, method: 'set' });
 
     expect(detailed.transport).toBe('node');
@@ -220,13 +220,13 @@ describe('the relay metadata the canonical shape has no room for', () => {
 
 describe('transport selection', () => {
   it('defaults to the node when no transport is named', () => {
-    const client = createMeroClient({ baseUrl: 'http://node.example' });
+    const client = createMeroClient({ baseUrl: 'https://node.example' });
     expect(client.transport).toBe('node');
     expect(client.canSubscribe).toBe(true);
   });
 
   it('accepts an explicit node transport as the same thing', () => {
-    const client = createMeroClient({ transport: 'node', baseUrl: 'http://node.example' });
+    const client = createMeroClient({ transport: 'node', baseUrl: 'https://node.example' });
     expect(client.transport).toBe('node');
     // The marker must not reach MeroJs, which has never heard of it.
     expect(client.node.rpc).toBe(client.rpc);
@@ -256,7 +256,7 @@ describe('transport selection', () => {
   });
 
   it('is constructible with `new` as well as through the factory', () => {
-    expect(new MeroClient({ baseUrl: 'http://node.example' })).toBeInstanceOf(MeroClient);
+    expect(new MeroClient({ baseUrl: 'https://node.example' })).toBeInstanceOf(MeroClient);
   });
 });
 
@@ -353,7 +353,7 @@ describe('a relay client with no node key', () => {
   });
 
   it('refuses `relay` on a node client', () => {
-    expect(() => createMeroClient({ baseUrl: 'http://node.example' }).relay).toThrow(
+    expect(() => createMeroClient({ baseUrl: 'https://node.example' }).relay).toThrow(
       /node transport/,
     );
   });
@@ -430,7 +430,7 @@ describe('a relay client given the node key', () => {
       observe: { ...OBSERVE },
     });
     vi.stubGlobal('fetch', fakeNodeFetch(null).fetch);
-    const noded = createMeroClient({ baseUrl: 'http://node.example' });
+    const noded = createMeroClient({ baseUrl: 'https://node.example' });
     expect(relayed.events.constructor).toBe(noded.events.constructor);
   });
 
@@ -543,7 +543,7 @@ describe('one call site that both writes and observes', () => {
       refresh_token: 'r',
       expires_at: Date.now() + 3_600_000,
     });
-    const noded = createMeroClient({ baseUrl: 'http://node.example', tokenStore: store });
+    const noded = createMeroClient({ baseUrl: 'https://node.example', tokenStore: store });
     await expect(appCodeThatObserves(noded)).resolves.toEqual(expected);
     noded.close();
 
@@ -569,7 +569,7 @@ describe('the admin surface on the relay transport', () => {
     const client = createMeroClient({
       transport: 'relay',
       relay: new RelayClient({
-        relayUrl: 'http://relay.example',
+        relayUrl: 'https://relay.example',
         authorAccount: 'aa'.repeat(32),
         authorProof: 'bb'.repeat(32),
         deviceSecret: 'cc'.repeat(32),
@@ -595,5 +595,35 @@ describe('the admin surface on the relay transport', () => {
     expect(message).toMatch(/warrant/i);
     // and it must still not suggest the caller is one admin grant away
     expect(message).not.toMatch(/permission denied|grant .* admin/i);
+  });
+});
+
+describe('a relay client over cleartext http', () => {
+  const insecure = (extra: Record<string, unknown> = {}) =>
+    createMeroClient({
+      transport: 'relay',
+      relay: {
+        relayUrl: 'http://relay.example',
+        authorAccount: AUTHOR,
+        authorProof: 'aa',
+        deviceSecret: DEVICE_SECRET,
+        nonces: createMemoryNonceSource(1),
+        fetch: fakeRelayFetch(null).fetch,
+      },
+      ...extra,
+    });
+
+  it('refuses a non-loopback relayUrl unless allowInsecureHttp is set', () => {
+    expect(() => insecure()).toThrow(/cleartext/);
+    expect(() => insecure({ allowInsecureHttp: true })).not.toThrow();
+  });
+
+  it('refuses a cleartext observed node, which has its own url', () => {
+    const observe = { ...OBSERVE, nodeUrl: 'http://node.example' };
+    const secureRelay = relayClient(fakeRelayNodeFetch().fetch);
+    const build = (extra: Record<string, unknown> = {}) =>
+      createMeroClient({ transport: 'relay', relay: secureRelay, observe, ...extra });
+    expect(() => build().events).toThrow(/cleartext/);
+    expect(() => build({ allowInsecureHttp: true }).events).not.toThrow();
   });
 });
