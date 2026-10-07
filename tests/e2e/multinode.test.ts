@@ -179,6 +179,7 @@ async function subgroupJoinedByNode2(name: string): Promise<string> {
     applicationId,
     parentGroupId: namespaceId,
     name,
+    visibility: 'restricted',
   });
   // Not recursive, so the single-invitation shape.
   const { invitation } = (await n1.admin.createGroupInvitation(

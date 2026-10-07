@@ -1430,6 +1430,12 @@ export interface CreateGroupRequest {
   appKey?: string;
   name?: string;
   parentGroupId?: string;
+  /**
+   * A nested group's visibility at birth; ignored without `parentGroupId`.
+   * Absent means `'open'` (core 0.11 and later; older nodes default to
+   * `'restricted'`). Pass `'restricted'` for a private nested group.
+   */
+  visibility?: 'open' | 'restricted';
 }
 
 export interface CreateGroupResponseData {
