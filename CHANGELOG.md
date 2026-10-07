@@ -1,3 +1,9 @@
+## [24.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v24.4.0...mero-js-v24.4.1) (2026-10-07)
+
+### Bug Fixes
+
+* **device-cert:** refuse a device id minted for another account ([#254](https://github.com/calimero-network/mero-js/issues/254)) ([bcb6520](https://github.com/calimero-network/mero-js/commit/bcb65206f70702aa2fc06f04b31dd4c612b38927))
+
 ## [24.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.3.0...mero-js-v24.4.0) (2026-10-07)
 
 ### Features
