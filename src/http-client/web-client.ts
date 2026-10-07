@@ -17,6 +17,9 @@ import { combineSignals, createTimeoutSignal } from './signal-utils.js';
  */
 const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
 
+/** Headers whose values `HTTPError.toJSON` masks, so serialized errors never carry credentials. */
+const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie']);
+
 /**
  * Pull the node's explanation out of an error body. Core answers every handled
  * failure with `{"error": "<message>"}` (`ApiError::into_response`); the nested
@@ -87,7 +90,7 @@ export class HTTPError extends Error {
       status: this.status,
       statusText: this.statusText,
       url: this.url,
-      headers: headersToRecord(this.headers),
+      headers: redactSensitiveHeaders(headersToRecord(this.headers)),
       bodyText: this.bodyText,
     };
   }
@@ -124,6 +127,58 @@ function headersToRecord(headers: Headers): Record<string, string> {
     record[key] = value;
   });
   return record;
+}
+
+function redactSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [
+      key,
+      SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[REDACTED]' : value,
+    ]),
+  );
+}
+
+/**
+ * Throw for a cleartext `http://`/`ws://` base URL on a non-loopback host, where
+ * every credential would cross the network unencrypted, unless `allowInsecureHttp`.
+ */
+export function assertSecureBaseUrl(baseUrl: string, allowInsecureHttp = false): void {
+  if (allowInsecureHttp) return;
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return;
+  }
+  if ((url.protocol === 'http:' || url.protocol === 'ws:') && !isLoopbackHost(url.hostname)) {
+    throw new Error(
+      `Refusing insecure baseUrl "${baseUrl}": credentials would be sent in cleartext to a ` +
+        'non-loopback host. Use https:// (or wss://), or set allowInsecureHttp: true.',
+    );
+  }
+}
+
+// `URL.hostname` keeps the brackets on an IPv6 literal.
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]'
+  );
+}
+
+/**
+ * Whether `path` is an absolute URL on another origin than the node's. `buildUrl`
+ * passes absolute URLs through verbatim, so no credential may follow one there.
+ */
+function isForeignOrigin(path: string, baseUrl: string): boolean {
+  if (!path.startsWith('http://') && !path.startsWith('https://')) return false;
+  try {
+    return new URL(path).origin !== new URL(baseUrl).origin;
+  } catch {
+    return true;
+  }
 }
 
 // Web Standards HTTP client implementation
@@ -236,14 +291,15 @@ export class WebHttpClient implements HttpClient {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
     const url = this.buildUrl(path);
-    
+    const withCredentials = !isForeignOrigin(path, this.transport.baseUrl);
+
     // Track request start time for timeout calculation (only on first attempt)
     // Use per-request start time to avoid corruption from concurrent requests
     const startTime = requestStartTime ?? Date.now();
     // Note: Tauri proxy script now handles AbortSignal, so we can use full RequestInit
     // Removed Tauri-specific minimal path - proxy script handles AbortSignal properly
     const signal = this.createAbortSignal(init);
-    const headers = await this.buildHeaders(init?.headers);
+    const headers = await this.buildHeaders(init?.headers, withCredentials);
     let headersObj: Record<string, string>;
     if (headers instanceof Headers) {
       headersObj = {};
@@ -260,7 +316,7 @@ export class WebHttpClient implements HttpClient {
     // the method, the assembled path and the body are all known. The path comes
     // from the URL rather than from `path`, because a base URL may carry a prefix
     // (`…/admin-api`) that the node sees and a bare relative path would not sign.
-    if (this.transport.authorizeRequest) {
+    if (this.transport.authorizeRequest && withCredentials) {
       const body = init?.body;
       if (body !== undefined && typeof body !== 'string' && !(body instanceof Uint8Array)) {
         throw new Error(
@@ -359,7 +415,7 @@ export class WebHttpClient implements HttpClient {
     // path it received, so the only safe source is the URL actually being
     // fetched. A query string is deliberately not covered — core's `RequestSig`
     // signs the path alone, and signing more here would fail every request.
-    if (this.transport.getProof) {
+    if (this.transport.getProof && withCredentials) {
       const proof = await this.transport.getProof({
         method: requestInit.method ?? 'GET',
         path: pathForProof(url),
@@ -566,14 +622,15 @@ export class WebHttpClient implements HttpClient {
   }
 
   private async buildHeaders(
-    initHeaders?: HeadersInit,
+    initHeaders: HeadersInit | undefined,
+    withCredentials: boolean,
   ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       ...this.transport.defaultHeaders,
     };
 
     // Add auth token if available and not empty
-    if (this.transport.getAuthToken) {
+    if (this.transport.getAuthToken && withCredentials) {
       try {
         const token = await this.transport.getAuthToken();
         if (token && token.trim() !== '') {

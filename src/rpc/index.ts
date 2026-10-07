@@ -14,6 +14,26 @@ export interface ExecuteParams {
   executorPublicKey?: string;
 }
 
+/** Coarse state-sync phase, tagged on `state` (core's `SyncState`). */
+export type SyncState =
+  | { state: 'idle' }
+  | { state: 'waitingForPeers' }
+  | { state: 'syncing' }
+  | { state: 'receivingSnapshot'; recordsReceived: number; percent?: number | null; etaSecs?: number | null }
+  | { state: 'backingOff'; retryInSecs: number };
+
+/** Result of the `sync_status` JSON-RPC method. */
+export interface SyncStatus {
+  contextId: string;
+  /** `true` once initial state is adopted, so `execute` no longer returns `Uninitialized`. */
+  isInitialized: boolean;
+  syncState: SyncState;
+  /** Consecutive failed sync attempts; 0 when healthy. */
+  failureCount: number;
+  /** The last sync error, when the last attempt failed. */
+  lastError?: string;
+}
+
 export class RpcError extends Error {
   code: number;
   type?: string;
@@ -131,5 +151,15 @@ export class RpcClient {
   /** Read-only count of the caller's entries still below the target schema. */
   async countMyPending(contextId: string): Promise<number> {
     return this.execute<number>({ contextId, method: 'count_my_pending' });
+  }
+
+  /**
+   * A context's state-sync status: tells a caller that hit `Uninitialized` on
+   * `execute` whether sync is running, waiting for a peer, or failing.
+   */
+  async syncStatus(contextId: string): Promise<SyncStatus> {
+    const status = await jsonRpcCall<SyncStatus | undefined>(this.httpClient, 'sync_status', { contextId });
+    if (!status) throw new RpcError(-1, 'sync_status returned an empty result');
+    return status;
   }
 }

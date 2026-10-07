@@ -1,4 +1,4 @@
-import { createBrowserHttpClient } from './http-client/index.js';
+import { assertSecureBaseUrl, createBrowserHttpClient } from './http-client/index.js';
 import { createAuthApiClientFromHttpClient } from './auth-api/index.js';
 import { createAdminApiClientFromHttpClient } from './admin-api/index.js';
 import type { AuthApiClient } from './auth-api/index.js';
@@ -50,6 +50,11 @@ export interface MeroJsConfig {
   fetch?: typeof fetch;
   /** Optional token store for persistence */
   tokenStore?: TokenStore;
+  /**
+   * Allow a cleartext `http://`/`ws://` `baseUrl` on a non-loopback host, which
+   * otherwise throws. Loopback hosts are always allowed.
+   */
+  allowInsecureHttp?: boolean;
   /**
    * Called when the node reports that the credential family is gone
    * (`x-auth-error: token_reuse` / `token_revoked`). Terminal: the tokens have
@@ -173,6 +178,7 @@ export class MeroJs {
       timeoutMs: 10000,
       ...config,
     };
+    assertSecureBaseUrl(this.config.baseUrl, this.config.allowInsecureHttp);
 
     this.tokenStore = config.tokenStore ?? null;
 

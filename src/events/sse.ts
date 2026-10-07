@@ -21,6 +21,9 @@ const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
  */
 const TERMINAL_AUTH_STATUSES = new Set([401, 403]);
 
+/** Ceiling on the reconnect backoff. */
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
 /** How long a subscription POST may take before it counts as failed. */
 export const SUBSCRIPTION_TIMEOUT_MS = 10_000;
 
@@ -86,6 +89,7 @@ export class SseClient {
   private baseUrl: string;
   private authorize: SseAuthorizer;
   private reconnectDelayMs: number;
+  private reconnectAttempt = 0;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -259,6 +263,7 @@ export class SseClient {
       if (!response.body) {
         throw new Error('SSE response has no body');
       }
+      this.reconnectAttempt = 0;
 
       this.readStream(response.body).catch((err) => {
         if (this.closed) return;
@@ -536,10 +541,14 @@ export class SseClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
+    // Exponential backoff with half-jitter, so a fleet of clients does not
+    // reconnect in lockstep. Uncapped in attempts: an outage can outlast any count.
+    const capped = Math.min(this.reconnectDelayMs * 2 ** this.reconnectAttempt, MAX_RECONNECT_DELAY_MS);
+    this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.forceReconnect();
-    }, this.reconnectDelayMs);
+    }, capped / 2 + Math.random() * (capped / 2));
   }
 
   close(): void {

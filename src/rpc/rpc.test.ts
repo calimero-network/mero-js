@@ -169,4 +169,26 @@ describe('RpcClient', () => {
       params: expect.objectContaining({ contextId: 'ctx-1', method: 'count_my_pending' }),
     }));
   });
+
+  it('syncStatus calls sync_status and returns the result as is', async () => {
+    const status = {
+      contextId: 'ctx-1',
+      isInitialized: false,
+      syncState: { state: 'backingOff', retryInSecs: 5 },
+      failureCount: 2,
+      lastError: 'No peers to sync with',
+    };
+    const httpClient = createMockHttpClient({ jsonrpc: '2.0', id: 1, result: status });
+
+    expect(await new RpcClient({ httpClient }).syncStatus('ctx-1')).toEqual(status);
+    expect(httpClient.post).toHaveBeenCalledWith('/jsonrpc', expect.objectContaining({
+      method: 'sync_status',
+      params: { contextId: 'ctx-1' },
+    }));
+  });
+
+  it('syncStatus throws RpcError on a response with neither result nor error', async () => {
+    const httpClient = createMockHttpClient({ jsonrpc: '2.0', id: 1 });
+    await expect(new RpcClient({ httpClient }).syncStatus('ctx-1')).rejects.toThrow(RpcError);
+  });
 });

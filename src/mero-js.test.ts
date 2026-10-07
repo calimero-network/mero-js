@@ -61,6 +61,7 @@ const mockAdminClient = {
 
 vi.mock('./http-client/index.js', () => ({
   createBrowserHttpClient: vi.fn(() => mockHttpClient),
+  assertSecureBaseUrl: vi.fn(),
 }));
 
 vi.mock('./auth-api/index.js', () => ({

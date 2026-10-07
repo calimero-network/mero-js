@@ -625,3 +625,28 @@ describe('SseClient connect failures carry the auth reason', () => {
   });
 });
 
+
+describe('SseClient reconnect backoff', () => {
+  it('doubles the delay per failed attempt, with half-jitter, up to the cap', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+    const sse = new SseClient({ baseUrl: 'http://localhost:4001', getAuthToken: async () => 't', reconnectDelayMs: 1000 });
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const delays = [0, 1, 2, 3, 4, 5].map(() => {
+        (sse as any).scheduleReconnect();
+        return setTimeoutSpy.mock.calls.at(-1)![1];
+      });
+      expect(delays).toEqual([1000, 2000, 4000, 8000, 16000, 30000]);
+
+      vi.mocked(Math.random).mockReturnValue(0);
+      (sse as any).reconnectAttempt = 0;
+      (sse as any).scheduleReconnect();
+      expect(setTimeoutSpy.mock.calls.at(-1)![1]).toBe(500);
+    } finally {
+      sse.close();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+});
