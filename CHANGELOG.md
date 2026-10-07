@@ -1,3 +1,9 @@
+## [24.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.3.0...mero-js-v24.4.0) (2026-10-07)
+
+### Features
+
+* **admin:** heldOps on a namespace ([#256](https://github.com/calimero-network/mero-js/issues/256)) ([607d4a1](https://github.com/calimero-network/mero-js/commit/607d4a103ed52ee4e8189e47247a917d3bb6e3bb))
+
 ## [24.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.2.0...mero-js-v24.3.0) (2026-10-06)
 
 ### Features
