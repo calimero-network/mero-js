@@ -244,10 +244,12 @@ describe('a root held as a CryptoKey', () => {
 describe('reading a credential back', () => {
   const SECRET = '77'.repeat(32);
 
-  async function credential(): Promise<string> {
+  const NONCE = new Uint8Array(16).fill(0x33);
+
+  async function credential(account?: string): Promise<string> {
     return signDeviceCert({
       rootSecret: SECRET,
-      device: DEVICE,
+      device: await mintDeviceId(account ?? (await accountForRoot(SECRET)), NONCE),
       signPublicKey: SIGN_PK,
       kemPublicKey: KEM_PK,
       deviceEpoch: 7,
@@ -259,7 +261,7 @@ describe('reading a credential back', () => {
     expect(parsed).toMatchObject({
       rootPublicKey: (await signerFromSecret(SECRET)).publicKey,
       account: await accountForRoot(SECRET),
-      device: DEVICE,
+      device: await mintDeviceId(await accountForRoot(SECRET), NONCE),
       signPublicKey: SIGN_PK,
       kemPublicKey: KEM_PK,
       keyEpoch: 0,
@@ -270,8 +272,15 @@ describe('reading a credential back', () => {
 
   it('verifies a credential its root really signed', async () => {
     await expect(verifyDeviceCredential(await credential())).resolves.toMatchObject({
-      device: DEVICE,
+      device: await mintDeviceId(await accountForRoot(SECRET), NONCE),
     });
+  });
+
+  it('refuses a device id minted for another account', async () => {
+    // Signed by the right root, so only the id binding can catch it; core refuses it too.
+    await expect(verifyDeviceCredential(await credential(ACCOUNT))).rejects.toThrow(
+      /not minted for account/,
+    );
   });
 
   it('refuses a credential re-pointed at another account', async () => {

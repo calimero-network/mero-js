@@ -299,14 +299,16 @@ export function parseDeviceCredential(credential: string): DeviceCredential {
 }
 
 /**
- * Check that a credential says what it claims: the root signed it, and the
- * account it names is the one that root derives.
+ * Check that a credential says what it claims: the root signed it, the
+ * account it names is the one that root derives, and the device id was minted
+ * for that account.
  *
- * Both halves matter and neither implies the other. The signature says the
+ * The first two matter and neither implies the other. The signature says the
  * genesis root consented to these exact keys; the account derivation says the
  * certificate cannot have been re-pointed at a different account while keeping a
  * signature that verifies. A caller that checked only the first would accept a
- * certificate naming an account whose root never signed anything.
+ * certificate naming an account whose root never signed anything. The third
+ * stops a root claiming a device id minted for another account.
  *
  * What it does **not** establish is that the account is one the caller wanted.
  * Anyone can mint a root offline and certify any public key with it, so a
@@ -326,6 +328,14 @@ export async function verifyDeviceCredential(
     throw new Error(
       `this credential names account ${parsed.account}, but its root key ` +
         `derives ${derived} — the certificate was re-pointed at another account`,
+    );
+  }
+
+  const nonce = fromHex(parsed.device, 'device', 32).subarray(0, 16);
+  if ((await mintDeviceId(parsed.account, nonce)) !== parsed.device) {
+    throw new Error(
+      `this credential names device ${parsed.device}, which was not minted for ` +
+        `account ${parsed.account}; core refuses it`,
     );
   }
 
