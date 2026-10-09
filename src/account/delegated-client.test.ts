@@ -51,6 +51,24 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe('buildDelegatedClient: transport', () => {
+  // Everything the client sends a hosted relay goes through one sealed
+  // transport, so the login, the token and every read reach only the TD.
+  it('hands a hosted relay client the relay\'s sealed transport', async () => {
+    const { relayTransportFetch } = await import('./session.js');
+    buildDelegatedClient(S, null);
+    const config = createMeroClient.mock.calls.at(-1)![0] as { fetch?: unknown };
+    expect(config.fetch).toBeTypeOf('function');
+    expect(config.fetch).toBe(relayTransportFetch(RELAY));
+  });
+
+  it('leaves a loopback relay, a dev rig, on the global fetch', () => {
+    buildDelegatedClient({ ...S, relayUrl: 'http://localhost:2428' }, null);
+    const config = createMeroClient.mock.calls.at(-1)![0] as { fetch?: unknown };
+    expect(config.fetch).toBeUndefined();
+  });
+});
+
 describe('buildDelegatedClient: reads of an account go through the query route', () => {
   it('a method the node answers as a view is read with the session, and no warrant is spent', async () => {
     pinRelayNodeKey(RELAY, 'ab'.repeat(32));
