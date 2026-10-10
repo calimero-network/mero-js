@@ -1,3 +1,9 @@
+## [24.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.5.0...mero-js-v24.6.0) (2026-10-10)
+
+### Features
+
+* **token-store:** let a token store lock refreshes across processes ([#260](https://github.com/calimero-network/mero-js/issues/260)) ([979bee1](https://github.com/calimero-network/mero-js/commit/979bee1dcb3da9b75f9c7828a272b85a37988d88))
+
 ## [24.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.4.1...mero-js-v24.5.0) (2026-10-07)
 
 ### Features
