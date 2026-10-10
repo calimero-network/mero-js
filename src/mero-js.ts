@@ -429,8 +429,12 @@ export class MeroJs {
     }
   }
 
-  /** Run `fn` under the cross-tab refresh lock, or directly if Web Locks are unavailable. */
+  /**
+   * Run `fn` under the refresh lock: the token store's own (shared across
+   * processes), else the cross-tab Web Lock, else directly.
+   */
   private withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.tokenStore?.withLock) return this.tokenStore.withLock(fn);
     const locks = getLockManager();
     return locks ? locks.request(REFRESH_LOCK_NAME, fn) : fn();
   }

@@ -570,6 +570,44 @@ describe('MeroJs SDK', () => {
       expect(mockAuthClient.refreshToken).toHaveBeenCalledTimes(1);
     });
 
+    it("should serialize the refresh through the token store's own lock, ahead of navigator.locks", async () => {
+      const request = vi.fn((_name: string, cb: () => Promise<unknown>) => cb());
+      vi.stubGlobal('navigator', { locks: { request } });
+      const withLock = vi.fn(<T>(fn: () => Promise<T>) => fn());
+      (store as any).withLock = withLock;
+
+      mockAuthClient.refreshToken.mockResolvedValue({
+        data: { access_token: 'access-2', refresh_token: 'refresh-2' },
+      });
+
+      try {
+        await (meroJs as any).performTokenRefresh();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+
+      expect(withLock).toHaveBeenCalledTimes(1);
+      expect(request).not.toHaveBeenCalled();
+      expect(mockAuthClient.refreshToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('should adopt, inside the store lock, a bundle another process rotated while it waited', async () => {
+      // The other process refreshes while this one is queued behind the lock.
+      (store as any).withLock = async <T>(fn: () => Promise<T>) => {
+        store.setTokens({
+          access_token: 'access-2',
+          refresh_token: 'refresh-2',
+          expires_at: Date.now() + 3600_000,
+        });
+        return fn();
+      };
+
+      const tokens = await (meroJs as any).performTokenRefresh();
+
+      expect(mockAuthClient.refreshToken).not.toHaveBeenCalled();
+      expect(tokens.access_token).toBe('access-2');
+    });
+
     it('should clear tokens when the transport reports a revoked token family', async () => {
       const { onAuthRevoked } = await getTransportHooks();
 
