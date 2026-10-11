@@ -18,14 +18,13 @@
  * three. The node's verifier handles both, so which you produce here is a
  * question about where your key lives, not about what the node accepts.
  *
- * **What it binds.** Method, path and a hash of the body. A signature for
- * `GET /a` is not a signature for `POST /a`, for `GET /b`, or for the same call
- * with different arguments.
+ * **What it binds.** Method, path and query, and a hash of the body. A
+ * signature for `GET /a?x=1` is not a signature for `POST /a?x=1`, for
+ * `GET /a?x=2`, for `GET /b?x=1`, or for the same call with a different body.
  *
- * **The path excludes the query string**, deliberately: a proxy may legitimately
- * rewrite it — a token parameter most of all — and signing over bytes something
- * else is entitled to change means failing for reasons the caller cannot see.
- * Anything that must be bound belongs in the body.
+ * **The path includes the query string**, exactly as it goes on the request
+ * line: no re-encoding, no reordering. A proxy between you and the node must
+ * forward both unchanged, or the node refuses the proof.
  *
  * **The method is not normalized.** `HEAD` and `GET` are the same *permission*
  * and the node's permission layer folds them, but they are different requests.
@@ -53,7 +52,7 @@ import {
   u64le,
 } from "../crypto/internal.js";
 
-const SIGN_DOMAIN = new TextEncoder().encode("calimero.auth.request.v1");
+const SIGN_DOMAIN = new TextEncoder().encode("calimero.auth.request.v2");
 
 /**
  * Its own domain, distinct from the signing one.
@@ -93,8 +92,8 @@ export interface RequestSigInput {
    */
   method: string;
   /**
-   * The path, **without** the query string. `/admin-api/namespaces`, not
-   * `/admin-api/namespaces?token=…`.
+   * The path and query, exactly as on the request line:
+   * `/admin-api/blobs?context_id=…`. Use `signedPath` to take it from a URL.
    */
   path: string;
   /**

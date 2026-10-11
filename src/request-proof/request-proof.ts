@@ -36,8 +36,8 @@ import type { Signer } from '../signer/index.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-/** `calimero.auth.request.v1` — what the request signature is separated by. */
-const REQUEST_SIGN_DOMAIN = utf8('calimero.auth.request.v1');
+/** `calimero.auth.request.v2` — what the request signature is separated by. */
+const REQUEST_SIGN_DOMAIN = utf8('calimero.auth.request.v2');
 /**
  * `calimero.auth.request.body.v1` — distinct from the signing domain so a body
  * hash can never be presented as a request signature preimage.
@@ -60,11 +60,8 @@ export interface RequestProofInput {
    */
   method: string;
   /**
-   * The path, **without** the query string.
-   *
-   * Excluded because a proxy may legitimately rewrite a query, and a signature
-   * over bytes something else may change fails for reasons the caller cannot
-   * see. Anything that must be bound belongs in the body.
+   * The path and query, exactly as on the request line, with no re-encoding or
+   * reordering. Use `signedPath` to take it from a URL.
    */
   path: string;
   /**
@@ -98,7 +95,7 @@ export interface RequestProofInput {
  *
  *   CallerProof = <account_proof bytes> || 0x00 (no session) || RequestSig
  *   RequestSig  = u32le(len method) || method
- *               || u32le(len path)  || path
+ *               || u32le(len path)  || path (with its query)
  *               || body_hash[32]
  *               || u64le(issued_at) || u64le(expires_at)
  *               || signature[64]
@@ -109,13 +106,6 @@ export async function signRequestProof(input: RequestProofInput): Promise<string
   if (!method) throw new Error('signRequestProof needs the method the request will use');
   if (!path.startsWith('/')) {
     throw new Error(`signRequestProof needs a path, got ${JSON.stringify(path)}`);
-  }
-  if (path.includes('?')) {
-    throw new Error(
-      `the path must carry no query string, got ${JSON.stringify(path)} — ` +
-        'a query is excluded from the signature on purpose, because a proxy may ' +
-        'rewrite one. Anything that must be bound belongs in the body.',
-    );
   }
 
   const bodyBytes =
