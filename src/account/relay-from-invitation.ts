@@ -61,9 +61,8 @@ import {
  *
  * - `admitters-lookup` — the cloud read itself failed (offline, 5xx, a refused
  *   routing proof). Nothing has been learned about the namespace.
- * - `no-nodes` - the read succeeded and the cloud lists nothing. The namespace
- *   has no fleet assignment, so there is no cloud node to admit through. An
- *   address on the invitation is not one: `admitter_addrs` is unsigned.
+ * - `no-nodes` - the cloud lists no node to admit through. An address on the
+ *   invitation is not one: `admitter_addrs` is unsigned.
  * - `not-invited` — nodes serve the namespace, and the invitation names none of
  *   them. Terminal for this invitation: ask for a fresh one.
  * - `invited-unreachable` — a named node exists but cannot take a join now (no

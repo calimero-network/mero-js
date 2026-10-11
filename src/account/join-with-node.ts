@@ -95,9 +95,8 @@ export interface JoinWithNodeInput {
   /**
    * The node to present the join to — its admin API origin.
    *
-   * Either resolved from the cloud's `/admitters` lookup or supplied by the
-   * caller. Never one read off the invitation, signed or not: the inviter may
-   * be the attacker.
+   * Resolved from the cloud's `/admitters` lookup or supplied by the caller;
+   * never read off the invitation, signed or not: the inviter may be the attacker.
    */
   readonly nodeUrl: string;
   /**

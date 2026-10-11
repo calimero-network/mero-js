@@ -60,10 +60,8 @@ export class NoRelayError extends Error {
  * cloud's routing, intersected with the invitation's signed admitters, so an
  * invitation the cloud routes to none of them can only fail in their hands.
  *
- * - `not-hosted` — the cloud serves the namespace on no node AND no relay is a
- *   member of it, so nothing admits a node-less claimant. A namespace with a
- *   relay in it is minted for even when the cloud routes it nowhere: the relay
- *   admits through its own `/admit`, and the invitation carries its address.
+ * - `not-hosted` - the cloud lists no node holding the namespace. A relay it
+ *   does not list cannot stand in: an address on the invitation is unsigned.
  * - `no-named-node` — the cloud's nodes are not among the admitters this
  *   invitation would name.
  */

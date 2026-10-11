@@ -97,9 +97,8 @@ export interface BootstrapFromInvitationInput {
   /**
    * A node to present the join to, skipping the cloud lookup.
    *
-   * Use it when the caller already knows the node, such as an operator or a
-   * local rig; never take it from the invitation. Without it the cloud's
-   * admitters lookup answers, narrowed by the invitation's signed list.
+   * For a node the caller already knows (an operator's, a local rig); never one
+   * from the invitation. Without it the cloud's lookup answers, narrowed by the signed admitters.
    */
   readonly nodeUrl?: string;
   /** Point at a cloud other than the hosted manager. For local rigs. */
