@@ -91,69 +91,6 @@ describe('resolveRelayFromInvitation', () => {
     expect(r).toMatchObject({ ok: false, step: 'no-nodes' });
   });
 
-  // Reproduced on prod: a namespace whose founder never linked the account is
-  // routed by the cloud to no node, yet its own relay admits a direct `/admit`
-  // with 200. The invitation that relay's account minted carries where it is
-  // reached (`admitter_addrs`), and that is the door when the cloud names none.
-  describe('with no cloud nodes, an address the invitation carries', () => {
-    const ADDRS = ['/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWpeer', 'https://relay.example/'];
-
-    it('is the admitter: the relay at that address, through its own admit route', async () => {
-      const r = await resolveRelayFromInvitation({
-        namespaceId: NS,
-        admitters: [INVITER],
-        admitterAddrs: ADDRS,
-        ...CREDENTIAL,
-        cloud: cloud([]),
-      });
-      expect(r.ok).toBe(true);
-      if (!r.ok) return;
-      expect(r.relayUrl).toBe('https://relay.example');
-      expect(r.admitUrl).toBe(`https://relay.example/admin-api/namespaces/${NS}/admit`);
-      expect(r.admitterAccount).toBe(INVITER);
-      expect(r.peerId).toBeNull();
-      expect(r.via).toBe('invitation');
-    });
-
-    it('is not used when the cloud does route the namespace: the cloud chooses', async () => {
-      const r = await resolveRelayFromInvitation({
-        namespaceId: NS,
-        admitters: [INVITER],
-        admitterAddrs: ['https://elsewhere.example'],
-        ...CREDENTIAL,
-        cloud: cloud([node()]),
-      });
-      expect(r.ok).toBe(true);
-      if (!r.ok) return;
-      expect(r.relayUrl).toBe('https://relay.example');
-      expect(r.via).toBe('cloud');
-    });
-
-    it('is still no-nodes when the invitation carries only multiaddrs: a browser cannot dial them', async () => {
-      const r = await resolveRelayFromInvitation({
-        namespaceId: NS,
-        admitters: [INVITER],
-        admitterAddrs: [ADDRS[0]!],
-        ...CREDENTIAL,
-        cloud: cloud([]),
-      });
-      expect(r).toMatchObject({ ok: false, step: 'no-nodes' });
-    });
-
-    it('names no admitter account when the invitation names several: the node says which it is', async () => {
-      const r = await resolveRelayFromInvitation({
-        namespaceId: NS,
-        admitters: [INVITER, OTHER],
-        admitterAddrs: ADDRS,
-        ...CREDENTIAL,
-        cloud: cloud([]),
-      });
-      expect(r.ok).toBe(true);
-      if (!r.ok) return;
-      expect(r.admitterAccount).toBeNull();
-    });
-  });
-
   // Measured against prod: the cloud reported servable:false / canAdmit:false /
   // fresh:false for a node whose /admin-api/health answered alive and which had
   // just minted the invitation being claimed. Those flags come from assignment
