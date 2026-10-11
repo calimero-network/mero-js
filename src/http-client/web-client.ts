@@ -127,6 +127,19 @@ function headersToRecord(headers: Headers): Record<string, string> {
   return record;
 }
 
+/** Runtimes disagree on sending a bare `?`, so the URL parser drops it once and
+ * the URL signed and the URL fetched are one string. */
+function withoutBareQuery(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, globalThis.location?.href);
+  } catch {
+    return url; // relative, with no page to resolve it against
+  }
+  if (parsed.search === '') parsed.search = '';
+  return parsed.href;
+}
+
 // Web Standards HTTP client implementation
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
@@ -219,9 +232,7 @@ export class WebHttpClient implements HttpClient {
   ): Promise<T> {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
-    // Runtimes disagree on sending a bare trailing `?`, so drop it once: the URL
-    // signed and the URL fetched are then the same string everywhere.
-    const url = this.buildUrl(path).replace(/\?$/, '');
+    const url = withoutBareQuery(this.buildUrl(path));
     
     // Track request start time for timeout calculation (only on first attempt)
     // Use per-request start time to avoid corruption from concurrent requests

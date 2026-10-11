@@ -88,12 +88,8 @@ export function createProofAuthorizer(credential: ProofCredential): RequestAutho
   };
 }
 
-/**
- * The path and query a proof must be signed over, taken from a URL.
- *
- * Read from the parsed URL because that is the serialization `fetch` puts on the
- * request line, base-URL prefix and percent-encoding included.
- */
+/** The path and query a proof signs, read from the parsed URL: the serialization
+ * `fetch` puts on the request line, base-URL prefix and escapes included. */
 export function signedPath(url: string): string {
   // A relative URL resolves as `fetch` resolves it: against the page, if any.
   const parsed = new URL(url, globalThis.location?.href ?? 'http://localhost');
