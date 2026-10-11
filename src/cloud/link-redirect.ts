@@ -34,7 +34,12 @@
 import { CloudClient } from './cloud-client.js';
 import type { CloudAccountLink } from './cloud-client.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
-import { beginLinkState, consumeLinkState } from './link-state.js';
+import {
+  beginLinkState,
+  consumeLinkState,
+  forgetLinkState,
+  withoutLinkState,
+} from './link-state.js';
 
 /** Where the consent screen lives. The web app, not the manager API. */
 const DEFAULT_CLOUD_WEB_URL = 'https://cloud.calimero.network';
@@ -94,6 +99,7 @@ export function readCloudLinkCallback(
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
   if (error) {
+    forgetLinkState(location.search ?? '');
     stripFragment();
     throw new Error(
       error === 'denied'
@@ -121,7 +127,7 @@ export function readCloudLinkCallback(
 
 function stripFragment(): void {
   if (typeof history === 'undefined' || !history.replaceState) return;
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(null, '', location.pathname + withoutLinkState(location.search));
 }
 
 export interface CompleteCloudLinkOptions extends CloudLinkCallback {

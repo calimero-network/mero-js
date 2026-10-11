@@ -34,7 +34,7 @@ import {
   type RootSource,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
-import { beginLinkState, consumeLinkState } from './link-state.js';
+import { beginLinkState, consumeLinkState, forgetLinkState } from './link-state.js';
 import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
@@ -1443,6 +1443,7 @@ export class CloudClient {
     const accountId = params.get('account');
     const error = params.get('error');
     const out: AccountLinkCallback = {};
+    if (error) forgetLinkState(search);
     if (grant && !consumeLinkState(search, accountId ?? '')) {
       return { error: 'unexpected_callback' };
     }
