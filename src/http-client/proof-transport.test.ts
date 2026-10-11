@@ -58,6 +58,20 @@ describe('request-carried proof on the transport', () => {
   });
 
   /**
+   * Browsers keep a bare trailing `?` on the request line and Node's fetch drops
+   * it, so the client drops it once and signs and fetches the same string.
+   */
+  it('drops a bare trailing ? before signing and fetching', async () => {
+    const getProof = vi.fn().mockResolvedValue('aa');
+    const { client, fetchMock } = clientWith(getProof);
+
+    await client.request('/admin-api/contexts?');
+
+    expect(getProof.mock.calls[0][0].path).toBe('/admin-api/contexts');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://relay.example/admin-api/contexts');
+  });
+
+  /**
    * A base URL may contribute a prefix, and the node verifies against the path
    * it received — so the signed path has to come from the URL being fetched,
    * not from the argument passed in.

@@ -36,7 +36,7 @@ import type { Signer } from '../signer/index.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-/** `calimero.auth.request.v2` — what the request signature is separated by. */
+/** `calimero.auth.request.v2`: what the request signature is separated by. */
 const REQUEST_SIGN_DOMAIN = utf8('calimero.auth.request.v2');
 /**
  * `calimero.auth.request.body.v1` — distinct from the signing domain so a body
