@@ -625,3 +625,93 @@ describe('SseClient connect failures carry the auth reason', () => {
   });
 });
 
+
+describe('SseClient reconnect backoff', () => {
+  it('doubles the delay per failed attempt, with half-jitter, up to the cap', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+    const sse = new SseClient({ baseUrl: 'http://localhost:4001', getAuthToken: async () => 't', reconnectDelayMs: 1000 });
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const delays = [0, 1, 2, 3, 4, 5].map(() => {
+        (sse as any).scheduleReconnect();
+        return setTimeoutSpy.mock.calls.at(-1)![1];
+      });
+      expect(delays).toEqual([1000, 2000, 4000, 8000, 16000, 30000]);
+
+      vi.mocked(Math.random).mockReturnValue(0);
+      (sse as any).reconnectAttempt = 0;
+      (sse as any).scheduleReconnect();
+      expect(setTimeoutSpy.mock.calls.at(-1)![1]).toBe(500);
+    } finally {
+      sse.close();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('SseClient reconnect attempt counter', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const make = () =>
+    new SseClient({ baseUrl: 'http://localhost:4001', getAuthToken: async () => 't', reconnectDelayMs: 100 });
+
+  it('keeps backing off while the server accepts then closes without a connect message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })));
+    const sse = make();
+    sse.on('error', () => {});
+    await sse.connect();
+    for (let i = 0; i < 2; i++) {
+      (sse as any).forceReconnect();
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect((sse as any).reconnectAttempt).toBe(3);
+    sse.close();
+  });
+
+  it('resets on the first connect message and on close', () => {
+    const sse = make();
+    (sse as any).reconnectAttempt = 4;
+    (sse as any).handleMessage(JSON.stringify({ type: 'connect', session_id: 's1' }));
+    expect((sse as any).reconnectAttempt).toBe(0);
+
+    (sse as any).reconnectAttempt = 4;
+    sse.close();
+    expect((sse as any).reconnectAttempt).toBe(0);
+  });
+
+  it('still reconnects after an expired token and stops after a revoked one', async () => {
+    const respond = (authError: string) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response('no', { status: 401, headers: { 'x-auth-error': authError } })),
+      );
+    const calls = () => (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    respond('token_expired');
+    const expired = make();
+    expired.on('error', () => {});
+    await expired.connect();
+    expect((expired as any).reconnectTimer).not.toBeNull();
+    expired.close();
+
+    respond('token_revoked');
+    const revoked = make();
+    revoked.on('error', () => {});
+    await revoked.connect();
+    expect((revoked as any).reconnectTimer).toBeNull();
+    expect(calls()).toBe(1);
+    revoked.close();
+  });
+});
+
+describe('SseClient baseUrl guard', () => {
+  it('refuses a cleartext non-loopback baseUrl unless allowInsecureHttp is set', () => {
+    const opts = { baseUrl: 'http://remote', getAuthToken: async () => 't' };
+    expect(() => new SseClient(opts)).toThrow(/cleartext/);
+    expect(() => new SseClient({ ...opts, allowInsecureHttp: true })).not.toThrow();
+  });
+});

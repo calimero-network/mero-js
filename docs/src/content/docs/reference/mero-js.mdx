@@ -31,6 +31,7 @@ new MeroJs(config: MeroJsConfig)
 | `requestCredentials` | `RequestCredentials` | `fetch` credentials mode. Defaults to `'omit'` in Tauri. |
 | `fetch` | `typeof fetch` | Custom fetch for every HTTP request (`auth`, `admin`, `rpc`, `events`). Defaults to global `fetch`. |
 | `tokenStore` | `TokenStore` | Persist tokens across sessions. Defaults to in-memory. |
+| `allowInsecureHttp` | `boolean` | Allow a cleartext `http://`/`ws://` `baseUrl` on a non-loopback host. Default `false`: the constructor throws for such a URL, since credentials would travel in the clear. Set it for a node reached over a LAN or a Docker network. |
 
 ## Property accessors
 

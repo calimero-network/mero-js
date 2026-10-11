@@ -1,6 +1,6 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
-import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+import { AuthRevokedError, HTTPError, assertSecureBaseUrl } from '../http-client/index.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone, mirroring
@@ -20,6 +20,9 @@ const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
  * `HTTPError(403)` and reconnected on a timer forever.
  */
 const TERMINAL_AUTH_STATUSES = new Set([401, 403]);
+
+/** Ceiling on the reconnect backoff. */
+const MAX_RECONNECT_DELAY_MS = 30_000;
 
 /** How long a subscription POST may take before it counts as failed. */
 export const SUBSCRIPTION_TIMEOUT_MS = 10_000;
@@ -86,6 +89,7 @@ export class SseClient {
   private baseUrl: string;
   private authorize: SseAuthorizer;
   private reconnectDelayMs: number;
+  private reconnectAttempt = 0;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,6 +109,7 @@ export class SseClient {
 
   constructor(opts: {
     baseUrl: string;
+    allowInsecureHttp?: boolean;
     /** A bearer token provider. The historical form, and still the default. */
     getAuthToken?: () => Promise<string>;
     /**
@@ -116,6 +121,7 @@ export class SseClient {
     reconnectDelayMs?: number;
     fetch?: typeof fetch;
   }) {
+    assertSecureBaseUrl(opts.baseUrl, opts.allowInsecureHttp);
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     if (opts.authorize) {
       this.authorize = opts.authorize;
@@ -331,6 +337,7 @@ export class SseClient {
       if (msg.type === 'connect' && msg.session_id) {
         const sessionId: string = msg.session_id;
         this.sessionId = sessionId;
+        this.reconnectAttempt = 0;
         // A new connection gets a new replay when it re-subscribes; what the
         // old one said may name authors who have since gone.
         this.presence.clear();
@@ -536,14 +543,19 @@ export class SseClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
+    // Exponential backoff with half-jitter, so a fleet of clients does not
+    // reconnect in lockstep. Uncapped in attempts: an outage can outlast any count.
+    const capped = Math.min(this.reconnectDelayMs * 2 ** this.reconnectAttempt, MAX_RECONNECT_DELAY_MS);
+    this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.forceReconnect();
-    }, this.reconnectDelayMs);
+    }, capped / 2 + Math.random() * (capped / 2));
   }
 
   close(): void {
     this.closed = true;
+    this.reconnectAttempt = 0;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;

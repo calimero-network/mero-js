@@ -33,7 +33,7 @@ import {
   signAccountLogin,
   type RootSource,
 } from '../account/index.js';
-import { HTTPError } from '../http-client/web-client.js';
+import { HTTPError, assertSecureBaseUrl } from '../http-client/web-client.js';
 import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
@@ -88,6 +88,8 @@ export function pickExecutingRelay(relays: readonly CloudRelay[]): CloudRelay | 
 
 export interface CloudClientConfig {
   cloudBaseUrl?: string;
+  /** Permit a cleartext `http://` cloudBaseUrl on a non-loopback host. */
+  allowInsecureHttp?: boolean;
   /**
    * An MDMA session token to start out authenticated with — from a previous
    * {@link CloudClient.signInWithGoogle}, persisted by the app.
@@ -647,6 +649,7 @@ export class CloudClient {
   private readonly routingCredential?: RoutingCredential;
 
   constructor(config: CloudClientConfig = {}) {
+    assertSecureBaseUrl(config.cloudBaseUrl || DEFAULT_CLOUD_BASE_URL, config.allowInsecureHttp);
     this.baseUrl = (config.cloudBaseUrl || DEFAULT_CLOUD_BASE_URL).replace(/\/+$/, '');
     this.onSession = config.onSession;
     // Bound through an arrow function: an unbound `globalThis.fetch` throws

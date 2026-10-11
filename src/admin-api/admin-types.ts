@@ -2186,6 +2186,7 @@ export interface TeeVerifyQuoteResponseData {
 
 export interface AdminApiClientConfig {
   baseUrl: string;
+  allowInsecureHttp?: boolean;
   getAuthToken?: () => Promise<string | undefined>;
   timeoutMs?: number;
 }

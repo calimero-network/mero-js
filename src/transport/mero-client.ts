@@ -58,7 +58,7 @@ import type { RelayObserveConfig } from './relay-observer.js';
 import type { ExecuteTransport, TransportKind } from './types.js';
 import type { AdminApiClient } from '../admin-api/index.js';
 import { createAdminApiClient, createAdminApiClientFromHttpClient } from '../admin-api/index.js';
-import { createHttpClient } from '../http-client/index.js';
+import { assertSecureBaseUrl, createHttpClient } from '../http-client/index.js';
 import { createProofAuthorizer } from '../request-proof/index.js';
 import type { ProofCredential, RequestAuthorizer } from '../request-proof/index.js';
 import { SseClient } from '../events/sse.js';
@@ -91,6 +91,8 @@ export interface RelayTransportConfig {
    * would have that caller take the client apart to put it back together.
    */
   relay: RelayClient | RelayClientConfig;
+  /** Permit cleartext `http://` to a non-loopback relay or observed node. */
+  allowInsecureHttp?: boolean;
   /**
    * A session on the relay, if this client has one.
    *
@@ -178,7 +180,11 @@ function missingNodeKey(surface: string): Error {
  * authors is the device that observes, and taking a second copy from the caller
  * is how the two come to name different keys.
  */
-function buildObserver(relay: RelayClient, observe?: RelayObserveConfig): RelayObserver | null {
+function buildObserver(
+  relay: RelayClient,
+  observe?: RelayObserveConfig,
+  allowInsecureHttp?: boolean,
+): RelayObserver | null {
   const nodeKey = observe?.nodeKey;
   if (!nodeKey) return null;
   return new RelayObserver({
@@ -191,6 +197,7 @@ function buildObserver(relay: RelayClient, observe?: RelayObserveConfig): RelayO
     ttlSeconds: observe?.ttlSeconds,
     fetch: observe?.fetch,
     timeoutMs: observe?.timeoutMs,
+    allowInsecureHttp,
   });
 }
 
@@ -221,6 +228,7 @@ export class MeroClient {
    */
   private readonly proofAuthorizer: RequestAuthorizer | null = null;
   private readonly relayUrl: string | null = null;
+  private readonly allowInsecureHttp?: boolean;
   private proofEvents: SseClient | null = null;
   private relayPresence: RelayPresenceClient | null = null;
 
@@ -230,9 +238,11 @@ export class MeroClient {
       this.nodeClient = null;
       const relay =
         config.relay instanceof RelayClient ? config.relay : new RelayClient(config.relay);
-      this.relayObserver = buildObserver(relay, config.observe);
+      assertSecureBaseUrl(relay.relayUrl, config.allowInsecureHttp);
+      this.relayObserver = buildObserver(relay, config.observe, config.allowInsecureHttp);
       this.rpcTransport = new RelayTransport(relay, this.relayObserver);
       this.relayUrl = relay.relayUrl;
+      this.allowInsecureHttp = config.allowInsecureHttp;
       if (config.proof) {
         this.proofAuthorizer = createProofAuthorizer(config.proof);
       }
@@ -246,6 +256,7 @@ export class MeroClient {
         const token = config.session;
         this.relayAdmin = createAdminApiClient({
           baseUrl: relay.relayUrl,
+          allowInsecureHttp: config.allowInsecureHttp,
           getAuthToken: typeof token === 'string' ? async () => token : token,
         });
       } else if (this.proofAuthorizer) {
@@ -255,6 +266,7 @@ export class MeroClient {
             fetch: (url: RequestInfo | URL, init?: RequestInit) =>
               globalThis.fetch(url as RequestInfo, init),
             baseUrl: relay.relayUrl,
+            allowInsecureHttp: config.allowInsecureHttp,
             authorizeRequest,
           }),
           { baseUrl: relay.relayUrl },
@@ -386,6 +398,7 @@ export class MeroClient {
       // caller would see some of its events on an object it no longer holds.
       this.proofEvents ??= new SseClient({
         baseUrl: this.relayUrl,
+        allowInsecureHttp: this.allowInsecureHttp,
         authorize: this.proofAuthorizer,
       });
       return this.proofEvents;

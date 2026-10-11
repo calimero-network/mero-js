@@ -124,3 +124,11 @@ describe('WsClient', () => {
     });
   });
 });
+
+describe('WsClient baseUrl guard', () => {
+  it('refuses a cleartext non-loopback baseUrl unless allowInsecureHttp is set', () => {
+    const opts = { baseUrl: 'http://remote', getAuthToken: async () => 't' };
+    expect(() => new WsClient(opts)).toThrow(/cleartext/);
+    expect(() => new WsClient({ ...opts, allowInsecureHttp: true })).not.toThrow();
+  });
+});
