@@ -219,7 +219,9 @@ export class WebHttpClient implements HttpClient {
   ): Promise<T> {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
-    const url = this.buildUrl(path);
+    // Runtimes disagree on sending a bare trailing `?`, so drop it once: the URL
+    // signed and the URL fetched are then the same string everywhere.
+    const url = this.buildUrl(path).replace(/\?$/, '');
     
     // Track request start time for timeout calculation (only on first attempt)
     // Use per-request start time to avoid corruption from concurrent requests
