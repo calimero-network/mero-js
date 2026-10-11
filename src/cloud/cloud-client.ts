@@ -890,9 +890,8 @@ export class CloudClient {
    * are answered together rather than across two endpoints — the per-context
    * read needs a context id a joiner does not yet have.
    *
-   * An empty `nodes` list is a state, not an error: a namespace with no fleet
-   * assignment has no cloud node, and the joiner must use one of the
-   * invitation's other admitters — another admin's node, or a self-hosted peer.
+   * An empty `nodes` list is a state, not an error: the cloud has no record of
+   * a node holding the namespace, so there is no hosted admitter.
    */
   async getNamespaceRouting(namespaceId: string): Promise<CloudNamespaceRouting> {
     const body = await this.request<{

@@ -74,7 +74,7 @@ export class InvitationNotClaimableError extends Error {
   ) {
     super(
       reason === 'not-hosted'
-        ? `nobody could claim an invitation to ${namespaceId} yet: the namespace is not hosted in the cloud, so an invitee with no node has no relay the cloud vouches for to be admitted through. Link this account to your cloud user in the wallet and enable HA for the namespace, then invite.`
+        ? `nobody could claim an invitation to ${namespaceId} yet: the cloud lists no node holding the namespace, so an invitee with no node of their own has no relay to be admitted through.`
         : `nobody could claim an invitation to ${namespaceId}: the cloud routes to none of the relays or admins it would name as admitters`,
     );
     this.name = 'InvitationNotClaimableError';

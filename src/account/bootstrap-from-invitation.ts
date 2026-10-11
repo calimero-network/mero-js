@@ -20,14 +20,11 @@
  *
  * # Where the node URL comes from, in preference order
  *
- * 1. one passed in — an operator's, or one a future invitation carries. Core
- *    today emits only libp2p multiaddrs on an invitation (`resolve_admitter_addrs`)
- *    because a node cannot know the URL its admin API is proxied on, so there is
- *    nothing to read off the invitation yet and this is the seam for when there
- *    is;
+ * 1. one the caller passes in, such as an operator's or a local rig's;
  * 2. the cloud's `/api/cloud/namespaces/{ns}/admitters`, intersected with the
- *    invitation's signed `admitters`, see `resolveRelayFromInvitation`. The
- *    invitation's `admitter_addrs` is never used: it is outside the signature.
+ *    invitation's signed `admitters`, see `resolveRelayFromInvitation`.
+ *
+ * Never from the invitation, signed or not: the inviter may be the attacker.
  *
  * # Nothing here is minted, weakened or worked around
  *
@@ -100,10 +97,9 @@ export interface BootstrapFromInvitationInput {
   /**
    * A node to present the join to, skipping the cloud lookup.
    *
-   * Use it when something already knows the node — an operator, a local rig, or
-   * an invitation that carries a claim URL once core emits one. Without it the
-   * cloud's admitters lookup answers, and the invitation's signed list is what
-   * narrows the answer.
+   * Use it when the caller already knows the node, such as an operator or a
+   * local rig; never take it from the invitation. Without it the cloud's
+   * admitters lookup answers, narrowed by the invitation's signed list.
    */
   readonly nodeUrl?: string;
   /** Point at a cloud other than the hosted manager. For local rigs. */

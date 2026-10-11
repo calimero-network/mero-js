@@ -267,25 +267,16 @@ describe('createAccountAdmin', () => {
       expect(deps.signInvitation).toHaveBeenCalled();
     });
 
-    // The invitation cannot say where an unrouted relay is: an address on it
-    // is unsigned, and a claimant must not trust it.
-    it('refuses, without signing, when the cloud hosts the namespace on no node, even with a relay in it', async () => {
+    // An address on the invitation is unsigned, so a relay the cloud does not
+    // list cannot be named there; a relay in the namespace changes nothing.
+    it('refuses, without signing, when the cloud lists no node, even with a relay in it', async () => {
       const routing = vi.fn(async () => ({ nodes: [] }));
       const { admin, deps, read } = rig({ routing });
       withRelay(read);
       const err = await admin.createNamespaceInvitation(NS).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(InvitationNotClaimableError);
       expect((err as InvitationNotClaimableError).reason).toBe('not-hosted');
-      expect(deps.signInvitation).not.toHaveBeenCalled();
-    });
-
-    it('refuses, without signing, when the cloud hosts the namespace on no node and no relay is in it', async () => {
-      const routing = vi.fn(async () => ({ nodes: [] }));
-      const { admin, deps } = rig({ routing });
-      const err = await admin.createNamespaceInvitation(NS).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(InvitationNotClaimableError);
-      expect((err as InvitationNotClaimableError).reason).toBe('not-hosted');
-      expect((err as Error).message).toMatch(/not hosted/);
+      expect((err as Error).message).toMatch(/lists no node/);
       expect(deps.signInvitation).not.toHaveBeenCalled();
     });
 

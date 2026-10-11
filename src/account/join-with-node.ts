@@ -95,12 +95,9 @@ export interface JoinWithNodeInput {
   /**
    * The node to present the join to — its admin API origin.
    *
-   * The primary parameter, so all three sources of a node URL feed one method:
-   * one carried by the invitation (core emits only libp2p multiaddrs today —
-   * see `resolve_admitter_addrs`, a node cannot know the URL its admin API is
-   * proxied on — so this is the seam for when invitations carry a claim URL),
-   * one resolved from the cloud's `/admitters` lookup, and one an operator
-   * simply knows.
+   * Either resolved from the cloud's `/admitters` lookup or supplied by the
+   * caller. Never one read off the invitation, signed or not: the inviter may
+   * be the attacker.
    */
   readonly nodeUrl: string;
   /**
