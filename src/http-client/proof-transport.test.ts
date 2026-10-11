@@ -43,17 +43,18 @@ describe('request-carried proof on the transport', () => {
   });
 
   /**
-   * The signature covers the path alone. Signing the query too would fail every
-   * request that has one, and the node would report it as a bad signature —
-   * which points at the key, not at the string that was signed.
+   * The query can name the object a request acts on, so it is signed exactly as
+   * `fetch` puts it on the request line: order and escapes kept.
    */
-  it('signs the path without the query string', async () => {
+  it('signs the path and query as they are sent', async () => {
     const getProof = vi.fn().mockResolvedValue('aa');
     const { client } = clientWith(getProof);
 
-    await client.request('/admin-api/blobs/blob-1?context_id=ctx-1');
+    await client.request('/admin-api/blobs/blob-1?hash=h&context_id=a%2Fb c');
 
-    expect(getProof.mock.calls[0][0].path).toBe('/admin-api/blobs/blob-1');
+    expect(getProof.mock.calls[0][0].path).toBe(
+      '/admin-api/blobs/blob-1?hash=h&context_id=a%2Fb%20c',
+    );
   });
 
   /**
