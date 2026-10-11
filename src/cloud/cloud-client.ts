@@ -34,6 +34,7 @@ import {
   type RootSource,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { beginLinkState, consumeLinkState } from './link-state.js';
 import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
@@ -464,7 +465,7 @@ export interface AccountLinkCallback {
   grant?: string;
   /** The account the grant is for, as the portal echoed it. */
   accountId?: string;
-  /** `'denied'` when the person cancelled. Absent on success. */
+  /** `'denied'` when the person cancelled, `'unexpected_callback'` for a grant this tab never asked for. */
   error?: string;
 }
 
@@ -1407,7 +1408,7 @@ export class CloudClient {
     const portal = options.portalUrl.replace(/\/+$/, '');
     const query = new URLSearchParams({
       'link-account': options.accountId,
-      'callback-url': options.callbackUrl,
+      'callback-url': beginLinkState(options.accountId, options.callbackUrl),
     });
     return { url: `${portal}/?${query.toString()}`, accountId: options.accountId };
   }
@@ -1418,14 +1419,19 @@ export class CloudClient {
    * Returns `{}` when there is nothing to read, so it is safe to call on every
    * load — which is how a redirected app finds out it has been sent back.
    *
+   * A grant is only returned when it answers a handoff this tab began, for the
+   * account that handoff named; anything else comes back as
+   * `error: 'unexpected_callback'`, because the redirect URL can be forwarded.
+   *
    * @param href defaults to the current location, when there is one.
    */
   static readAccountLinkCallback(href?: string): AccountLinkCallback {
     const source = href ?? (typeof window === 'undefined' ? '' : window.location.href);
     if (!source) return {};
     let hash: string;
+    let search: string;
     try {
-      hash = new URL(source).hash;
+      ({ hash, search } = new URL(source));
     } catch {
       return {};
     }
@@ -1434,6 +1440,9 @@ export class CloudClient {
     const accountId = params.get('account');
     const error = params.get('error');
     const out: AccountLinkCallback = {};
+    if (grant && !consumeLinkState(search, accountId ?? '')) {
+      return { error: 'unexpected_callback' };
+    }
     if (grant) out.grant = grant;
     if (accountId) out.accountId = accountId;
     if (error) out.error = error;

@@ -55,7 +55,9 @@ describe('CloudClient.accountLinkHandoff', () => {
     expect(parsed.searchParams.get('link-account')).toBe(ACCOUNT_ID);
     // Encoded as one parameter, so a callback carrying its own query does not
     // arrive as extra parameters of ours.
-    expect(parsed.searchParams.get('callback-url')).toBe('https://demo.example/app?keep=this');
+    const back = new URL(parsed.searchParams.get('callback-url')!);
+    expect(back.searchParams.get('keep')).toBe('this');
+    expect(back.searchParams.get('link_state')).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('needs no client and no session', () => {
@@ -67,8 +69,14 @@ describe('CloudClient.accountLinkHandoff', () => {
 
 describe('CloudClient.readAccountLinkCallback', () => {
   it('reads a grant out of the fragment', () => {
+    const { url } = CloudClient.accountLinkHandoff({
+      portalUrl: 'https://cloud.calimero.network',
+      accountId: ACCOUNT_ID,
+      callbackUrl: 'https://demo.example/app',
+    });
+    const back = new URL(new URL(url).searchParams.get('callback-url')!);
     const out = CloudClient.readAccountLinkCallback(
-      `https://demo.example/app#grant=sealed.token&account=${ACCOUNT_ID}`,
+      `${back.toString()}#grant=sealed.token&account=${ACCOUNT_ID}`,
     );
     expect(out).toEqual({ grant: 'sealed.token', accountId: ACCOUNT_ID });
   });

@@ -34,6 +34,7 @@
 import { CloudClient } from './cloud-client.js';
 import type { CloudAccountLink } from './cloud-client.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
+import { beginLinkState, consumeLinkState } from './link-state.js';
 
 /** Where the consent screen lives. The web app, not the manager API. */
 const DEFAULT_CLOUD_WEB_URL = 'https://cloud.calimero.network';
@@ -52,14 +53,14 @@ export interface BeginCloudLinkOptions {
   cloudWebUrl?: string;
 }
 
-/** The consent URL to send a person to. */
+/** The consent URL to send a person to. Remembers the link so the callback can be matched. */
 export function cloudLinkUrl(options: BeginCloudLinkOptions): string {
   if (!/^[0-9a-f]{64}$/.test(options.accountId)) {
     throw new Error('accountId must be 64 lowercase hex characters');
   }
   const url = new URL(options.cloudWebUrl ?? DEFAULT_CLOUD_WEB_URL);
   url.searchParams.set('link-account', options.accountId);
-  url.searchParams.set('callback-url', options.returnTo);
+  url.searchParams.set('callback-url', beginLinkState(options.accountId, options.returnTo));
   return url.toString();
 }
 
@@ -83,10 +84,12 @@ export interface CloudLinkCallback {
  *
  * Returns `null` when this is an ordinary page load, so a caller can run it
  * unconditionally at startup. Throws when the person declined, because that is
- * an outcome the app has to show rather than a state to wait in.
+ * an outcome the app has to show rather than a state to wait in. Also throws on
+ * a grant for a link this tab did not begin, since the redirect URL can be
+ * forwarded by whoever consented.
  */
 export function readCloudLinkCallback(
-  location: { hash: string } = window.location,
+  location: { hash: string; search?: string } = window.location,
 ): CloudLinkCallback | null {
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
@@ -102,6 +105,13 @@ export function readCloudLinkCallback(
   const grant = params.get('grant');
   const account = params.get('account');
   if (!grant || !account) return null;
+
+  if (!consumeLinkState(location.search ?? '', account)) {
+    stripFragment();
+    throw new Error(
+      'this account link answers a request this tab did not make - start the link again from here',
+    );
+  }
 
   // Consumed once. Leaving it in the bar means a reload replays a spent grant
   // and reports a confusing failure instead of the link that already worked.
