@@ -73,8 +73,12 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * `Open` (calimero-network/core#4522) - an apply-time rule older peers
  * disagree on, since they let any of its admins open it. A UI that offers
  * "make public" should offer it to the creator alone.
+ *
+ * 25: no layout change. A device link, unlink or descope core refuses on the op
+ * alone or at its cut is now an error, so it is never logged
+ * (calimero-network/core#4546). No op this module signs changes.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 24;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 25;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
