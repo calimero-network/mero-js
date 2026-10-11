@@ -41,7 +41,6 @@ describe('bootstrapFromInvitation', () => {
       peerId: null,
       writable: true,
       stale: false,
-      via: 'cloud' as const,
     }));
     const join = vi.fn(async () => ({
       ok: true as const,

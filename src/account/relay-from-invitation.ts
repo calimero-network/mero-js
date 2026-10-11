@@ -61,11 +61,9 @@ import {
  *
  * - `admitters-lookup` — the cloud read itself failed (offline, 5xx, a refused
  *   routing proof). Nothing has been learned about the namespace.
- * - `no-nodes` — the read succeeded and the cloud lists nothing, and the
- *   invitation carries no http(s) address of an admitter either. The namespace
- *   has no fleet assignment, so there is no cloud node to admit through; the
- *   invitation's admitters are somebody's self-hosted or desktop node, which the
- *   cloud neither knows nor routes to.
+ * - `no-nodes` - the read succeeded and the cloud lists nothing. The namespace
+ *   has no fleet assignment, so there is no cloud node to admit through. An
+ *   address on the invitation is not one: `admitter_addrs` is unsigned.
  * - `not-invited` — nodes serve the namespace, and the invitation names none of
  *   them. Terminal for this invitation: ask for a fresh one.
  * - `invited-unreachable` — a named node exists but cannot take a join now (no
@@ -89,12 +87,9 @@ export interface ResolvedInvitationRelay {
   readonly relayUrl: string;
   /** Where to POST the signed join — the cloud's own, never rebuilt when given. */
   readonly admitUrl: string;
-  /**
-   * The admitter's account: as the cloud reported it, or — for a relay the
-   * invitation itself named — the one admitter it names, when it names one.
-   */
+  /** The admitter's account, as the cloud reported it. */
   readonly admitterAccount: string | null;
-  /** The node's peer id as the cloud reported it; `null` for a relay the invitation named. */
+  /** The node's peer id, as the cloud reported it. */
   readonly peerId: string | null;
   /**
    * Whether this node can also run delegated writes (`CAN_AUTHOR_ON_BEHALF`).
@@ -106,11 +101,6 @@ export interface ResolvedInvitationRelay {
   readonly writable: boolean;
   /** Whether the chosen node's heartbeat for this namespace has lapsed. */
   readonly stale: boolean;
-  /**
-   * Who named this relay: the cloud's routing, or the invitation's own
-   * `admitter_addrs` when the cloud routed the namespace to no node.
-   */
-  readonly via: 'cloud' | 'invitation';
 }
 
 export interface RelayResolutionFailure {
@@ -134,15 +124,6 @@ export interface ResolveRelayFromInvitationInput {
    * here that means "nobody may admit", because an invitation cannot say that.
    */
   readonly admitters?: readonly string[];
-  /**
-   * The invitation's `admitter_addrs`: where its admitters are reached. Core
-   * emits libp2p multiaddrs here; an account minting through mero-react adds
-   * its relay's http(s) origin. Only the http(s) entries are of use to a
-   * browser, and only when the cloud routes the namespace to no node — the
-   * case of a namespace whose founder never linked the account, which the
-   * cloud does not route yet whose own relay admits.
-   */
-  readonly admitterAddrs?: readonly string[];
   /** The delegated credential — an `AccountProof<DeviceCert>`, hex. */
   readonly credential: string;
   /** The certified device's ed25519 signing secret, hex. */
@@ -165,20 +146,6 @@ export function normaliseAccount(account: string | null | undefined): string | n
   const trimmed = account.trim().toLowerCase();
   const bare = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
   return bare.length > 0 ? bare : null;
-}
-
-/** The http(s) origins among an invitation's admitter addresses, trailing slash dropped. */
-function httpAdmitterOrigins(addrs: readonly string[] | undefined): string[] {
-  const out: string[] = [];
-  for (const addr of addrs ?? []) {
-    try {
-      const url = new URL(addr);
-      if (url.protocol === 'http:' || url.protocol === 'https:') out.push(addr.replace(/\/+$/, ''));
-    } catch {
-      // A multiaddr, or nothing a browser can dial.
-    }
-  }
-  return out;
 }
 
 /** Whether the invitation's signed list names this node. */
@@ -228,28 +195,6 @@ export async function resolveRelayFromInvitation(
   }
 
   if (nodes.length === 0) {
-    // The cloud routes nothing, but the invitation may say where an admitter
-    // is: an account's relay writes its origin into `admitter_addrs` when it
-    // mints for a namespace the cloud does not host. The relay's `admit_join`
-    // re-verifies the invitation and its admitters, so nothing is loosened by
-    // knocking there; the account is the invitation's, when it names one.
-    const [relayUrl] = httpAdmitterOrigins(input.admitterAddrs);
-    if (relayUrl) {
-      const admitters = (input.admitters ?? []).map(normaliseAccount).filter((a): a is string => a !== null);
-      return {
-        ok: true,
-        relayUrl,
-        admitUrl: `${relayUrl}/admin-api/namespaces/${input.namespaceId}/admit`,
-        admitterAccount: admitters.length === 1 ? admitters[0]! : null,
-        peerId: null,
-        // The relay a founder's session runs through executes that founder's
-        // warrants, so it authors on behalf; the node's answer to the first
-        // write is the authoritative one, as for a cloud-routed node.
-        writable: true,
-        stale: false,
-        via: 'invitation',
-      };
-    }
     return {
       ok: false,
       step: 'no-nodes',
@@ -334,6 +279,5 @@ export async function resolveRelayFromInvitation(
     // disagrees with trying it at all. Both mean the same thing to a caller:
     // this was attempted on advisory data, so if the admit fails that is why.
     stale: !chosen.fresh || advisory,
-    via: 'cloud',
   };
 }
