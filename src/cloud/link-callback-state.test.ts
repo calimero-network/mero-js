@@ -1,8 +1,8 @@
 /**
- * A link grant is only spent for a link this tab began.
+ * A link grant is only spent for a link this browser began.
  *
  * Whoever consents at the cloud can forward the redirect URL to someone else, so
- * a callback that arrives without the state this tab minted is somebody else's.
+ * a callback that arrives without the state this browser minted is somebody else's.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,9 +13,9 @@ const ACCOUNT = '1f'.repeat(32);
 const OTHER = '2e'.repeat(32);
 const RETURN_TO = 'https://app.example/connected';
 
-function fakeSessionStorage(): void {
+function fakeStorage(): void {
   const map = new Map<string, string>();
-  vi.stubGlobal('sessionStorage', {
+  vi.stubGlobal('localStorage', {
     getItem: (k: string) => map.get(k) ?? null,
     setItem: (k: string, v: string) => void map.set(k, v),
     removeItem: (k: string) => void map.delete(k),
@@ -31,11 +31,12 @@ function callbackFor(consentUrl: string, account: string): URL {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  fakeSessionStorage();
+  vi.useRealTimers();
+  fakeStorage();
 });
 
 describe('readCloudLinkCallback', () => {
-  it('refuses a grant when this tab began no link', () => {
+  it('refuses a grant when this browser began no link', () => {
     expect(() =>
       readCloudLinkCallback({ hash: `#grant=attacker-grant&account=${ACCOUNT}`, search: '' }),
     ).toThrow(/did not make/);
@@ -51,14 +52,14 @@ describe('readCloudLinkCallback', () => {
     ).toThrow(/did not make/);
   });
 
-  it('refuses a grant sealed for a different account than the one this tab began for', () => {
+  it('refuses a grant sealed for a different account than the one this browser began for', () => {
     const back = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), OTHER);
     expect(() => readCloudLinkCallback({ hash: back.hash, search: back.search })).toThrow(
       /did not make/,
     );
   });
 
-  it('accepts the callback of the link this tab began, once', () => {
+  it('accepts the callback of the link this browser began, once', () => {
     const back = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
     expect(readCloudLinkCallback({ hash: back.hash, search: back.search })).toEqual({
       grant: 'attacker-grant',
@@ -81,7 +82,7 @@ describe('readCloudLinkCallback', () => {
 });
 
 describe('CloudClient.readAccountLinkCallback', () => {
-  it('reports a grant this tab never asked for as an error, not a grant', () => {
+  it('reports a grant this browser never asked for as an error, not a grant', () => {
     const out = CloudClient.readAccountLinkCallback(
       `${RETURN_TO}#grant=attacker-grant&account=${ACCOUNT}`,
     );
@@ -89,7 +90,7 @@ describe('CloudClient.readAccountLinkCallback', () => {
     expect(out.error).toBe('unexpected_callback');
   });
 
-  it('accepts the callback of a handoff this tab began', () => {
+  it('accepts the callback of a handoff this browser began', () => {
     const { url } = CloudClient.accountLinkHandoff({
       portalUrl: 'https://cloud.calimero.network',
       accountId: ACCOUNT,
@@ -111,5 +112,62 @@ describe('CloudClient.readAccountLinkCallback', () => {
     const out = CloudClient.readAccountLinkCallback(callbackFor(url, OTHER).toString());
     expect(out.grant).toBeUndefined();
     expect(out.error).toBe('unexpected_callback');
+  });
+});
+
+describe('pending links', () => {
+  it('is found by a callback in another tab, which does not share session storage', () => {
+    vi.stubGlobal('sessionStorage', undefined);
+    const back = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
+    expect(readCloudLinkCallback({ hash: back.hash, search: back.search })?.account).toBe(ACCOUNT);
+  });
+
+  it('keeps an earlier consent URL valid when another is built for the same account', () => {
+    const first = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
+    cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+    expect(readCloudLinkCallback({ hash: first.hash, search: first.search })?.account).toBe(ACCOUNT);
+  });
+
+  it('keeps links for two accounts apart', () => {
+    const a = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
+    const b = callbackFor(cloudLinkUrl({ accountId: OTHER, returnTo: RETURN_TO }), OTHER);
+    expect(readCloudLinkCallback({ hash: b.hash, search: b.search })?.account).toBe(OTHER);
+    expect(readCloudLinkCallback({ hash: a.hash, search: a.search })?.account).toBe(ACCOUNT);
+  });
+
+  it('refuses a callback after the link has expired', () => {
+    vi.useFakeTimers();
+    const back = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
+    vi.advanceTimersByTime(11 * 60 * 1000);
+    expect(() => readCloudLinkCallback({ hash: back.hash, search: back.search })).toThrow(
+      /did not make/,
+    );
+  });
+
+  it('does not replace a pending link when the return URL is invalid', () => {
+    const back = callbackFor(cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }), ACCOUNT);
+    expect(() => cloudLinkUrl({ accountId: OTHER, returnTo: '/relative' })).toThrow();
+    expect(readCloudLinkCallback({ hash: back.hash, search: back.search })?.account).toBe(ACCOUNT);
+  });
+
+  it('spends a handoff callback once', () => {
+    const { url } = CloudClient.accountLinkHandoff({
+      portalUrl: 'https://cloud.calimero.network',
+      accountId: ACCOUNT,
+      callbackUrl: RETURN_TO,
+    });
+    const back = callbackFor(url, ACCOUNT).toString();
+    expect(CloudClient.readAccountLinkCallback(back).grant).toBe('attacker-grant');
+    expect(CloudClient.readAccountLinkCallback(back).error).toBe('unexpected_callback');
+  });
+
+  it('refuses a handoff for an account id the cloud would reject', () => {
+    expect(() =>
+      CloudClient.accountLinkHandoff({
+        portalUrl: 'https://cloud.calimero.network',
+        accountId: ACCOUNT.toUpperCase(),
+        callbackUrl: RETURN_TO,
+      }),
+    ).toThrow(/64 lowercase hex/);
   });
 });

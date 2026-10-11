@@ -465,7 +465,7 @@ export interface AccountLinkCallback {
   grant?: string;
   /** The account the grant is for, as the portal echoed it. */
   accountId?: string;
-  /** `'denied'` when the person cancelled, `'unexpected_callback'` for a grant this tab never asked for. */
+  /** `'denied'` when the person cancelled, `'unexpected_callback'` for a grant this browser never asked for. */
   error?: string;
 }
 
@@ -1405,6 +1405,9 @@ export class CloudClient {
     /** Where to come back to. */
     callbackUrl: string;
   }): AccountLinkHandoff {
+    if (!/^[0-9a-f]{64}$/.test(options.accountId)) {
+      throw new Error('accountId must be 64 lowercase hex characters');
+    }
     const portal = options.portalUrl.replace(/\/+$/, '');
     const query = new URLSearchParams({
       'link-account': options.accountId,
@@ -1419,7 +1422,7 @@ export class CloudClient {
    * Returns `{}` when there is nothing to read, so it is safe to call on every
    * load — which is how a redirected app finds out it has been sent back.
    *
-   * A grant is only returned when it answers a handoff this tab began, for the
+   * A grant is only returned when it answers a handoff this browser began, for the
    * account that handoff named; anything else comes back as
    * `error: 'unexpected_callback'`, because the redirect URL can be forwarded.
    *
@@ -1451,6 +1454,10 @@ export class CloudClient {
 
   /**
    * Spend a link grant: sign it with the account root and post the pair.
+   *
+   * Pass only a grant returned by {@link readAccountLinkCallback}, never one
+   * parsed from a URL by hand: that check is what ties it to a link this
+   * browser began.
    *
    * Anonymous, and it has to be — the app doing this holds no cloud session,
    * which is the whole reason the grant exists. The grant carries the consenting

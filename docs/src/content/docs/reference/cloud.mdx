@@ -119,8 +119,11 @@ what makes it safe to carry back through a browser redirect, and it is why the
 callback puts it in the URL *fragment*, which browsers never send to servers.
 
 The handoff adds a random `link_state` to the callback URL and remembers it in
-this tab. A grant is returned only when the callback carries that state for the
-same account, so a forwarded redirect URL is refused instead of spent.
+this browser's `localStorage` for ten minutes, so the callback may return in a
+different tab (including one opened with `noopener`).
+A grant is returned only when the callback carries that state for the same account,
+so a forwarded redirect URL is refused instead of spent.
+Pass `linkAccountWithGrant` only a grant that `readAccountLinkCallback` returned.
 
 The callback origin must be allow-listed on the cloud
 (`account_link_callback_origins`), and the flow is off where none is configured.

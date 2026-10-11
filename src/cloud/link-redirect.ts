@@ -85,7 +85,7 @@ export interface CloudLinkCallback {
  * Returns `null` when this is an ordinary page load, so a caller can run it
  * unconditionally at startup. Throws when the person declined, because that is
  * an outcome the app has to show rather than a state to wait in. Also throws on
- * a grant for a link this tab did not begin, since the redirect URL can be
+ * a grant for a link this browser did not begin, since the redirect URL can be
  * forwarded by whoever consented.
  */
 export function readCloudLinkCallback(
@@ -109,7 +109,7 @@ export function readCloudLinkCallback(
   if (!consumeLinkState(location.search ?? '', account)) {
     stripFragment();
     throw new Error(
-      'this account link answers a request this tab did not make - start the link again from here',
+      'this account link answers a request this browser did not make - start the link again from here',
     );
   }
 
@@ -137,6 +137,9 @@ export interface CompleteCloudLinkOptions extends CloudLinkCallback {
  *
  * Anonymous by construction — the client is built with no session, because the
  * whole point is that the page never needed one.
+ *
+ * Pass only what {@link readCloudLinkCallback} returned, never a grant parsed
+ * from a URL by hand.
  *
  * @throws if the grant names a different account than the root derives, before
  * anything is sent. The cloud checks this too, but failing here says which two
