@@ -122,4 +122,42 @@ describe('token persistence is bound to the issuing node', () => {
     expect(refreshed).toEqual(['b-refresh']);
     expect(b.getTokenData()?.refresh_token).toBe('b-refresh-2');
   });
+
+  it.each([
+    ['https://host.example/node1', 'https://host.example/node2'],
+    ['https://host.example/node2', 'https://host.example/node1'],
+    ['https://host.example', 'https://host.example/node1'],
+  ])('does not send tokens for %s to %s on the same origin', async (issuer, other) => {
+    new MeroJs({ baseUrl: issuer, tokenStore: new LocalStorageTokenStore() }).setTokenData(
+      bundle('a'),
+    );
+
+    const { fetchFn, seen } = recordingFetch();
+    const mero = new MeroJs({
+      baseUrl: other,
+      fetch: fetchFn,
+      tokenStore: new LocalStorageTokenStore(),
+    });
+    await mero.admin.getContexts();
+
+    expect(seen[0] ?? '').not.toContain('a-access');
+    expect(mero.isAuthenticated()).toBe(false);
+  });
+
+  it('treats a trailing slash on the base URL as the same node', async () => {
+    new MeroJs({
+      baseUrl: 'https://host.example/node1/',
+      tokenStore: new LocalStorageTokenStore(),
+    }).setTokenData(bundle('a'));
+
+    const { fetchFn, seen } = recordingFetch();
+    const mero = new MeroJs({
+      baseUrl: 'https://host.example/node1',
+      fetch: fetchFn,
+      tokenStore: new LocalStorageTokenStore(),
+    });
+    await mero.admin.getContexts();
+
+    expect(seen).toEqual(['Bearer a-access']);
+  });
 });
