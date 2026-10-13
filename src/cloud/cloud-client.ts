@@ -34,6 +34,7 @@ import {
   type RootSource,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { pathSegment } from '../http-client/path-segment.js';
 import { ACCOUNT_HEX, beginLinkState, takeLinkState } from './link-state.js';
 import type { Signer } from '../signer/signer.js';
 import {
@@ -830,7 +831,7 @@ export class CloudClient {
   async getNamespaceRelays(namespaceId: string): Promise<CloudRelay[]> {
     const body = await this.request<{ relays?: Array<Record<string, unknown>> }>(
       'GET',
-      `/api/cloud/me/namespaces/${encodeURIComponent(namespaceId)}/relays`,
+      `/api/cloud/me/namespaces/${pathSegment(namespaceId)}/relays`,
     );
     return (body.relays ?? []).map((row) => {
       const relayUrl = (row.relay_url as string | null | undefined) ?? null;
@@ -898,7 +899,7 @@ export class CloudClient {
       admitters?: Array<Record<string, unknown>>;
       servable?: unknown;
       writable?: unknown;
-    }>('GET', `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/admitters`, {
+    }>('GET', `/api/cloud/namespaces/${pathSegment(namespaceId)}/admitters`, {
       anonymous: true,
       headers: await this.routingProof(namespaceId),
     });
@@ -947,7 +948,7 @@ export class CloudClient {
       namespace_id?: unknown;
       nonce?: unknown;
       expires_at_ms?: unknown;
-    }>('GET', `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/challenge`, {
+    }>('GET', `/api/cloud/namespaces/${pathSegment(namespaceId)}/challenge`, {
       anonymous: true,
     });
     return {
@@ -986,7 +987,7 @@ export class CloudClient {
       account_id?: unknown;
       nonce?: unknown;
       expires_at_ms?: unknown;
-    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/challenge`, {
+    }>('GET', `/api/cloud/accounts/${pathSegment(accountId)}/challenge`, {
       anonymous: true,
     });
     return {
@@ -1027,7 +1028,7 @@ export class CloudClient {
     const body = await this.request<{
       account_id?: unknown;
       relays?: Array<Record<string, unknown>>;
-    }>('GET', `/api/cloud/accounts/${encodeURIComponent(accountId)}/relays`, {
+    }>('GET', `/api/cloud/accounts/${pathSegment(accountId)}/relays`, {
       anonymous: true,
       headers: await routingProofHeaders(challenge, this.routingCredential),
     });
@@ -1169,7 +1170,7 @@ export class CloudClient {
         : { admitter_addrs: [...options.admitterAddrs] };
     return this.request<unknown>(
       'POST',
-      `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
+      `/api/cloud/namespaces/${pathSegment(namespaceId)}/enable-ha`,
       { body },
     );
   }
@@ -1183,7 +1184,7 @@ export class CloudClient {
   async enableFoundedNamespaceHa(namespaceId: string, ownershipProof: AccountOwnershipProof): Promise<unknown> {
     return this.request<unknown>(
       'POST',
-      `/api/cloud/me/namespaces/${encodeURIComponent(namespaceId)}/enable-ha`,
+      `/api/cloud/me/namespaces/${pathSegment(namespaceId)}/enable-ha`,
       { body: { groups: [], ownership_proof: ownershipProof } },
     );
   }
@@ -1223,7 +1224,7 @@ export class CloudClient {
     try {
       return await this.request<unknown>(
         'POST',
-        `/api/cloud/accounts/${encodeURIComponent(account)}/namespaces/${encodeURIComponent(namespace)}/enable-ha`,
+        `/api/cloud/accounts/${pathSegment(account)}/namespaces/${pathSegment(namespace)}/enable-ha`,
         { body: { ownership_proof: proof }, anonymous: true },
       );
     } catch (err) {
@@ -1249,7 +1250,7 @@ export class CloudClient {
   async disableNamespaceHa(namespaceId: string): Promise<unknown> {
     return this.request<unknown>(
       'POST',
-      `/api/cloud/namespaces/${encodeURIComponent(namespaceId)}/disable-ha`,
+      `/api/cloud/namespaces/${pathSegment(namespaceId)}/disable-ha`,
       { body: {} },
     );
   }
