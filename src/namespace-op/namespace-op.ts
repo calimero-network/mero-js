@@ -74,9 +74,7 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * disagree on, since they let any of its admins open it. A UI that offers
  * "make public" should offer it to the creator alone.
  *
- * 25: no layout change. A device link, unlink or descope core refuses on the op
- * alone or at its cut is now an error, so it is never logged
- * (calimero-network/core#4546). No op this module signs changes.
+ * 25: no layout change; refused device link/unlink/descope ops are never logged.
  */
 export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 25;
 
