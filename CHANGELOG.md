@@ -1,3 +1,9 @@
+## [25.0.3](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.2...mero-js-v25.0.3) (2026-10-13)
+
+### Bug Fixes
+
+* **account:** only trust relays the cloud lists ([#264](https://github.com/calimero-network/mero-js/issues/264)) ([98d6e6e](https://github.com/calimero-network/mero-js/commit/98d6e6ec788f58ef989384d81d1cf86a0bc1f3b9))
+
 ## [25.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.1...mero-js-v25.0.2) (2026-10-13)
 
 ### Bug Fixes
