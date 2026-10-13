@@ -794,7 +794,10 @@ export interface JoinNamespaceRequest {
   groupName?: string;
 }
 
-/** Ask this node to follow a namespace as a read-only member, with no invitation. */
+/**
+ * Ask this node to follow a namespace its account was added to, with no
+ * invitation. The node takes part with the role the admin gave the account.
+ */
 export interface FollowNamespaceRequest {
   /** Multiaddrs of peers to sync the namespace from. */
   peerAddrs: string[];
