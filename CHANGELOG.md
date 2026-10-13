@@ -1,3 +1,9 @@
+## [25.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.0...mero-js-v25.0.1) (2026-10-13)
+
+### Bug Fixes
+
+* **groups:** let createGroup name a subgroup's visibility; restrict the invitation-join test's subgroup ([#266](https://github.com/calimero-network/mero-js/issues/266)) ([683a770](https://github.com/calimero-network/mero-js/commit/683a770fdd1067328a90ecd290a68184e11bee63))
+
 ## [25.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.7.0...mero-js-v25.0.0) (2026-10-13)
 
 ### ⚠ BREAKING CHANGES
