@@ -506,11 +506,11 @@ export class MeroJs {
         refresh_token: this.tokenData.refresh_token,
       });
 
-      if (
-        generation !== this.tokenGeneration ||
-        (storeHeldPresented && this.tokenStore?.getTokens()?.access_token !== presented)
-      ) {
-        this.dropLocalTokens();
+      // A local drop already set the state; a store change by another tab is adopted.
+      if (generation !== this.tokenGeneration) throw new Error('Signed out during token refresh');
+      if (storeHeldPresented && this.tokenStore?.getTokens()?.access_token !== presented) {
+        this.tokenData = this.tokenStore?.getTokens() ?? null;
+        this.storeHoldsTokens = this.tokenData !== null;
         throw new Error('Signed out during token refresh');
       }
 
