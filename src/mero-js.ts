@@ -114,7 +114,7 @@ export interface TokenData {
   access_token: string;
   refresh_token: string;
   expires_at: number;
-  /** Origin of the node that issued the bundle; a store entry for another node is ignored. */
+  /** Origin and path prefix of the issuing node; a store entry for another node is ignored. */
   node_origin?: string;
 }
 
@@ -133,11 +133,11 @@ function getLockManager(): LockManagerLike | null {
   return locks && typeof locks.request === 'function' ? locks : null;
 }
 
-/** Key a token bundle to its node; falls back to the raw URL when it has no usable origin. */
-function originOf(baseUrl: string): string {
+/** Key a token bundle to its node: origin plus path prefix, so nodes behind one host stay apart. */
+function nodeKeyOf(baseUrl: string): string {
   try {
-    const { origin } = new URL(baseUrl);
-    return origin === 'null' ? baseUrl : origin;
+    const { origin, pathname } = new URL(baseUrl);
+    return origin === 'null' ? baseUrl : origin + pathname.replace(/\/+$/, '');
   } catch {
     return baseUrl;
   }
@@ -180,7 +180,7 @@ export class MeroJs {
   private readonly onStorage = (): void => {
     if (this.signedOutElsewhere()) this.dropLocalTokens();
   };
-  private readonly nodeOrigin: string;
+  private readonly nodeKey: string;
   private rpcClient: RpcClient | null = null;
   private sseClient: SseClient | null = null;
   private wsClient: WsClient | null = null;
@@ -195,7 +195,7 @@ export class MeroJs {
     };
 
     this.tokenStore = config.tokenStore ?? null;
-    this.nodeOrigin = originOf(config.baseUrl);
+    this.nodeKey = nodeKeyOf(config.baseUrl);
 
     // Restore tokens from store if available
     this.tokenData = this.readStoredTokens();
@@ -407,14 +407,14 @@ export class MeroJs {
 
   private persistTokens(): void {
     if (!this.tokenStore || !this.tokenData) return;
-    this.tokenStore.setTokens({ ...this.tokenData, node_origin: this.nodeOrigin });
+    this.tokenStore.setTokens({ ...this.tokenData, node_origin: this.nodeKey });
     this.storeHoldsTokens = this.tokenStore.getTokens() !== null;
   }
 
   /** The stored bundle, only if this node issued it; a legacy or foreign entry reads as empty. */
   private readStoredTokens(): TokenData | null {
     const stored = this.tokenStore?.getTokens();
-    if (!stored || stored.node_origin !== this.nodeOrigin) return null;
+    if (!stored || stored.node_origin !== this.nodeKey) return null;
     return {
       access_token: stored.access_token,
       refresh_token: stored.refresh_token,

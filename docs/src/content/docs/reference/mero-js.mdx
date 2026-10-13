@@ -97,7 +97,7 @@ interface TokenData {
   access_token: string;   // JWT access token
   refresh_token: string;  // refresh token
   expires_at: number;     // ms epoch; 0 → parse from the JWT exp claim
-  node_origin?: string;   // origin of the issuing node, stamped when persisted
+  node_origin?: string;   // origin + path prefix of the issuing node, stamped when persisted
 }
 ```
 
@@ -137,7 +137,7 @@ interface TokenStore {
 }
 ```
 
-`MeroJs` stamps `node_origin` on every bundle it writes and ignores a stored bundle from another origin, so a custom store must round-trip that field.
+`MeroJs` stamps `node_origin` on every bundle it writes and ignores a stored bundle from another node (origin plus path prefix), so a custom store must round-trip that field.
 
 Built-in implementations:
 

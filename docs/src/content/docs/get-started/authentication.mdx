@@ -177,7 +177,7 @@ window.location.href = url;
 
 Pass a `tokenStore` and the SDK persists tokens on login/refresh and restores
 them on construction — so a reload stays signed in.
-Stored tokens are tied to the node's origin: a store shared with another node's `MeroJs` is not restored.
+Stored tokens are tied to the node's origin and path prefix: a store shared with another node's `MeroJs` is not restored.
 
 ```typescript
 import { MeroJs, LocalStorageTokenStore, MemoryTokenStore } from '@calimero-network/mero-js';
