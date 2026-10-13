@@ -220,13 +220,12 @@ describe.skipIf(!MEROD_BINARY)('performIntent E2E — delegated authorship', () 
       await expect(attempt).rejects.toMatchObject({ status: 404 });
       return;
     }
-    const tokens = new MemoryTokenStore();
-    tokens.setTokens({
+    const author = new MeroJs({ baseUrl: NODE_URL, tokenStore: new MemoryTokenStore() });
+    author.setTokenData({
       access_token: session.accessToken,
       refresh_token: session.refreshToken,
       expires_at: Date.now() + 3_600_000,
     });
-    const author = new MeroJs({ baseUrl: NODE_URL, tokenStore: tokens });
     try {
       await expect(
         author.admin.queryContext(contextId, { method: 'get', argsJson: { key: ARGS.key } }),
