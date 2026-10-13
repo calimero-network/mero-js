@@ -177,10 +177,10 @@ suite('Multi-node E2E — namespace invite/join', () => {
 async function subgroupJoinedByNode2(name: string): Promise<string> {
   // Restricted: an Open subgroup (the default) already counts every namespace
   // member, node-2 included, so there would be nothing to join by invitation.
-  const { groupId } = await n1.admin.createGroup({
-    applicationId,
-    parentGroupId: namespaceId,
-    name,
+  // The namespace route, because it names `visibility` on released merods too;
+  // `POST /admin-api/groups` only learned it in core#4543.
+  const { groupId } = await n1.admin.createGroupInNamespace(namespaceId, {
+    groupName: name,
     visibility: 'restricted',
   });
   // Not recursive, so the single-invitation shape.

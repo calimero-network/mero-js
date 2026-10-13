@@ -1434,6 +1434,8 @@ export interface CreateGroupRequest {
    * A nested group's visibility at birth. Absent means `open`: every member of
    * the parent is a member of the subgroup by inheritance. `restricted` admits
    * only those added or invited to it. Ignored without `parentGroupId`.
+   * Needs core 0.11.0-rc.85 or later (core#4543); an older node refuses the
+   * field. `createGroupInNamespace` takes it on older nodes too.
    */
   visibility?: 'open' | 'restricted';
 }
