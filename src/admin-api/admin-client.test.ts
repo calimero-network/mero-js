@@ -1007,6 +1007,21 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('createGroup sends a nested group visibility', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups', { data: { groupId: 'g-2' } });
+      const result = await client.createGroup({
+        applicationId: 'app-1',
+        parentGroupId: 'ns-1',
+        visibility: 'restricted',
+      });
+      expect(result).toEqual({ groupId: 'g-2' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups')).toEqual({
+        applicationId: 'app-1',
+        parentGroupId: 'ns-1',
+        visibility: 'restricted',
+      });
+    });
+
     it('listNamespaceGroups unwraps data', async () => {
       mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/groups', { data: [{ groupId: 'g-1', name: 'Sub' }] });
       const result = await client.listNamespaceGroups('ns-1');
