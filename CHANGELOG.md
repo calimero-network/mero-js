@@ -1,3 +1,13 @@
+## [25.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.7.0...mero-js-v25.0.0) (2026-10-13)
+
+### ⚠ BREAKING CHANGES
+
+* **sealed:** refuse debug TDs and trust only the production image profile by default (#265)
+
+### Features
+
+* **sealed:** refuse debug TDs and trust only the production image profile by default ([#265](https://github.com/calimero-network/mero-js/issues/265)) ([a94c1a8](https://github.com/calimero-network/mero-js/commit/a94c1a8e56a83c66dee3fb58cd60616f6bc34d36))
+
 ## [24.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.6.0...mero-js-v24.7.0) (2026-10-13)
 
 ### Features
