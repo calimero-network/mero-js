@@ -1,6 +1,7 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
 import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+import { carriesProof, refuseProofRedirect } from '../http-client/web-client.js';
 import { signedPath } from '../request-proof/authorizer.js';
 
 /**
@@ -219,13 +220,17 @@ export class SseClient {
 
     try {
       const url = `${this.baseUrl}/sse`;
+      const headers = {
+        ...(await this.authorize({ method: 'GET', path: signedPath(url) })),
+        'Accept': 'text/event-stream',
+      };
+      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
-        headers: {
-          ...(await this.authorize({ method: 'GET', path: signedPath(url) })),
-          'Accept': 'text/event-stream',
-        },
+        headers,
         signal: this.abortController.signal,
+        ...(proofAttached && { redirect: 'manual' as const }),
       });
+      if (proofAttached) refuseProofRedirect(response, url);
 
       if (!response.ok) {
         // Throw the same typed errors the request path throws. A bare
@@ -480,15 +485,19 @@ export class SseClient {
       // differ in key order, which fails as a refused credential rather than as
       // anything that names the real cause.
       const body = JSON.stringify({ id: this.sessionId, method, params });
+      const headers = {
+        ...(await this.authorize({ method: 'POST', path: signedPath(url), body })),
+        'Content-Type': 'application/json',
+      };
+      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
         method: 'POST',
-        headers: {
-          ...(await this.authorize({ method: 'POST', path: signedPath(url), body })),
-          'Content-Type': 'application/json',
-        },
+        headers,
         body,
         signal: timeout.signal,
+        ...(proofAttached && { redirect: 'manual' as const }),
       });
+      if (proofAttached) refuseProofRedirect(response, url);
       if (!response.ok) {
         // The subscribe path used to report only the status. On the one failure
         // that matters it is the whole of what the caller got: a revoked family
