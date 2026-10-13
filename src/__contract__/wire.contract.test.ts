@@ -26,6 +26,8 @@ import type {
   AccountSignWithRootResponseData,
   CreateContextRequest,
   CreateContextResponseData,
+  FollowNamespaceRequest,
+  FollowNamespaceResponseData,
   GetTeeAdmissionPolicyResponseData,
   GroupMember,
   GroupMemberRole,
@@ -92,6 +94,8 @@ const mReport = key<MemberMigrationReport>();
 const nodeId = key<NodeIdentity>();
 const intentRelay = key<IntentRelayInfo>();
 const pairInitReq = key<AccountPairInitRequest>();
+const followReq = key<FollowNamespaceRequest>();
+const followRes = key<FollowNamespaceResponseData>();
 const deviceEntry = key<AccountDeviceEntry>();
 const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
@@ -301,7 +305,21 @@ const SPECS: Spec[] = [
       nodeId('deviceCertified'),
       nodeId('accountNamespaceId'),
       nodeId('revokedFrom'),
+      nodeId('externalAddrs'),
     ],
+  },
+  {
+    type: 'FollowNamespaceRequest',
+    file: 'namespaces/follow.req.json',
+    required: [followReq('peerAddrs'), followReq('applicationId')],
+    optional: [followReq('bytecodeId')],
+  },
+  {
+    type: 'FollowNamespaceResponseData',
+    file: 'namespaces/follow.res.json',
+    path: 'data',
+    required: [followRes('namespaceId'), followRes('memberAccount'), followRes('keyReady')],
+    optional: [],
   },
   {
     type: 'IntentRelayInfo',
