@@ -44,7 +44,9 @@ function gatedRefreshFetch() {
     refreshStarted = resolve;
   });
   let expired = true;
-  const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+  const seen: Array<string | null> = [];
+  const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    seen.push(new Headers(init?.headers).get('authorization'));
     if (String(input).endsWith('/auth/refresh')) {
       refreshStarted();
       await refreshGate;
@@ -59,7 +61,7 @@ function gatedRefreshFetch() {
     }
     return new Response('{}', { status: 200 });
   }) as unknown as typeof fetch;
-  return { fetchFn, started, releaseRefresh };
+  return { fetchFn, started, releaseRefresh, seen };
 }
 
 describe('a logout in one tab holds for the others', () => {
@@ -193,6 +195,30 @@ describe('a logout in one tab holds for the others', () => {
       return mero;
     };
 
+    const reLoginDuringRefresh = async (tokenStore?: LocalStorageTokenStore) => {
+      const { fetchFn, started, releaseRefresh } = gatedRefreshFetch();
+      const mero = new MeroJs({ baseUrl: NODE, fetch: fetchFn, tokenStore });
+      mero.setTokenData(tokens);
+
+      const call = mero.admin.getContexts().catch(() => undefined);
+      await started;
+      mero.clearToken();
+      mero.setTokenData({ ...tokens, access_token: 'access-new', refresh_token: 'refresh-new' });
+      releaseRefresh();
+      await call;
+      return mero;
+    };
+
+    it.each([
+      ['no store', () => undefined],
+      ['a persisting store', () => new LocalStorageTokenStore()],
+    ])('keeps a re-login made during the refresh with %s', async (_name, makeStore) => {
+      const mero = await reLoginDuringRefresh(makeStore());
+
+      expect(mero.isAuthenticated()).toBe(true);
+      expect(mero.getTokenData()?.access_token).toBe('access-new');
+    });
+
     it('does not restore tokens with no store', async () => {
       const mero = await logoutDuringRefresh();
 
@@ -217,6 +243,29 @@ describe('a logout in one tab holds for the others', () => {
       expect(mero.isAuthenticated()).toBe(false);
       expect(storage.has(STORE_KEY)).toBe(false);
     });
+  });
+
+  it('keeps the new login of another tab in this instance, not only in the store', async () => {
+    const tab1 = new MeroJs({ baseUrl: NODE, tokenStore: new LocalStorageTokenStore() });
+    tab1.setTokenData(tokens);
+    const { fetchFn, started, releaseRefresh, seen } = gatedRefreshFetch();
+    const tab2 = new MeroJs({
+      baseUrl: NODE,
+      fetch: fetchFn,
+      tokenStore: new LocalStorageTokenStore(),
+    });
+
+    const call = tab2.admin.getContexts().catch(() => undefined);
+    await started;
+    tab1.clearToken();
+    tab1.setTokenData({ ...tokens, access_token: 'access-new', refresh_token: 'refresh-new' });
+    releaseRefresh();
+    await call;
+    await tab2.admin.getContexts();
+
+    expect(tab2.isAuthenticated()).toBe(true);
+    expect(seen[seen.length - 1]).toBe('Bearer access-new');
+    tab2.close();
   });
 
   it('does not treat another node bundle in the store as a logout', async () => {
