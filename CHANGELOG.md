@@ -1,3 +1,9 @@
+## [25.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.1...mero-js-v25.0.2) (2026-10-13)
+
+### Bug Fixes
+
+* **auth:** keep a logout from another tab signed out ([#270](https://github.com/calimero-network/mero-js/issues/270)) ([b4651b1](https://github.com/calimero-network/mero-js/commit/b4651b1420cf4c5b3e30bd55c369780e525d67c5))
+
 ## [25.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.0...mero-js-v25.0.1) (2026-10-13)
 
 ### Bug Fixes
