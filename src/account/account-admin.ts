@@ -37,8 +37,8 @@ import { governGroup, governRoot, namespaceOfGroup, rememberGroupNamespace } fro
 import { createDelegatedContext, foundDelegatedNamespace, latestPublishedVersion } from './create-context.js';
 
 export class NotForAccountError extends Error {
-  constructor(readonly method: string) {
-    super(`${method} is not available for an account: it needs a node`);
+  constructor(readonly method: string, reason = 'it needs a node') {
+    super(`${method} is not available for an account: ${reason}`);
     this.name = 'NotForAccountError';
   }
 }
@@ -144,7 +144,13 @@ const NODE_ONLY = new Set([
   'deleteNamespace', 'createGroupInvitation', 'joinGroup',
   'setTeeAdmissionPolicy', 'getTeeAdmissionPolicy', 'deleteBlob',
   'listAccountDevices', 'revokeAccountDevice',
+  'followNamespace',
 ]);
+
+/** Why a node-only method is refused, where "it needs a node" would mislead. */
+const NODE_ONLY_REASON: Record<string, string> = {
+  followNamespace: "a relay cannot follow on an account's behalf yet",
+};
 
 /**
  * Core's refusal of a MemberJoinedOpen from someone already a direct member
@@ -410,7 +416,7 @@ export function createAccountAdmin(
       if (typeof prop === 'string' && prop in writes) return writes[prop as keyof AdminApiClient];
       if (typeof prop === 'string' && NODE_ONLY.has(prop)) {
         return async () => {
-          throw new NotForAccountError(prop);
+          throw new NotForAccountError(prop, NODE_ONLY_REASON[prop]);
         };
       }
       return Reflect.get(target, prop, receiver);

@@ -695,6 +695,14 @@ export interface NodeIdentity {
    */
   holdsAccountRoot?: boolean;
   /**
+   * Addresses other peers can dial this node on, as multiaddrs: what a
+   * follower hands to {@link FollowNamespaceRequest.peerAddrs} to reach it.
+   *
+   * Optional because an older node does not send it; `undefined` means "too
+   * old to say", not "no reachable address".
+   */
+  externalAddrs?: string[];
+  /**
    * Whether this node's device is certified into the account it speaks for.
    *
    * Pair-init mints a device but only pair-complete certifies it, and
@@ -784,6 +792,24 @@ export interface CreateRecursiveInvitationResponseData {
 export interface JoinNamespaceRequest {
   invitation: SignedGroupOpenInvitation;
   groupName?: string;
+}
+
+/** Ask this node to follow a namespace as a read-only member, with no invitation. */
+export interface FollowNamespaceRequest {
+  /** Multiaddrs of peers to sync the namespace from. */
+  peerAddrs: string[];
+  /** The application the namespace runs, which the node installs or already has. */
+  applicationId: string;
+  /** The application's bytecode, when the node must fetch it. */
+  bytecodeId?: string;
+}
+
+export interface FollowNamespaceResponseData {
+  namespaceId: string;
+  /** The account the node follows as, 64 hex characters. */
+  memberAccount: string;
+  /** Whether the namespace key had arrived by the time the node answered. */
+  keyReady: boolean;
 }
 
 export interface JoinNamespaceResponseData {

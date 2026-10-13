@@ -910,6 +910,14 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ invitation, groupName: 'NS' });
     });
 
+    it('followNamespace posts peers and application to the follow route', async () => {
+      const data = { namespaceId: 'ns-1', memberAccount: 'c'.repeat(64), keyReady: true };
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/follow', { data });
+      const req = { peerAddrs: ['/ip4/1.2.3.4/tcp/2428'], applicationId: 'app-1', bytecodeId: 'bc-1' };
+      expect(await client.followNamespace('ns-1', req)).toEqual(data);
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/follow')).toEqual(req);
+    });
+
     it('joinNamespace sends structured invitation', async () => {
       const invitation = SIGNED_INVITATION;
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {

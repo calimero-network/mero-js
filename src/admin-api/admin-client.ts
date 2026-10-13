@@ -54,6 +54,8 @@ import type {
   CreateNamespaceInvitationResponseData,
   CreateRecursiveInvitationResponseData,
   JoinNamespaceRequest,
+  FollowNamespaceRequest,
+  FollowNamespaceResponseData,
   JoinNamespaceResponseData,
   CreateGroupInNamespaceRequest,
   CreateGroupInNamespaceResponseData,
@@ -964,6 +966,25 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.post<{ data: AdmitJoinResponseData }>(
         `/admin-api/namespaces/${namespaceId}/admit`,
+        request,
+        { timeoutMs: 65000 },
+      ),
+    );
+  }
+
+  /**
+   * Follow a namespace without an invitation, syncing it from the given peers.
+   *
+   * @param namespaceId the namespace to follow, 64 hex
+   * @param request peers to dial and the application the namespace runs
+   */
+  async followNamespace(
+    namespaceId: string,
+    request: FollowNamespaceRequest,
+  ): Promise<FollowNamespaceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: FollowNamespaceResponseData }>(
+        `/admin-api/namespaces/${namespaceId}/follow`,
         request,
         { timeoutMs: 65000 },
       ),

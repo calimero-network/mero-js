@@ -330,6 +330,13 @@ describe('createAccountAdmin', () => {
     });
   });
 
+  it('followNamespace is refused by name with the relay reason', async () => {
+    const { admin } = rig();
+    await expect(admin.followNamespace(NS, {} as never)).rejects.toThrow(
+      "a relay cannot follow on an account's behalf yet",
+    );
+  });
+
   it('a node-only write is refused by name, never sent to a node route', async () => {
     const { admin } = rig();
     await expect(admin.upgradeGroup(NS, {} as never)).rejects.toBeInstanceOf(NotForAccountError);
