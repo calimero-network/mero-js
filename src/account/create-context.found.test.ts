@@ -21,6 +21,25 @@ const ACCOUNT = 'aa'.repeat(32);
 const EXECUTOR = '6a'.repeat(32);
 /** The relay's node key: the key it signs with, so the warrant's `executor_key`. */
 const RELAY_KEY = '7b'.repeat(32);
+
+/**
+ * The relay's attestation, as founding asks for it: every founding attests the
+ * relay now, whatever is pinned. Answers `RELAY_KEY` unless a test says the
+ * quote is refused.
+ */
+const attested = vi.hoisted(() => ({ calls: 0, refuse: false, real: false }));
+vi.mock('../relay-attestation/index.js', async (importActual) => {
+  const actual = await importActual<typeof import('../relay-attestation/index.js')>();
+  return {
+    ...actual,
+    attestRelayNodeKey: async (...args: Parameters<typeof actual.attestRelayNodeKey>) => {
+      attested.calls += 1;
+      if (attested.real) return actual.attestRelayNodeKey(...args);
+      if (attested.refuse) throw new Error('RTMR3 is not of a signed locked-read-only release');
+      return { nodeKey: '7b'.repeat(32) };
+    },
+  };
+});
 const RELAY = 'https://relay.example';
 const session = (extra: Record<string, unknown> = {}) =>
   ({ account: ACCOUNT, credential: 'cc', deviceSecret: '11'.repeat(32), relayUrl: RELAY, ...extra }) as never;
@@ -31,6 +50,9 @@ let enableHa: any;
 
 beforeEach(() => {
   localStorage.clear();
+  attested.calls = 0;
+  attested.refuse = false;
+  attested.real = false;
   pinRelayNodeKey(RELAY, RELAY_KEY);
   found = vi
     .spyOn(RelayClient.prototype, 'foundNamespace')
@@ -44,6 +66,22 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('foundDelegatedNamespace', () => {
+  // The relay founded through becomes the namespace's first TEE and holds its
+  // keys. A key pinned on an earlier day proves nothing about what answers
+  // today, so founding attests the relay again, pin or no pin.
+  it('attests the relay at founding even with its key pinned', async () => {
+    await foundDelegatedNamespace(session({ executorAccount: EXECUTOR }));
+    expect(attested.calls).toBe(1);
+  });
+
+  it('refuses to found through a relay whose attestation is refused, though its key is pinned', async () => {
+    attested.refuse = true;
+    await expect(foundDelegatedNamespace(session({ executorAccount: EXECUTOR }))).rejects.toThrow(
+      /attestation was refused/,
+    );
+    expect(found).not.toHaveBeenCalled();
+  });
+
   // A brand-new account is in nothing, so no namespace can tell it the relay's
   // account. When the app knows it (the cloud's machine page names it), the
   // account founds with it directly: the documented mero-js path, no join first.
@@ -92,6 +130,8 @@ describe('foundDelegatedNamespace', () => {
   describe("when the relay's key cannot be learned", () => {
     beforeEach(() => {
       localStorage.clear();
+      // The real attestation, over the network these tests take down.
+      attested.real = true;
       vi.spyOn(console, 'warn').mockImplementation(() => {});
     });
 

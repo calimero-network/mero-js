@@ -169,6 +169,8 @@ export {
   learnRelayNodeKey,
   RELAY_NODE_KEY_RETRY_MS,
   forgetMethodKinds,
+  forgetRelaySealing,
+  relayTransportFetch,
   buildDelegatedClient,
   readRelayMap,
   rememberRelay,

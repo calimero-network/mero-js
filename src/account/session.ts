@@ -18,6 +18,7 @@ import {
 } from '../relay-attestation/index.js';
 import {
   cloudNodeReleaseUrl,
+  createAttestedSealedFetch,
   createSignedReleaseVerifier,
   DEFAULT_RELEASE_MIRROR,
   fetchNodeRelease,
@@ -314,15 +315,6 @@ function isLoopback(relayUrl: string): boolean {
   }
 }
 
-/**
- * The relay's node key: the pinned one, or else learned from the relay's TEE
- * attestation (see mero-js `attestRelayNodeKey`) and pinned for next time.
- *
- * A mock quote proves nothing about hardware, so one is accepted only from a
- * loopback relay — a local rig. A real quote needs signature and measurement
- * verification this client does not do yet, so a real relay still needs its
- * key pinned; `null` then, and admin reads and events stay off.
- */
 /** The one relay image trusted: no shell, so nobody reads the TD. */
 const TRUSTED_RELAY_PROFILE = 'locked-read-only';
 /**
@@ -459,8 +451,23 @@ export type RelayNodeKeyAttempt =
   | { kind: 'unavailable'; error: unknown }
   | { kind: 'refused'; error: unknown };
 
-export async function attemptRelayNodeKey(relayUrl: string): Promise<RelayNodeKeyAttempt> {
-  const pinned = readPinnedRelayNodeKey(relayUrl);
+/**
+ * The relay's node key: the pinned one, or else learned from the relay's TEE
+ * attestation (see mero-js `attestRelayNodeKey`) and pinned for next time.
+ *
+ * A mock quote proves nothing about hardware, so one is accepted only from a
+ * loopback relay — a local rig. A real one must be a signed release of the
+ * trusted profile ({@link relayQuoteVerifier}).
+ *
+ * `fresh` skips the pin and attests now, for a step that hands the relay
+ * something it keeps — founding a namespace through it. A pinned key was
+ * checked once, on some earlier day, against whatever answered then.
+ */
+export async function attemptRelayNodeKey(
+  relayUrl: string,
+  options: { fresh?: boolean } = {},
+): Promise<RelayNodeKeyAttempt> {
+  const pinned = options.fresh ? null : readPinnedRelayNodeKey(relayUrl);
   if (pinned) return { kind: 'learned', nodeKey: pinned };
   const marked: { failure: unknown } = { failure: null };
   const fetchRelay = relayFetch(marked);
@@ -557,6 +564,86 @@ function jwtExpiryMs(token: string): number | null {
   }
 }
 
+// ------------------------------------------------------------------- sealing
+//
+// Everything a delegated session sends a hosted relay is sealed to the relay's
+// attested TD (mero-js `createAttestedSealedFetch`), so TLS that ends at the
+// relay's ingress, and whoever holds its certificate, reads none of it: not the
+// login, not the token, not a query or its result, not an event.
+//
+// A relay whose node leaves auth to its proxy, and has no
+// `[server.sealed] forward_auth`, cannot guard a logged-in route inside the
+// envelope and answers `403 sealed_route_unguarded` from inside it. Only then
+// does a request go out plain, as it always did before sealing: that answer is
+// sealed under the session, so nobody on the way can forge it to force the
+// downgrade. Anything else that goes wrong, an attestation refused or a relay
+// that does not answer, fails the request; it never falls back.
+
+const sealedFetches = new Map<string, typeof fetch>();
+
+/** Forget every relay's sealed transport. For tests. */
+export function forgetRelaySealing(): void {
+  sealedFetches.clear();
+}
+
+/** Whether a sealed answer is the TD saying it cannot guard this route sealed. */
+async function isUnguardedRefusal(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  try {
+    const body = (await response.clone().json()) as { error?: { code?: unknown } };
+    return body.error?.code === 'sealed_route_unguarded';
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `request` needs a session the relay's proxy checks: a token, or a login. */
+function needsSession(request: Request): boolean {
+  return request.headers.has('authorization') || new URL(request.url).pathname.startsWith('/auth/');
+}
+
+function sealedRelayFetch(relayUrl: string): typeof fetch {
+  const plain: typeof fetch = (input, init) => globalThis.fetch(input, init);
+  const sealed = createAttestedSealedFetch({
+    baseUrl: relayUrl,
+    verify: relayQuoteVerifier(relayUrl, plain),
+    fetch: plain,
+  });
+  // Set once the TD has said it cannot guard a logged-in call: those go plain
+  // straight away instead of paying a refused round trip each.
+  let unguarded = false;
+  return async (input, init) => {
+    const request = new Request(input, init);
+    if (unguarded && needsSession(request)) return plain(request);
+    const response = await sealed(request.clone());
+    if (!(await isUnguardedRefusal(response))) return response;
+    if (!unguarded) {
+      unguarded = true;
+      console.warn(
+        `[mero-js] ${relayOrigin(relayUrl)} cannot guard logged-in calls sealed (no forward_auth); ` +
+          'they go over its TLS until it does',
+      );
+    }
+    return plain(request);
+  };
+}
+
+/**
+ * The `fetch` a delegated session uses for `relayUrl`: sealed to its attested
+ * TD, one per relay so its session is shared. `undefined` for a loopback relay,
+ * a dev rig answering mock quotes, which keeps the global `fetch`.
+ */
+export function relayTransportFetch(relayUrl: string): typeof fetch | undefined {
+  if (isLoopback(relayUrl)) return undefined;
+  const origin = relayOrigin(relayUrl);
+  let found = sealedFetches.get(origin);
+  if (!found) {
+    found = sealedRelayFetch(relayUrl);
+    sealedFetches.set(origin, found);
+  }
+  return found;
+}
+
 /**
  * A lazily minted `account_proof` session on the relay.
  *
@@ -576,6 +663,8 @@ function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: strin
     if (!inflight) {
       inflight = login({
         nodeUrl: s.relayUrl,
+        // Sealed: the token is the session, and the TLS ends outside the TD.
+        fetch: relayTransportFetch(s.relayUrl),
         node: nodeKey,
         deviceSecret: s.deviceSecret,
         accountProof: s.credential,
@@ -751,6 +840,9 @@ export function buildDelegatedClient(
   const nodeKey = readPinnedRelayNodeKey(s.relayUrl);
   const client = createMeroClient({
     transport: 'relay',
+    // Every request sealed to the relay's attested TD: intents, admin reads,
+    // queries, the login and events (see `relayTransportFetch`).
+    fetch: relayTransportFetch(s.relayUrl),
     relay: {
       relayUrl: s.relayUrl,
       authorAccount: s.account,

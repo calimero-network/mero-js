@@ -92,6 +92,13 @@ export interface RelayTransportConfig {
    */
   relay: RelayClient | RelayClientConfig;
   /**
+   * Fetch for everything this client sends the relay: intents (unless `relay`
+   * names its own), admin reads, the observing login and events. Typically a
+   * sealed fetch (`createAttestedSealedFetch`), so none of it can be read where
+   * TLS ends. Defaults to global `fetch`.
+   */
+  fetch?: typeof fetch;
+  /**
    * A session on the relay, if this client has one.
    *
    * The delegated path has **two** credentials, not one. A warrant authorises a
@@ -178,7 +185,11 @@ function missingNodeKey(surface: string): Error {
  * authors is the device that observes, and taking a second copy from the caller
  * is how the two come to name different keys.
  */
-function buildObserver(relay: RelayClient, observe?: RelayObserveConfig): RelayObserver | null {
+function buildObserver(
+  relay: RelayClient,
+  observe?: RelayObserveConfig,
+  fetchImpl?: typeof fetch,
+): RelayObserver | null {
   const nodeKey = observe?.nodeKey;
   if (!nodeKey) return null;
   return new RelayObserver({
@@ -189,7 +200,7 @@ function buildObserver(relay: RelayClient, observe?: RelayObserveConfig): RelayO
     signer: observe?.signer ? async () => observe.signer as Signer : () => relay.authorSigner(),
     clientName: observe?.clientName,
     ttlSeconds: observe?.ttlSeconds,
-    fetch: observe?.fetch,
+    fetch: observe?.fetch ?? fetchImpl,
     timeoutMs: observe?.timeoutMs,
   });
 }
@@ -222,15 +233,21 @@ export class MeroClient {
   private readonly proofAuthorizer: RequestAuthorizer | null = null;
   private readonly relayUrl: string | null = null;
   private proofEvents: SseClient | null = null;
+  /** The relay transport's `fetch`, if one was given. */
+  private readonly relayFetch: typeof fetch | undefined = undefined;
   private relayPresence: RelayPresenceClient | null = null;
 
   constructor(config: MeroClientConfig) {
     if (config.transport === 'relay') {
       this.transport = 'relay';
       this.nodeClient = null;
+      const fetchImpl = config.fetch;
+      this.relayFetch = fetchImpl;
       const relay =
-        config.relay instanceof RelayClient ? config.relay : new RelayClient(config.relay);
-      this.relayObserver = buildObserver(relay, config.observe);
+        config.relay instanceof RelayClient
+          ? config.relay
+          : new RelayClient({ ...config.relay, fetch: config.relay.fetch ?? fetchImpl });
+      this.relayObserver = buildObserver(relay, config.observe, fetchImpl);
       this.rpcTransport = new RelayTransport(relay, this.relayObserver);
       this.relayUrl = relay.relayUrl;
       if (config.proof) {
@@ -247,13 +264,14 @@ export class MeroClient {
         this.relayAdmin = createAdminApiClient({
           baseUrl: relay.relayUrl,
           getAuthToken: typeof token === 'string' ? async () => token : token,
+          fetch: fetchImpl,
         });
       } else if (this.proofAuthorizer) {
         const authorizeRequest = this.proofAuthorizer;
         this.relayAdmin = createAdminApiClientFromHttpClient(
           createHttpClient({
             fetch: (url: RequestInfo | URL, init?: RequestInit) =>
-              globalThis.fetch(url as RequestInfo, init),
+              fetchImpl ? fetchImpl(url, init) : globalThis.fetch(url as RequestInfo, init),
             baseUrl: relay.relayUrl,
             authorizeRequest,
           }),
@@ -387,6 +405,7 @@ export class MeroClient {
       this.proofEvents ??= new SseClient({
         baseUrl: this.relayUrl,
         authorize: this.proofAuthorizer,
+        fetch: this.relayFetch,
       });
       return this.proofEvents;
     }

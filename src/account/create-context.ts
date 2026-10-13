@@ -30,6 +30,7 @@ import {
   knownRelays,
   markContextNonceSpent,
   readRelayMap,
+  relayTransportFetch,
   rememberRelay,
   type DelegatedSession,
 } from './session.js';
@@ -103,7 +104,11 @@ export interface CreateDelegatedContextRequest {
   readonly name?: string;
 }
 
-/** A relay client for these calls: the author's credential, whatever nonces the call needs. */
+/**
+ * A relay client for these calls: the author's credential, whatever nonces the
+ * call needs, and the relay's sealed transport unless the caller brings its own
+ * `fetch` (see `relayTransportFetch`).
+ */
 function client(s: DelegatedSession, relayUrl: string, nonces: NonceSource, fetch?: typeof globalThis.fetch) {
   return new RelayClient({
     relayUrl,
@@ -111,7 +116,7 @@ function client(s: DelegatedSession, relayUrl: string, nonces: NonceSource, fetc
     authorProof: s.credential,
     deviceSecret: s.deviceSecret,
     nonces,
-    fetch,
+    fetch: fetch ?? relayTransportFetch(relayUrl),
   });
 }
 
@@ -267,14 +272,21 @@ async function foundingExecutor(
   return { executorAccount: described.executorAccount, executorKey };
 }
 
-/** The relay's pinned or attested node key; any failed attestation throws. */
+/**
+ * The relay's node key, attested now; any failed attestation throws.
+ *
+ * Never the pin alone: the relay founded through becomes the namespace's first
+ * TEE and holds its keys, so it is checked against the signed release on the
+ * day it is trusted with them, not on whichever day its key was pinned. A key
+ * pinned by hand therefore no longer stands in for an attestation here.
+ */
 async function attestedNodeKey(relay: string): Promise<string> {
-  const key = await attemptRelayNodeKey(relay);
+  const key = await attemptRelayNodeKey(relay, { fresh: true });
   if (key.kind === 'learned') return key.nodeKey;
   throw new Error(
     key.kind === 'unavailable'
       ? "the relay's signing key could not be learned: its attestation did not answer, try again"
-      : "the relay's attestation was refused, so founding through it is not possible (only a key from its operator, pinned with pinRelayNodeKey, can stand in)",
+      : "the relay's attestation was refused, so founding through it is not possible: it is not a signed locked-read-only release",
   );
 }
 

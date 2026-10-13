@@ -2188,6 +2188,8 @@ export interface AdminApiClientConfig {
   baseUrl: string;
   getAuthToken?: () => Promise<string | undefined>;
   timeoutMs?: number;
+  /** Fetch every request goes through. Defaults to global `fetch`. */
+  fetch?: typeof fetch;
 }
 
 /** A join signed by its subject, handed to an admitter to publish. */

@@ -231,6 +231,17 @@ attests the node from its URL and seals everything after that. Or give it a
 the relay's signed release ([above](#trusting-a-signed-release-at-run-time)). See
 [delegated execution](/guides/delegated-execution/#sealing-the-intent-to-the-tee).
 
+A delegated session (`buildDelegatedClient`, `foundDelegatedNamespace` and the
+other account calls) does this for you: every request it sends a hosted relay,
+the login, admin reads, queries and events included, goes through the relay's
+sealed transport (`relayTransportFetch`), attested against a signed
+`locked-read-only` release. It falls back to plain HTTPS for one case only: the
+TD answering, from inside the envelope, that it cannot guard a logged-in route
+sealed (a relay without `forward_auth`, below). That answer is sealed under the
+session, so nobody on the way can forge it; a failed attestation or a relay that
+does not answer fails the request instead. Founding a namespace also attests the
+relay at that moment, rather than trusting a node key pinned earlier.
+
 ## What can be sealed, and where
 
 The node opens an envelope and routes the request inside it like a direct one.
@@ -240,12 +251,16 @@ Whether that request then meets an auth check depends on the node:
 | --- | --- |
 | embedded auth (`merod` checks requests itself) | everything: login, admin API, JSON-RPC, SSE, intents |
 | proxy auth (a proxy in front checks requests; every hosted TEE node) | only what `merod` serves without a credential: `.../intents` on a relay, `/admin-api/health`, `/ready`, `/is-authed`, `/tee/info`, `/tee/attest` |
+| proxy auth with `[server.sealed] forward_auth` | everything the proxy lets the same token reach: login, admin API, queries, SSE, intents |
 
 A proxy sees only `POST /sealed/v2`, never the route inside, so it cannot guard
 it. A node in proxy mode therefore refuses, inside the envelope, a sealed
 request for any route the proxy would have guarded: `403` with code
-`sealed_route_unguarded`, before anything runs. On a hosted relay that means
-intents are sealed, and login and reads are not.
+`sealed_route_unguarded`, before anything runs. With `forward_auth`, the node
+instead asks the proxy's auth service itself, on loopback inside the TD, the same
+question the proxy would have asked, and forwards `/auth/` to it; so on such a
+relay the login and reads are sealed too, and on one without it only intents
+are.
 
 ## Runtimes
 
