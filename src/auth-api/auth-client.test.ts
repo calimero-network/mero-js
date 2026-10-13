@@ -234,4 +234,43 @@ describe('AuthApiClient', () => {
       expect(await client.getHealth()).toEqual({ status: 'alive', storage: true, uptime_seconds: 42 });
     });
   });
+  describe('path segments', () => {
+    const calls: Array<[string, (id: string) => Promise<unknown>, (e: string) => string]> = [
+      ['deleteRootKey', (id) => client.deleteRootKey(id), (e) => `DELETE /admin/keys/${e}`],
+      ['deleteClientKey', (id) => client.deleteClientKey(id, id), (e) => `DELETE /admin/keys/${e}/clients/${e}`],
+      ['getKeyPermissions', (id) => client.getKeyPermissions(id), (e) => `GET /admin/keys/${e}/permissions`],
+      ['updateKeyPermissions', (id) => client.updateKeyPermissions(id, {}), (e) => `PUT /admin/keys/${e}/permissions`],
+    ];
+    const ids = ['../x', 'a/b', 'a?b', 'a#b', '%2e%2e'];
+
+    it.each(ids.flatMap((id) => calls.map((c) => [id, ...c] as const)))(
+      'id %j through %s stays one encoded segment',
+      async (id, _name, call, expected) => {
+        const seen: string[] = [];
+        for (const m of ['get', 'post', 'put', 'delete', 'patch'] as const) {
+          (mock as unknown as Record<string, unknown>)[m] = async (path: string) => {
+            seen.push(`${m.toUpperCase()} ${path}`);
+            return {};
+          };
+        }
+        await call(id).catch(() => undefined);
+        expect(seen).toEqual([expected(encodeURIComponent(id))]);
+      },
+    );
+
+    it.each(['.', '..', ''].flatMap((id) => calls.map((c) => [id, ...c] as const)))(
+      'id %j through %s is refused before any request',
+      async (id, _name, call) => {
+        let requested = false;
+        for (const m of ['get', 'post', 'put', 'delete', 'patch'] as const) {
+          (mock as unknown as Record<string, unknown>)[m] = async () => {
+            requested = true;
+            return {};
+          };
+        }
+        await expect(call(id)).rejects.toThrow(/path segment/);
+        expect(requested).toBe(false);
+      },
+    );
+  });
 });

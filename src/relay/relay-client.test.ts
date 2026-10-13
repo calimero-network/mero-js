@@ -1130,3 +1130,29 @@ describe('targetApplicationSetOp', () => {
     expect(() => targetApplicationSetOp({ applicationId: '88'.repeat(32), package: 'p', version: '' })).toThrow(/version/);
   });
 });
+
+describe('RelayClient path segments', () => {
+  const reads: Array<[string, (c: RelayClient, id: string) => Promise<unknown>, (e: string) => string]> = [
+    ['describe', (c, id) => c.describe(id), (e) => `/admin-api/contexts/${e}/intents`],
+    ['describeCreation', (c, id) => c.describeCreation(id), (e) => `/admin-api/groups/${e}/context-intents`],
+    ['describeGovernance', (c, id) => c.describeGovernance(id), (e) => `/admin-api/groups/${e}/governance-intents`],
+  ];
+
+  it.each(['../x', 'a/b', 'a?b', 'a#b', '%2e%2e'].flatMap((id) => reads.map((r) => [id, ...r] as const)))(
+    'id %j through %s stays one encoded segment',
+    async (id, _name, call, expected) => {
+      const { fetch, calls } = scriptedFetch([{ body: { data: {} } }]);
+      await call(client(fetch), id).catch(() => undefined);
+      expect(calls.map((c) => c.url)).toEqual([`https://relay.example${expected(encodeURIComponent(id))}`]);
+    },
+  );
+
+  it.each(['.', '..', ''].flatMap((id) => reads.map((r) => [id, ...r] as const)))(
+    'id %j through %s is refused before any request',
+    async (id, _name, call) => {
+      const { fetch, calls } = scriptedFetch([{ body: { data: {} } }]);
+      await expect(call(client(fetch), id)).rejects.toThrow(/path segment/);
+      expect(calls).toEqual([]);
+    },
+  );
+});
