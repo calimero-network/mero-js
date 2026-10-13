@@ -104,4 +104,74 @@ describe('a logout in one tab holds for the others', () => {
     expect(mero.getTokenData()?.refresh_token).toBe('refresh-2');
     mero.close();
   });
+
+  it('does not write back tokens from a refresh that was already in flight when another tab logged out', async () => {
+    const tab1 = new MeroJs({ baseUrl: NODE, tokenStore: new LocalStorageTokenStore() });
+    tab1.setTokenData(tokens);
+
+    let releaseRefresh: () => void = () => undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let refreshStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      refreshStarted = resolve;
+    });
+    let expired = true;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/refresh')) {
+        refreshStarted();
+        await refreshGate;
+        return new Response(
+          JSON.stringify({ data: { access_token: 'access-2', refresh_token: 'refresh-2' } }),
+          { status: 200 },
+        );
+      }
+      if (expired) {
+        expired = false;
+        return new Response('{}', { status: 401, headers: { 'x-auth-error': 'token_expired' } });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const tab2 = new MeroJs({
+      baseUrl: NODE,
+      fetch: fetchFn,
+      tokenStore: new LocalStorageTokenStore(),
+    });
+
+    const call = tab2.admin.getContexts().catch(() => undefined);
+    await started;
+    tab1.clearToken();
+    window.dispatchEvent(new StorageEvent('storage', { key: STORE_KEY }));
+    releaseRefresh();
+    await call;
+
+    expect(storage.has(STORE_KEY)).toBe(false);
+    expect(tab2.isAuthenticated()).toBe(false);
+    tab2.close();
+  });
+
+  it('does not treat another node bundle in the store as a logout', async () => {
+    const tab1 = new MeroJs({ baseUrl: NODE, tokenStore: new LocalStorageTokenStore() });
+    tab1.setTokenData(tokens);
+    const { fetchFn } = expiringFetch();
+    const tab2 = new MeroJs({
+      baseUrl: NODE,
+      fetch: fetchFn,
+      tokenStore: new LocalStorageTokenStore(),
+    });
+
+    new LocalStorageTokenStore().setTokens({
+      access_token: 'other-access',
+      refresh_token: 'other-refresh',
+      expires_at: Date.now() + 3600_000,
+      node_origin: 'https://other-node.example',
+    });
+    window.dispatchEvent(new StorageEvent('storage', { key: STORE_KEY }));
+    expect(tab2.isAuthenticated()).toBe(true);
+
+    await tab2.admin.getContexts();
+    expect(tab2.isAuthenticated()).toBe(true);
+    tab2.close();
+  });
 });
