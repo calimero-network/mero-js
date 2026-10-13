@@ -1,4 +1,5 @@
 import { HttpClient } from '../http-client/index.js';
+import { pathSegment } from '../http-client/path-segment.js';
 import {
   // Common types
   ApiResponse,
@@ -152,7 +153,7 @@ export class AuthApiClient {
   }
 
   async deleteRootKey(keyId: string): Promise<DeleteKeyResponse> {
-    return this.httpClient.delete<DeleteKeyResponse>(`/admin/keys/${keyId}`);
+    return this.httpClient.delete<DeleteKeyResponse>(`/admin/keys/${pathSegment(keyId)}`);
   }
 
   // Client Management Endpoints
@@ -177,14 +178,14 @@ export class AuthApiClient {
     clientId: string,
   ): Promise<DeleteClientResponse> {
     return this.httpClient.delete<DeleteClientResponse>(
-      `/admin/keys/${keyId}/clients/${clientId}`,
+      `/admin/keys/${pathSegment(keyId)}/clients/${pathSegment(clientId)}`,
     );
   }
 
   // Permission Management Endpoints
   async getKeyPermissions(keyId: string): Promise<PermissionResponse> {
     return this.httpClient.get<PermissionResponse>(
-      `/admin/keys/${keyId}/permissions`,
+      `/admin/keys/${pathSegment(keyId)}/permissions`,
     );
   }
 
@@ -194,7 +195,7 @@ export class AuthApiClient {
   ): Promise<PermissionResponse> {
     // Core expects an { add, remove } delta, not a { permissions } replacement.
     return this.httpClient.put<PermissionResponse>(
-      `/admin/keys/${keyId}/permissions`,
+      `/admin/keys/${pathSegment(keyId)}/permissions`,
       { add: changes.add, remove: changes.remove },
     );
   }

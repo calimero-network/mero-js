@@ -54,6 +54,7 @@ import {
   CloudClient,
   type CloudNamespaceNode,
 } from '../cloud/index.js';
+import { pathSegment } from '../http-client/path-segment.js';
 
 /**
  * Which step could not be completed. Each one needs a different action from the
@@ -270,7 +271,7 @@ export async function resolveRelayFromInvitation(
     // from a guess; the fallback is the documented route on the same origin.
     admitUrl:
       chosen.admitUrl ??
-      `${chosen.relayUrl.replace(/\/+$/, '')}/admin-api/namespaces/${input.namespaceId}/admit`,
+      `${chosen.relayUrl.replace(/\/+$/, '')}/admin-api/namespaces/${pathSegment(input.namespaceId)}/admit`,
     admitterAccount: chosen.account,
     peerId: chosen.peerId,
     writable: chosen.canExecute,

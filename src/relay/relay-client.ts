@@ -41,6 +41,7 @@ import {
   type GovernanceOp,
 } from '../warrant/governance-op.js';
 import { HTTPError } from '../http-client/web-client.js';
+import { pathSegment } from '../http-client/path-segment.js';
 import { fromHex, hex } from '../crypto/internal.js';
 import type { NonceSource } from './nonce-source.js';
 
@@ -410,7 +411,7 @@ export class RelayClient {
   async describe(contextId: string): Promise<RelayDescription> {
     const body = await this.json<{ data: RelayDescription }>(
       'GET',
-      `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
+      `/admin-api/contexts/${pathSegment(contextId)}/intents`,
     );
     return body.data;
   }
@@ -457,7 +458,7 @@ export class RelayClient {
 
     const body = await this.json<{ data: { rootHash: string; returns: T | null } }>(
       'POST',
-      `/admin-api/contexts/${encodeURIComponent(contextId)}/intents`,
+      `/admin-api/contexts/${pathSegment(contextId)}/intents`,
       { method, argsJson, warrant, authorProof: this.config.authorProof },
     );
     return { rootHash: body.data.rootHash, returns: body.data.returns ?? null };
@@ -475,7 +476,7 @@ export class RelayClient {
   ): Promise<void> {
     await this.jsonOnce<undefined>(
       'POST',
-      `/admin-api/contexts/${encodeURIComponent(contextId)}/presence-intents`,
+      `/admin-api/contexts/${pathSegment(contextId)}/presence-intents`,
       body,
     );
   }
@@ -493,7 +494,7 @@ export class RelayClient {
     const query = opts.author ? `?author=${encodeURIComponent(opts.author)}` : '';
     const body = await this.json<{ data: CreationDescription }>(
       'GET',
-      `/admin-api/groups/${encodeURIComponent(groupId)}/context-intents${query}`,
+      `/admin-api/groups/${pathSegment(groupId)}/context-intents${query}`,
     );
     return body.data;
   }
@@ -565,7 +566,7 @@ export class RelayClient {
 
     const body = await this.json<{ data: CreatedContext }>(
       'POST',
-      `/admin-api/groups/${encodeURIComponent(input.groupId)}/context-intents`,
+      `/admin-api/groups/${pathSegment(input.groupId)}/context-intents`,
       { warrant, authorProof: this.config.authorProof, initArgs },
     );
     return {
@@ -582,7 +583,7 @@ export class RelayClient {
   async describeGovernance(groupId: string): Promise<GovernanceDescription> {
     const body = await this.json<{ data: GovernanceDescription }>(
       'GET',
-      `/admin-api/groups/${encodeURIComponent(groupId)}/governance-intents`,
+      `/admin-api/groups/${pathSegment(groupId)}/governance-intents`,
     );
     return body.data;
   }
@@ -745,7 +746,7 @@ export class RelayClient {
   ): Promise<{ groupId: string; teeEnabled?: boolean; teeError?: string }> {
     const body = await this.json<{
       data: { groupId: string; teeEnabled?: boolean; teeError?: string };
-    }>('POST', `/admin-api/groups/${encodeURIComponent(groupId)}/governance-intents`, {
+    }>('POST', `/admin-api/groups/${pathSegment(groupId)}/governance-intents`, {
       warrant,
       authorProof: this.config.authorProof,
       op: hex(op.bytes),

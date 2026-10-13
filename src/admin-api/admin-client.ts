@@ -1,4 +1,5 @@
 import { HttpClient, HTTPError, withRetry } from '../http-client/index.js';
+import { pathSegment } from '../http-client/path-segment.js';
 import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
@@ -391,7 +392,7 @@ export class AdminApiClient {
   }
 
   async uninstallApplication(appId: string): Promise<UninstallApplicationResponseData> {
-    return unwrap(await this.httpClient.delete<{ data: UninstallApplicationResponseData }>(`/admin-api/applications/${appId}`));
+    return unwrap(await this.httpClient.delete<{ data: UninstallApplicationResponseData }>(`/admin-api/applications/${pathSegment(appId)}`));
   }
 
   async listApplications(): Promise<ListApplicationsResponseData> {
@@ -399,7 +400,7 @@ export class AdminApiClient {
   }
 
   async getApplication(appId: string): Promise<GetApplicationResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetApplicationResponseData }>(`/admin-api/applications/${appId}`));
+    return unwrap(await this.httpClient.get<{ data: GetApplicationResponseData }>(`/admin-api/applications/${pathSegment(appId)}`));
   }
 
   /**
@@ -409,7 +410,7 @@ export class AdminApiClient {
    */
   async listApplicationVersions(applicationId: string): Promise<ApplicationVersionEntry[]> {
     return unwrap(
-      await this.httpClient.get<{ data: ApplicationVersionEntry[] }>(`/admin-api/applications/${applicationId}/versions`),
+      await this.httpClient.get<{ data: ApplicationVersionEntry[] }>(`/admin-api/applications/${pathSegment(applicationId)}/versions`),
     );
   }
 
@@ -421,7 +422,7 @@ export class AdminApiClient {
     const query = serviceName ? `?service_name=${encodeURIComponent(serviceName)}` : '';
     return unwrap(
       await this.httpClient.get<{ data: GetApplicationAbiResponseData }>(
-        `/admin-api/applications/${applicationId}/abi${query}`,
+        `/admin-api/applications/${pathSegment(applicationId)}/abi${query}`,
       ),
     );
   }
@@ -439,14 +440,14 @@ export class AdminApiClient {
   async listPackageVersions(packageName: string): Promise<ListVersionsResponseData> {
     // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
     const r = await this.httpClient.get<ListVersionsResponseData & { data?: ListVersionsResponseData }>(
-      `/admin-api/packages/${encodeURIComponent(packageName)}/versions`,
+      `/admin-api/packages/${pathSegment(packageName)}/versions`,
     );
     return (r?.data ?? r) as ListVersionsResponseData;
   }
 
   async getLatestPackageVersion(packageName: string): Promise<GetLatestVersionResponseData> {
     return this.httpClient.get<GetLatestVersionResponseData>(
-      `/admin-api/packages/${encodeURIComponent(packageName)}/latest`,
+      `/admin-api/packages/${pathSegment(packageName)}/latest`,
     );
   }
 
@@ -460,7 +461,7 @@ export class AdminApiClient {
   }
 
   async deleteContext(contextId: string): Promise<DeleteContextResponseData> {
-    return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${contextId}`));
+    return unwrap(await this.httpClient.delete<{ data: DeleteContextResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}`));
   }
 
   async getContexts(): Promise<GetContextsResponseData> {
@@ -468,11 +469,11 @@ export class AdminApiClient {
   }
 
   async getContext(contextId: string): Promise<Context> {
-    return unwrap(await this.httpClient.get<{ data: Context }>(`/admin-api/contexts/${contextId}`));
+    return unwrap(await this.httpClient.get<{ data: Context }>(`/admin-api/contexts/${pathSegment(contextId)}`));
   }
 
   async getContextsForApplication(applicationId: string): Promise<GetContextsResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetContextsResponseData }>(`/admin-api/contexts/for-application/${applicationId}`));
+    return unwrap(await this.httpClient.get<{ data: GetContextsResponseData }>(`/admin-api/contexts/for-application/${pathSegment(applicationId)}`));
   }
 
   // ---- Context Identity ----
@@ -482,36 +483,36 @@ export class AdminApiClient {
   }
 
   async getContextIdentities(contextId: string): Promise<GetContextIdentitiesResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${contextId}/identities`));
+    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}/identities`));
   }
 
   async getContextIdentitiesOwned(contextId: string): Promise<GetContextIdentitiesResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${contextId}/identities-owned`));
+    return unwrap(await this.httpClient.get<{ data: GetContextIdentitiesResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}/identities-owned`));
   }
 
   // ---- Context join (group membership) ----
 
   async joinContext(contextId: string): Promise<JoinContextResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: JoinContextResponseData }>(`/admin-api/contexts/${contextId}/join`, {}),
+      await this.httpClient.post<{ data: JoinContextResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}/join`, {}),
     );
   }
 
   // ---- Context group / storage / sync ----
 
   async getContextGroup(contextId: string): Promise<ContextGroupResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ContextGroupResponseData }>(`/admin-api/contexts/${contextId}/group`));
+    return unwrap(await this.httpClient.get<{ data: ContextGroupResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}/group`));
   }
 
   async getContextStorage(contextId: string): Promise<ContextStorageResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ContextStorageResponseData }>(`/admin-api/contexts/${contextId}/storage`));
+    return unwrap(await this.httpClient.get<{ data: ContextStorageResponseData }>(`/admin-api/contexts/${pathSegment(contextId)}/storage`));
   }
 
   /** Sync one context, or every context when `contextId` is omitted. */
   async syncContext(contextId?: string): Promise<void> {
     // Sync-all is `/contexts/sync` with no trailing slash - core routes the two
     // spellings separately and 404s the trailing one.
-    const path = contextId ? `/admin-api/contexts/sync/${contextId}` : '/admin-api/contexts/sync';
+    const path = contextId ? `/admin-api/contexts/sync/${pathSegment(contextId)}` : '/admin-api/contexts/sync';
     await this.httpClient.post(path, {});
   }
 
@@ -528,7 +529,7 @@ export class AdminApiClient {
     // field), so parse the body directly — do NOT `unwrap`, or `resyncStarted`
     // reads as undefined and the resync silently appears to never start.
     const r = await this.httpClient.post<ResyncContextResponseData | null>(
-      `/admin-api/contexts/${contextId}/resync`,
+      `/admin-api/contexts/${pathSegment(contextId)}/resync`,
       request,
     );
     // An empty 2xx body means the resync was accepted; synthesize the result so
@@ -549,7 +550,7 @@ export class AdminApiClient {
     contextId: string,
     request: UpdateContextApplicationRequest,
   ): Promise<void> {
-    await this.httpClient.post(`/admin-api/contexts/${contextId}/application`, request);
+    await this.httpClient.post(`/admin-api/contexts/${pathSegment(contextId)}/application`, request);
   }
 
   async getContextsWithExecutorsForApplication(applicationId: string): Promise<ContextsWithExecutorsResponseData> {
@@ -558,7 +559,7 @@ export class AdminApiClient {
       | ContextsWithExecutorsResponseData
       | { contexts: ContextsWithExecutorsResponseData }
       | { data: ContextsWithExecutorsResponseData }
-    >(`/admin-api/contexts/with-executors/for-application/${applicationId}`);
+    >(`/admin-api/contexts/with-executors/for-application/${pathSegment(applicationId)}`);
     if (Array.isArray(r)) return r;
     return (
       (r as { contexts?: ContextsWithExecutorsResponseData } | null)?.contexts ??
@@ -596,7 +597,7 @@ export class AdminApiClient {
     // deleted }`) — the lone admin DTO without a camelCase rename and without an
     // inner `data` field. Parse directly (no `unwrap`) and map to camelCase.
     const body = await this.httpClient.delete<{ blob_id: string; deleted: boolean }>(
-      `/admin-api/blobs/${blobId}`,
+      `/admin-api/blobs/${pathSegment(blobId)}`,
     );
     return { blobId: body.blob_id, deleted: body.deleted };
   }
@@ -617,9 +618,9 @@ export class AdminApiClient {
    * side from drifting from the write side.
    */
   private blobPath(blobId: string, options?: BlobReadOptions): string {
-    if (!options?.contextId) return `/admin-api/blobs/${blobId}`;
+    if (!options?.contextId) return `/admin-api/blobs/${pathSegment(blobId)}`;
     const params = new URLSearchParams({ context_id: options.contextId });
-    return `/admin-api/blobs/${blobId}?${params.toString()}`;
+    return `/admin-api/blobs/${pathSegment(blobId)}?${params.toString()}`;
   }
 
   /**
@@ -700,7 +701,7 @@ export class AdminApiClient {
   async lookupContextAlias(name: string): Promise<LookupAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: LookupAliasResponseData }>(
-        `/admin-api/alias/lookup/context/${encodeURIComponent(name)}`,
+        `/admin-api/alias/lookup/context/${pathSegment(name)}`,
         {},
       ),
     );
@@ -709,7 +710,7 @@ export class AdminApiClient {
   async lookupApplicationAlias(name: string): Promise<LookupAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: LookupAliasResponseData }>(
-        `/admin-api/alias/lookup/application/${encodeURIComponent(name)}`,
+        `/admin-api/alias/lookup/application/${pathSegment(name)}`,
         {},
       ),
     );
@@ -718,7 +719,7 @@ export class AdminApiClient {
   async deleteContextAlias(name: string): Promise<DeleteAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: DeleteAliasResponseData }>(
-        `/admin-api/alias/delete/context/${encodeURIComponent(name)}`,
+        `/admin-api/alias/delete/context/${pathSegment(name)}`,
         {},
       ),
     );
@@ -727,7 +728,7 @@ export class AdminApiClient {
   async deleteApplicationAlias(name: string): Promise<DeleteAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: DeleteAliasResponseData }>(
-        `/admin-api/alias/delete/application/${encodeURIComponent(name)}`,
+        `/admin-api/alias/delete/application/${pathSegment(name)}`,
         {},
       ),
     );
@@ -753,7 +754,7 @@ export class AdminApiClient {
   async lookupDeviceAlias(name: string): Promise<LookupAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: LookupAliasResponseData }>(
-        `/admin-api/alias/lookup/device/${encodeURIComponent(name)}`,
+        `/admin-api/alias/lookup/device/${pathSegment(name)}`,
         {},
       ),
     );
@@ -762,7 +763,7 @@ export class AdminApiClient {
   async deleteDeviceAlias(name: string): Promise<DeleteAliasResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: DeleteAliasResponseData }>(
-        `/admin-api/alias/delete/device/${encodeURIComponent(name)}`,
+        `/admin-api/alias/delete/device/${pathSegment(name)}`,
         {},
       ),
     );
@@ -779,7 +780,7 @@ export class AdminApiClient {
   }
 
   async getNamespace(namespaceId: string): Promise<Namespace> {
-    return unwrap(await this.httpClient.get<{ data: Namespace }>(`/admin-api/namespaces/${namespaceId}`));
+    return unwrap(await this.httpClient.get<{ data: Namespace }>(`/admin-api/namespaces/${pathSegment(namespaceId)}`));
   }
 
   /**
@@ -850,7 +851,7 @@ export class AdminApiClient {
   ): Promise<PerformIntentResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: PerformIntentResponseData }>(
-        `/admin-api/contexts/${contextId}/intents`,
+        `/admin-api/contexts/${pathSegment(contextId)}/intents`,
         request,
       ),
     );
@@ -871,7 +872,7 @@ export class AdminApiClient {
   ): Promise<QueryContextResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: QueryContextResponseData }>(
-        `/admin-api/contexts/${contextId}/query`,
+        `/admin-api/contexts/${pathSegment(contextId)}/query`,
         request,
       ),
     );
@@ -901,13 +902,13 @@ export class AdminApiClient {
   async getIntentRelay(contextId: string): Promise<IntentRelayInfo> {
     return unwrap(
       await this.httpClient.get<{ data: IntentRelayInfo }>(
-        `/admin-api/contexts/${contextId}/intents`,
+        `/admin-api/contexts/${pathSegment(contextId)}/intents`,
       ),
     );
   }
 
   async listNamespacesForApplication(applicationId: string): Promise<ListNamespacesResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>(`/admin-api/namespaces/for-application/${applicationId}`));
+    return unwrap(await this.httpClient.get<{ data: ListNamespacesResponseData }>(`/admin-api/namespaces/for-application/${pathSegment(applicationId)}`));
   }
 
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
@@ -920,7 +921,7 @@ export class AdminApiClient {
     // Core requires `Content-Type: application/json` on this DELETE even though
     // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
-      await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${namespaceId}`, {
+      await this.httpClient.request<{ data: DeleteNamespaceResponseData }>(`/admin-api/namespaces/${pathSegment(namespaceId)}`, {
         method: 'DELETE',
         body: '{}',
         headers: { 'Content-Type': 'application/json' },
@@ -934,7 +935,7 @@ export class AdminApiClient {
   ): Promise<CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/invite`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/invite`,
         request ?? {},
       ),
     );
@@ -963,7 +964,7 @@ export class AdminApiClient {
   ): Promise<AdmitJoinResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: AdmitJoinResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/admit`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/admit`,
         request,
         { timeoutMs: 65000 },
       ),
@@ -976,7 +977,7 @@ export class AdminApiClient {
   ): Promise<JoinNamespaceResponseData> {
     const data = unwrap(
       await this.httpClient.post<{ data: JoinNamespaceResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/join`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/join`,
         request,
         { timeoutMs: 65000 },
       ),
@@ -1040,14 +1041,14 @@ export class AdminApiClient {
   ): Promise<CreateGroupInNamespaceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: CreateGroupInNamespaceResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/groups`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/groups`,
         request ?? {},
       ),
     );
   }
 
   async listNamespaceGroups(namespaceId: string): Promise<SubgroupEntry[]> {
-    return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/namespaces/${namespaceId}/groups`));
+    return unwrap(await this.httpClient.get<{ data: SubgroupEntry[] }>(`/admin-api/namespaces/${pathSegment(namespaceId)}/groups`));
   }
 
   // ---- Account Devices & Pairing ----
@@ -1118,7 +1119,7 @@ export class AdminApiClient {
   ): Promise<RelinkDeviceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: RelinkDeviceResponseData }>(
-        `/admin-api/account/devices/${deviceId}/relink`,
+        `/admin-api/account/devices/${pathSegment(deviceId)}/relink`,
         request ?? {},
       ),
     );
@@ -1137,7 +1138,7 @@ export class AdminApiClient {
   ): Promise<RescopeDeviceResponseData> {
     return unwrap(
       await this.httpClient.put<{ data: RescopeDeviceResponseData }>(
-        `/admin-api/account/devices/${encodeURIComponent(deviceId)}/scope`,
+        `/admin-api/account/devices/${pathSegment(deviceId)}/scope`,
         request,
       ),
     );
@@ -1195,7 +1196,7 @@ export class AdminApiClient {
   ): Promise<LabelDeviceResponseData> {
     return unwrap(
       await this.httpClient.put<{ data: LabelDeviceResponseData }>(
-        `/admin-api/account/devices/${encodeURIComponent(deviceId)}/label`,
+        `/admin-api/account/devices/${pathSegment(deviceId)}/label`,
         request,
       ),
     );
@@ -1265,7 +1266,7 @@ export class AdminApiClient {
   ): Promise<RevokeAccountDeviceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: RevokeAccountDeviceResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/account/revoke`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/account/revoke`,
         request,
       ),
     );
@@ -1292,7 +1293,7 @@ export class AdminApiClient {
   ): Promise<LinkAccountDeviceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: LinkAccountDeviceResponseData }>(
-        `/admin-api/namespaces/${namespaceId}/account/link-device`,
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/account/link-device`,
         request,
       ),
     );
@@ -1301,7 +1302,7 @@ export class AdminApiClient {
   // ---- Group Management ----
 
   async getGroupInfo(groupId: string): Promise<GroupInfoResponseData> {
-    return unwrap(await this.httpClient.get<{ data: GroupInfoResponseData }>(`/admin-api/groups/${groupId}`));
+    return unwrap(await this.httpClient.get<{ data: GroupInfoResponseData }>(`/admin-api/groups/${pathSegment(groupId)}`));
   }
 
   /** Thin wrapper over {@link getGroupInfo}: returns the group's `defaultCapabilities` bitmask. */
@@ -1318,7 +1319,7 @@ export class AdminApiClient {
     // Core requires `Content-Type: application/json` on this DELETE even though
     // the body is always empty, so send the header and an empty JSON object.
     return unwrap(
-      await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${groupId}`, {
+      await this.httpClient.request<{ data: DeleteGroupResponseData }>(`/admin-api/groups/${pathSegment(groupId)}`, {
         method: 'DELETE',
         body: '{}',
         headers: { 'Content-Type': 'application/json' },
@@ -1328,7 +1329,7 @@ export class AdminApiClient {
 
   async listGroupMembers(groupId: string): Promise<ListGroupMembersResponseData> {
     const response = await this.httpClient.get<ListGroupMembersResponseData>(
-      `/admin-api/groups/${groupId}/members`,
+      `/admin-api/groups/${pathSegment(groupId)}/members`,
     );
     // Validate the field we declare as non-optional in the type so a
     // contract-violating response (proxy error body, future API drift,
@@ -1381,7 +1382,7 @@ export class AdminApiClient {
     if (options?.offset !== undefined) params.set('offset', String(options.offset));
     if (options?.limit !== undefined) params.set('limit', String(options.limit));
     const query = params.toString();
-    const base = `/admin-api/groups/${encodeURIComponent(groupId)}/member-devices`;
+    const base = `/admin-api/groups/${pathSegment(groupId)}/member-devices`;
     const response = await this.httpClient.get<{ members: MemberDevicesEntry[] }>(
       query ? `${base}?${query}` : base,
     );
@@ -1437,7 +1438,7 @@ export class AdminApiClient {
     contextId: string,
     authorDeviceKey: string,
   ): Promise<WarrantNonceState> {
-    const path = `/admin-api/contexts/${encodeURIComponent(contextId)}/warrant-nonce/${encodeURIComponent(authorDeviceKey)}`;
+    const path = `/admin-api/contexts/${pathSegment(contextId)}/warrant-nonce/${pathSegment(authorDeviceKey)}`;
     // Read as TEXT, not JSON. `JSON.parse` would turn the `u64` nonces into
     // doubles before this code ever sees them, rounding anything past 2^53 into
     // a value that looks ordinary and is refused forever. The digits have to be
@@ -1485,7 +1486,7 @@ export class AdminApiClient {
     contextId: string,
     authorProof: string,
   ): Promise<WarrantNonceState> {
-    const path = `/admin-api/contexts/${encodeURIComponent(contextId)}/warrant-nonce`;
+    const path = `/admin-api/contexts/${pathSegment(contextId)}/warrant-nonce`;
     // Text, not JSON, for the reason given in `getWarrantNonce`: `JSON.parse`
     // rounds a u64 past 2^53 into a nonce that looks ordinary and is refused
     // for ever.
@@ -1514,7 +1515,7 @@ export class AdminApiClient {
     if (options.offset !== undefined) params.set('offset', String(options.offset));
     if (options.limit !== undefined) params.set('limit', String(options.limit));
     const query = params.toString();
-    const path = `/admin-api/groups/${groupId}/member-devices${query ? `?${query}` : ''}`;
+    const path = `/admin-api/groups/${pathSegment(groupId)}/member-devices${query ? `?${query}` : ''}`;
     return this.httpClient.get<ListMemberDevicesResponseData>(path);
   }
 
@@ -1530,22 +1531,22 @@ export class AdminApiClient {
   ): Promise<SealedEnvelope> {
     return unwrap(
       await this.httpClient.post<{ data: SealedEnvelope }>(
-        `/admin-api/groups/${groupId}/accounts/${account}/seal`,
+        `/admin-api/groups/${pathSegment(groupId)}/accounts/${pathSegment(account)}/seal`,
         request,
       ),
     );
   }
 
   async listGroupContexts(groupId: string): Promise<ListGroupContextsResponseData> {
-    return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${groupId}/contexts`));
+    return unwrap(await this.httpClient.get<{ data: ListGroupContextsResponseData }>(`/admin-api/groups/${pathSegment(groupId)}/contexts`));
   }
 
   async addGroupMembers(groupId: string, request: AddGroupMembersRequest): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/members`, request);
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/members`, request);
   }
 
   async removeGroupMembers(groupId: string, request: RemoveGroupMembersRequest): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/members/remove`, request);
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/members/remove`, request);
   }
 
   /**
@@ -1558,7 +1559,7 @@ export class AdminApiClient {
     identity: string,
     request: UpdateMemberRoleRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/role`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/role`, request);
   }
 
   /**
@@ -1569,7 +1570,7 @@ export class AdminApiClient {
   async getMemberCapabilities(groupId: string, identity: string): Promise<MemberCapabilities> {
     return unwrap(
       await this.httpClient.get<{ data: MemberCapabilities }>(
-        `/admin-api/groups/${groupId}/members/${identity}/capabilities`,
+        `/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/capabilities`,
       ),
     );
   }
@@ -1584,14 +1585,14 @@ export class AdminApiClient {
     identity: string,
     request: SetMemberCapabilitiesRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/capabilities`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/capabilities`, request);
   }
 
   async setDefaultCapabilities(
     groupId: string,
     request: SetDefaultCapabilitiesRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/default-capabilities`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/settings/default-capabilities`, request);
   }
 
   /**
@@ -1684,14 +1685,14 @@ export class AdminApiClient {
     groupId: string,
     request: SetSubgroupVisibilityRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/subgroup-visibility`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/settings/subgroup-visibility`, request);
   }
 
   async setTeeAdmissionPolicy(
     groupId: string,
     request: SetTeeAdmissionPolicyRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-admission-policy`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/settings/tee-admission-policy`, request);
   }
 
   async getTeeAdmissionPolicy(groupId: string): Promise<GetTeeAdmissionPolicyResponseData> {
@@ -1699,7 +1700,7 @@ export class AdminApiClient {
     // `?? response` cleanly falls back to a flat (un-enveloped) response.
     const response = await this.httpClient.get<
       GetTeeAdmissionPolicyResponseData & { data?: GetTeeAdmissionPolicyResponseData }
-    >(`/admin-api/groups/${groupId}/settings/tee-admission-policy`);
+    >(`/admin-api/groups/${pathSegment(groupId)}/settings/tee-admission-policy`);
     return response.data ?? response;
   }
 
@@ -1713,7 +1714,7 @@ export class AdminApiClient {
     groupId: string,
     request: SetTeeAuthoringPolicyRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/settings/tee-authoring-policy`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/settings/tee-authoring-policy`, request);
   }
 
   /**
@@ -1726,7 +1727,7 @@ export class AdminApiClient {
    * (`teeAuthoringPolicyOp([])`); omit it on a node that holds that root.
    */
   async disableTeeAuthoringPolicy(groupId: string, options: RootGuardedOpRequest = {}): Promise<void> {
-    const path = `/admin-api/groups/${groupId}/settings/tee-authoring-policy`;
+    const path = `/admin-api/groups/${pathSegment(groupId)}/settings/tee-authoring-policy`;
     if (options.rootProof === undefined) {
       await this.httpClient.delete(path);
       return;
@@ -1746,7 +1747,7 @@ export class AdminApiClient {
    * {@link RootGuardedOpRequest}.
    */
   async transferOwnership(groupId: string, request: TransferOwnershipRequest): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/transfer-ownership`, request);
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/transfer-ownership`, request);
   }
 
   /**
@@ -1757,7 +1758,7 @@ export class AdminApiClient {
     namespaceId: string,
     request: ChangeNamespaceAdminRequest,
   ): Promise<void> {
-    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/admin`, request);
+    await this.httpClient.post(`/admin-api/namespaces/${pathSegment(namespaceId)}/admin`, request);
   }
 
   /**
@@ -1766,13 +1767,13 @@ export class AdminApiClient {
    * admin-level cascading delete.
    */
   async ownerDeleteGroup(groupId: string, request: OwnerDeleteGroupRequest = {}): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/owner-delete`, request);
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/owner-delete`, request);
   }
 
   // ---- Group / member / context metadata ----
 
   async setGroupMetadata(groupId: string, request: SetGroupMetadataRequest): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/metadata`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/metadata`, request);
   }
 
   async getGroupMetadata(groupId: string): Promise<MetadataRecord | null> {
@@ -1781,7 +1782,7 @@ export class AdminApiClient {
     // so optional-chain to a clean null. Returns the full record (name + data +
     // updatedAt/updatedBy), not just the data map.
     const response = await this.httpClient.get<GetMetadataResponseData | null>(
-      `/admin-api/groups/${groupId}/metadata`,
+      `/admin-api/groups/${pathSegment(groupId)}/metadata`,
     );
     return response?.data ?? null;
   }
@@ -1791,7 +1792,7 @@ export class AdminApiClient {
     identity: string,
     request: SetMemberMetadataRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/metadata`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/metadata`, request);
   }
 
   /**
@@ -1802,7 +1803,7 @@ export class AdminApiClient {
   async getMemberMetadata(groupId: string, identity: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
     const response = await this.httpClient.get<GetMetadataResponseData | null>(
-      `/admin-api/groups/${groupId}/members/${identity}/metadata`,
+      `/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/metadata`,
     );
     return response?.data ?? null;
   }
@@ -1812,28 +1813,28 @@ export class AdminApiClient {
     contextId: string,
     request: SetContextMetadataRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/contexts/${contextId}/metadata`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/metadata`, request);
   }
 
   async getContextMetadata(groupId: string, contextId: string): Promise<MetadataRecord | null> {
     // Single-enveloped record; see getGroupMetadata.
     const response = await this.httpClient.get<GetMetadataResponseData | null>(
-      `/admin-api/groups/${groupId}/contexts/${contextId}/metadata`,
+      `/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/metadata`,
     );
     return response?.data ?? null;
   }
 
   async syncGroup(groupId: string): Promise<SyncGroupResponseData> {
-    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${groupId}/sync`, {}));
+    return unwrap(await this.httpClient.post<{ data: SyncGroupResponseData }>(`/admin-api/groups/${pathSegment(groupId)}/sync`, {}));
   }
 
   async upgradeGroup(groupId: string, request: UpgradeGroupRequest): Promise<UpgradeGroupResponseData> {
-    return unwrap(await this.httpClient.post<{ data: UpgradeGroupResponseData }>(`/admin-api/groups/${groupId}/upgrade`, request));
+    return unwrap(await this.httpClient.post<{ data: UpgradeGroupResponseData }>(`/admin-api/groups/${pathSegment(groupId)}/upgrade`, request));
   }
 
   async getGroupUpgradeStatus(groupId: string): Promise<GroupUpgradeStatusResponseData> {
     return unwrap(
-      await this.httpClient.get<{ data: GroupUpgradeStatusResponseData }>(`/admin-api/groups/${groupId}/upgrade/status`),
+      await this.httpClient.get<{ data: GroupUpgradeStatusResponseData }>(`/admin-api/groups/${pathSegment(groupId)}/upgrade/status`),
     );
   }
 
@@ -1843,22 +1844,20 @@ export class AdminApiClient {
    * envelope to unwrap here (unlike most admin reads).
    */
   async getMigrationStatus(namespaceId: string): Promise<MigrationStatus> {
-    const id = encodeURIComponent(namespaceId);
-    return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${id}/migration-status`);
+    return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${pathSegment(namespaceId)}/migration-status`);
   }
 
   /** Per-group cascade-migration snapshots for a namespace. */
   async getCascadeStatus(namespaceId: string): Promise<CascadeStatusEntry[]> {
-    const id = encodeURIComponent(namespaceId);
     return unwrap(
-      await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${id}/cascade-status`),
+      await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${pathSegment(namespaceId)}/cascade-status`),
     );
   }
 
   async retryGroupUpgrade(groupId: string): Promise<RetryGroupUpgradeResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: RetryGroupUpgradeResponseData }>(
-        `/admin-api/groups/${groupId}/upgrade/retry`,
+        `/admin-api/groups/${pathSegment(groupId)}/upgrade/retry`,
         {},
       ),
     );
@@ -1872,19 +1871,19 @@ export class AdminApiClient {
     // Core returns this flat ({ reparented }); tolerate the { data } envelope too.
     const r = await this.httpClient.post<
       ReparentGroupResponseData & { data?: ReparentGroupResponseData }
-    >(`/admin-api/groups/${childGroupId}/reparent`, request);
+    >(`/admin-api/groups/${pathSegment(childGroupId)}/reparent`, request);
     return (r?.data ?? r) as ReparentGroupResponseData;
   }
 
   async listSubgroups(groupId: string): Promise<SubgroupEntry[]> {
     const response = await this.httpClient.get<{ subgroups?: SubgroupEntry[]; data?: SubgroupEntry[] }>(
-      `/admin-api/groups/${groupId}/subgroups`,
+      `/admin-api/groups/${pathSegment(groupId)}/subgroups`,
     );
     return response.subgroups ?? response.data ?? [];
   }
 
   async detachContextFromGroup(groupId: string, contextId: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/contexts/${contextId}/remove`, {});
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/remove`, {});
   }
 
   // ---- Group Invitation & Join ----
@@ -1895,7 +1894,7 @@ export class AdminApiClient {
   ): Promise<CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData }>(
-        `/admin-api/groups/${groupId}/invite`,
+        `/admin-api/groups/${pathSegment(groupId)}/invite`,
         request ?? {},
       ),
     );
@@ -1910,7 +1909,7 @@ export class AdminApiClient {
   async joinSubgroupInheritance(groupId: string): Promise<JoinSubgroupInheritanceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: JoinSubgroupInheritanceResponseData }>(
-        `/admin-api/groups/${groupId}/join-via-inheritance`,
+        `/admin-api/groups/${pathSegment(groupId)}/join-via-inheritance`,
         {},
       ),
     );
@@ -1963,17 +1962,17 @@ export class AdminApiClient {
 
   /** Leave a group (POST /admin-api/groups/:group_id/leave). */
   async leaveGroup(groupId: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/groups/${groupId}/leave`, {});
+    await this.httpClient.post(`/admin-api/groups/${pathSegment(groupId)}/leave`, {});
   }
 
   /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
   async leaveContext(contextId: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/contexts/${contextId}/leave`, {});
+    await this.httpClient.post(`/admin-api/contexts/${pathSegment(contextId)}/leave`, {});
   }
 
   /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
   async leaveNamespace(namespaceId: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/namespaces/${namespaceId}/leave`, {});
+    await this.httpClient.post(`/admin-api/namespaces/${pathSegment(namespaceId)}/leave`, {});
   }
 
   /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
@@ -1982,7 +1981,7 @@ export class AdminApiClient {
     request: IssueOwnershipProofRequest,
   ): Promise<IssueOwnershipProofResponseData> {
     return this.httpClient.post<IssueOwnershipProofResponseData>(
-      `/admin-api/groups/${groupId}/issue-ownership-proof`,
+      `/admin-api/groups/${pathSegment(groupId)}/issue-ownership-proof`,
       request,
     );
   }
@@ -1993,7 +1992,7 @@ export class AdminApiClient {
     request: IssueNamespaceOwnershipProofRequest,
   ): Promise<IssueOwnershipProofResponseData> {
     return this.httpClient.post<IssueOwnershipProofResponseData>(
-      `/admin-api/groups/${groupId}/issue-namespace-ownership-proof`,
+      `/admin-api/groups/${pathSegment(groupId)}/issue-namespace-ownership-proof`,
       request,
     );
   }
@@ -2011,11 +2010,11 @@ export class AdminApiClient {
     identity: string,
     request: SetMemberAutoFollowRequest,
   ): Promise<void> {
-    await this.httpClient.put(`/admin-api/groups/${groupId}/members/${identity}/auto-follow`, request);
+    await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/auto-follow`, request);
   }
 
   /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
   async abortMigration(namespaceId: string): Promise<unknown> {
-    return this.httpClient.post<unknown>(`/admin-api/groups/${namespaceId}/migration/abort`, {});
+    return this.httpClient.post<unknown>(`/admin-api/groups/${pathSegment(namespaceId)}/migration/abort`, {});
   }
 }
