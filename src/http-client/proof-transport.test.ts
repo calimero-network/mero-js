@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { WebHttpClient } from './web-client.js';
+import { WebHttpClient, HTTPError } from './web-client.js';
 import { Transport } from './http-types.js';
 
 const ok = () =>
@@ -99,5 +99,99 @@ describe('request-carried proof on the transport', () => {
     await client.request('/admin-api/contexts');
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(headersOf(fetchMock)['X-Calimero-Proof']).toBeUndefined();
+  });
+});
+
+describe('a request carrying a proof', () => {
+  const redirectOf = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls[0][1].redirect;
+
+  const redirected = () =>
+    new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/x' } });
+
+  // What a browser hands back for redirect: 'manual': nothing readable.
+  const opaqueRedirect = () =>
+    ({
+      ok: false,
+      status: 0,
+      statusText: '',
+      type: 'opaqueredirect',
+      headers: new Headers(),
+      text: async () => '',
+    }) as unknown as Response;
+
+  function authorizingClient(fetchMock: ReturnType<typeof vi.fn>) {
+    return new WebHttpClient({
+      fetch: fetchMock,
+      baseUrl: 'https://relay.example',
+      authorizeRequest: async () => ({ 'X-Calimero-Proof': 'aa' }),
+    });
+  }
+
+  it('is issued without following redirects', async () => {
+    const { client, fetchMock } = clientWith(vi.fn().mockResolvedValue('aa'));
+    await client.request('/admin-api/contexts');
+    expect(redirectOf(fetchMock)).toBe('manual');
+  });
+
+  it('is issued without following redirects when an authorizer supplied the proof', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok());
+    await authorizingClient(fetchMock).request('/admin-api/contexts');
+    expect(redirectOf(fetchMock)).toBe('manual');
+  });
+
+  it('keeps an explicit redirect: error', async () => {
+    const { client, fetchMock } = clientWith(vi.fn().mockResolvedValue('aa'));
+    await client.request('/admin-api/contexts', { redirect: 'error' });
+    expect(redirectOf(fetchMock)).toBe('error');
+  });
+
+  it('does not let redirect: follow carry the proof to another origin', async () => {
+    const { client, fetchMock } = clientWith(vi.fn().mockResolvedValue('aa'));
+    await client.request('/admin-api/contexts', { redirect: 'follow' });
+    expect(redirectOf(fetchMock)).toBe('manual');
+  });
+
+  it.each([
+    ['a 3xx response', redirected],
+    ['an opaque redirect', opaqueRedirect],
+  ])('surfaces %s as an error naming the proof and is not re-sent', async (_name, response) => {
+    const { client, fetchMock } = clientWith(vi.fn().mockResolvedValue('aa'));
+    fetchMock.mockResolvedValue(response());
+
+    const err = await client.request('/admin-api/contexts').catch((e) => e);
+
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err.message).toMatch(/redirect/i);
+    expect(err.message).toMatch(/X-Calimero-Proof/);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces a redirect to an authorizer-signed request the same way', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(redirected());
+    const err = await authorizingClient(fetchMock).request('/admin-api/contexts').catch((e) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err.message).toMatch(/X-Calimero-Proof/);
+  });
+});
+
+describe('a request carrying no proof', () => {
+  it('leaves redirect handling to the caller and the platform', async () => {
+    const { client, fetchMock } = clientWith(vi.fn().mockResolvedValue(undefined));
+    await client.request('/admin-api/contexts');
+    expect(fetchMock.mock.calls[0][1].redirect).toBeUndefined();
+  });
+
+  it('keeps an explicit redirect: follow', async () => {
+    const { client, fetchMock } = clientWith(undefined);
+    await client.request('/admin-api/contexts', { redirect: 'follow' });
+    expect(fetchMock.mock.calls[0][1].redirect).toBe('follow');
+  });
+
+  it('reports a redirect as a plain HTTP error', async () => {
+    const { client, fetchMock } = clientWith(undefined);
+    fetchMock.mockResolvedValue(new Response(null, { status: 302, headers: { location: '/x' } }));
+    const err = await client.request('/admin-api/contexts').catch((e) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err.message).not.toMatch(/X-Calimero-Proof/);
   });
 });
