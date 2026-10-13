@@ -5,7 +5,7 @@
  * replayed on reload, a grant spent for the wrong account, a refusal treated as
  * a pending state. The happy path is one line and is the least of it.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   cloudLinkUrl,
@@ -15,6 +15,14 @@ import {
 
 const ACCOUNT = '1f'.repeat(32);
 
+beforeEach(() => {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+  });
+});
+
 describe('cloudLinkUrl', () => {
   it('names the account and where to come back to', () => {
     const url = new URL(
@@ -22,7 +30,9 @@ describe('cloudLinkUrl', () => {
     );
     expect(url.origin).toBe('https://cloud.calimero.network');
     expect(url.searchParams.get('link-account')).toBe(ACCOUNT);
-    expect(url.searchParams.get('callback-url')).toBe('https://app.example/back');
+    const back = new URL(url.searchParams.get('callback-url')!);
+    expect(back.origin + back.pathname).toBe('https://app.example/back');
+    expect(back.searchParams.get('link_state')).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('refuses an account id the cloud would reject anyway', () => {
@@ -40,7 +50,12 @@ describe('readCloudLinkCallback', () => {
   });
 
   it('reads the grant the cloud handed back', () => {
-    const got = readCloudLinkCallback({ hash: `#grant=abc.def&account=${ACCOUNT}` });
+    const consent = cloudLinkUrl({ accountId: ACCOUNT, returnTo: 'https://app.example/back' });
+    const back = new URL(new URL(consent).searchParams.get('callback-url')!);
+    const got = readCloudLinkCallback({
+      hash: `#grant=abc.def&account=${ACCOUNT}`,
+      search: back.search,
+    });
     expect(got).toEqual({ grant: 'abc.def', account: ACCOUNT });
   });
 

@@ -13,7 +13,7 @@
  * of them: the handoff URL the portal parses, and the fragment it answers with.
  */
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { CloudClient } from './cloud-client.js';
 
@@ -23,6 +23,14 @@ const ROOT_PUBLIC_KEY =
   'a021d221f1e7601e8d280c857f8a667383e3923dda13b55f21ca2d928b79c70c';
 const ACCOUNT_ID =
   'ca7645ffd4d0621d00c6c88743aeace5797135ab298c49e77de066206090b778';
+
+beforeEach(() => {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+  });
+});
 
 /** A `fetch` that answers a scripted queue and records what it was asked. */
 function scriptedFetch(responses: Array<{ status?: number; body?: unknown }>): {
@@ -55,7 +63,9 @@ describe('CloudClient.accountLinkHandoff', () => {
     expect(parsed.searchParams.get('link-account')).toBe(ACCOUNT_ID);
     // Encoded as one parameter, so a callback carrying its own query does not
     // arrive as extra parameters of ours.
-    expect(parsed.searchParams.get('callback-url')).toBe('https://demo.example/app?keep=this');
+    const back = new URL(parsed.searchParams.get('callback-url')!);
+    expect(back.searchParams.get('keep')).toBe('this');
+    expect(back.searchParams.get('link_state')).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('needs no client and no session', () => {
@@ -67,8 +77,14 @@ describe('CloudClient.accountLinkHandoff', () => {
 
 describe('CloudClient.readAccountLinkCallback', () => {
   it('reads a grant out of the fragment', () => {
+    const { url } = CloudClient.accountLinkHandoff({
+      portalUrl: 'https://cloud.calimero.network',
+      accountId: ACCOUNT_ID,
+      callbackUrl: 'https://demo.example/app',
+    });
+    const back = new URL(new URL(url).searchParams.get('callback-url')!);
     const out = CloudClient.readAccountLinkCallback(
-      `https://demo.example/app#grant=sealed.token&account=${ACCOUNT_ID}`,
+      `${back.toString()}#grant=sealed.token&account=${ACCOUNT_ID}`,
     );
     expect(out).toEqual({ grant: 'sealed.token', accountId: ACCOUNT_ID });
   });
