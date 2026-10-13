@@ -1,3 +1,9 @@
+## [24.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.6.0...mero-js-v24.7.0) (2026-10-13)
+
+### Features
+
+* **account:** seal a delegated session's relay traffic to the attested TD ([#259](https://github.com/calimero-network/mero-js/issues/259)) ([891fbc4](https://github.com/calimero-network/mero-js/commit/891fbc49b6e7cfc7d70608722951bab1da06b55e))
+
 ## [24.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v24.5.0...mero-js-v24.6.0) (2026-10-10)
 
 ### Features
