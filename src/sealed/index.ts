@@ -10,7 +10,7 @@ export {
   transportKeyBinding,
 } from './sealed.js';
 export type { AttestedSealedFetchOptions, SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
-export { createQuoteVerifier, trustedMeasurementsFromReleases } from './verify.js';
+export { PRODUCTION_PROFILE, createQuoteVerifier, trustedMeasurementsFromReleases } from './verify.js';
 export type {
   DcapCollateral,
   DcapVerifiedReport,
@@ -19,6 +19,7 @@ export type {
   QuoteVerifier,
   QuoteVerifierOptions,
   TrustedMeasurements,
+  TrustedProfileOptions,
 } from './verify.js';
 export {
   DEFAULT_RELEASE_MIRROR,

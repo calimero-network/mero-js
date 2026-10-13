@@ -255,6 +255,14 @@ describe('trustSignedRelease', () => {
     expect(trusted.allowedTcbStatuses).toContain('UpToDate');
     await expect(
       trustSignedRelease({ release: signed('2.3.87'), profile: 'debug', minReleaseVersion: '2.3.87' }),
+    ).rejects.toThrow('not a production profile');
+    await expect(
+      trustSignedRelease({
+        release: signed('2.3.87'),
+        profile: 'debug',
+        minReleaseVersion: '2.3.87',
+        allowDebugProfile: true,
+      }),
     ).resolves.toBeDefined();
   });
 

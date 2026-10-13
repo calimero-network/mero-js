@@ -170,6 +170,24 @@ describe('createQuoteVerifier policy', () => {
     await expect(verifier(args)).rejects.toThrow('Revoked');
   });
 
+  // Whatever dcapVerify was given: a debug TD's memory and registers are open
+  // to the host, so its measurements prove nothing about what runs in it.
+  it('refuses a debug TD, or one whose attributes it cannot read, whatever dcapVerify allows', async () => {
+    const withAttributes = (tdAttributes: Uint8Array | undefined, type = 'td10'): DcapVerifiedReport => {
+      const td = { ...sampleTd, tdAttributes };
+      return { status: 'UpToDate', report: { type, data: type === 'td15' ? { base: td } : td } };
+    };
+    const verifierFor = (r: DcapVerifiedReport) => createQuoteVerifier({ dcapVerify: () => r, allowedMeasurements: [IMAGE] });
+
+    const debug = new Uint8Array(8);
+    debug[0] = 0x01;
+    await expect(verifierFor(withAttributes(debug))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(debug, 'td15'))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(undefined))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(new Uint8Array(4)))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(new Uint8Array(8)))(args)).resolves.toBe(true);
+  });
+
   it('refuses a quote that is not TDX', async () => {
     const verifier = createQuoteVerifier({ dcapVerify: () => report('UpToDate', 'sgx'), allowedMeasurements: [IMAGE] });
     await expect(verifier(args)).rejects.toThrow('not a TDX one');
@@ -225,10 +243,40 @@ describe('trustedMeasurementsFromReleases', () => {
     const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
     const locked = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'locked-read-only' });
     await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...locked })(args)).resolves.toBe(true);
-    const debug = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'debug' });
+    const debug = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], {
+      profile: 'debug',
+      allowDebugProfile: true,
+    });
     await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...debug })(args)).rejects.toThrow(
       'are not an image this verifier trusts',
     );
+  });
+
+  // A debug profile's image runs with SSH and the operator's tooling inside the
+  // TD, so its measurements name an image the operator can read; only
+  // locked-read-only is a production image.
+  it('trusts only the production profile unless debug profiles are asked for', () => {
+    const debugRelease = {
+      ...release('2.3.78', IMAGE.rtmr3),
+      profiles: {
+        ...release('2.3.78', IMAGE.rtmr3).profiles,
+        'debug-read-only': { ...IMAGE, rtmr3: 'ee'.repeat(48), allowed_tcb_statuses: ['uptodate'] },
+      },
+    };
+    for (const profile of ['debug', 'debug-read-only']) {
+      expect(() => trustedMeasurementsFromReleases([debugRelease], { profile })).toThrow(
+        `${JSON.stringify(profile)} is not a production profile`,
+      );
+      expect(() =>
+        trustedMeasurementsFromReleases([debugRelease], { profile, allowDebugProfile: false }),
+      ).toThrow('not a production profile');
+      expect(
+        trustedMeasurementsFromReleases([debugRelease], { profile, allowDebugProfile: true }).allowedMeasurements,
+      ).toHaveLength(1);
+    }
+    expect(
+      trustedMeasurementsFromReleases([debugRelease], { profile: 'locked-read-only' }).allowedMeasurements,
+    ).toEqual([IMAGE]);
   });
 
   it('accepts only the TCB statuses every release accepts', () => {

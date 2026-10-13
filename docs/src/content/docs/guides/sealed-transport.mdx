@@ -91,8 +91,13 @@ all of `allowedRtmr1`–`3` still works, but checks each register on its own.)
 `trustedMeasurementsFromReleases(releases, { profile })` builds those options
 from mero-tee releases' `published-mrtds.json`:
 
-- **one profile** of each release: `locked-read-only` for production. A `debug`
-  image of the same release has other RTMRs and is refused;
+- **one profile** of each release: `locked-read-only` (`PRODUCTION_PROFILE`), the
+  only one trusted by default. A `debug` image of the same release has other
+  RTMRs and is refused. The `debug` and `debug-read-only` profiles keep SSH and
+  the operator's tooling inside the TD, so their images are readable by whoever
+  runs the node: naming one throws unless you pass `allowDebugProfile: true`,
+  which is for testing only. A quote from a TD in debug mode is refused whatever
+  the profile;
 - **every release your nodes may run.** Each release has its own RTMRs, so during
   a rollout pass the old release and the new one, and drop the old one once no
   node runs it. A client that trusts only the new release refuses the nodes not

@@ -46,6 +46,7 @@ interface TdReport {
   rtMr2: Uint8Array;
   rtMr3: Uint8Array;
   reportData: Uint8Array;
+  tdAttributes?: Uint8Array;
 }
 
 /** What a DCAP verifier returns for a quote whose signature chain verified. */
@@ -203,6 +204,13 @@ export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifie
       throw new Error(`The platform's TCB status is ${verified.status}, which is not accepted`);
     }
     const td = tdReport(verified.report);
+    // TUD bit 0. A debug TD's memory and registers are open to the host, so its
+    // measurements prove nothing about what runs in it. Checked here, not left
+    // to `dcapVerify`, which a caller may swap for one that allows debug; an
+    // attribute field that cannot be read counts as debug.
+    if (td.tdAttributes?.length !== 8 || (td.tdAttributes[0] & 0x01) !== 0) {
+      throw new Error('The quote is from a debug TD, or its TD attributes cannot be read');
+    }
     const measured = [td.mrTd, td.rtMr0, td.rtMr1, td.rtMr2, td.rtMr3].map((register) => hex(register));
     if (allowedImages.length > 0 && !allowedImages.includes(measured.join())) {
       throw new Error(
@@ -304,9 +312,27 @@ const TCB_STATUSES = [
  * (checked out of a release you verified) trusts that release; fetching it at
  * run time trusts whoever serves it.
  */
+/**
+ * The one image profile a release publishes for production. The `debug` and
+ * `debug-read-only` images are signed and published beside it, but run with
+ * SSH and the operator's tooling inside the TD, so trusting one trusts an
+ * image the operator can read.
+ */
+export const PRODUCTION_PROFILE = 'locked-read-only';
+
+export interface TrustedProfileOptions {
+  /** The image profile to trust, e.g. `locked-read-only`. */
+  profile: string;
+  /**
+   * Trust a profile other than {@link PRODUCTION_PROFILE}, such as `debug`.
+   * Its image is readable by whoever operates the node, so only for testing.
+   */
+  allowDebugProfile?: boolean;
+}
+
 export function trustedMeasurementsFromReleases(
   releases: PublishedMrtds[],
-  { profile }: { profile: string },
+  { profile, allowDebugProfile = false }: TrustedProfileOptions,
 ): Required<Pick<QuoteVerifierOptions, 'allowedMeasurements' | 'allowedTcbStatuses'>> {
   if (releases.length === 0) {
     throw new Error('No release given, so no image would be trusted');
@@ -321,6 +347,12 @@ export function trustedMeasurementsFromReleases(
     if (!image) {
       const known = Object.keys(release?.profiles ?? {}).join(', ') || 'none';
       throw new Error(`${name} has no profile ${JSON.stringify(profile)} (it has: ${known})`);
+    }
+    if (profile !== PRODUCTION_PROFILE && !allowDebugProfile) {
+      throw new Error(
+        `${JSON.stringify(profile)} is not a production profile: its image is readable by whoever ` +
+          `operates the node. Trust ${JSON.stringify(PRODUCTION_PROFILE)}, or pass allowDebugProfile to test`,
+      );
     }
     const accepted = (image.allowed_tcb_statuses ?? ['uptodate']).map((status) => tcbStatus(status, name));
     statuses = statuses === undefined ? accepted : statuses.filter((status) => accepted.includes(status));
