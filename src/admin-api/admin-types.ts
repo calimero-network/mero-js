@@ -1430,6 +1430,12 @@ export interface CreateGroupRequest {
   appKey?: string;
   name?: string;
   parentGroupId?: string;
+  /**
+   * A nested group's visibility at birth. Absent means `open`: every member of
+   * the parent is a member of the subgroup by inheritance. `restricted` admits
+   * only those added or invited to it. Ignored without `parentGroupId`.
+   */
+  visibility?: 'open' | 'restricted';
 }
 
 export interface CreateGroupResponseData {

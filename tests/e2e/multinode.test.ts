@@ -175,10 +175,13 @@ suite('Multi-node E2E — namespace invite/join', () => {
  * node-2 there cannot race the join.
  */
 async function subgroupJoinedByNode2(name: string): Promise<string> {
+  // Restricted: an Open subgroup (the default) already counts every namespace
+  // member, node-2 included, so there would be nothing to join by invitation.
   const { groupId } = await n1.admin.createGroup({
     applicationId,
     parentGroupId: namespaceId,
     name,
+    visibility: 'restricted',
   });
   // Not recursive, so the single-invitation shape.
   const { invitation } = (await n1.admin.createGroupInvitation(
