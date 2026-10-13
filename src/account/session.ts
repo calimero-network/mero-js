@@ -544,7 +544,7 @@ export async function learnRelayNodeKey(
       console.warn("[mero-js] refusing the relay's attestation; its node key stays unknown", attempt.error);
       return null;
     }
-    const wait = RELAY_NODE_KEY_RETRY_MS[Math.min(failures, RELAY_NODE_KEY_RETRY_MS.length - 1)]!;
+    const wait = RELAY_NODE_KEY_RETRY_MS[Math.min(failures, RELAY_NODE_KEY_RETRY_MS.length - 1)];
     console.warn(
       `[mero-js] could not reach what proves the relay's node key; retrying in ${wait / 1000} s`,
       attempt.error,
@@ -557,7 +557,7 @@ export async function learnRelayNodeKey(
 /** Milliseconds-since-epoch a JWT expires at, or `null` if unreadable. */
 function jwtExpiryMs(token: string): number | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')));
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
   } catch {
     return null;
