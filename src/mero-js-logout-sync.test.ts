@@ -179,6 +179,46 @@ describe('a logout in one tab holds for the others', () => {
     tab2.close();
   });
 
+  describe('a logout in the same tab during an in-flight refresh', () => {
+    const logoutDuringRefresh = async (tokenStore?: LocalStorageTokenStore) => {
+      const { fetchFn, started, releaseRefresh } = gatedRefreshFetch();
+      const mero = new MeroJs({ baseUrl: NODE, fetch: fetchFn, tokenStore });
+      mero.setTokenData(tokens);
+
+      const call = mero.admin.getContexts().catch(() => undefined);
+      await started;
+      mero.clearToken();
+      releaseRefresh();
+      await call;
+      return mero;
+    };
+
+    it('does not restore tokens with no store', async () => {
+      const mero = await logoutDuringRefresh();
+
+      expect(mero.isAuthenticated()).toBe(false);
+    });
+
+    it('does not restore tokens with a store that cannot persist', async () => {
+      const setItem = vi.fn(() => {
+        throw new Error('storage blocked');
+      });
+      vi.stubGlobal('localStorage', { getItem: () => null, setItem, removeItem: () => undefined });
+
+      const mero = await logoutDuringRefresh(new LocalStorageTokenStore());
+
+      expect(mero.isAuthenticated()).toBe(false);
+      expect(setItem).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not restore or persist tokens with a persisting store', async () => {
+      const mero = await logoutDuringRefresh(new LocalStorageTokenStore());
+
+      expect(mero.isAuthenticated()).toBe(false);
+      expect(storage.has(STORE_KEY)).toBe(false);
+    });
+  });
+
   it('does not treat another node bundle in the store as a logout', async () => {
     const tab1 = new MeroJs({ baseUrl: NODE, tokenStore: new LocalStorageTokenStore() });
     tab1.setTokenData(tokens);
