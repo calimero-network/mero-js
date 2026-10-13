@@ -338,8 +338,6 @@ export function createAccountAdmin(
           // Nothing learned: the claimant's own lookup will say what is wrong.
         }
         if (nodes !== null) {
-          // A claimant trusts only relays the cloud routes to; an address on
-          // the invitation is unsigned, so it cannot stand in for one.
           if (nodes.length === 0) throw new InvitationNotClaimableError(namespaceId, 'not-hosted');
           if (!nodes.some((n) => n.account !== null && named.has(n.account.toLowerCase()))) {
             throw new InvitationNotClaimableError(namespaceId, 'no-named-node');

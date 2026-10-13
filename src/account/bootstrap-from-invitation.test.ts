@@ -38,7 +38,7 @@ describe('bootstrapFromInvitation', () => {
       relayUrl: 'https://relay.example',
       admitUrl: `https://relay.example/admin-api/namespaces/${NS}/admit`,
       admitterAccount: null,
-      peerId: null,
+      peerId: 'peer',
       writable: true,
       stale: false,
     }));

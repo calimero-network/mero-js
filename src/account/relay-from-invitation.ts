@@ -89,7 +89,7 @@ export interface ResolvedInvitationRelay {
   /** The admitter's account, as the cloud reported it. */
   readonly admitterAccount: string | null;
   /** The node's peer id, as the cloud reported it. */
-  readonly peerId: string | null;
+  readonly peerId: string;
   /**
    * Whether this node can also run delegated writes (`CAN_AUTHOR_ON_BEHALF`).
    *
