@@ -51,6 +51,7 @@ import {
   type AdmitJoinRequest,
   type SignedGroupOpenInvitation,
 } from '../admin-api/index.js';
+import { pathSegment } from '../http-client/path-segment.js';
 import type { DelegatedCredential, DelegatedSession } from './session.js';
 
 /** Which step failed, when one did. */
@@ -212,7 +213,7 @@ export async function joinWithNode(input: JoinWithNodeInput): Promise<JoinWithNo
   const body: AdmitJoinRequest = { invitation: input.invitation, signedOp };
   const url =
     input.admitUrl ??
-    `${origin(input.nodeUrl)}/admin-api/namespaces/${input.namespaceId}/admit`;
+    `${origin(input.nodeUrl)}/admin-api/namespaces/${pathSegment(input.namespaceId)}/admit`;
 
   const doFetch = input.deps?.fetch ?? fetch;
   let response: Response;

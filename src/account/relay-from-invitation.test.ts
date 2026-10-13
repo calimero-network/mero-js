@@ -154,4 +154,26 @@ describe('resolveRelayFromInvitation', () => {
     expect(r).toMatchObject({ ok: false, step: 'admitters-lookup' });
     expect(r.ok === false && r.reason).toContain('503');
   });
+  describe('a namespace id that is not a plain segment', () => {
+    it.each(['../namespaces/x', 'a/b', 'a?b', 'a#b'])('keeps %j as one encoded segment in the admit path', async (id) => {
+      const r = await resolveRelayFromInvitation({
+        namespaceId: id,
+        admitters: [INVITER],
+        ...CREDENTIAL,
+        cloud: cloud([node({ admitUrl: null, relayUrl: 'https://relay.example' })]),
+      });
+      expect(r.ok && r.admitUrl).toBe(`https://relay.example/admin-api/namespaces/${encodeURIComponent(id)}/admit`);
+    });
+
+    it.each(['.', '..'])('refuses %j rather than building a path that leaves the namespace route', async (id) => {
+      await expect(
+        resolveRelayFromInvitation({
+          namespaceId: id,
+          admitters: [INVITER],
+          ...CREDENTIAL,
+          cloud: cloud([node({ admitUrl: null })]),
+        }),
+      ).rejects.toThrow(/path segment/);
+    });
+  });
 });
