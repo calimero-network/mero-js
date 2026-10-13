@@ -5,7 +5,7 @@
  * replayed on reload, a grant spent for the wrong account, a refusal treated as
  * a pending state. The happy path is one line and is the least of it.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   cloudLinkUrl,
@@ -14,6 +14,14 @@ import {
 } from './link-redirect.js';
 
 const ACCOUNT = '1f'.repeat(32);
+
+beforeEach(() => {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+  });
+});
 
 describe('cloudLinkUrl', () => {
   it('names the account and where to come back to', () => {

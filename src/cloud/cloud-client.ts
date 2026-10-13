@@ -34,7 +34,7 @@ import {
   type RootSource,
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
-import { beginLinkState, consumeLinkState, forgetLinkState } from './link-state.js';
+import { ACCOUNT_HEX, beginLinkState, takeLinkState } from './link-state.js';
 import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
@@ -306,8 +306,6 @@ export interface CloudAccountRelay {
    */
   assigned: boolean;
 }
-
-const ACCOUNT_HEX = /^[0-9a-f]{64}$/;
 
 function accountHexOrNull(value: unknown): string | null {
   return typeof value === 'string' && ACCOUNT_HEX.test(value) ? value : null;
@@ -1405,9 +1403,6 @@ export class CloudClient {
     /** Where to come back to. */
     callbackUrl: string;
   }): AccountLinkHandoff {
-    if (!/^[0-9a-f]{64}$/.test(options.accountId)) {
-      throw new Error('accountId must be 64 lowercase hex characters');
-    }
     const portal = options.portalUrl.replace(/\/+$/, '');
     const query = new URLSearchParams({
       'link-account': options.accountId,
@@ -1443,8 +1438,8 @@ export class CloudClient {
     const accountId = params.get('account');
     const error = params.get('error');
     const out: AccountLinkCallback = {};
-    if (error) forgetLinkState(search);
-    if (grant && !consumeLinkState(search, accountId ?? '')) {
+    if (error) takeLinkState(search);
+    if (grant && takeLinkState(search)?.account !== accountId) {
       return { error: 'unexpected_callback' };
     }
     if (grant) out.grant = grant;
@@ -1455,10 +1450,6 @@ export class CloudClient {
 
   /**
    * Spend a link grant: sign it with the account root and post the pair.
-   *
-   * Pass only a grant returned by {@link readAccountLinkCallback}, never one
-   * parsed from a URL by hand: that check is what ties it to a link this
-   * browser began.
    *
    * Anonymous, and it has to be — the app doing this holds no cloud session,
    * which is the whole reason the grant exists. The grant carries the consenting

@@ -65,6 +65,18 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
   });
 
+  it("drops the pending link when its callback names a different account", () => {
+    const consent = cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+    const wrong = callbackFor(consent, OTHER);
+    const right = callbackFor(consent, ACCOUNT);
+    expect(() =>
+      readCloudLinkCallback({ hash: wrong.hash, search: wrong.search }),
+    ).toThrow(/did not make/);
+    expect(() =>
+      readCloudLinkCallback({ hash: right.hash, search: right.search }),
+    ).toThrow(/did not make/);
+  });
+
   it("accepts the callback of the link this browser began, once", () => {
     const back = callbackFor(
       cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
@@ -285,6 +297,17 @@ describe("pending links hygiene", () => {
     expect(() =>
       cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
     ).not.toThrow();
+  });
+
+  it("begins without storage and refuses the callback", () => {
+    vi.stubGlobal("localStorage", undefined);
+    const back = callbackFor(
+      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      ACCOUNT,
+    );
+    expect(() =>
+      readCloudLinkCallback({ hash: back.hash, search: back.search }),
+    ).toThrow(/did not make/);
   });
 
   it("refuses state values that name object prototype members", () => {

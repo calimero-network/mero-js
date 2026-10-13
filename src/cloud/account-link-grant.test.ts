@@ -13,7 +13,7 @@
  * of them: the handoff URL the portal parses, and the fragment it answers with.
  */
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { CloudClient } from './cloud-client.js';
 
@@ -23,6 +23,14 @@ const ROOT_PUBLIC_KEY =
   'a021d221f1e7601e8d280c857f8a667383e3923dda13b55f21ca2d928b79c70c';
 const ACCOUNT_ID =
   'ca7645ffd4d0621d00c6c88743aeace5797135ab298c49e77de066206090b778';
+
+beforeEach(() => {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+  });
+});
 
 /** A `fetch` that answers a scripted queue and records what it was asked. */
 function scriptedFetch(responses: Array<{ status?: number; body?: unknown }>): {

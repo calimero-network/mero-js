@@ -34,12 +34,7 @@
 import { CloudClient } from './cloud-client.js';
 import type { CloudAccountLink } from './cloud-client.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
-import {
-  beginLinkState,
-  consumeLinkState,
-  forgetLinkState,
-  withoutLinkState,
-} from './link-state.js';
+import { beginLinkState, takeLinkState, withoutLinkState } from './link-state.js';
 
 /** Where the consent screen lives. The web app, not the manager API. */
 const DEFAULT_CLOUD_WEB_URL = 'https://cloud.calimero.network';
@@ -60,9 +55,6 @@ export interface BeginCloudLinkOptions {
 
 /** The consent URL to send a person to. Remembers the link so the callback can be matched. */
 export function cloudLinkUrl(options: BeginCloudLinkOptions): string {
-  if (!/^[0-9a-f]{64}$/.test(options.accountId)) {
-    throw new Error('accountId must be 64 lowercase hex characters');
-  }
   const url = new URL(options.cloudWebUrl ?? DEFAULT_CLOUD_WEB_URL);
   url.searchParams.set('link-account', options.accountId);
   url.searchParams.set('callback-url', beginLinkState(options.accountId, options.returnTo));
@@ -88,10 +80,8 @@ export interface CloudLinkCallback {
  * Read a grant out of the current URL fragment, and strip it.
  *
  * Returns `null` when this is an ordinary page load, so a caller can run it
- * unconditionally at startup. Throws when the person declined, because that is
- * an outcome the app has to show rather than a state to wait in. Also throws on
- * a grant for a link this browser did not begin, since the redirect URL can be
- * forwarded by whoever consented.
+ * unconditionally at startup. Throws when declined or when this browser did not
+ * begin the link.
  */
 export function readCloudLinkCallback(
   location: { hash: string; search?: string } = window.location,
@@ -99,7 +89,7 @@ export function readCloudLinkCallback(
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
   if (error) {
-    forgetLinkState(location.search ?? '');
+    takeLinkState(location.search ?? '');
     stripFragment();
     throw new Error(
       error === 'denied'
@@ -112,7 +102,7 @@ export function readCloudLinkCallback(
   const account = params.get('account');
   if (!grant || !account) return null;
 
-  if (!consumeLinkState(location.search ?? '', account)) {
+  if (takeLinkState(location.search ?? '')?.account !== account) {
     stripFragment();
     throw new Error(
       'this account link answers a request this browser did not make - start the link again from here',
@@ -143,9 +133,6 @@ export interface CompleteCloudLinkOptions extends CloudLinkCallback {
  *
  * Anonymous by construction — the client is built with no session, because the
  * whole point is that the page never needed one.
- *
- * Pass only what {@link readCloudLinkCallback} returned, never a grant parsed
- * from a URL by hand.
  *
  * @throws if the grant names a different account than the root derives, before
  * anything is sent. The cloud checks this too, but failing here says which two
