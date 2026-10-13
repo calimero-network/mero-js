@@ -170,6 +170,24 @@ describe('createQuoteVerifier policy', () => {
     await expect(verifier(args)).rejects.toThrow('Revoked');
   });
 
+  // Whatever dcapVerify was given: a debug TD's memory and registers are open
+  // to the host, so its measurements prove nothing about what runs in it.
+  it('refuses a debug TD, or one whose attributes it cannot read, whatever dcapVerify allows', async () => {
+    const withAttributes = (tdAttributes: Uint8Array | undefined, type = 'td10'): DcapVerifiedReport => {
+      const td = { ...sampleTd, tdAttributes };
+      return { status: 'UpToDate', report: { type, data: type === 'td15' ? { base: td } : td } };
+    };
+    const verifierFor = (r: DcapVerifiedReport) => createQuoteVerifier({ dcapVerify: () => r, allowedMeasurements: [IMAGE] });
+
+    const debug = new Uint8Array(8);
+    debug[0] = 0x01;
+    await expect(verifierFor(withAttributes(debug))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(debug, 'td15'))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(undefined))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(new Uint8Array(4)))(args)).rejects.toThrow('debug TD');
+    await expect(verifierFor(withAttributes(new Uint8Array(8)))(args)).resolves.toBe(true);
+  });
+
   it('refuses a quote that is not TDX', async () => {
     const verifier = createQuoteVerifier({ dcapVerify: () => report('UpToDate', 'sgx'), allowedMeasurements: [IMAGE] });
     await expect(verifier(args)).rejects.toThrow('not a TDX one');

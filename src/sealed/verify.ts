@@ -46,6 +46,7 @@ interface TdReport {
   rtMr2: Uint8Array;
   rtMr3: Uint8Array;
   reportData: Uint8Array;
+  tdAttributes?: Uint8Array;
 }
 
 /** What a DCAP verifier returns for a quote whose signature chain verified. */
@@ -203,6 +204,13 @@ export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifie
       throw new Error(`The platform's TCB status is ${verified.status}, which is not accepted`);
     }
     const td = tdReport(verified.report);
+    // TUD bit 0. A debug TD's memory and registers are open to the host, so its
+    // measurements prove nothing about what runs in it. Checked here, not left
+    // to `dcapVerify`, which a caller may swap for one that allows debug; an
+    // attribute field that cannot be read counts as debug.
+    if (td.tdAttributes?.length !== 8 || (td.tdAttributes[0] & 0x01) !== 0) {
+      throw new Error('The quote is from a debug TD, or its TD attributes cannot be read');
+    }
     const measured = [td.mrTd, td.rtMr0, td.rtMr1, td.rtMr2, td.rtMr3].map((register) => hex(register));
     if (allowedImages.length > 0 && !allowedImages.includes(measured.join())) {
       throw new Error(
