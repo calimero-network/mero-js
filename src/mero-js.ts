@@ -163,6 +163,8 @@ export class MeroJs {
   private tokenStore: TokenStore | null;
   // True while the store is known to hold our tokens; a store that cannot persist never sets it.
   private storeHoldsTokens = false;
+  // Bumped when local tokens are dropped, so a refresh already in flight cannot restore them.
+  private tokenGeneration = 0;
   private readonly onStorage = (): void => {
     if (this.signedOutElsewhere()) this.dropLocalTokens();
   };
@@ -401,6 +403,7 @@ export class MeroJs {
   }
 
   private dropLocalTokens(): void {
+    this.tokenGeneration++;
     this.refreshPromise = null;
     this.tokenData = null;
     this.storeHoldsTokens = false;
@@ -494,6 +497,7 @@ export class MeroJs {
 
     // The store held the token we present; if it no longer does after the refresh, the
     // session was replaced or signed out meanwhile and our rotated tokens must not be written.
+    const generation = this.tokenGeneration;
     const presented = this.tokenData.access_token;
     const storeHeldPresented = this.tokenStore?.getTokens()?.access_token === presented;
     try {
@@ -502,7 +506,10 @@ export class MeroJs {
         refresh_token: this.tokenData.refresh_token,
       });
 
-      if (storeHeldPresented && this.tokenStore?.getTokens()?.access_token !== presented) {
+      if (
+        generation !== this.tokenGeneration ||
+        (storeHeldPresented && this.tokenStore?.getTokens()?.access_token !== presented)
+      ) {
         this.dropLocalTokens();
         throw new Error('Signed out during token refresh');
       }
