@@ -1,3 +1,9 @@
+## [25.0.5](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.4...mero-js-v25.0.5) (2026-10-13)
+
+### Bug Fixes
+
+* encode ids in admin, auth and relay request paths ([#267](https://github.com/calimero-network/mero-js/issues/267)) ([c53443f](https://github.com/calimero-network/mero-js/commit/c53443f2d7f45c5016794d9763af2fe3db6f28ae))
+
 ## [25.0.4](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.3...mero-js-v25.0.4) (2026-10-13)
 
 ### Bug Fixes
