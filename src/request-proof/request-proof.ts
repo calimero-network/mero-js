@@ -32,17 +32,10 @@ import {
   u32le,
   u64le,
 } from '../crypto/internal.js';
+import { requestBodyHash, SIGN_DOMAIN } from '../request/request-sig.js';
 import type { Signer } from '../signer/index.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
-
-/** `calimero.auth.request.v2`: what the request signature is separated by. */
-const REQUEST_SIGN_DOMAIN = utf8('calimero.auth.request.v2');
-/**
- * `calimero.auth.request.body.v1` — distinct from the signing domain so a body
- * hash can never be presented as a request signature preimage.
- */
-const REQUEST_BODY_DOMAIN = utf8('calimero.auth.request.body.v1');
 
 /** The header a signed request carries. */
 export const REQUEST_PROOF_HEADER = 'X-Calimero-Proof';
@@ -108,19 +101,12 @@ export async function signRequestProof(input: RequestProofInput): Promise<string
     throw new Error(`signRequestProof needs a path, got ${JSON.stringify(path)}`);
   }
 
-  const bodyBytes =
-    input.body === undefined
-      ? new Uint8Array()
-      : typeof input.body === 'string'
-        ? utf8(input.body)
-        : input.body;
-
-  const bodyHash = await domainHash(REQUEST_BODY_DOMAIN, [bodyBytes]);
+  const bodyHash = await requestBodyHash(input.body);
 
   const issuedAt = Math.floor(input.now ?? Date.now() / 1000);
   const expiresAt = issuedAt + (input.validForSeconds ?? DEFAULT_VALID_FOR);
 
-  const payload = await domainHash(REQUEST_SIGN_DOMAIN, [
+  const payload = await domainHash(SIGN_DOMAIN, [
     utf8(method),
     utf8(path),
     bodyHash,

@@ -52,7 +52,7 @@ import {
   u64le,
 } from "../crypto/internal.js";
 
-const SIGN_DOMAIN = new TextEncoder().encode("calimero.auth.request.v2");
+export const SIGN_DOMAIN = new TextEncoder().encode("calimero.auth.request.v2");
 
 /**
  * Its own domain, distinct from the signing one.
