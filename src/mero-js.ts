@@ -161,6 +161,11 @@ export class MeroJs {
   private tokenData: TokenData | null = null;
   private refreshPromise: Promise<TokenData> | null = null;
   private tokenStore: TokenStore | null;
+  // True while the store is known to hold our tokens; a store that cannot persist never sets it.
+  private storeHoldsTokens = false;
+  private readonly onStorage = (): void => {
+    if (this.storeHoldsTokens && !this.tokenStore?.getTokens()) this.dropLocalTokens();
+  };
   private rpcClient: RpcClient | null = null;
   private sseClient: SseClient | null = null;
   private wsClient: WsClient | null = null;
@@ -179,6 +184,8 @@ export class MeroJs {
     // Restore tokens from store if available
     if (this.tokenStore) {
       this.tokenData = this.tokenStore.getTokens();
+      this.storeHoldsTokens = this.tokenData !== null;
+      if (typeof window !== 'undefined') window.addEventListener('storage', this.onStorage);
     }
 
     // Create HTTP client with token management
@@ -204,7 +211,7 @@ export class MeroJs {
       onTokenRefresh: async (newToken: string) => {
         if (this.tokenData) {
           this.tokenData.access_token = newToken;
-          this.tokenStore?.setTokens(this.tokenData);
+          this.persistTokens(this.tokenData);
         }
       },
       onAuthRevoked: async () => {
@@ -372,7 +379,7 @@ export class MeroJs {
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
 
-      this.tokenStore?.setTokens(this.tokenData);
+      this.persistTokens(this.tokenData);
 
       return this.tokenData;
     } catch (error) {
@@ -380,6 +387,18 @@ export class MeroJs {
         `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  private persistTokens(data: TokenData): void {
+    if (!this.tokenStore) return;
+    this.tokenStore.setTokens(data);
+    this.storeHoldsTokens = this.tokenStore.getTokens() !== null;
+  }
+
+  private dropLocalTokens(): void {
+    this.refreshPromise = null;
+    this.tokenData = null;
+    this.storeHoldsTokens = false;
   }
 
   /**
@@ -448,7 +467,13 @@ export class MeroJs {
     // Another instance/tab may have rotated the bundle while we were queued behind
     // the lock — the store, not our in-memory copy, is the source of truth.
     const stored = this.tokenStore?.getTokens() ?? null;
+    if (!stored && this.storeHoldsTokens) {
+      // Another holder signed out and emptied the store; refreshing would undo that.
+      this.dropLocalTokens();
+      throw new Error('Signed out in another tab');
+    }
     if (stored?.refresh_token) {
+      this.storeHoldsTokens = true;
       this.tokenData = stored;
 
       if (triggeringAccessToken && stored.access_token !== triggeringAccessToken) {
@@ -477,7 +502,7 @@ export class MeroJs {
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
 
-      this.tokenStore?.setTokens(this.tokenData);
+      this.persistTokens(this.tokenData);
 
       return this.tokenData;
     } catch (error) {
@@ -495,8 +520,7 @@ export class MeroJs {
    * Clear the current token
    */
   public clearToken(): void {
-    this.refreshPromise = null;
-    this.tokenData = null;
+    this.dropLocalTokens();
     this.tokenStore?.clear();
   }
 
@@ -515,7 +539,7 @@ export class MeroJs {
   public setTokenData(data: TokenData): void {
     const expiresAt = data.expires_at || expiresAtFromJwt(data.access_token, Date.now() + 3600_000);
     this.tokenData = { ...data, expires_at: expiresAt };
-    this.tokenStore?.setTokens(this.tokenData);
+    this.persistTokens(this.tokenData);
   }
 
   /**
@@ -529,6 +553,7 @@ export class MeroJs {
    * Close all event connections and clean up resources
    */
   public close(): void {
+    if (typeof window !== 'undefined') window.removeEventListener('storage', this.onStorage);
     this.sseClient?.close();
     this.wsClient?.close();
   }
