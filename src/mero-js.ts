@@ -163,8 +163,10 @@ export class MeroJs {
   private tokenStore: TokenStore | null;
   // True while the store is known to hold our tokens; a store that cannot persist never sets it.
   private storeHoldsTokens = false;
+  // Bumped when local tokens are dropped, so a refresh already in flight cannot write them back.
+  private tokenGeneration = 0;
   private readonly onStorage = (): void => {
-    if (this.storeHoldsTokens && !this.tokenStore?.getTokens()) this.dropLocalTokens();
+    if (this.signedOutElsewhere()) this.dropLocalTokens();
   };
   private rpcClient: RpcClient | null = null;
   private sseClient: SseClient | null = null;
@@ -395,7 +397,13 @@ export class MeroJs {
     this.storeHoldsTokens = this.tokenStore.getTokens() !== null;
   }
 
+  // Raw store read: an empty store is a logout, another node's bundle is not.
+  private signedOutElsewhere(): boolean {
+    return this.storeHoldsTokens && !this.tokenStore?.getTokens();
+  }
+
   private dropLocalTokens(): void {
+    this.tokenGeneration++;
     this.refreshPromise = null;
     this.tokenData = null;
     this.storeHoldsTokens = false;
@@ -466,12 +474,12 @@ export class MeroJs {
   ): Promise<TokenData> {
     // Another instance/tab may have rotated the bundle while we were queued behind
     // the lock — the store, not our in-memory copy, is the source of truth.
-    const stored = this.tokenStore?.getTokens() ?? null;
-    if (!stored && this.storeHoldsTokens) {
+    if (this.signedOutElsewhere()) {
       // Another holder signed out and emptied the store; refreshing would undo that.
       this.dropLocalTokens();
       throw new Error('Signed out in another tab');
     }
+    const stored = this.tokenStore?.getTokens() ?? null;
     if (stored?.refresh_token) {
       this.storeHoldsTokens = true;
       this.tokenData = stored;
@@ -487,11 +495,17 @@ export class MeroJs {
       throw new Error('No refresh token available');
     }
 
+    const generation = this.tokenGeneration;
     try {
       const response = await this.authClient.refreshToken({
         access_token: this.tokenData.access_token,
         refresh_token: this.tokenData.refresh_token,
       });
+
+      if (generation !== this.tokenGeneration || this.signedOutElsewhere()) {
+        this.dropLocalTokens();
+        throw new Error('Signed out during token refresh');
+      }
 
       const accessToken = response.data.access_token;
       this.tokenData = {
