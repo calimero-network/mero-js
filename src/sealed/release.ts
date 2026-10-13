@@ -36,6 +36,7 @@ import {
   type PublishedMrtds,
   type QuoteVerifier,
   type QuoteVerifierOptions,
+  type TrustedProfileOptions,
 } from './verify.js';
 
 /** The workflow that signs every mero-tee node release, and the issuer of its identity. */
@@ -231,11 +232,9 @@ export function cloudNodeReleaseUrl(cloudUrl: string, version: string): string {
   return `${cloudUrl.replace(/\/+$/, '')}/api/tee/node-releases/${releaseVersion(version, 'version')}`;
 }
 
-export interface TrustSignedReleaseOptions {
+export interface TrustSignedReleaseOptions extends TrustedProfileOptions {
   /** The release, from any source; it is verified here. */
   release: SignedNodeRelease;
-  /** The image profile to trust, e.g. `locked-read-only`. */
-  profile: string;
   /**
    * The oldest release accepted, e.g. `2.3.87`. Required: every release ever
    * signed stays validly signed, so without a floor a relay could present an
@@ -277,7 +276,10 @@ export async function trustSignedRelease(
   if (compareReleaseVersions(version, minimum) < 0) {
     throw new Error(`Release ${version} is older than the minimum trusted, ${minimum}`);
   }
-  return trustedMeasurementsFromReleases([published], { profile: options.profile });
+  return trustedMeasurementsFromReleases([published], {
+    profile: options.profile,
+    allowDebugProfile: options.allowDebugProfile,
+  });
 }
 
 export interface SignedReleaseVerifierOptions extends Omit<TrustSignedReleaseOptions, 'release'> {
@@ -313,6 +315,7 @@ export function createSignedReleaseVerifier(options: SignedReleaseVerifierOption
     const trusted = await trustSignedRelease({
       release: await options.release(),
       profile: options.profile,
+      allowDebugProfile: options.allowDebugProfile,
       minReleaseVersion: options.minReleaseVersion,
       identity: options.identity,
       issuer: options.issuer,

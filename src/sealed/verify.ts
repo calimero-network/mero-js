@@ -312,9 +312,27 @@ const TCB_STATUSES = [
  * (checked out of a release you verified) trusts that release; fetching it at
  * run time trusts whoever serves it.
  */
+/**
+ * The one image profile a release publishes for production. The `debug` and
+ * `debug-read-only` images are signed and published beside it, but run with
+ * SSH and the operator's tooling inside the TD, so trusting one trusts an
+ * image the operator can read.
+ */
+export const PRODUCTION_PROFILE = 'locked-read-only';
+
+export interface TrustedProfileOptions {
+  /** The image profile to trust, e.g. `locked-read-only`. */
+  profile: string;
+  /**
+   * Trust a profile other than {@link PRODUCTION_PROFILE}, such as `debug`.
+   * Its image is readable by whoever operates the node, so only for testing.
+   */
+  allowDebugProfile?: boolean;
+}
+
 export function trustedMeasurementsFromReleases(
   releases: PublishedMrtds[],
-  { profile }: { profile: string },
+  { profile, allowDebugProfile = false }: TrustedProfileOptions,
 ): Required<Pick<QuoteVerifierOptions, 'allowedMeasurements' | 'allowedTcbStatuses'>> {
   if (releases.length === 0) {
     throw new Error('No release given, so no image would be trusted');
@@ -329,6 +347,12 @@ export function trustedMeasurementsFromReleases(
     if (!image) {
       const known = Object.keys(release?.profiles ?? {}).join(', ') || 'none';
       throw new Error(`${name} has no profile ${JSON.stringify(profile)} (it has: ${known})`);
+    }
+    if (profile !== PRODUCTION_PROFILE && !allowDebugProfile) {
+      throw new Error(
+        `${JSON.stringify(profile)} is not a production profile: its image is readable by whoever ` +
+          `operates the node. Trust ${JSON.stringify(PRODUCTION_PROFILE)}, or pass allowDebugProfile to test`,
+      );
     }
     const accepted = (image.allowed_tcb_statuses ?? ['uptodate']).map((status) => tcbStatus(status, name));
     statuses = statuses === undefined ? accepted : statuses.filter((status) => accepted.includes(status));

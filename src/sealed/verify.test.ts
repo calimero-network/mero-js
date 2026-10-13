@@ -243,10 +243,40 @@ describe('trustedMeasurementsFromReleases', () => {
     const args = { quoteB64: QUOTE_B64, nonce: NONCE, reportDataSuffix: SUFFIX, collateral: COLLATERAL };
     const locked = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'locked-read-only' });
     await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...locked })(args)).resolves.toBe(true);
-    const debug = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], { profile: 'debug' });
+    const debug = trustedMeasurementsFromReleases([release('2.3.78', IMAGE.rtmr3)], {
+      profile: 'debug',
+      allowDebugProfile: true,
+    });
     await expect(createQuoteVerifier({ dcapVerify, now: () => AT, ...debug })(args)).rejects.toThrow(
       'are not an image this verifier trusts',
     );
+  });
+
+  // A debug profile's image runs with SSH and the operator's tooling inside the
+  // TD, so its measurements name an image the operator can read; only
+  // locked-read-only is a production image.
+  it('trusts only the production profile unless debug profiles are asked for', () => {
+    const debugRelease = {
+      ...release('2.3.78', IMAGE.rtmr3),
+      profiles: {
+        ...release('2.3.78', IMAGE.rtmr3).profiles,
+        'debug-read-only': { ...IMAGE, rtmr3: 'ee'.repeat(48), allowed_tcb_statuses: ['uptodate'] },
+      },
+    };
+    for (const profile of ['debug', 'debug-read-only']) {
+      expect(() => trustedMeasurementsFromReleases([debugRelease], { profile })).toThrow(
+        `${JSON.stringify(profile)} is not a production profile`,
+      );
+      expect(() =>
+        trustedMeasurementsFromReleases([debugRelease], { profile, allowDebugProfile: false }),
+      ).toThrow('not a production profile');
+      expect(
+        trustedMeasurementsFromReleases([debugRelease], { profile, allowDebugProfile: true }).allowedMeasurements,
+      ).toHaveLength(1);
+    }
+    expect(
+      trustedMeasurementsFromReleases([debugRelease], { profile: 'locked-read-only' }).allowedMeasurements,
+    ).toEqual([IMAGE]);
   });
 
   it('accepts only the TCB statuses every release accepts', () => {
