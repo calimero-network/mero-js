@@ -1,3 +1,9 @@
+## [25.0.4](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.3...mero-js-v25.0.4) (2026-10-13)
+
+### Bug Fixes
+
+* **cloud:** match a link callback to the link this tab began ([#263](https://github.com/calimero-network/mero-js/issues/263)) ([a29be8c](https://github.com/calimero-network/mero-js/commit/a29be8c1c699685429454629fe8b17038a0c6f81))
+
 ## [25.0.3](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.2...mero-js-v25.0.3) (2026-10-13)
 
 ### Bug Fixes
