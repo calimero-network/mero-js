@@ -114,6 +114,8 @@ export interface TokenData {
   access_token: string;
   refresh_token: string;
   expires_at: number;
+  /** Origin of the node that issued the bundle; a store entry for another node is ignored. */
+  node_origin?: string;
 }
 
 /** Name of the Web Lock that serializes token refresh across tabs / webviews. */
@@ -129,6 +131,16 @@ function getLockManager(): LockManagerLike | null {
   const nav = (globalThis as unknown as { navigator?: { locks?: LockManagerLike } }).navigator;
   const locks = nav?.locks;
   return locks && typeof locks.request === 'function' ? locks : null;
+}
+
+/** Key a token bundle to its node; falls back to the raw URL when it has no usable origin. */
+function originOf(baseUrl: string): string {
+  try {
+    const { origin } = new URL(baseUrl);
+    return origin === 'null' ? baseUrl : origin;
+  } catch {
+    return baseUrl;
+  }
 }
 
 /** Try to extract `exp` (seconds) from a JWT, return ms timestamp or fallback. */
@@ -168,6 +180,7 @@ export class MeroJs {
   private readonly onStorage = (): void => {
     if (this.signedOutElsewhere()) this.dropLocalTokens();
   };
+  private readonly nodeOrigin: string;
   private rpcClient: RpcClient | null = null;
   private sseClient: SseClient | null = null;
   private wsClient: WsClient | null = null;
@@ -182,10 +195,11 @@ export class MeroJs {
     };
 
     this.tokenStore = config.tokenStore ?? null;
+    this.nodeOrigin = originOf(config.baseUrl);
 
     // Restore tokens from store if available
+    this.tokenData = this.readStoredTokens();
     if (this.tokenStore) {
-      this.tokenData = this.tokenStore.getTokens();
       this.storeHoldsTokens = this.tokenData !== null;
       if (typeof window !== 'undefined') window.addEventListener('storage', this.onStorage);
     }
@@ -213,7 +227,7 @@ export class MeroJs {
       onTokenRefresh: async (newToken: string) => {
         if (this.tokenData) {
           this.tokenData.access_token = newToken;
-          this.persistTokens(this.tokenData);
+          this.persistTokens();
         }
       },
       onAuthRevoked: async () => {
@@ -381,7 +395,7 @@ export class MeroJs {
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
 
-      this.persistTokens(this.tokenData);
+      this.persistTokens();
 
       return this.tokenData;
     } catch (error) {
@@ -391,10 +405,21 @@ export class MeroJs {
     }
   }
 
-  private persistTokens(data: TokenData): void {
-    if (!this.tokenStore) return;
-    this.tokenStore.setTokens(data);
+  private persistTokens(): void {
+    if (!this.tokenStore || !this.tokenData) return;
+    this.tokenStore.setTokens({ ...this.tokenData, node_origin: this.nodeOrigin });
     this.storeHoldsTokens = this.tokenStore.getTokens() !== null;
+  }
+
+  /** The stored bundle, only if this node issued it; a legacy or foreign entry reads as empty. */
+  private readStoredTokens(): TokenData | null {
+    const stored = this.tokenStore?.getTokens();
+    if (!stored || stored.node_origin !== this.nodeOrigin) return null;
+    return {
+      access_token: stored.access_token,
+      refresh_token: stored.refresh_token,
+      expires_at: stored.expires_at,
+    };
   }
 
   // Raw store read: an empty store is a logout, another node's bundle is not.
@@ -479,7 +504,7 @@ export class MeroJs {
       this.dropLocalTokens();
       throw new Error('Signed out in another tab');
     }
-    const stored = this.tokenStore?.getTokens() ?? null;
+    const stored = this.readStoredTokens();
     if (stored?.refresh_token) {
       this.storeHoldsTokens = true;
       this.tokenData = stored;
@@ -523,7 +548,7 @@ export class MeroJs {
         expires_at: expiresAtFromJwt(accessToken, Date.now() + 3600_000),
       };
 
-      this.persistTokens(this.tokenData);
+      this.persistTokens();
 
       return this.tokenData;
     } catch (error) {
@@ -560,7 +585,7 @@ export class MeroJs {
   public setTokenData(data: TokenData): void {
     const expiresAt = data.expires_at || expiresAtFromJwt(data.access_token, Date.now() + 3600_000);
     this.tokenData = { ...data, expires_at: expiresAt };
-    this.persistTokens(this.tokenData);
+    this.persistTokens();
   }
 
   /**

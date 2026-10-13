@@ -90,11 +90,11 @@ describe('token persistence is bound to the issuing node', () => {
   });
 
   it('ignores a foreign-origin bundle when the refresh re-reads the store', async () => {
-    const refreshBodies: Array<{ refresh_token: string }> = [];
+    const refreshed: string[] = [];
     let expired = true;
     const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/auth/refresh')) {
-        refreshBodies.push(JSON.parse(String(init?.body)));
+        refreshed.push(JSON.parse(String(init?.body)).refresh_token);
         return new Response(
           JSON.stringify({ data: { access_token: 'b-access-2', refresh_token: 'b-refresh-2' } }),
           { status: 200 },
@@ -119,7 +119,7 @@ describe('token persistence is bound to the issuing node', () => {
 
     await b.admin.getContexts();
 
-    expect(refreshBodies).toEqual([{ refresh_token: 'b-refresh' }]);
+    expect(refreshed).toEqual(['b-refresh']);
     expect(b.getTokenData()?.refresh_token).toBe('b-refresh-2');
   });
 });
