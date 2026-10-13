@@ -7,6 +7,7 @@ import {
 } from './http-types.js';
 import { combineSignals, createTimeoutSignal } from './signal-utils.js';
 import { signedPath } from '../request-proof/authorizer.js';
+import { REQUEST_PROOF_HEADER } from '../request-proof/request-proof.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone.
@@ -17,6 +18,10 @@ import { signedPath } from '../request-proof/authorizer.js';
  * a fresh login.
  */
 const TERMINAL_AUTH_ERRORS = new Set(['token_reuse', 'token_revoked']);
+
+// A browser reports redirect: 'manual' as an opaque response with status 0.
+const isRedirect = (response: Response): boolean =>
+  response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
 
 /**
  * Pull the node's explanation out of an error body. Core answers every handled
@@ -361,8 +366,28 @@ export class WebHttpClient implements HttpClient {
       }
     }
 
+    // fetch forwards custom headers across redirects, so a proof must never be
+    // sent anywhere but where it was signed for.
+    const proofAttached = Object.keys(headersObj).some(
+      (name) => name.toLowerCase() === REQUEST_PROOF_HEADER.toLowerCase(),
+    );
+    if (proofAttached && requestInit.redirect !== 'error') {
+      requestInit.redirect = 'manual';
+    }
+
     try {
       const response = await this.transport.fetch(url, requestInit);
+
+      if (proofAttached && isRedirect(response)) {
+        // Status 0 marks a withheld response; its explanation is the body text.
+        throw new HTTPError(
+          0,
+          'Redirect Not Followed',
+          url,
+          response.headers,
+          `the node answered with a redirect; a request carrying ${REQUEST_PROOF_HEADER} is not followed to another location`,
+        );
+      }
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);

@@ -161,6 +161,7 @@ describe('a request carrying a proof', () => {
     const err = await client.request('/admin-api/contexts').catch((e) => e);
 
     expect(err).toBeInstanceOf(HTTPError);
+    expect(err.status).toBe(0);
     expect(err.message).toMatch(/redirect/i);
     expect(err.message).toMatch(/X-Calimero-Proof/);
     expect(fetchMock).toHaveBeenCalledOnce();
