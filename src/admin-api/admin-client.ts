@@ -986,7 +986,9 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: FollowNamespaceResponseData }>(
         `/admin-api/namespaces/${namespaceId}/follow`,
         request,
-        { timeoutMs: 65000 },
+        // The node bounds a follow at 45 s of peer search plus the join's key
+        // wait; 120 s leaves room for queue wait.
+        { timeoutMs: 120000 },
       ),
     );
   }
