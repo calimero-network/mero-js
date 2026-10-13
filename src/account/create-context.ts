@@ -302,7 +302,7 @@ export interface FoundedDelegatedNamespace {
 
 /** What an app can tell a person whose account the cloud cannot place. */
 export const HA_ACCOUNT_NOT_LINKED_MESSAGE =
-  'link this account to your cloud user in the wallet so invitees can find this namespace';
+  'link this account to your cloud user in the wallet so the cloud can host this namespace on its fleet';
 
 /**
  * What to tell a person for each refusal the cloud names, keyed by its code.
@@ -335,9 +335,8 @@ function blockingNamespace(e: AccountHaRefusedError): string | null {
  * the namespace id) and the cloud bills the user it is linked to.
  *
  * Best-effort: the namespace exists whatever the cloud answers, so a refusal is
- * reported, never thrown. Without HA nothing in the cloud knows the namespace,
- * so an invitee cannot find its relay; hence the not-linked case gets a
- * sentence that says what to do.
+ * reported, never thrown. The cloud records the founding relay before its link
+ * gate, so invitees find the namespace either way; HA adds fleet hosting.
  */
 async function enableHaBestEffort(
   s: DelegatedSession,

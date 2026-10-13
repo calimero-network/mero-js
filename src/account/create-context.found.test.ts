@@ -244,7 +244,7 @@ describe('foundDelegatedNamespace', () => {
       const out = await foundDelegatedNamespace(session({ executorAccount: EXECUTOR }));
       expect(out.haEnabled).toBe(false);
       expect(out.haError).toBe(HA_ACCOUNT_NOT_LINKED_MESSAGE);
-      expect(out.haError).toBe('link this account to your cloud user in the wallet so invitees can find this namespace');
+      expect(out.haError).toBe('link this account to your cloud user in the wallet so the cloud can host this namespace on its fleet');
     });
 
     // Each refusal the cloud names gets a sentence saying what to do, never a
