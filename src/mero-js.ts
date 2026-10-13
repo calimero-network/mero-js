@@ -8,7 +8,11 @@ import type { TokenStore } from './token-store/index.js';
 import { parseAuthCallback, buildAuthLoginUrl } from './auth/index.js';
 import { createProofSigner } from './request/index.js';
 import type { ProofRequest, ProofSignerOptions } from './request/index.js';
-import type { AuthCallbackResult, AuthLoginOptions } from './auth/index.js';
+import type {
+  AuthCallbackResult,
+  AuthLoginOptions,
+  ParseAuthCallbackOptions,
+} from './auth/index.js';
 import { RpcClient } from './rpc/index.js';
 import { SseClient } from './events/sse.js';
 import { WsClient } from './events/ws.js';
@@ -582,8 +586,11 @@ export class MeroJs {
   /**
    * Parse an auth callback URL hash fragment (static utility)
    */
-  static parseAuthCallback(url: string): AuthCallbackResult | null {
-    return parseAuthCallback(url);
+  static parseAuthCallback(
+    url: string,
+    options?: ParseAuthCallbackOptions,
+  ): AuthCallbackResult | null {
+    return parseAuthCallback(url, options);
   }
 
   /**

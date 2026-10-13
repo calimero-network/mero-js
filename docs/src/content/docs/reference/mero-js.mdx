@@ -81,12 +81,14 @@ Close any open SSE/WebSocket connections and release resources.
 ## Static methods
 
 ```typescript
-MeroJs.parseAuthCallback(url: string): AuthCallbackResult | null
+MeroJs.parseAuthCallback(url: string, options?: { allowUnsolicited?: boolean }): AuthCallbackResult | null
 MeroJs.buildAuthLoginUrl(nodeUrl: string, opts: AuthLoginOptions): string
 ```
 
 Both are also exported as standalone functions, `parseAuthCallback` and
-`buildAuthLoginUrl`. See [authentication](/get-started/authentication/#desktop-sso--tokens-from-the-url-hash).
+`buildAuthLoginUrl`.
+`parseAuthCallback` returns `null` unless the callback answers a login that
+`buildAuthLoginUrl` began in this browser, or `allowUnsolicited` is set. See [authentication](/get-started/authentication/#desktop-sso--tokens-from-the-url-hash).
 
 ## Types
 
