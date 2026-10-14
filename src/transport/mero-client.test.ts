@@ -542,6 +542,7 @@ describe('one call site that both writes and observes', () => {
       access_token: 'node-token',
       refresh_token: 'r',
       expires_at: Date.now() + 3_600_000,
+      node_origin: 'http://node.example',
     });
     const noded = createMeroClient({ baseUrl: 'http://node.example', tokenStore: store });
     await expect(appCodeThatObserves(noded)).resolves.toEqual(expected);

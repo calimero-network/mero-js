@@ -50,6 +50,7 @@ export class LocalStorageTokenStore implements TokenStore {
           access_token: parsed.access_token,
           refresh_token: parsed.refresh_token,
           expires_at: typeof parsed.expires_at === 'number' ? parsed.expires_at : Date.now() + 3600_000,
+          ...(typeof parsed.node_origin === 'string' && { node_origin: parsed.node_origin }),
         };
       }
       return null;

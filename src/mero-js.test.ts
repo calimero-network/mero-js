@@ -521,6 +521,7 @@ describe('MeroJs SDK', () => {
         access_token: 'access-1',
         refresh_token: 'refresh-1b',
         expires_at: Date.now() + 3600_000,
+        node_origin: 'http://localhost:3000',
       });
 
       mockAuthClient.refreshToken.mockResolvedValue({
@@ -540,6 +541,7 @@ describe('MeroJs SDK', () => {
         access_token: 'access-2',
         refresh_token: 'refresh-2',
         expires_at: Date.now() + 3600_000,
+        node_origin: 'http://localhost:3000',
       });
 
       const tokens = await (meroJs as any).performTokenRefresh();
@@ -598,6 +600,7 @@ describe('MeroJs SDK', () => {
           access_token: 'access-2',
           refresh_token: 'refresh-2',
           expires_at: Date.now() + 3600_000,
+          node_origin: 'http://localhost:3000',
         });
         return fn();
       };
