@@ -1,3 +1,9 @@
+## [25.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.1.1...mero-js-v25.2.0) (2026-10-14)
+
+### Features
+
+* **auth:** type trusted_callback_origins on the providers response ([#277](https://github.com/calimero-network/mero-js/issues/277)) ([412f8cf](https://github.com/calimero-network/mero-js/commit/412f8cf202f4505e2c2e044da83ef2d25de285bb))
+
 ## [25.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.1.0...mero-js-v25.1.1) (2026-10-14)
 
 ### Bug Fixes
