@@ -333,6 +333,9 @@ export {
 } from "./nodeDiscovery.js";
 export type { DiscoverLocalNodesOptions } from "./nodeDiscovery.js";
 
+// Private agents: attest one, claim it with your key, give it its secrets sealed to its TD.
+export * from "./agent-gate/index.js";
+
 // A relay's node key, learned from its TEE attestation rather than pasted in.
 export { attestRelayNodeKey, attestKeyBinding, reportDataOf } from "./relay-attestation/index.js";
 export type { AttestedNodeKey, AttestRelayNodeKeyOptions } from "./relay-attestation/index.js";

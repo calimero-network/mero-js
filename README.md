@@ -249,6 +249,31 @@ with no node of their own can be admitted by one of them. The `read` client is
 `null` until the relay's node key is attested, which is why the session is
 built in that order.
 
+## Private agents
+
+A private agent runs in a TDX VM (mero-tee's agent image) that several owners' agents share, each named by an agent id. Its gate proves which image runs and takes each agent's secrets only sealed to it, from its owner. These functions are that owner's side; whoever relays the requests (mdma included) sees only quotes and ciphertext.
+
+```ts
+import { verify as dcapVerify, getCollateral } from '@phala/dcap-qvl';
+import {
+  agentQuoteVerifier, attestAgent, generateOwnerKey, provisionAgent, releaseAgent, verifySignedAgentPolicy,
+} from '@calimero-network/mero-js';
+
+// The mero-kms release's agent allowlist, checked against its Sigstore signature.
+const policy = await verifySignedAgentPolicy(policyJson, bundleJson, { profile: 'locked-read-only' });
+const verifier = agentQuoteVerifier(policy, { dcapVerify, fetchCollateral: (quote) => getCollateral(PCCS_URL, quote) });
+
+const owner = await generateOwnerKey(); // keep owner.secret: only it can change or release the agent
+const agent = await attestAgent({ gateUrl, agentId: 'a-1f2e', verifier });
+await provisionAgent({ gateUrl, agent, ownerSecret: owner.secret, verifier, secrets: { NEAR_AI_API_KEY: key } });
+// later: await releaseAgent({ gateUrl, agent: await attestAgent({ gateUrl, agentId, verifier }), ownerSecret, verifier });
+```
+
+- `attestAgent` returns the agent's keys only once its quote verifies: genuine, from an image in the policy, not a debug TD, for your nonce, and committing to the agent id asked about and to the keys the gate names.
+- `provisionAgent` refuses an agent another key claimed before sending anything. The first bundle for an unclaimed agent claims it for your key, and a fresh quote must then name your key as owner.
+- Secrets are sealed with RFC 9180 HPKE in Auth mode (X25519, HKDF-SHA256, ChaCha20-Poly1305) to the gate's in-memory key, for that agent id only.
+- `releaseAgent` stops the agent and erases its slot; a fresh quote must name no owner.
+
 ## Lower-level HTTP client
 
 If you need raw HTTP against a node (without the `MeroJs` facade), the SDK
