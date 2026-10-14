@@ -1,3 +1,9 @@
+## [25.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.7...mero-js-v25.1.0) (2026-10-14)
+
+### Features
+
+* **agent-gate:** attest a private agent, claim it, and seal its secrets to its TD ([#276](https://github.com/calimero-network/mero-js/issues/276)) ([830498d](https://github.com/calimero-network/mero-js/commit/830498d71509b6f586e720115e628b57e247e01f))
+
 ## [25.0.7](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.6...mero-js-v25.0.7) (2026-10-14)
 
 ### Bug Fixes
