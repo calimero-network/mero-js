@@ -407,7 +407,7 @@ function stringMap(data: Record<string, string> = {}): Uint8Array {
   const entries = Object.entries(data)
     .map(([k, v]) => [enc.encode(k), v, k] as const)
     .sort(([a], [b]) => {
-      for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
+      for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
       return a.length - b.length;
     });
   return concat(u32le(entries.length), ...entries.flatMap(([, v, k]) => [str(k), str(v)]));

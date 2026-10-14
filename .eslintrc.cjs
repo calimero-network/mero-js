@@ -20,6 +20,7 @@ module.exports = {
     'tests/**',
   ],
   rules: {
+    '@typescript-eslint/no-non-null-assertion': 'error',
     '@typescript-eslint/no-unused-vars': [
       'warn',
       {

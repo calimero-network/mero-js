@@ -56,10 +56,15 @@ function newer(a: string, b: string): boolean {
  * one rule for "latest", shared by the version lookup and the id derivation so
  * the two cannot disagree about which bundle an account is founding on.
  */
-export function selectLatestBundle<B extends RegistryBundle>(bundles: readonly B[]): B | undefined {
+export function selectLatestBundle<B extends RegistryBundle>(
+  bundles: readonly B[],
+): (B & { appVersion: string }) | undefined {
   return bundles
-    .filter((b) => !b.yanked && typeof b.appVersion === 'string' && b.appVersion.length > 0)
-    .reduce<B | undefined>((best, b) => (!best || newer(b.appVersion!, best.appVersion!) ? b : best), undefined);
+    .filter((b): b is B & { appVersion: string } => !b.yanked && typeof b.appVersion === 'string' && b.appVersion.length > 0)
+    .reduce<(B & { appVersion: string }) | undefined>(
+      (best, b) => (!best || newer(b.appVersion, best.appVersion) ? b : best),
+      undefined,
+    );
 }
 
 /** The registry's listing of `pkg`, every version. */
@@ -106,5 +111,5 @@ export async function resolveApplicationIdFromRegistry(
   if (!latest) throw new Error(`the registry lists no version of ${pkg}`);
   const signerId = latest.signerId;
   if (!signerId) throw new Error(`the registry names no publisher for ${pkg} ${latest.appVersion}`);
-  return { applicationId: await applicationIdForBundle(pkg, signerId), signerId, version: latest.appVersion! };
+  return { applicationId: await applicationIdForBundle(pkg, signerId), signerId, version: latest.appVersion };
 }

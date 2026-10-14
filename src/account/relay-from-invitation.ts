@@ -246,7 +246,8 @@ export async function resolveRelayFromInvitation(
     (n): n is CloudNamespaceNode & { relayUrl: string } =>
       typeof n.relayUrl === 'string' && n.relayUrl.length > 0,
   );
-  if (addressable.length === 0) {
+  const [firstAddressable] = addressable;
+  if (firstAddressable === undefined) {
     return {
       ok: false,
       step: 'no-relay-url',
@@ -262,7 +263,7 @@ export async function resolveRelayFromInvitation(
   // invitation's list at all, so insisting would refuse a perfectly good
   // admitter for a permission admission never needed.
   const chosen =
-    addressable.find((n) => n.canExecute) ?? addressable.find((n) => n.fresh) ?? addressable[0]!;
+    addressable.find((n) => n.canExecute) ?? addressable.find((n) => n.fresh) ?? firstAddressable;
 
   return {
     ok: true,

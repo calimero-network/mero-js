@@ -380,5 +380,5 @@ export async function latestPublishedVersion(
 ): Promise<string> {
   const latest = selectLatestBundle(await fetchRegistryBundles(registryUrl, pkg, fetchFn));
   if (!latest) throw new Error(`the registry lists no version of ${pkg}`);
-  return latest.appVersion!;
+  return latest.appVersion;
 }
