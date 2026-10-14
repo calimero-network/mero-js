@@ -1,3 +1,9 @@
+## [25.0.7](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.6...mero-js-v25.0.7) (2026-10-14)
+
+### Bug Fixes
+
+* **token-store:** bind persisted tokens to the node that issued them ([#269](https://github.com/calimero-network/mero-js/issues/269)) ([b005b43](https://github.com/calimero-network/mero-js/commit/b005b43ec7db6e9d62c0a4bbbef841bea0a2a547))
+
 ## [25.0.6](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.5...mero-js-v25.0.6) (2026-10-14)
 
 ## [25.0.5](https://github.com/calimero-network/mero-js/compare/mero-js-v25.0.4...mero-js-v25.0.5) (2026-10-13)
