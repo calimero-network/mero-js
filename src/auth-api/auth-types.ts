@@ -26,6 +26,14 @@ export interface ProvidersResponse {
     config: Record<string, unknown>;
   }>;
   count: number;
+  /**
+   * App origins, besides the node's own and the registry-declared frontends,
+   * that this node's login page may hand a token pair to (`callback-url`):
+   * exact `http(s)` origins from the node's
+   * `[server.embedded_auth.development] trusted_callback_origins`. Absent on
+   * nodes from before it existed; treat that as none.
+   */
+  trusted_callback_origins?: string[];
 }
 
 // Authentication Types
