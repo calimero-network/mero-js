@@ -82,12 +82,15 @@ afterEach(() => vi.useRealTimers());
 describe('device keystore', () => {
   it('keeps both device keys unexportable', async () => {
     const enrolled = await enrol(ROOT_A);
-    const [active] = (await deviceRecords()) as Array<{ signKey: CryptoKey; kemKey: CryptoKey }>;
+    const records = await deviceRecords();
+    const keys = records.flatMap((r) => (r instanceof CryptoKey ? [r] : Object.values(r as object)))
+      .filter((v): v is CryptoKey => v instanceof CryptoKey);
 
-    expect(active.signKey.extractable).toBe(false);
-    expect(active.kemKey.extractable).toBe(false);
-    await expect(crypto.subtle.exportKey('pkcs8', active.signKey)).rejects.toThrow();
-    await expect(crypto.subtle.exportKey('pkcs8', active.kemKey)).rejects.toThrow();
+    expect(keys.map((k) => k.algorithm.name).sort()).toEqual(['Ed25519', 'X25519']);
+    for (const key of keys) {
+      expect(key.extractable).toBe(false);
+      await expect(crypto.subtle.exportKey('pkcs8', key)).rejects.toThrow();
+    }
     expect(enrolled.signer.publicKey).toBe(enrolled.certificate.signPublicKey);
   });
 
@@ -168,6 +171,27 @@ describe('device keystore', () => {
   });
 });
 
+describe('an engine that cannot store an X25519 key', () => {
+  // WebKitGTK commits a record holding an X25519 CryptoKey and reads it back as null.
+  const isX25519 = (v: unknown) => v instanceof CryptoKey && v.algorithm.name === 'X25519';
+  beforeEach(() => {
+    const put = IDBObjectStore.prototype.put;
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      const holdsX25519 = isX25519(value) || Object.values((value ?? {}) as object).some(isX25519);
+      return put.call(this, holdsX25519 ? null : value, key);
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('still enrols, restores and signs with the device', async () => {
+    const a = await enrol(ROOT_A);
+    const device = await readDevice(a.account);
+
+    expect(device?.signer.publicKey).toBe(a.certificate.signPublicKey);
+    await expect(device!.signer.sign(new Uint8Array(32))).resolves.toHaveLength(64);
+  });
+});
+
 describe('device keystore across a logout', () => {
   it('does not activate a device whose enrolment completes after a logout began', async () => {
     const begun = await beginDeviceEnrolment();
@@ -200,7 +224,8 @@ describe('device keystore across a logout', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60 * 1000 });
     await beginDeviceEnrolment();
 
-    expect(await deviceRecords()).toHaveLength(1);
+    // One pending pair: its record and its delivery key.
+    expect(await deviceRecords()).toHaveLength(2);
   });
 });
 

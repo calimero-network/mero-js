@@ -10,13 +10,13 @@ const STORE = 'device';
 const ACTIVE = 'active';
 const SESSION = 'session';
 const PENDING_PREFIX = 'pending:';
+const KEM_PREFIX = 'kem:'; // X25519 keys apart: WebKitGTK reads a record holding one back as null
 const PENDING_TTL_MS = 30 * 60 * 1000; // time to consent at the wallet; bounds a pending pair's life
 
 /** A key pair generated for an enrolment, before any account certified it. */
 export interface PendingDevice {
   signKey: CryptoKey;
   signPk: string;
-  kemKey: CryptoKey;
   kemPk: string;
   createdAt: number;
 }
@@ -82,7 +82,10 @@ function pruneExpiredPending(store: IDBObjectStore): void {
   cursor.onsuccess = () => {
     const c = cursor.result;
     if (!c) return;
-    if (String(c.key).startsWith(PENDING_PREFIX) && !isLive(c.value as PendingDevice)) c.delete();
+    if (String(c.key).startsWith(PENDING_PREFIX) && !isLive(c.value as PendingDevice)) {
+      c.delete();
+      store.delete(KEM_PREFIX + String(c.key));
+    }
     c.continue();
   };
 }
@@ -109,12 +112,12 @@ export async function createPendingDevice(state: string): Promise<PendingDevice>
   const pending: PendingDevice = {
     signKey: sign.privateKey,
     signPk: await rawPublicKey(sign.publicKey),
-    kemKey: kem.privateKey,
     kemPk: await rawPublicKey(kem.publicKey),
     createdAt: Date.now(),
   };
   await inStore('readwrite', (s) => {
     s.put(pending, PENDING_PREFIX + state);
+    s.put(kem.privateKey, KEM_PREFIX + PENDING_PREFIX + state);
     pruneExpiredPending(s);
   });
   return pending;
@@ -128,7 +131,11 @@ export async function readPendingDevice(state: string): Promise<PendingDevice | 
   return undefined;
 }
 
-export const discardPendingDevice = (state: string) => remove(PENDING_PREFIX + state);
+export const discardPendingDevice = (state: string) =>
+  inStore('readwrite', (s) => {
+    s.delete(PENDING_PREFIX + state);
+    s.delete(KEM_PREFIX + PENDING_PREFIX + state);
+  });
 
 /**
  * Make the pair under `state` this browser's device, in one transaction that
@@ -141,12 +148,14 @@ export async function activatePendingDevice(
   let activated = false;
   await inStore('readwrite', (s) => {
     const req = s.get(PENDING_PREFIX + state) as IDBRequest<PendingDevice | undefined>;
-    req.onsuccess = () => {
+    const kemReq = s.get(KEM_PREFIX + PENDING_PREFIX + state) as IDBRequest<CryptoKey | null | undefined>;
+    kemReq.onsuccess = () => {
       const pending = req.result;
       if (!isLive(pending)) return;
       const { createdAt: _createdAt, ...keys } = pending;
       s.clear();
       s.put({ ...keys, ...certified } satisfies ActiveDevice, ACTIVE);
+      if (kemReq.result) s.put(kemReq.result, KEM_PREFIX + ACTIVE);
       activated = true;
     };
   });
