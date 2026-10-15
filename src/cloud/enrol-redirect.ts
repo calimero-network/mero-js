@@ -191,16 +191,6 @@ function stripFragment(): void {
   history.replaceState(null, '', location.pathname + location.search);
 }
 
-export interface CompleteDeviceEnrolmentOptions extends DeviceEnrolmentCallback {
-  /**
-   * The {@link DeviceEnrolmentOptions.state} this tab sent, if it kept one.
-   *
-   * Supplied and mismatched is a refusal. The pending key pair named by the
-   * returned state is what binds the answer to this browser either way.
-   */
-  expectState?: string;
-}
-
 /** A device this app may now sign as. */
 export interface EnrolledDevice {
   /** The credential to present, hex — `RelayClientConfig.authorProof`. */
@@ -225,15 +215,8 @@ export interface EnrolledDevice {
  * what disagreed rather than reporting "invalid credential".
  */
 export async function completeDeviceEnrolment(
-  options: CompleteDeviceEnrolmentOptions,
+  options: DeviceEnrolmentCallback,
 ): Promise<EnrolledDevice> {
-  if (options.expectState !== undefined && options.expectState !== options.state) {
-    throw new Error(
-      'this enrolment answers a request this app did not make — the state it ' +
-        'carries is not the one sent',
-    );
-  }
-
   if (!options.state) {
     throw new Error(
       'this enrolment carries no state, so it cannot be matched to a key pair this browser generated',

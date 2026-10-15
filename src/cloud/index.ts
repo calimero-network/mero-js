@@ -72,7 +72,6 @@ export {
 export type {
   DeviceEnrolmentOptions,
   DeviceEnrolmentCallback,
-  CompleteDeviceEnrolmentOptions,
   BegunDeviceEnrolment,
   EnrolledDevice,
 } from './enrol-redirect.js';

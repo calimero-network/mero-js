@@ -212,12 +212,12 @@ describe('completeDeviceEnrolment', () => {
     ).rejects.toThrow(/did not sign this certificate/);
   });
 
-  it('refuses an answer to a request this tab never made', async () => {
+  it('refuses an answer carrying a state other than the one sent', async () => {
     const begun = await beginDeviceEnrolment();
     const { credential, account, device } = await enrol('07'.repeat(32), begun.devicePublicKey, begun.kemPublicKey);
     await expect(
-      completeDeviceEnrolment({ credential, account, device, state: begun.state, expectState: 's-1' }),
-    ).rejects.toThrow(/did not make/);
+      completeDeviceEnrolment({ credential, account, device, state: 'from-somewhere-else' }),
+    ).rejects.toThrow(/not started here/);
   });
 
   it('checks the state before it checks anything expensive', async () => {
