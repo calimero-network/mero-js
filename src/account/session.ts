@@ -19,6 +19,8 @@ import type { Signer } from '../signer/index.js';
 import {
   activeAccount,
   clearSessionRecord,
+  deviceIsActive,
+  isKeystoreSigner,
   signOutCount,
   readDevice,
   readSessionRecord,
@@ -632,8 +634,9 @@ function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: strin
   let inflight: Promise<string | undefined> | null = null;
   const builtAt = signOutCount();
   return async (): Promise<string | undefined> => {
-    // A sign-out since this client was built ends its session too.
+    // A sign-out since this client was built, in this tab or another, ends its session too.
     if (signOutCount() !== builtAt) return undefined;
+    if (isKeystoreSigner(s.signer) && !(await deviceIsActive(s.account, s.signer.publicKey))) return undefined;
     const exp = token ? jwtExpiryMs(token) : null;
     if (token && (exp === null || exp - Date.now() > 30_000)) return token;
     if (!inflight) {

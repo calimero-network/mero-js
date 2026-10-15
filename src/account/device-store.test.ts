@@ -154,11 +154,12 @@ describe('device keystore', () => {
   it('says whether a key is still the active device, without clearing anything', async () => {
     const a = await enrol(ROOT_A);
 
-    expect(await deviceIsActive(a.signer.publicKey)).toBe(true);
-    expect(await deviceIsActive('ab'.repeat(32))).toBe(false);
+    expect(await deviceIsActive(a.account, a.signer.publicKey)).toBe(true);
+    expect(await deviceIsActive(a.account, 'ab'.repeat(32))).toBe(false);
+    expect(await deviceIsActive('bb'.repeat(32), a.signer.publicKey)).toBe(false);
     expect(await readDevice(a.account)).not.toBeNull();
     await forgetAccount(a.account);
-    expect(await deviceIsActive(a.signer.publicKey)).toBe(false);
+    expect(await deviceIsActive(a.account, a.signer.publicKey)).toBe(false);
   });
 
   it('signs as the enrolled device on a reload', async () => {
@@ -256,6 +257,15 @@ describe('device keystore across a logout', () => {
 });
 
 describe('forgetAccount', () => {
+  it("also clears the records of every account the store names, not only the one asked about", async () => {
+    const a = await enrol(ROOT_A);
+    rememberRelay(a.account, 'https://relay.example', { namespaceId: 'ns' });
+
+    await forgetAccount('');
+
+    expect(localStorage.getItem(`calimero.delegated.relays.${a.account}`)).toBeNull();
+  });
+
   it('resolves where there is no IndexedDB, having cleared web storage', async () => {
     const idb = globalThis.indexedDB;
     // @ts-expect-error: a runtime without IndexedDB

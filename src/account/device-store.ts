@@ -74,6 +74,7 @@ const isLive = (p: PendingDevice | undefined): p is PendingDevice =>
 
 let signOuts = 0; // bumped by every clear, so work begun before one can tell
 export const signOutCount = () => signOuts;
+const keystoreSigners = new WeakSet<Signer>();
 const remove = (key: string) => inStore('readwrite', (s) => void s.delete(key));
 
 async function rawPublicKey(key: CryptoKey): Promise<string> {
@@ -170,7 +171,7 @@ export async function activatePendingDevice(
 /** A signer that refuses once its device is no longer the active one, in this tab or any other. */
 export async function deviceSigner(signKey: CryptoKey, signPk: string): Promise<Signer> {
   const inner = await signerFromCryptoKey(signKey, signPk);
-  return {
+  const signer: Signer = {
     publicKey: inner.publicKey,
     async sign(payload) {
       if ((await read<ActiveDevice>(ACTIVE))?.signPk !== signPk) {
@@ -179,6 +180,8 @@ export async function deviceSigner(signKey: CryptoKey, signPk: string): Promise<
       return inner.sign(payload);
     },
   };
+  keystoreSigners.add(signer);
+  return signer;
 }
 
 /** The enrolled device, only for the account that certified it; any other account clears it. */
@@ -196,11 +199,15 @@ export async function readDevice(account: string): Promise<DeviceHandle | null> 
   };
 }
 
-/** Whether `publicKey` is still this browser's active device key; never clears anything. */
-export async function deviceIsActive(publicKey: string): Promise<boolean> {
+/** Whether `publicKey` is still this browser's active device key for `account`; never clears anything. */
+export async function deviceIsActive(account: string, publicKey: string): Promise<boolean> {
   if (typeof indexedDB === 'undefined') return false;
-  return (await read<ActiveDevice>(ACTIVE))?.signPk === publicKey;
+  const active = await read<ActiveDevice>(ACTIVE);
+  return active?.signPk === publicKey && active.account === account.trim().toLowerCase();
 }
+
+/** Whether `signer` came from this keystore, so its key's standing can be checked here. */
+export const isKeystoreSigner = (signer: Signer) => keystoreSigners.has(signer);
 
 /** The account the active device was certified for, if there is one. */
 export async function activeAccount(): Promise<string | null> {
@@ -215,9 +222,9 @@ export function writeSessionRecord(record: SessionRecord): Promise<unknown> {
 
 export const clearSessionRecord = () => remove(SESSION);
 
-/** Drop every device record: the active key, any pending ones, and the session. */
 export const markSignedOut = () => void (signOuts += 1);
 
+/** Drop every device record: the active key, any pending ones, and the session. */
 export function clearDeviceStore(): Promise<unknown> {
   markSignedOut();
   return inStore('readwrite', (s) => void s.clear());
