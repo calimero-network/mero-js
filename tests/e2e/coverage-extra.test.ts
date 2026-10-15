@@ -103,8 +103,8 @@ describe('Admin API E2E — Coverage filler', () => {
       expect(Array.isArray(res.revokedDevices)).toBe(true);
       expect(Array.isArray(res.withdrawnSlots)).toBe(true);
     } catch (e) {
-      // namespaceId was created earlier in this suite, so a 404 here can only
-      // mean the node predates the route - tolerate it like the /abi cover above.
+      // A 404 means a merod that predates the route; core's coverage gate still
+      // fails if its own build answers 404 here.
       if ((e as { status?: number }).status !== 404) throw e;
       console.log(`(cover) listNamespaceRevokedDevices: ${(e as Error).message}`);
     }
