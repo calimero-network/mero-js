@@ -7,6 +7,7 @@ import {
 } from './http-types.js';
 import { combineSignals, createTimeoutSignal } from './signal-utils.js';
 import { signedPath } from '../request-proof/authorizer.js';
+import { REQUEST_PROOF_HEADER } from '../request-proof/request-proof.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone.
@@ -138,6 +139,31 @@ function withoutBareQuery(url: string): string {
   }
   if (parsed.search === '') parsed.search = '';
   return parsed.href;
+}
+
+/** Whether `headers` carry a request proof, which must never follow a redirect. */
+export function carriesProof(headers: Record<string, string>): boolean {
+  return Object.keys(headers).some(
+    (name) => name.toLowerCase() === REQUEST_PROOF_HEADER.toLowerCase(),
+  );
+}
+
+/**
+ * Throws when a proof-carrying request was answered with a redirect, which
+ * fetch reports as an opaque response with status 0 under redirect: 'manual'.
+ */
+export function refuseProofRedirect(response: Response, url: string): void {
+  const redirected =
+    response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
+  if (!redirected) return;
+  // Status 0 marks a withheld response; its explanation is the body text.
+  throw new HTTPError(
+    0,
+    'Redirect Not Followed',
+    url,
+    response.headers,
+    `the node answered with a redirect; a request carrying ${REQUEST_PROOF_HEADER} is not followed to another location`,
+  );
 }
 
 // Web Standards HTTP client implementation
@@ -361,8 +387,17 @@ export class WebHttpClient implements HttpClient {
       }
     }
 
+    // fetch forwards custom headers across redirects, so a proof must never be
+    // sent anywhere but where it was signed for.
+    const proofAttached = carriesProof(headersObj);
+    if (proofAttached && requestInit.redirect !== 'error') {
+      requestInit.redirect = 'manual';
+    }
+
     try {
       const response = await this.transport.fetch(url, requestInit);
+
+      if (proofAttached) refuseProofRedirect(response, url);
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);
