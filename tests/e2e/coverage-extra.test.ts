@@ -97,6 +97,12 @@ describe('Admin API E2E — Coverage filler', () => {
     await mero.admin.setGroupMetadata(namespaceId, { name: `cov-meta-${RUN}` });
   });
 
+  it('lists namespace revoked devices (namespaces/:id/revoked-devices)', async () => {
+    const res = await mero.admin.listNamespaceRevokedDevices(namespaceId);
+    expect(Array.isArray(res.revokedDevices)).toBe(true);
+    expect(Array.isArray(res.withdrawnSlots)).toBe(true);
+  });
+
   // NOTE: contexts/:id/resync is baselined (uncovered): core returns an empty 2xx
   // body and the SDK's JSON parse chokes on it — a separate SDK-robustness finding
   // (empty-body handling) to fix before this route can be smoke-tested.
