@@ -138,7 +138,7 @@ export async function bootstrapFromInvitation(
       // being performed against the wrong list.
       admitters: input.invitation.invitation.admitters,
       credential: input.credential.credential,
-      deviceSecret: input.credential.deviceSecret,
+      signer: input.credential.signer,
       cloudBaseUrl: input.cloudBaseUrl,
     });
     if (resolved.ok === false) return resolved;

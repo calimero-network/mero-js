@@ -30,6 +30,16 @@ function readGroupNamespaces(account: string): Record<string, string> {
   return { ...stored, ...learned.get(account) };
 }
 
+/** Forget every subgroup this account learned, stored or not. */
+export function forgetGroupNamespaces(account: string): void {
+  learned.delete(account);
+  try {
+    localStorage.removeItem(GROUP_NAMESPACE_PREFIX + account);
+  } catch {
+    /* no storage, nothing stored */
+  }
+}
+
 /** Record that `groupId` is a subgroup of `namespaceId`, for this account. */
 export function rememberGroupNamespace(account: string, groupId: string, namespaceId: string): void {
   learned.set(account, { ...learned.get(account), [groupId]: namespaceId });

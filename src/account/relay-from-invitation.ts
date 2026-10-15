@@ -55,6 +55,7 @@ import {
   type CloudNamespaceNode,
 } from '../cloud/index.js';
 import { pathSegment } from '../http-client/path-segment.js';
+import type { Signer } from '../signer/index.js';
 
 /**
  * Which step could not be completed. Each one needs a different action from the
@@ -126,8 +127,8 @@ export interface ResolveRelayFromInvitationInput {
   readonly admitters?: readonly string[];
   /** The delegated credential — an `AccountProof<DeviceCert>`, hex. */
   readonly credential: string;
-  /** The certified device's ed25519 signing secret, hex. */
-  readonly deviceSecret: string;
+  /** The certified device key. */
+  readonly signer: Signer;
   /** Point at a cloud other than the hosted manager. For local rigs. */
   readonly cloudBaseUrl?: string;
   /** Injected in tests. Anything with the one method this needs. */
@@ -170,7 +171,7 @@ export async function resolveRelayFromInvitation(
     input.cloud ??
     new CloudClient({
       cloudBaseUrl: input.cloudBaseUrl,
-      routingCredential: { credential: input.credential, deviceSecret: input.deviceSecret },
+      routingCredential: { credential: input.credential, signer: input.signer },
     });
 
   let nodes: readonly CloudNamespaceNode[];

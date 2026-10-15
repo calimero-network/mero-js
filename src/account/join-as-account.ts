@@ -31,7 +31,7 @@ export async function joinAsAccount(
   const outcome = await bootstrap({
     namespaceId,
     invitation,
-    credential: { account: session.account, credential: session.credential, deviceSecret: session.deviceSecret },
+    credential: { account: session.account, credential: session.credential, signer: session.signer },
     cloudBaseUrl: opts.cloudBaseUrl,
   });
   if (outcome.ok === false) {
