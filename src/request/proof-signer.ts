@@ -10,6 +10,7 @@
 
 import { callerProof } from "./caller-proof.js";
 import { signRequest } from "./request-sig.js";
+import type { Signer } from "../signer/signer.js";
 
 /** What the transport knows about the call it is about to make. */
 export interface ProofRequest {
@@ -32,9 +33,11 @@ export interface ProofSignerOptions {
   session?: string;
   /**
    * The ed25519 secret that signs each request, hex: the session key when
-   * `session` is set, otherwise the device key.
+   * `session` is set, otherwise the device key. Or pass `signer`.
    */
-  signerSecret: string;
+  signerSecret?: string;
+  /** The same key as a signer, for a key that cannot be exported to hex. */
+  signer?: Signer;
   /**
    * How long each signature stays valid. Seconds, default 120.
    *
@@ -95,6 +98,7 @@ export function createProofSigner(
         issuedAt,
         expiresAt: issuedAt + ttl,
         signerSecret: options.signerSecret,
+        signer: options.signer,
       }),
     });
   };

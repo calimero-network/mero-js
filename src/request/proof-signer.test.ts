@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createProofSigner } from "./proof-signer.js";
+import { signerFromCryptoKey, signerFromSecret } from "../signer/signer.js";
 
 /**
  * The whole chain, reproduced byte for byte from core's own fixture.
@@ -84,5 +85,17 @@ describe("createProofSigner", () => {
     })({ method: "GET", path: "/admin-api/namespaces" });
 
     expect(captured).toBe(withExplicit);
+  });
+
+  it("signs the same bytes through a key that cannot be exported", async () => {
+    const prefix = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+    const key = await crypto.subtle.importKey("pkcs8", new Uint8Array([...prefix, ...new Array(32).fill(0x65)]), { name: "Ed25519" }, false, ["sign"]);
+    const signer = await signerFromCryptoKey(key, (await signerFromSecret(SESSION_SECRET)).publicKey);
+    const options = { credential: "02", ttlSeconds: 300, now: () => NOW };
+    const request = { method: "GET", path: "/admin-api/namespaces" };
+
+    await expect(createProofSigner({ ...options, signer })(request)).resolves.toBe(
+      await createProofSigner({ ...options, signerSecret: SESSION_SECRET })(request),
+    );
   });
 });

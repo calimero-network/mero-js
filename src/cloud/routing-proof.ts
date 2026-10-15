@@ -37,7 +37,8 @@
  * to the device.
  */
 
-import { concat, fromHex, importSigningKey } from '../crypto/internal.js';
+import { concat } from '../crypto/internal.js';
+import { resolveSigner, signerFromSecret, type Signer } from '../signer/signer.js';
 
 /**
  * The signing domain, followed immediately by the nonce as UTF-8.
@@ -60,14 +61,16 @@ const ROUTING_PROOF_DOMAIN = new TextEncoder().encode(
  * {@link signDeviceCert} returns, and the same string a login statement and a
  * warrant carry. It is public by construction.
  *
- * `deviceSecret` never leaves the process. It signs the challenge locally and
+ * The device key never leaves the process. It signs the challenge locally and
  * only the signature travels.
  */
 export interface RoutingCredential {
   /** The `AccountProof<DeviceCert>`, hex borsh, as `signDeviceCert` returns it. */
   credential: string;
-  /** The certified device's ed25519 signing secret, hex (32 bytes). */
-  deviceSecret: string;
+  /** The certified device's ed25519 signing secret, hex (32 bytes). Or pass `signer`. */
+  deviceSecret?: string;
+  /** The certified device's signer, for a key that cannot be exported to hex. */
+  signer?: Signer;
 }
 
 /** A challenge to sign, as the cloud minted it. */
@@ -120,23 +123,15 @@ export type RoutingProofHeaders = Record<string, string> & {
  */
 export async function signRoutingChallenge(
   nonce: string,
-  deviceSecret: string,
+  device: string | Signer,
 ): Promise<string> {
-  // Validate the secret the same way every other signing path does, so a
-  // truncated or mis-cased key fails here rather than as a 403 from the cloud.
-  fromHex(deviceSecret, 'deviceSecret', 32);
-  const key = await importSigningKey(deviceSecret);
-
+  const signer =
+    typeof device === 'string' ? await signerFromSecret(device, 'deviceSecret') : device;
   const message = concat(
     ROUTING_PROOF_DOMAIN,
     new TextEncoder().encode(nonce),
   );
-
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: 'Ed25519' }, key, message),
-  );
-
-  return base64(signature);
+  return base64(await signer.sign(message));
 }
 
 /**
@@ -159,7 +154,7 @@ export async function routingProofHeaders(
     'X-Calimero-Nonce': challenge.nonce,
     'X-Calimero-Signature': await signRoutingChallenge(
       challenge.nonce,
-      credential.deviceSecret,
+      await resolveSigner(credential.deviceSecret, credential.signer, 'deviceSecret'),
     ),
   };
 }
