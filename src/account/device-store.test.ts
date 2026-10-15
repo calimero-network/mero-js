@@ -5,7 +5,7 @@
  */
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   beginDeviceEnrolment,
@@ -77,6 +77,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
 });
+afterEach(() => vi.useRealTimers());
 
 describe('device keystore', () => {
   it('keeps both device keys unexportable', async () => {
@@ -167,7 +168,56 @@ describe('device keystore', () => {
   });
 });
 
+describe('device keystore across a logout', () => {
+  it('does not activate a device whose enrolment completes after a logout began', async () => {
+    const begun = await beginDeviceEnrolment();
+    const back = await walletCertifies(ROOT_A, begun);
+
+    const completing = completeDeviceEnrolment(back);
+    await forgetAccount(back.account);
+
+    await expect(completing).rejects.toThrow(/not started here/);
+    expect(await deviceRecords()).toEqual([]);
+  });
+
+  it('stops signing with a device already handed out once it is forgotten', async () => {
+    const a = await enrol(ROOT_A);
+    await forgetAccount(a.account);
+
+    await expect(a.signer.sign(new Uint8Array(32))).rejects.toThrow(/signed out/);
+  });
+
+  it('refuses an enrolment answered after the pending key pair expired', async () => {
+    const begun = await beginDeviceEnrolment();
+    const back = await walletCertifies(ROOT_A, begun);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60 * 1000 });
+
+    await expect(completeDeviceEnrolment(back)).rejects.toThrow(/not started here/);
+    expect(await deviceRecords()).toEqual([]);
+  });
+  it('prunes abandoned enrolments once they expire', async () => {
+    await beginDeviceEnrolment();
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60 * 1000 });
+    await beginDeviceEnrolment();
+
+    expect(await deviceRecords()).toHaveLength(1);
+  });
+});
+
 describe('forgetAccount', () => {
+  it('resolves where there is no IndexedDB, having cleared web storage', async () => {
+    const idb = globalThis.indexedDB;
+    // @ts-expect-error: a runtime without IndexedDB
+    delete globalThis.indexedDB;
+    localStorage.setItem('calimero.nonce.https://relay.example', '4');
+    try {
+      await expect(forgetAccount('aa'.repeat(32))).resolves.toBeUndefined();
+    } finally {
+      globalThis.indexedDB = idb;
+    }
+    expect(localStorage.length).toBe(0);
+  });
+
   it('leaves no device, session or account-scoped storage behind', async () => {
     const a = await enrol(ROOT_A);
     await beginDeviceEnrolment(); // an abandoned second enrolment
@@ -178,6 +228,7 @@ describe('forgetAccount', () => {
     localStorage.setItem(`calimero.delegated.group-namespace.${a.account}`, '{}');
     localStorage.setItem(`calimero.delegated.joinnonce.${a.account}`, '1');
     localStorage.setItem('calimero.cloud.link.pending', '{}');
+    localStorage.setItem(`mero-js:warrant-nonce:${a.signer.publicKey}`, '3');
     localStorage.setItem('calimero.delegated.relay-node-key.https://relay.example', 'ab'.repeat(32));
     // What an earlier release left: a hex device secret in session storage.
     sessionStorage.setItem('calimero.delegated.connection', '{"deviceSecret":"00"}');

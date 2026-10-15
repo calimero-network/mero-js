@@ -159,8 +159,8 @@ references — including why a warrant nonce must never restart.
 `connectCloud` is the shape for an account that already belongs somewhere. The
 account layer is everything around it for an account that owns nothing yet: it
 has a device the wallet certified and no relay, and it has to found a namespace
-or be invited into one before it can write. It is framework-free — plain TS over
-IndexedDB and `localStorage` — and `@calimero-network/mero-react` re-exports
+or be invited into one before it can write. It is framework-free (plain TS over
+IndexedDB and `localStorage`), and `@calimero-network/mero-react` re-exports
 every name below unchanged (its hooks are built on it), so an app may import
 them from either package.
 

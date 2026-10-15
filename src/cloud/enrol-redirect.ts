@@ -49,19 +49,26 @@
  * started, so an answer to a link someone else sent has nothing to complete.
  */
 
-import { activateDevice, createPendingDevice, takePendingDevice } from '../account/device-store.js';
+import {
+  activatePendingDevice,
+  createPendingDevice,
+  deviceSigner,
+  discardPendingDevice,
+  readPendingDevice,
+} from '../account/device-store.js';
 import { hex } from '../crypto/internal.js';
 import {
   verifyDeviceCredential,
   type DeviceCredential,
 } from '../device-cert/index.js';
-import { signerFromCryptoKey, type Signer } from '../signer/signer.js';
+import type { Signer } from '../signer/signer.js';
 
 /** Query parameters the wallet reads. Mirrors the cloud's `link-account` shape. */
 const DEVICE_PARAM = 'enrol-device';
 const KEM_PARAM = 'enrol-kem';
 const CALLBACK_PARAM = 'callback-url';
 const STATE_PARAM = 'state';
+const NOT_STARTED_HERE = 'this enrolment was not started here, or was already completed - start it again';
 
 export interface DeviceEnrolmentOptions {
   /**
@@ -86,11 +93,7 @@ export interface DeviceEnrolmentOptions {
    * localhost — see {@link assertSafeReturnTo}.
    */
   returnTo: string;
-  /**
-   * The value {@link beginDeviceEnrolment} returned, echoed back unchanged.
-   * It names the key pair parked for this enrolment, and without it no answer
-   * can be completed.
-   */
+  /** The value {@link beginDeviceEnrolment} returned; it names the parked key pair. */
   state: string;
 }
 
@@ -123,10 +126,7 @@ export interface BegunDeviceEnrolment {
 }
 
 /**
- * Generate a fresh device key pair for one enrolment, unexportable, and park it
- * in this origin's IndexedDB under a new random state.
- *
- * Never reuses a key: every enrolment certifies keys nothing else has seen.
+ * Park a fresh, unexportable device key pair in IndexedDB under a new random state.
  * Pass the result to {@link deviceEnrolmentUrl} with `walletUrl` and `returnTo`.
  */
 export async function beginDeviceEnrolment(): Promise<BegunDeviceEnrolment> {
@@ -222,21 +222,40 @@ export async function completeDeviceEnrolment(
       'this enrolment carries no state, so it cannot be matched to a key pair this browser generated',
     );
   }
-  // Taken before anything is checked, so a refused answer cannot be retried
-  // against the same key pair.
-  const pending = await takePendingDevice(options.state);
+  const state = options.state;
+  const pending = await readPendingDevice(state);
   if (!pending) {
-    throw new Error(
-      'this enrolment was not started here, or was already completed — start it again',
-    );
+    throw new Error(NOT_STARTED_HERE);
   }
+  // A refused answer burns the pair, so it cannot be retried against it.
+  const certificate = await checkCertificate(options, pending).catch(async (e: unknown) => {
+    await discardPendingDevice(state);
+    throw e;
+  });
+  const certified = { account: certificate.account, credential: options.credential };
+  if (!(await activatePendingDevice(state, certified))) {
+    throw new Error(NOT_STARTED_HERE);
+  }
+  return {
+    credential: options.credential,
+    account: certificate.account,
+    device: certificate.device,
+    certificate,
+    signer: await deviceSigner(pending.signKey, pending.signPk),
+  };
+}
 
+/** The certificate, checked against the pending pair and the labels beside it. */
+async function checkCertificate(
+  options: DeviceEnrolmentCallback,
+  pending: { signPk: string; kemPk: string },
+): Promise<DeviceCredential> {
   const certificate = await verifyDeviceCredential(options.credential);
 
   if (certificate.signPublicKey !== pending.signPk) {
     throw new Error(
       `this credential certifies device key ${certificate.signPublicKey}, but ` +
-        `this app holds ${pending.signPk} — it would ` +
+        `this app holds ${pending.signPk} - it would ` +
         'sign with a key the certificate does not cover',
     );
   }
@@ -262,14 +281,7 @@ export async function completeDeviceEnrolment(
     );
   }
 
-  await activateDevice({ ...pending, account: certificate.account, credential: options.credential });
-  return {
-    credential: options.credential,
-    account: certificate.account,
-    device: certificate.device,
-    certificate,
-    signer: await signerFromCryptoKey(pending.signKey, pending.signPk),
-  };
+  return certificate;
 }
 
 function assertHex(value: string, label: string): void {
