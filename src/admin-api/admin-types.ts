@@ -1537,6 +1537,13 @@ export interface MigrationStatus {
   members: MemberMigrationStatusEntry[];
 }
 
+export interface NamespaceRevokedDevices {
+  /** Device ids (64 hex) revoked in the namespace. */
+  revokedDevices: string[];
+  /** Hex `sha256(account || device)` of each device its own account withdrew in the namespace. */
+  withdrawnSlots: string[];
+}
+
 // ---- Cascade status ----
 
 export interface CascadeStatusEntry {
