@@ -1,3 +1,9 @@
+## [25.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.1...mero-js-v25.3.2) (2026-10-15)
+
+### Bug Fixes
+
+* **auth:** match login and enrolment callbacks to a request this browser began ([#271](https://github.com/calimero-network/mero-js/issues/271)) ([07951f5](https://github.com/calimero-network/mero-js/commit/07951f51df451bb97160dfaeb24dbbe2ad07774d))
+
 ## [25.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.0...mero-js-v25.3.1) (2026-10-15)
 
 ### Bug Fixes
