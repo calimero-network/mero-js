@@ -1,3 +1,10 @@
+## [25.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.0...mero-js-v25.3.1) (2026-10-15)
+
+### Bug Fixes
+
+* **http-client:** do not follow redirects on requests carrying a proof ([#268](https://github.com/calimero-network/mero-js/issues/268)) ([c5f57fe](https://github.com/calimero-network/mero-js/commit/c5f57fed2ad571de32c9aa94bbc5cd51569d913c))
+* **request:** sign the path and query in request proofs ([#262](https://github.com/calimero-network/mero-js/issues/262)) ([f323b65](https://github.com/calimero-network/mero-js/commit/f323b65822b5e2af08e4aeff0eadc47f3038752f))
+
 ## [25.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.2.0...mero-js-v25.3.0) (2026-10-15)
 
 ### Features
