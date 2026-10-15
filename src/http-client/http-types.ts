@@ -23,7 +23,7 @@ export interface Transport {
    */
   authorizeRequest?: (request: {
     method: string;
-    /** The path the node will see, query excluded. */
+    /** The path and query the node will see, as `signedPath` reads them. */
     path: string;
     body?: string | Uint8Array;
   }) => Promise<Record<string, string>>;

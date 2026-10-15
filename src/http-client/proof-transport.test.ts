@@ -43,17 +43,39 @@ describe('request-carried proof on the transport', () => {
   });
 
   /**
-   * The signature covers the path alone. Signing the query too would fail every
-   * request that has one, and the node would report it as a bad signature —
-   * which points at the key, not at the string that was signed.
+   * The query can name the object a request acts on, so it is signed exactly as
+   * `fetch` puts it on the request line: order and escapes kept.
    */
-  it('signs the path without the query string', async () => {
+  it('signs the path and query as they are sent', async () => {
     const getProof = vi.fn().mockResolvedValue('aa');
     const { client } = clientWith(getProof);
 
-    await client.request('/admin-api/blobs/blob-1?context_id=ctx-1');
+    await client.request('/admin-api/blobs/blob-1?hash=h&context_id=a%2Fb c');
 
-    expect(getProof.mock.calls[0][0].path).toBe('/admin-api/blobs/blob-1');
+    expect(getProof.mock.calls[0][0].path).toBe(
+      '/admin-api/blobs/blob-1?hash=h&context_id=a%2Fb%20c',
+    );
+  });
+
+  /**
+   * Browsers keep a bare trailing `?` on the request line and Node's fetch drops
+   * it, so the client drops it once and signs and fetches the same string.
+   */
+  it('drops only a bare ? before signing and fetching', async () => {
+    for (const [requested, fetched, signed] of [
+      ['/x?', '/x', '/x'],
+      ['/x?q=what?', '/x?q=what?', '/x?q=what?'],
+      ['/x??', '/x??', '/x??'],
+      ['/x?#frag', '/x#frag', '/x'],
+    ]) {
+      const getProof = vi.fn().mockResolvedValue('aa');
+      const { client, fetchMock } = clientWith(getProof);
+
+      await client.request(requested);
+
+      expect(fetchMock.mock.calls[0][0], requested).toBe(`https://relay.example${fetched}`);
+      expect(getProof.mock.calls[0][0].path, requested).toBe(signed);
+    }
   });
 
   /**

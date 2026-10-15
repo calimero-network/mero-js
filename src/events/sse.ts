@@ -1,6 +1,7 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
 import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+import { signedPath } from '../request-proof/authorizer.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone, mirroring
@@ -220,7 +221,7 @@ export class SseClient {
       const url = `${this.baseUrl}/sse`;
       const response = await this.fetchImpl(url, {
         headers: {
-          ...(await this.authorize({ method: 'GET', path: new URL(url).pathname })),
+          ...(await this.authorize({ method: 'GET', path: signedPath(url) })),
           'Accept': 'text/event-stream',
         },
         signal: this.abortController.signal,
@@ -482,7 +483,7 @@ export class SseClient {
       const response = await this.fetchImpl(url, {
         method: 'POST',
         headers: {
-          ...(await this.authorize({ method: 'POST', path: new URL(url).pathname, body })),
+          ...(await this.authorize({ method: 'POST', path: signedPath(url), body })),
           'Content-Type': 'application/json',
         },
         body,

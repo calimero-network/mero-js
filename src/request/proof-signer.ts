@@ -15,7 +15,7 @@ import { signRequest } from "./request-sig.js";
 export interface ProofRequest {
   /** `GET`, `POST`, … exactly as it will be sent. */
   method: string;
-  /** The URL path the node will see, **without** the query string. */
+  /** The path and query the node will see, as `signedPath` reads them. */
   path: string;
   /** The exact bytes that will be sent, if any. */
   body?: unknown;

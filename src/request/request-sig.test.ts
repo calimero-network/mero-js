@@ -9,13 +9,14 @@
 
 import { describe, expect, it } from "vitest";
 
+import { signRequestProof } from "../request-proof/request-proof.js";
 import { requestBodyHash, signRequest } from "./request-sig.js";
 
 /** core's `key(3)` — a `PrivateKey` of 32 bytes of 0x03. */
 const SIGNER_SECRET = "03".repeat(32);
 
 const METHOD = "GET";
-const PATH = "/admin-api/namespaces";
+const PATH = "/admin-api/namespaces?limit=5&q=a%2Fb";
 const BODY = '{"k":"v"}';
 const ISSUED_AT = 1_700_000_000;
 const EXPIRES_AT = 1_700_000_300;
@@ -59,18 +60,18 @@ describe("signRequest", () => {
       // method: u32 LE 3, then "GET"
       "03000000" +
         "474554" +
-        // path: u32 LE 21, then the ASCII path
-        "15000000" +
+        // path and query: u32 LE 37, then the ASCII bytes as sent
+        "25000000" +
         "2f61646d696e2d6170692f6e616d657370616365" +
-        "73" +
+        "733f6c696d69743d3526713d6125324662" +
         // body_hash
         "3b26137eb7b296bdf7d84b9193dd52d1947b2056731f38020f4a3b9b88d95121" +
         // issued_at / expires_at, u64 LE
         "00f1536500000000" +
         "2cf2536500000000" +
         // signature
-        "295cdac7a269f7f773735dcc35511d4174d042aa4c20454b6c14d5c5661a4f2e" +
-        "6401e8d1dc457040a388359982f2b915fdd8ca56a84d26f2b40867f092013706",
+        "fab437d01e5fe97a376e9165a55e0ec91e73325b08bb997c8755776df0939d2f" +
+        "c3001455d4c08e306244afd2f050c30a01237aa06187e185fc0a671941c8ac09",
     );
   });
 
@@ -95,7 +96,9 @@ describe("signRequest", () => {
     const original = await sig({});
     for (const over of [
       { method: "POST" },
-      { path: "/admin-api/contexts" },
+      { path: "/admin-api/namespaces?q=a%2Fb&limit=5" },
+      { path: "/admin-api/namespaces?limit=5&q=a/b" },
+      { path: "/admin-api/namespaces" },
       { body: '{"k":"w"}' },
       { issuedAt: ISSUED_AT + 1 },
       { expiresAt: EXPIRES_AT + 1 },
@@ -119,5 +122,28 @@ describe("signRequest", () => {
     expect(await signRequest({ ...base, method: "HEAD" })).not.toBe(
       await signRequest({ ...base, method: "GET" }),
     );
+  });
+
+  /** The device-key proof path signs the same request link, query included. */
+  it("matches signRequestProof's request link", async () => {
+    const link = await signRequest({
+      method: METHOD,
+      path: PATH,
+      body: BODY,
+      issuedAt: ISSUED_AT,
+      expiresAt: EXPIRES_AT,
+      signerSecret: SIGNER_SECRET,
+    });
+    await expect(
+      signRequestProof({
+        method: METHOD,
+        path: PATH,
+        body: BODY,
+        credential: "ab",
+        deviceSecret: SIGNER_SECRET,
+        now: ISSUED_AT,
+        validForSeconds: EXPIRES_AT - ISSUED_AT,
+      }),
+    ).resolves.toBe(`ab00${link}`);
   });
 });

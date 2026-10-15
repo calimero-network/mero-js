@@ -6,6 +6,7 @@ import {
   ResponseParser,
 } from './http-types.js';
 import { combineSignals, createTimeoutSignal } from './signal-utils.js';
+import { signedPath } from '../request-proof/authorizer.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone.
@@ -126,24 +127,20 @@ function headersToRecord(headers: Headers): Record<string, string> {
   return record;
 }
 
-// Web Standards HTTP client implementation
-/**
- * The path a node will verify a request signature against.
- *
- * `new URL` drops the query and keeps any prefix the base URL contributed,
- * which is exactly what reaches the server. The fallback covers a `url` that is
- * already relative — it cannot be parsed, and signing the whole string with its
- * query attached would be worse than signing the part before the `?`.
- */
-function pathForProof(url: string): string {
+/** Runtimes disagree on sending a bare `?`, so the URL parser drops it once and
+ * the URL signed and the URL fetched are one string. */
+function withoutBareQuery(url: string): string {
+  let parsed: URL;
   try {
-    return new URL(url).pathname;
+    parsed = new URL(url, globalThis.location?.href);
   } catch {
-    const query = url.indexOf('?');
-    return query === -1 ? url : url.slice(0, query);
+    return url; // relative, with no page to resolve it against
   }
+  if (parsed.search === '') parsed.search = '';
+  return parsed.href;
 }
 
+// Web Standards HTTP client implementation
 export class WebHttpClient implements HttpClient {
   // Cache for concurrent refresh token calls to prevent race conditions
   private refreshTokenPromise: Promise<string> | null = null;
@@ -235,7 +232,7 @@ export class WebHttpClient implements HttpClient {
   ): Promise<T> {
     // Maximum retry attempts to prevent infinite loops
     const MAX_RETRY_ATTEMPTS = 1;
-    const url = this.buildUrl(path);
+    const url = withoutBareQuery(this.buildUrl(path));
     
     // Track request start time for timeout calculation (only on first attempt)
     // Use per-request start time to avoid corruption from concurrent requests
@@ -257,9 +254,7 @@ export class WebHttpClient implements HttpClient {
     const method = init?.method || 'GET';
 
     // A credential that commits to the request can only be produced here, where
-    // the method, the assembled path and the body are all known. The path comes
-    // from the URL rather than from `path`, because a base URL may carry a prefix
-    // (`…/admin-api`) that the node sees and a bare relative path would not sign.
+    // the method, the assembled path and query, and the body are all known.
     if (this.transport.authorizeRequest) {
       const body = init?.body;
       if (body !== undefined && typeof body !== 'string' && !(body instanceof Uint8Array)) {
@@ -273,7 +268,7 @@ export class WebHttpClient implements HttpClient {
         headersObj,
         await this.transport.authorizeRequest({
           method,
-          path: new URL(url).pathname,
+          path: signedPath(url),
           // Narrowed by the guard above; `BodyInit` is wider than what can be
           // signed.
           body: body as string | Uint8Array | undefined,
@@ -353,16 +348,12 @@ export class WebHttpClient implements HttpClient {
     // nor the body — and a proof commits to both. Signed AFTER the body is
     // settled above, so what is hashed is what is sent.
     //
-    // The path comes from the built URL's `pathname`, not from the `path`
-    // argument: that argument may carry a query string, and may be relative to
-    // a base URL that contributes its own prefix. The node verifies against the
-    // path it received, so the only safe source is the URL actually being
-    // fetched. A query string is deliberately not covered — core's `RequestSig`
-    // signs the path alone, and signing more here would fail every request.
+    // The path and query come from the built URL, not from the `path` argument,
+    // which may be relative to a base URL that contributes its own prefix.
     if (this.transport.getProof) {
       const proof = await this.transport.getProof({
         method: requestInit.method ?? 'GET',
-        path: pathForProof(url),
+        path: signedPath(url),
         body: requestInit.body,
       });
       if (proof) {
