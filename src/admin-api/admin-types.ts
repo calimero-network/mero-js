@@ -1540,7 +1540,7 @@ export interface MigrationStatus {
 export interface NamespaceRevokedDevices {
   /** Device ids (64 hex) revoked in the namespace. */
   revokedDevices: string[];
-  /** Device ids (64 hex) whose membership slot was withdrawn. */
+  /** Hex `sha256(account || device)` of each device its own account withdrew in the namespace. */
   withdrawnSlots: string[];
 }
 
