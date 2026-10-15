@@ -7,7 +7,7 @@
  * account, a reply to a request this app never made — and each of those is a
  * credential the app would otherwise file and act on.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   callbackIsForeign,
@@ -24,6 +24,32 @@ import { signerFromSecret } from '../signer/signer.js';
 
 const DEVICE_KEY = 'aa'.repeat(32);
 const KEM_KEY = 'bb'.repeat(32);
+
+function fakeStorage(): void {
+  const map = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, v),
+    removeItem: (k: string) => void map.delete(k),
+  });
+}
+
+/** Begin an enrolment as the app would, and return the state the wallet echoes back. */
+function begin(): string | undefined {
+  const url = deviceEnrolmentUrl({
+    walletUrl: 'https://wallet.example',
+    devicePublicKey: DEVICE_KEY,
+    kemPublicKey: KEM_KEY,
+    returnTo: 'https://app.example/back',
+  });
+  return new URL(url).searchParams.get('state') ?? undefined;
+}
+
+beforeEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  fakeStorage();
+});
 
 /** A real credential, signed by a real root — nothing here is hand-built bytes. */
 async function enrol(
@@ -52,14 +78,17 @@ describe('deviceEnrolmentUrl', () => {
         devicePublicKey: DEVICE_KEY,
         kemPublicKey: KEM_KEY,
         returnTo: 'https://app.example/back',
-        state: 's-1',
       }),
     );
     expect(url.origin).toBe('https://wallet.example');
     expect(url.searchParams.get('enrol-device')).toBe(DEVICE_KEY);
     expect(url.searchParams.get('enrol-kem')).toBe(KEM_KEY);
     expect(url.searchParams.get('callback-url')).toBe('https://app.example/back');
-    expect(url.searchParams.get('state')).toBe('s-1');
+    expect(url.searchParams.get('state')).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('mints a fresh state for every request', () => {
+    expect(begin()).not.toBe(begin());
   });
 
   it('refuses a key the wallet could not use', () => {
@@ -147,6 +176,7 @@ describe('completeDeviceEnrolment', () => {
   it('accepts a credential over the key this app asked about', async () => {
     const { credential, account, device } = await enrol('07'.repeat(32), DEVICE_KEY);
     const enrolled = await completeDeviceEnrolment({
+      state: begin(),
       credential,
       account,
       device,
@@ -165,6 +195,7 @@ describe('completeDeviceEnrolment', () => {
     const { credential, account, device } = await enrol('07'.repeat(32), 'cc'.repeat(32));
     await expect(
       completeDeviceEnrolment({
+        state: begin(),
         credential,
         account,
         device,
@@ -181,6 +212,7 @@ describe('completeDeviceEnrolment', () => {
     );
     await expect(
       completeDeviceEnrolment({
+        state: begin(),
         credential,
         account,
         device,
@@ -194,6 +226,7 @@ describe('completeDeviceEnrolment', () => {
     const { credential, device } = await enrol('07'.repeat(32), DEVICE_KEY);
     await expect(
       completeDeviceEnrolment({
+        state: begin(),
         credential,
         account: 'ff'.repeat(32),
         device,
@@ -206,6 +239,7 @@ describe('completeDeviceEnrolment', () => {
     const { credential, account } = await enrol('07'.repeat(32), DEVICE_KEY);
     await expect(
       completeDeviceEnrolment({
+        state: begin(),
         credential,
         account,
         device: 'ff'.repeat(32),
@@ -223,6 +257,7 @@ describe('completeDeviceEnrolment', () => {
       (credential.endsWith('00') ? '01' : '00');
     await expect(
       completeDeviceEnrolment({
+        state: begin(),
         credential: tampered,
         account,
         device,
@@ -231,17 +266,56 @@ describe('completeDeviceEnrolment', () => {
     ).rejects.toThrow(/did not sign this certificate/);
   });
 
+  it('refuses an answer that carries no state', async () => {
+    // The attack this closes: a device key is public once enrolled, so anyone can
+    // certify it under their own root and send the app a link that files it there.
+    begin();
+    const { credential, account, device } = await enrol('09'.repeat(32), DEVICE_KEY);
+    await expect(
+      completeDeviceEnrolment({ credential, account, device, devicePublicKey: DEVICE_KEY }),
+    ).rejects.toThrow(/did not make/);
+  });
+
   it('refuses an answer to a request this app never made', async () => {
-    const { credential, account, device } = await enrol('07'.repeat(32), DEVICE_KEY);
+    begin();
+    const { credential, account, device } = await enrol('09'.repeat(32), DEVICE_KEY);
     await expect(
       completeDeviceEnrolment({
         credential,
         account,
         device,
         state: 'from-somewhere-else',
-        expectState: 's-1',
         devicePublicKey: DEVICE_KEY,
       }),
+    ).rejects.toThrow(/did not make/);
+  });
+
+  it('accepts an answer once', async () => {
+    const state = begin();
+    const { credential, account, device } = await enrol('07'.repeat(32), DEVICE_KEY);
+    const answer = { state, credential, account, device, devicePublicKey: DEVICE_KEY };
+    await expect(completeDeviceEnrolment(answer)).resolves.toMatchObject({ account });
+    await expect(completeDeviceEnrolment(answer)).rejects.toThrow(/did not make/);
+  });
+
+  it('refuses an answer to a request begun too long ago', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const state = begin();
+    vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+    const { credential, account, device } = await enrol('07'.repeat(32), DEVICE_KEY);
+    await expect(
+      completeDeviceEnrolment({ state, credential, account, device, devicePublicKey: DEVICE_KEY }),
+    ).rejects.toThrow(/did not make/);
+  });
+
+  it('forgets a request the person declined', async () => {
+    const state = begin();
+    expect(() => readEnrolmentCallback({ hash: `#error=denied&state=${state}` })).toThrow(
+      /not approved/,
+    );
+    const { credential, account, device } = await enrol('07'.repeat(32), DEVICE_KEY);
+    await expect(
+      completeDeviceEnrolment({ state, credential, account, device, devicePublicKey: DEVICE_KEY }),
     ).rejects.toThrow(/did not make/);
   });
 
@@ -254,7 +328,7 @@ describe('completeDeviceEnrolment', () => {
         credential: 'not-even-hex',
         account: 'ff'.repeat(32),
         device: 'ff'.repeat(32),
-        expectState: 's-1',
+        state: 'from-somewhere-else',
         devicePublicKey: DEVICE_KEY,
       }),
     ).rejects.toThrow(/did not make/);

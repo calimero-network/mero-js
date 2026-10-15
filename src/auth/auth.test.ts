@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { parseAuthCallback, buildAuthLoginUrl } from './index.js';
 
+// Parsing only; matching a callback to a login this browser began is covered in auth-callback-state.test.ts.
+const unsolicited = { allowUnsolicited: true };
+
 describe('parseAuthCallback', () => {
   it('parses a valid callback URL', () => {
     const url =
       'http://localhost:5173/#access_token=abc&refresh_token=def&application_id=Cfow1&context_id=YqEN&context_identity=2q9U&node_url=http%3A%2F%2Flocalhost%3A4001';
 
-    const result = parseAuthCallback(url);
+    const result = parseAuthCallback(url, unsolicited);
     expect(result).toEqual({
       accessToken: 'abc',
       refreshToken: 'def',
@@ -27,7 +30,7 @@ describe('parseAuthCallback', () => {
 
   it('handles missing optional fields', () => {
     const url = 'http://localhost:5173/#access_token=abc';
-    const result = parseAuthCallback(url);
+    const result = parseAuthCallback(url, unsolicited);
     expect(result).toEqual({
       accessToken: 'abc',
       refreshToken: '',
@@ -40,7 +43,7 @@ describe('parseAuthCallback', () => {
   it('handles URL-encoded access tokens (URLSearchParams auto-decodes)', () => {
     // URLSearchParams.get() auto-decodes percent-encoded values
     const url = 'http://localhost:5173/#access_token=eyJ%2BdG9rZW4%3D&refresh_token=ref';
-    const result = parseAuthCallback(url);
+    const result = parseAuthCallback(url, unsolicited);
     expect(result).not.toBeNull();
     // URLSearchParams auto-decodes %2B → + and %3D → =
     expect(result!.accessToken).toBe('eyJ+dG9rZW4=');

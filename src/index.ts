@@ -19,7 +19,11 @@ export * from "./errors/index.js";
 
 // Auth utilities
 export { parseAuthCallback, buildAuthLoginUrl } from "./auth/index.js";
-export type { AuthCallbackResult, AuthLoginOptions } from "./auth/index.js";
+export type {
+  AuthCallbackResult,
+  AuthLoginOptions,
+  ParseAuthCallbackOptions,
+} from "./auth/index.js";
 
 // Token store
 export {
