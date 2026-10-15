@@ -113,6 +113,7 @@ import type {
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
   MigrationStatus,
+  NamespaceRevokedDevices,
   CascadeStatusEntry,
   RetryGroupUpgradeResponseData,
   ReparentGroupRequest,
@@ -1845,6 +1846,11 @@ export class AdminApiClient {
    */
   async getMigrationStatus(namespaceId: string): Promise<MigrationStatus> {
     return this.httpClient.get<MigrationStatus>(`/admin-api/groups/${pathSegment(namespaceId)}/migration-status`);
+  }
+
+  /** Revoked devices and withdrawn slots of a namespace; 403 unless this node is a bound member. */
+  async listNamespaceRevokedDevices(namespaceId: string): Promise<NamespaceRevokedDevices> {
+    return this.httpClient.get<NamespaceRevokedDevices>(`/admin-api/namespaces/${pathSegment(namespaceId)}/revoked-devices`);
   }
 
   /** Per-group cascade-migration snapshots for a namespace. */

@@ -1982,6 +1982,12 @@ describe('AdminApiClient', () => {
       expect(res.members[2].report).toBeUndefined();
     });
 
+    it('listNamespaceRevokedDevices reads the top-level body (no data envelope)', async () => {
+      const body = { revokedDevices: ['a'.repeat(64)], withdrawnSlots: [] };
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns1/revoked-devices', body);
+      expect(await client.listNamespaceRevokedDevices('ns1')).toEqual(body);
+    });
+
     it('getCascadeStatus unwraps the data array', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/ns1/cascade-status', {
         data: [
