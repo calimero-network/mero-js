@@ -160,16 +160,18 @@ references — including why a warrant nonce must never restart.
 account layer is everything around it for an account that owns nothing yet: it
 has a device the wallet certified and no relay, and it has to found a namespace
 or be invited into one before it can write. It is framework-free — plain TS over
-`sessionStorage`/`localStorage` — and `@calimero-network/mero-react` re-exports
+IndexedDB and `localStorage` — and `@calimero-network/mero-react` re-exports
 every name below unchanged (its hooks are built on it), so an app may import
 them from either package.
 
 - **Session** — `DelegatedCredential` (what the wallet certified: account,
-  certificate, device secret) and `DelegatedAccountSession` (that plus the relay
-  to write through, `null` until the account is a member of something).
-  `readDelegatedSession` / `saveDelegatedSession` / `clearDelegatedSession`,
-  `readDelegatedCredential` / `saveDelegatedCredential` /
-  `clearDelegatedCredential`; `readRelayMap`, `rememberRelay`,
+  certificate, and a `Signer` over the device key) and `DelegatedAccountSession`
+  (that plus the relay to write through, `null` until the account is a member of
+  something). The device key is generated unexportable and kept in IndexedDB
+  for the one account that certified it; `forgetAccount` deletes it with
+  everything else held for the account. `readDelegatedSession` /
+  `saveDelegatedSession`, `readDelegatedCredential`, `readDevice`,
+  `forgetAccount`; `readRelayMap`, `rememberRelay`,
   `relayForContext`, `knownRelays`, `listDelegatedContexts`,
   `listDelegatedNamespaces`, `carryExecutorAccount`.
 - **The relay's node key** — `learnRelayNodeKey` (attests the relay: its signed
@@ -204,20 +206,20 @@ them from either package.
 
 ```typescript
 import {
-  beginDeviceEnrolment, readEnrolmentCallback, completeDeviceEnrolment,
+  beginDeviceEnrolment, deviceEnrolmentUrl, readEnrolmentCallback, completeDeviceEnrolment,
   saveDelegatedSession, learnRelayNodeKey, pinRelayNodeKey, buildDelegatedClient,
   createAccountAdmin, joinAsAccount, resolveApplicationIdFromRegistry, type DelegatedAccountSession,
 } from '@calimero-network/mero-js';
 
-// 1. Enrol: the wallet certifies a device key this app generated and keeps.
-//    (first visit)  beginDeviceEnrolment({ walletUrl, devicePublicKey, kemPublicKey, returnTo });
+// 1. Enrol: the wallet certifies a device key this browser generated and cannot export.
+//    (first visit)  location.assign(deviceEnrolmentUrl({ walletUrl, returnTo, ...(await beginDeviceEnrolment()) }));
 //    (on return)
-const callback = readEnrolmentCallback(); // null on an ordinary load
-const enrolled = await completeDeviceEnrolment({ ...callback, devicePublicKey, kemPublicKey });
+const callback = readEnrolmentCallback();
+const enrolled = await completeDeviceEnrolment(callback!);
 let session: DelegatedAccountSession = {
-  account: enrolled.account, credential: enrolled.credential, deviceSecret, relayUrl: null,
+  account: enrolled.account, credential: enrolled.credential, signer: enrolled.signer, relayUrl: null,
 };
-saveDelegatedSession(session);
+await saveDelegatedSession(session);
 
 // 2. Found a namespace, or join one. A new account has no relay; either gives it one.
 const registryUrl = 'https://apps.calimero.network';
@@ -225,7 +227,7 @@ const app = await resolveApplicationIdFromRegistry(registryUrl, 'com.example.kv'
 const admin = createAccountAdmin(
   { session, read: null, app: { packageName: 'com.example.kv', packageVersion: app.version, registryUrl } },
   { join: (namespaceId, invitation) => joinAsAccount(session, namespaceId, invitation, {
-      onJoined: (next) => { session = next; saveDelegatedSession(next); },
+      onJoined: (next) => { session = next; void saveDelegatedSession(next); },
     }) },
 );
 const { namespaceId } = await admin.createNamespace({ applicationId: app.applicationId, name: 'my-notes' });

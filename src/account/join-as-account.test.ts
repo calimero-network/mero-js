@@ -2,10 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { joinAsAccount } from './join-as-account.js';
 import { readRelayMap } from './session.js';
+import { signerFromSecret } from '../signer/signer.js';
 
 const ACCOUNT = 'aa'.repeat(32);
 const NS = '01'.repeat(32);
-const S = { account: ACCOUNT, credential: 'cc', deviceSecret: '11'.repeat(32), relayUrl: null };
+const S = { account: ACCOUNT, credential: 'cc', signer: await signerFromSecret('11'.repeat(32), 'deviceSecret'), relayUrl: null };
 const INVITATION = { invitation: { group_id: NS, admitters: [] }, inviter_signature: 'sig' } as never;
 
 beforeEach(() => localStorage.clear());
@@ -24,7 +25,7 @@ describe('joinAsAccount', () => {
       expect.objectContaining({
         namespaceId: NS,
         invitation: INVITATION,
-        credential: { account: ACCOUNT, credential: 'cc', deviceSecret: S.deviceSecret },
+        credential: { account: ACCOUNT, credential: 'cc', signer: S.signer },
         cloudBaseUrl: 'https://cloud',
       }),
     );

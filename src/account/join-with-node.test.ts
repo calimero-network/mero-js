@@ -5,6 +5,7 @@ import type {
 import { joinWithNode } from './join-with-node.js';
 import { bootstrapFromInvitation } from './bootstrap-from-invitation.js';
 import type { ResolveRelayResult } from './relay-from-invitation.js';
+import { signerFromSecret } from '../signer/signer.js';
 
 const NS = 'b0e37d63a32a7ccf9759b843a29761e6aac6709b949cc2ef80ba14be8d7aa319';
 const INVITER = '838286af6a5b66641a6e860f4c171e1e790e347cba352878c453abf1c08f5239';
@@ -32,7 +33,7 @@ const CREDENTIAL = {
   // Any hex blob: the op carries the credential verbatim. The device secret must
   // be a real 32-byte key, because it actually signs.
   credential: 'ab'.repeat(120),
-  deviceSecret: 'cd'.repeat(32),
+  signer: await signerFromSecret('cd'.repeat(32), 'deviceSecret'),
 };
 
 const NODE = 'https://relay.example';
@@ -80,7 +81,7 @@ describe('joinWithNode', () => {
       relayUrl: NODE,
       account: ACCOUNT,
       credential: CREDENTIAL.credential,
-      deviceSecret: CREDENTIAL.deviceSecret,
+      signer: CREDENTIAL.signer,
     });
   });
 
@@ -124,13 +125,16 @@ describe('joinWithNode', () => {
     expect(r.ok === false && r.reason).toContain('could not be reached');
   });
 
-  it('fails at the signing step, having sent nothing, on a bad device secret', async () => {
+  it('fails at the signing step, having sent nothing, on a signer that cannot sign', async () => {
     const fetchSpy = vi.fn(ok({ data: { published: true } }));
     const r = await joinWithNode({
       nodeUrl: NODE,
       namespaceId: NS,
       invitation: INVITATION,
-      credential: { ...CREDENTIAL, deviceSecret: 'ff' },
+      credential: {
+        ...CREDENTIAL,
+        signer: { publicKey: CREDENTIAL.signer.publicKey, sign: async () => { throw new Error('no key'); } },
+      },
       deps: { fetch: fetchSpy as unknown as typeof fetch, nonce: async () => 1n },
     });
     expect(r).toMatchObject({ ok: false, step: 'sign' });

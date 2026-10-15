@@ -181,7 +181,7 @@ function origin(url: string): string {
  * node is a retry, and a 409 means pick another admitter.
  */
 export async function joinWithNode(input: JoinWithNodeInput): Promise<JoinWithNodeResult> {
-  const { account, credential, deviceSecret } = input.credential;
+  const { account, credential, signer } = input.credential;
 
   let signedOp: string;
   try {
@@ -190,7 +190,7 @@ export async function joinWithNode(input: JoinWithNodeInput): Promise<JoinWithNo
       member: account,
       invitation: input.invitation,
       credential,
-      deviceSecret,
+      signer,
       nonce: await (input.deps?.nonce ?? joinNonce(account))(),
     });
   } catch (e) {
@@ -255,6 +255,6 @@ export async function joinWithNode(input: JoinWithNodeInput): Promise<JoinWithNo
   return {
     ok: true,
     published,
-    session: { relayUrl: origin(input.nodeUrl), account, credential, deviceSecret },
+    session: { relayUrl: origin(input.nodeUrl), account, credential, signer },
   };
 }
