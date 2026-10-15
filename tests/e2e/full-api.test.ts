@@ -10,7 +10,7 @@
  * Run:
  *   NODE_URL=http://localhost:4001 pnpm test:e2e
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
 import { resolveBaseUrl, resolveCreds, ensureApplication, runId } from './harness.js';
 import { parseAuthCallback, buildAuthLoginUrl } from '../../src/auth/index.js';
@@ -282,8 +282,20 @@ describe('MeroJs E2E — Full Flow', () => {
 
   describe('Auth Helpers', () => {
     it('parseAuthCallback extracts all fields from hash', () => {
-      const url = 'http://localhost:5173/#access_token=abc&refresh_token=def&application_id=app1&context_id=ctx1&context_identity=id1&node_url=http%3A%2F%2Flocalhost%3A4001';
-      const result = parseAuthCallback(url);
+      const store = new Map<string, string>();
+      vi.stubGlobal('localStorage', {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+        removeItem: (k: string) => void store.delete(k),
+      });
+      const login = buildAuthLoginUrl('http://localhost:4001', {
+        callbackUrl: 'http://localhost:5173/',
+        mode: 'admin',
+      });
+      const callback = new URL(new URL(login).searchParams.get('callback-url')!);
+      callback.hash = 'access_token=abc&refresh_token=def&application_id=app1&context_id=ctx1&context_identity=id1&node_url=http%3A%2F%2Flocalhost%3A4001';
+      const result = parseAuthCallback(callback.toString());
+      vi.unstubAllGlobals();
       expect(result).not.toBeNull();
       expect(result!.accessToken).toBe('abc');
       expect(result!.refreshToken).toBe('def');
