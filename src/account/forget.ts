@@ -1,7 +1,7 @@
 /**
  * Signing out of a delegated account: everything this browser holds for it, gone.
  */
-import { clearDeviceStore } from './device-store.js';
+import { clearDeviceStore, markSignedOut } from './device-store.js';
 import { forgetGroupNamespaces } from './govern.js';
 import { dropLegacySecrets, forgetMethodKinds, forgetRelaySealing } from './session.js';
 
@@ -32,4 +32,5 @@ export async function forgetAccount(account: string): Promise<void> {
   }
   // A runtime with no IndexedDB never held a device here.
   if (typeof indexedDB !== 'undefined') await clearDeviceStore();
+  else markSignedOut();
 }

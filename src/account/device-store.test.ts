@@ -219,6 +219,22 @@ describe('device keystore across a logout', () => {
     await expect(completeDeviceEnrolment(back)).rejects.toThrow(/not started here/);
     expect(await deviceRecords()).toEqual([]);
   });
+  it('does not stretch the expiry of a pair stamped by a clock running fast', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 24 * 60 * 60 * 1000 });
+    const begun = await beginDeviceEnrolment();
+    vi.setSystemTime(Date.now() - 23 * 60 * 60 * 1000);
+
+    await expect(completeDeviceEnrolment(await walletCertifies(ROOT_A, begun))).rejects.toThrow(/not started here/);
+  });
+
+  it('leaves no pending pair from an enrolment begun while a logout ran', async () => {
+    const begun = beginDeviceEnrolment();
+    await forgetAccount('aa'.repeat(32));
+
+    await expect(begun).rejects.toThrow(/signed out/);
+    expect(await deviceRecords()).toEqual([]);
+  });
+
   it('prunes abandoned enrolments once they expire', async () => {
     await beginDeviceEnrolment();
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 31 * 60 * 1000 });
