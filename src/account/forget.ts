@@ -6,14 +6,10 @@ import { forgetGroupNamespaces } from './govern.js';
 import { dropLegacySecrets, forgetMethodKinds, forgetRelaySealing } from './session.js';
 
 /** Device-scoped `localStorage` prefixes: a new device starts its own ledgers. */
-const DEVICE_SCOPED_PREFIXES = ['calimero.nonce.', 'calimero.governance-nonce.'];
+const DEVICE_SCOPED_PREFIXES = ['calimero.nonce.', 'calimero.governance-nonce.', 'mero-js:warrant-nonce:'];
 const LINK_PENDING_KEY = 'calimero.cloud.link.pending';
 
-/**
- * Delete the device key, any enrolment in flight, the session, and every
- * record kept for `account`. Pinned relay node keys stay: they describe the
- * relay, not the account.
- */
+/** Delete the device key, pending enrolments, the session and every record kept for `account`. */
 export async function forgetAccount(account: string): Promise<void> {
   const id = account.trim().toLowerCase();
   dropLegacySecrets();
@@ -34,5 +30,6 @@ export async function forgetAccount(account: string): Promise<void> {
   } catch {
     /* no storage, nothing stored */
   }
-  await clearDeviceStore();
+  // A runtime with no IndexedDB never held a device here.
+  if (typeof indexedDB !== 'undefined') await clearDeviceStore();
 }

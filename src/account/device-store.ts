@@ -1,11 +1,6 @@
 /**
- * This browser's device key, held where script on the origin can use it but
- * never read it: a non-extractable `CryptoKey` in IndexedDB.
- *
- * One record per role in one object store. `pending:<state>` is a key pair
- * generated for an enrolment in flight; `active` is the certified device and
- * the account it belongs to; `session` is which relay that account writes
- * through. Origin-wide, like node-login tokens: every tab shares the device.
+ * This browser's device key: non-extractable `CryptoKey`s in IndexedDB, origin-wide.
+ * Records: `pending:<state>` (enrolment in flight), `active` (certified device), `session`.
  */
 import { hex } from '../crypto/internal.js';
 import { signerFromCryptoKey, type Signer } from '../signer/signer.js';
@@ -15,6 +10,7 @@ const STORE = 'device';
 const ACTIVE = 'active';
 const SESSION = 'session';
 const PENDING_PREFIX = 'pending:';
+const PENDING_TTL_MS = 30 * 60 * 1000; // time to consent at the wallet; bounds a pending pair's life
 
 /** A key pair generated for an enrolment, before any account certified it. */
 export interface PendingDevice {
@@ -22,9 +18,10 @@ export interface PendingDevice {
   signPk: string;
   kemKey: CryptoKey;
   kemPk: string;
+  createdAt: number;
 }
 
-interface ActiveDevice extends PendingDevice {
+interface ActiveDevice extends Omit<PendingDevice, 'createdAt'> {
   account: string;
   credential: string;
 }
@@ -72,10 +69,22 @@ async function inStore<T>(
 }
 
 const read = <T>(key: string) => inStore<T>('readonly', (s) => s.get(key) as IDBRequest<T>);
+const isLive = (p: PendingDevice | undefined): p is PendingDevice =>
+  p !== undefined && Date.now() - p.createdAt < PENDING_TTL_MS;
 const remove = (key: string) => inStore('readwrite', (s) => void s.delete(key));
 
 async function rawPublicKey(key: CryptoKey): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.exportKey('raw', key)));
+}
+
+function pruneExpiredPending(store: IDBObjectStore): void {
+  const cursor = store.openCursor();
+  cursor.onsuccess = () => {
+    const c = cursor.result;
+    if (!c) return;
+    if (String(c.key).startsWith(PENDING_PREFIX) && !isLive(c.value as PendingDevice)) c.delete();
+    c.continue();
+  };
 }
 
 /** Generate a fresh, unexportable device key pair and park it under `state`. */
@@ -102,35 +111,63 @@ export async function createPendingDevice(state: string): Promise<PendingDevice>
     signPk: await rawPublicKey(sign.publicKey),
     kemKey: kem.privateKey,
     kemPk: await rawPublicKey(kem.publicKey),
+    createdAt: Date.now(),
   };
-  await inStore('readwrite', (s) => void s.put(pending, PENDING_PREFIX + state));
+  await inStore('readwrite', (s) => {
+    s.put(pending, PENDING_PREFIX + state);
+    pruneExpiredPending(s);
+  });
   return pending;
 }
 
-/** The pair parked under `state`, removed in the same transaction so it is used at most once. */
-export function takePendingDevice(state: string): Promise<PendingDevice | undefined> {
-  return inStore<PendingDevice>('readwrite', (s) => {
-    const req = s.get(PENDING_PREFIX + state) as IDBRequest<PendingDevice>;
-    s.delete(PENDING_PREFIX + state);
-    return req;
-  });
+/** The live pair parked under `state`, left in place: activation takes it. */
+export async function readPendingDevice(state: string): Promise<PendingDevice | undefined> {
+  const pending = await read<PendingDevice>(PENDING_PREFIX + state);
+  if (isLive(pending)) return pending;
+  if (pending) await discardPendingDevice(state);
+  return undefined;
 }
 
-/** Make `device` this browser's device, replacing any earlier one and its session. */
-export function activateDevice(device: PendingDevice & { account: string; credential: string }): Promise<unknown> {
-  const active: ActiveDevice = { ...device };
-  return inStore('readwrite', (s) => {
-    s.clear();
-    s.put(active, ACTIVE);
-  });
-}
+export const discardPendingDevice = (state: string) => remove(PENDING_PREFIX + state);
 
 /**
- * The enrolled device, only for the account that certified it.
- *
- * Asking for any other account clears the record: a device left behind by one
- * account must never sign for the next.
+ * Make the pair under `state` this browser's device, in one transaction that
+ * fails if the pair is gone, so a logout that ran meanwhile wins.
  */
+export async function activatePendingDevice(
+  state: string,
+  certified: { account: string; credential: string },
+): Promise<boolean> {
+  let activated = false;
+  await inStore('readwrite', (s) => {
+    const req = s.get(PENDING_PREFIX + state) as IDBRequest<PendingDevice | undefined>;
+    req.onsuccess = () => {
+      const pending = req.result;
+      if (!isLive(pending)) return;
+      const { createdAt: _createdAt, ...keys } = pending;
+      s.clear();
+      s.put({ ...keys, ...certified } satisfies ActiveDevice, ACTIVE);
+      activated = true;
+    };
+  });
+  return activated;
+}
+
+/** A signer that refuses once its device is no longer the active one, in this tab or any other. */
+export async function deviceSigner(signKey: CryptoKey, signPk: string): Promise<Signer> {
+  const inner = await signerFromCryptoKey(signKey, signPk);
+  return {
+    publicKey: inner.publicKey,
+    async sign(payload) {
+      if ((await read<ActiveDevice>(ACTIVE))?.signPk !== signPk) {
+        throw new Error('this device was signed out, so it no longer signs');
+      }
+      return inner.sign(payload);
+    },
+  };
+}
+
+/** The enrolled device, only for the account that certified it; any other account clears it. */
 export async function readDevice(account: string): Promise<DeviceHandle | null> {
   const active = await read<ActiveDevice>(ACTIVE);
   if (!active) return null;
@@ -141,7 +178,7 @@ export async function readDevice(account: string): Promise<DeviceHandle | null> 
   return {
     account: active.account,
     credential: active.credential,
-    signer: await signerFromCryptoKey(active.signKey, active.signPk),
+    signer: await deviceSigner(active.signKey, active.signPk),
   };
 }
 
