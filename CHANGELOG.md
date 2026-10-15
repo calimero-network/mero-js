@@ -1,3 +1,9 @@
+## [25.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.2.0...mero-js-v25.3.0) (2026-10-15)
+
+### Features
+
+* **client:** add listNamespaceRevokedDevices ([#281](https://github.com/calimero-network/mero-js/issues/281)) ([aef5d7f](https://github.com/calimero-network/mero-js/commit/aef5d7fd165080cd3dd579ba3337d1919b25c3fa))
+
 ## [25.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.1.1...mero-js-v25.2.0) (2026-10-14)
 
 ### Features
