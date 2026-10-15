@@ -239,10 +239,10 @@ describe('device keystore across a logout', () => {
   });
 
   it('leaves no pending pair from an enrolment begun while a logout ran', async () => {
-    const begun = beginDeviceEnrolment();
+    const refused = expect(beginDeviceEnrolment()).rejects.toThrow(/signed out/);
     await forgetAccount('aa'.repeat(32));
 
-    await expect(begun).rejects.toThrow(/signed out/);
+    await refused;
     expect(await deviceRecords()).toEqual([]);
   });
 
