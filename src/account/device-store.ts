@@ -1,6 +1,6 @@
 /**
  * This browser's device key: non-extractable `CryptoKey`s in IndexedDB, origin-wide.
- * Records: `pending:<state>` (enrolment in flight), `active` (certified device), `session`.
+ * Records: `pending:<state>`, `active`, `session`, and the X25519 keys under `kem:`.
  */
 import { hex } from '../crypto/internal.js';
 import { signerFromCryptoKey, type Signer } from '../signer/signer.js';
@@ -70,7 +70,10 @@ async function inStore<T>(
 
 const read = <T>(key: string) => inStore<T>('readonly', (s) => s.get(key) as IDBRequest<T>);
 const isLive = (p: PendingDevice | undefined): p is PendingDevice =>
-  p !== undefined && Date.now() - p.createdAt < PENDING_TTL_MS;
+  p !== undefined && p.createdAt <= Date.now() && Date.now() - p.createdAt < PENDING_TTL_MS;
+
+let signOuts = 0; // bumped by every clear, so work begun before one can tell
+export const signOutCount = () => signOuts;
 const remove = (key: string) => inStore('readwrite', (s) => void s.delete(key));
 
 async function rawPublicKey(key: CryptoKey): Promise<string> {
@@ -92,6 +95,7 @@ function pruneExpiredPending(store: IDBObjectStore): void {
 
 /** Generate a fresh, unexportable device key pair and park it under `state`. */
 export async function createPendingDevice(state: string): Promise<PendingDevice> {
+  const startedAt = signOuts;
   const sign = (await crypto.subtle.generateKey({ name: 'Ed25519' }, false, [
     'sign',
     'verify',
@@ -115,6 +119,7 @@ export async function createPendingDevice(state: string): Promise<PendingDevice>
     kemPk: await rawPublicKey(kem.publicKey),
     createdAt: Date.now(),
   };
+  if (signOuts !== startedAt) throw new Error('signed out while this enrolment began - start it again');
   await inStore('readwrite', (s) => {
     s.put(pending, PENDING_PREFIX + state);
     s.put(kem.privateKey, KEM_PREFIX + PENDING_PREFIX + state);
@@ -205,4 +210,9 @@ export function writeSessionRecord(record: SessionRecord): Promise<unknown> {
 export const clearSessionRecord = () => remove(SESSION);
 
 /** Drop every device record: the active key, any pending ones, and the session. */
-export const clearDeviceStore = () => inStore('readwrite', (s) => void s.clear());
+export const markSignedOut = () => void (signOuts += 1);
+
+export function clearDeviceStore(): Promise<unknown> {
+  markSignedOut();
+  return inStore('readwrite', (s) => void s.clear());
+}

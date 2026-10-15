@@ -19,6 +19,7 @@ import type { Signer } from '../signer/index.js';
 import {
   activeAccount,
   clearSessionRecord,
+  signOutCount,
   readDevice,
   readSessionRecord,
   writeSessionRecord,
@@ -632,7 +633,10 @@ export function relayTransportFetch(relayUrl: string): typeof fetch | undefined 
 function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: string) {
   let token: string | null = null;
   let inflight: Promise<string | undefined> | null = null;
+  const builtAt = signOutCount();
   return async (): Promise<string | undefined> => {
+    // A sign-out since this client was built ends its session too.
+    if (signOutCount() !== builtAt) return undefined;
     const exp = token ? jwtExpiryMs(token) : null;
     if (token && (exp === null || exp - Date.now() > 30_000)) return token;
     if (!inflight) {
