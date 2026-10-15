@@ -75,8 +75,12 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * "make public" should offer it to the creator alone.
  *
  * 25: no layout change; refused device link/unlink/descope ops are never logged.
+ *
+ * 26: no layout change. A TEE member may rotate a group's key for an account
+ * that is no longer a member there at the op's cut, which older peers refuse
+ * (calimero-network/core, feat/tee-pays-rotation-debt).
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 25;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 26;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
