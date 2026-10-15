@@ -17,7 +17,7 @@ import {
   signDeviceCert,
 } from '../device-cert/index.js';
 import { signerFromSecret } from '../signer/signer.js';
-import { readDevice } from './device-store.js';
+import { deviceIsActive, readDevice } from './device-store.js';
 import { forgetAccount } from './forget.js';
 import { namespaceOfGroup, rememberGroupNamespace } from './govern.js';
 import {
@@ -149,6 +149,16 @@ describe('device keystore', () => {
     // A mismatch is not a miss to retry: the record is gone for both accounts.
     expect(await readDevice(a.account)).toBeNull();
     expect(await deviceRecords()).toEqual([]);
+  });
+
+  it('says whether a key is still the active device, without clearing anything', async () => {
+    const a = await enrol(ROOT_A);
+
+    expect(await deviceIsActive(a.signer.publicKey)).toBe(true);
+    expect(await deviceIsActive('ab'.repeat(32))).toBe(false);
+    expect(await readDevice(a.account)).not.toBeNull();
+    await forgetAccount(a.account);
+    expect(await deviceIsActive(a.signer.publicKey)).toBe(false);
   });
 
   it('signs as the enrolled device on a reload', async () => {

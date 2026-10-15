@@ -162,6 +162,7 @@ export {
   saveDelegatedSession,
   readDelegatedCredential,
   readDevice,
+  deviceIsActive,
   forgetAccount,
   persistedNonces,
   markContextNonceSpent,

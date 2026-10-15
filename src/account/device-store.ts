@@ -196,6 +196,12 @@ export async function readDevice(account: string): Promise<DeviceHandle | null> 
   };
 }
 
+/** Whether `publicKey` is still this browser's active device key; never clears anything. */
+export async function deviceIsActive(publicKey: string): Promise<boolean> {
+  if (typeof indexedDB === 'undefined') return false;
+  return (await read<ActiveDevice>(ACTIVE))?.signPk === publicKey;
+}
+
 /** The account the active device was certified for, if there is one. */
 export async function activeAccount(): Promise<string | null> {
   return (await read<ActiveDevice>(ACTIVE))?.account ?? null;
