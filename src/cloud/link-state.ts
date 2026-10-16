@@ -3,11 +3,16 @@
  * not `sessionStorage`: consent opens in a `noopener` tab with empty session storage.
  */
 
+import { hex } from "../crypto/internal.js";
+
 const KEY = "calimero.cloud.link.pending";
 const STATE_PARAM = "link_state";
 const LIFETIME_MS = 10 * 60 * 1000; // a grant lives 5 minutes, plus time to consent
 export const ACCOUNT_HEX = /^[0-9a-f]{64}$/;
 const MAX_PENDING = 20; // bounds storage when a page builds a consent URL on every render
+const VERIFIER_BYTES = 32; // the cloud refuses any other length
+export const VERIFIER_HEX = /^[0-9a-f]{64}$/;
+const LINK_GRANT_USE = "account-link-grant";
 
 type Pending<T> = Record<string, T & { expiresAt: number }>;
 
@@ -37,10 +42,7 @@ function writePending<T>(key: string, pending: Pending<T>): void {
 export function beginState<T extends object>(key: string, payload: T): string {
   const now = Date.now();
   const pending = readPending<T>(key, now);
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  const state = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  const state = hex(crypto.getRandomValues(new Uint8Array(16)));
   pending[state] = { ...payload, expiresAt: now + LIFETIME_MS };
   writePending(key, Object.fromEntries(Object.entries(pending).slice(-MAX_PENDING)));
   return state;
@@ -60,19 +62,67 @@ export function takeState<T extends object>(
   return entry;
 }
 
-/** Remember a link for `account` and return `returnTo` carrying its state. */
-export function beginLinkState(account: string, returnTo: string): string {
+/** What a link grant claims, read without its seal, which only the cloud can check. */
+export interface LinkGrantClaims {
+  /** The cloud login that consented. */
+  login: string;
+  account: string;
+  challenge: string;
+}
+
+/** The challenge a verifier commits to: sha256 of its bytes, hex. */
+export async function linkChallenge(verifier: string): Promise<string> {
+  const bytes = Uint8Array.from(verifier.match(/../g) ?? [], (b) => parseInt(b, 16));
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
+/**
+ * Remember a link for `account` under a fresh verifier. Returns `returnTo`
+ * carrying its state, and the challenge to send the cloud in place of the verifier.
+ */
+export async function beginLinkState(
+  account: string,
+  returnTo: string,
+): Promise<{ callbackUrl: string; challenge: string }> {
   if (!ACCOUNT_HEX.test(account)) {
     throw new Error("accountId must be 64 lowercase hex characters");
   }
   const url = new URL(returnTo);
-  url.searchParams.set(STATE_PARAM, beginState(KEY, { account }));
-  return url.toString();
+  const verifier = hex(crypto.getRandomValues(new Uint8Array(VERIFIER_BYTES)));
+  const challenge = await linkChallenge(verifier);
+  url.searchParams.set(STATE_PARAM, beginState(KEY, { account, verifier }));
+  return { callbackUrl: url.toString(), challenge };
 }
 
-/** Removes and returns the link a callback answers, or null when this browser did not begin it. */
-export function takeLinkState(search: string): { account: string } | null {
-  return takeState(KEY, new URLSearchParams(search).get(STATE_PARAM));
+/**
+ * Removes the link a callback answers and returns its verifier, or null when
+ * this browser did not begin a link for `account` with this state.
+ */
+export function takeLinkVerifier(search: string, account: string | null): string | null {
+  const pending = takeState<{ account?: unknown; verifier?: unknown }>(
+    KEY,
+    new URLSearchParams(search).get(STATE_PARAM),
+  );
+  if (!pending || pending.account !== account) return null;
+  return typeof pending.verifier === "string" && VERIFIER_HEX.test(pending.verifier)
+    ? pending.verifier
+    : null;
+}
+
+/** The claims of a link grant, or null when `grant` is not one. */
+export function linkGrantClaims(grant: string): LinkGrantClaims | null {
+  try {
+    const body = grant.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(atob(body), (c) => c.charCodeAt(0))),
+    ) as Record<string, unknown>;
+    const { use, sub, acc, chal } = claims;
+    if (use !== LINK_GRANT_USE) return null;
+    if (typeof sub !== "string" || typeof acc !== "string" || typeof chal !== "string") return null;
+    return { login: sub, account: acc, challenge: chal };
+  } catch {
+    return null;
+  }
 }
 
 /** The query with the link state removed, for rewriting the address bar. */
