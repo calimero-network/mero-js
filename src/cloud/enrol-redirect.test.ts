@@ -143,6 +143,17 @@ describe('readEnrolmentCallback', () => {
     );
   });
 
+  it('forgets the request the person declined', async () => {
+    const begun = await beginDeviceEnrolment();
+    expect(() => readEnrolmentCallback({ hash: `#error=denied&state=${begun.state}` })).toThrow(
+      /not approved/,
+    );
+    const { credential, account, device } = await enrol('07'.repeat(32), begun.devicePublicKey, begun.kemPublicKey);
+    await expect(
+      completeDeviceEnrolment({ credential, account, device, state: begun.state }),
+    ).rejects.toThrow(/not started here/);
+  });
+
   it('reports an error the wallet named, verbatim enough to act on', () => {
     expect(() => readEnrolmentCallback({ hash: '#error=unknown-device' })).toThrow(
       /unknown-device/,

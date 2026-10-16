@@ -165,6 +165,8 @@ export function readEnrolmentCallback(
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
   if (error) {
+    const declined = params.get(STATE_PARAM);
+    if (declined) void discardPendingDevice(declined).catch(() => undefined);
     stripFragment();
     throw new Error(
       error === 'denied' || error === 'cancelled'
