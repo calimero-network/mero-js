@@ -109,22 +109,15 @@ two cases behind it: the **mutations** (`createNamespace`,
 `setMemberCapabilities`, …) are operator actions on somebody else's machine and
 will never be served to a keyholder; the **reads** are pending the API above.
 
-## Nonce recovery has a deployment caveat
+## Keep the nonce counter
 
-`createRecoveringNonceSource` lets a client that lost its local storage ask the
-node where its nonce sequence stands, instead of guessing and burning attempts
-on refusals. It reads the warrant-nonce route — which is admin-gated, so on a
-relay with auth enabled the lookup itself fails:
-
-```
-401 Unauthorized
-```
-
-A client whose local counter survived is unaffected. A browser that cleared its
-storage is stuck, on precisely the deployment where recovery is the point. Track
-[core #4018](https://github.com/calimero-network/core/issues/4018).
-
-Until then, a relay-transport client should hold its own counter and persist it.
+A warrant's nonce is spent once per context and author device, and no node
+serves a lookup of where that sequence stands
+([core #4018](https://github.com/calimero-network/core/issues/4018)). The
+client's own counter is the only record, so persist it —
+`createLocalStorageNonceSource` in a browser. A client that loses its storage
+restarts low and burns refused writes until its counter passes the spent ones;
+re-pairing the device starts a fresh sequence instead.
 
 ## Telling which you got
 

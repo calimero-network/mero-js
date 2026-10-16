@@ -116,8 +116,8 @@ describe('MeroJs E2E — Full Flow', () => {
       groupId = namespaceId;
     });
 
-    it('should get namespace identity', async () => {
-      const identity = await mero.admin.getNamespaceIdentity(namespaceId);
+    it('should get node identity', async () => {
+      const identity = await mero.admin.getNodeIdentity();
       expect(identity.publicKey).toBeTruthy();
     });
 

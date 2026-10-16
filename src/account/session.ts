@@ -209,12 +209,9 @@ export function clearDelegatedCredential(): void {
  * replay a spent nonce and be refused. Keyed by relay and context because the
  * ledger the node keeps is per `(context, author device)`.
  *
- * This is the client-side half of core #4018. The node can answer "where does
- * my sequence stand" — `POST /contexts/{id}/warrant-nonce` with the caller's own
- * `authorProof` — but that route is mounted on the protected router, so a
- * delegated client on a relay cannot reach it. Until it moves, holding the
- * counter locally is the only option, and losing storage means burning refusals
- * until the counter catches up.
+ * No node serves a "where does my sequence stand" lookup (core #4018), so
+ * holding the counter locally is the only option, and losing storage means
+ * burning refusals until the counter catches up.
  */
 export function persistedNonces(relayUrl: string) {
   // ONE sequence per relay, not one per context. A client is rebuilt whenever
