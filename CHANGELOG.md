@@ -1,3 +1,9 @@
+## [25.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.2...mero-js-v25.3.3) (2026-10-16)
+
+### Bug Fixes
+
+* **sse:** a superseded stream's abort no longer tears down the live one ([#283](https://github.com/calimero-network/mero-js/issues/283)) ([f2ef5ae](https://github.com/calimero-network/mero-js/commit/f2ef5ae515871739d9379b2c35fc0650b9fea72e))
+
 ## [25.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.1...mero-js-v25.3.2) (2026-10-15)
 
 ### Bug Fixes
