@@ -6,8 +6,14 @@ import {
 } from '../warrant/index.js';
 import { createAccountAdmin, InvitationNotClaimableError, NoRelayError, NotForAccountError } from './account-admin.js';
 import { namespaceOfGroup } from './govern.js';
+import { signerFromSecret } from '../signer/signer.js';
 
-const S = { account: 'aa'.repeat(32), credential: 'cc', deviceSecret: '11'.repeat(32), relayUrl: 'http://relay' };
+const S = {
+  account: 'aa'.repeat(32),
+  credential: 'cc',
+  signer: await signerFromSecret('11'.repeat(32), 'deviceSecret'),
+  relayUrl: 'http://relay',
+};
 /** What the relay answers a direct member's MemberJoinedOpen with (core's `AlreadyDirectMember`). */
 const DIRECT_MEMBER_REFUSAL = Object.assign(
   new Error(`HTTP 409 Conflict: signer ${'aa'.repeat(32)} is a direct member; use MemberJoined or add_group_members instead`),
@@ -218,7 +224,7 @@ describe('createAccountAdmin', () => {
     const { admin, deps, read } = rig();
     const out = await admin.createNamespaceInvitation(NS);
     expect(read.listGroupMembers).toHaveBeenCalledWith(NS);
-    expect(deps.signInvitation).toHaveBeenCalledWith(expect.objectContaining({ groupId: NS, inviterAccount: ME, deviceSecret: S.deviceSecret }));
+    expect(deps.signInvitation).toHaveBeenCalledWith(expect.objectContaining({ groupId: NS, inviterAccount: ME, signer: S.signer }));
     expect(out).toMatchObject({ invitation: { inviter_signature: 'sig' } });
   });
 

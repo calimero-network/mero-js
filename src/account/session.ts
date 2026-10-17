@@ -9,13 +9,23 @@
  * signs itself. Weaving the two together would put a token-rotation decision in
  * front of a flow that has no tokens.
  *
- * Per-tab on purpose. The record lives in `sessionStorage`, so two tabs can hold
- * two different connections — one a node you run, one a relay you do not — with
- * the same application code in both.
+ * Origin-wide, like node-login tokens: the record sits in IndexedDB beside the
+ * unexportable device key it is useless without (see `device-store.ts`).
  */
 import {
   attestRelayNodeKey,
 } from '../relay-attestation/index.js';
+import type { Signer } from '../signer/index.js';
+import {
+  activeAccount,
+  clearSessionRecord,
+  deviceIsActive,
+  isKeystoreSigner,
+  signOutCount,
+  readDevice,
+  readSessionRecord,
+  writeSessionRecord,
+} from './device-store.js';
 import {
   cloudNodeReleaseUrl,
   createAttestedSealedFetch,
@@ -43,28 +53,9 @@ import {
   type ExecuteParams,
 } from '../rpc/index.js';
 
-/** Where the per-tab record lives. */
-const KEY = 'calimero.delegated.connection';
-/**
- * Where the enrolled credential lives when there is no relay for it yet.
- *
- * Separate from {@link KEY}, and deliberately not "a connection with a null
- * relay": a record under that key means a usable client can be built from it,
- * and every reader relies on that. An account that has just enrolled is a
- * member of nothing, so the cloud names no relay for it and there is nothing to
- * build — but the certificate is real and must survive, or the only way to
- * bootstrap from an invitation would be to enrol again.
- */
-const CREDENTIAL_KEY = 'calimero.delegated.credential';
+/** Where earlier releases kept the session and credential, each with a hex device secret. */
+const LEGACY_SESSION_KEYS = ['calimero.delegated.connection', 'calimero.delegated.credential'];
 
-/**
- * What a delegated connection needs to be rebuilt after a reload.
- *
- * `deviceSecret` is here because the device key is what signs warrants, and a
- * reload that could not sign would be a dead session. It is a per-tab secret for
- * a certificate the account can revoke — not the account root, which never
- * leaves the wallet's origin.
- */
 /**
  * What the wallet certified: an account, a device it trusts, and the key that
  * device signs with. Everything except somewhere to send the result.
@@ -79,8 +70,8 @@ export interface DelegatedCredential {
   account: string;
   /** The author's `AccountProof<DeviceCert>`, hex borsh. */
   credential: string;
-  /** The certified device's ed25519 signing secret, hex. */
-  deviceSecret: string;
+  /** The certified device key; it cannot be exported. */
+  signer: Signer;
 }
 
 export interface DelegatedSession extends DelegatedCredential {
@@ -128,77 +119,64 @@ export interface DelegatedSession extends DelegatedCredential {
    */
 }
 
-export function readDelegatedSession(): DelegatedSession | null {
-  if (typeof sessionStorage === 'undefined') return null;
+/** Drop what an earlier release left in session storage: it holds a device secret as hex. */
+export function dropLegacySecrets(): void {
   try {
-    const raw = sessionStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as DelegatedSession) : null;
+    for (const key of LEGACY_SESSION_KEYS) sessionStorage.removeItem(key);
   } catch {
-    // Private mode, blocked site data, or a half-written record. Treat all
-    // three as "not connected" rather than throwing during render.
+    /* no storage, nothing left behind */
+  }
+}
+
+/**
+ * The connected session, or `null`. A record whose account no longer holds the
+ * device here is cleared rather than returned.
+ */
+export async function readDelegatedSession(): Promise<DelegatedSession | null> {
+  dropLegacySecrets();
+  try {
+    const record = await readSessionRecord();
+    if (!record) return null;
+    const device = await readDevice(record.account);
+    if (!device) {
+      await clearSessionRecord();
+      return null;
+    }
+    return { ...record, ...device };
+  } catch {
+    // No IndexedDB (private mode, blocked site data): not connected, rather
+    // than a throw during startup.
     return null;
   }
 }
 
-export function saveDelegatedSession(s: DelegatedSession): void {
+/** Remember which relay the session writes through. The device key is stored by enrolment, never here. */
+export async function saveDelegatedSession(s: DelegatedSession): Promise<void> {
   try {
-    sessionStorage.setItem(KEY, JSON.stringify(s));
+    await writeSessionRecord({
+      account: s.account,
+      relayUrl: s.relayUrl,
+      executorAccount: s.executorAccount ?? null,
+    });
   } catch {
     // Non-fatal: the client still works for this page view, it just will not
-    // survive a reload. Better than refusing to connect.
-  }
-}
-
-export function clearDelegatedSession(): void {
-  try {
-    sessionStorage.removeItem(KEY);
-  } catch {
-    /* nothing to clear if storage is unavailable */
+    // survive a reload.
   }
 }
 
 /**
  * The enrolled credential, whether or not a relay was ever found for it.
  *
- * A connected session is authoritative: it carries the same three fields and a
- * relay, so it is read first and the standalone record is the fallback. Without
- * that order a stale record from an earlier enrolment could out-rank the account
- * actually connected.
+ * Read for the session's account when there is one, so a device certified for
+ * another account is cleared rather than returned.
  */
-export function readDelegatedCredential(): DelegatedCredential | null {
-  const session = readDelegatedSession();
-  if (session) {
-    const { account, credential, deviceSecret } = session;
-    return { account, credential, deviceSecret };
-  }
-  if (typeof sessionStorage === 'undefined') return null;
+export async function readDelegatedCredential(): Promise<DelegatedCredential | null> {
+  dropLegacySecrets();
   try {
-    const raw = sessionStorage.getItem(CREDENTIAL_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<DelegatedCredential>;
-    // A half-written record is worse than none: it would be carried into a
-    // signing call and fail as a malformed credential, somewhere that cannot say
-    // where the bad value came from.
-    if (!parsed.account || !parsed.credential || !parsed.deviceSecret) return null;
-    return parsed as DelegatedCredential;
+    const account = (await readSessionRecord())?.account ?? (await activeAccount());
+    return account ? await readDevice(account) : null;
   } catch {
     return null;
-  }
-}
-
-export function saveDelegatedCredential(c: DelegatedCredential): void {
-  try {
-    sessionStorage.setItem(CREDENTIAL_KEY, JSON.stringify(c));
-  } catch {
-    /* this page view still holds it; it just will not survive a reload */
-  }
-}
-
-export function clearDelegatedCredential(): void {
-  try {
-    sessionStorage.removeItem(CREDENTIAL_KEY);
-  } catch {
-    /* nothing to clear if storage is unavailable */
   }
 }
 
@@ -654,7 +632,11 @@ export function relayTransportFetch(relayUrl: string): typeof fetch | undefined 
 function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: string) {
   let token: string | null = null;
   let inflight: Promise<string | undefined> | null = null;
+  const builtAt = signOutCount();
   return async (): Promise<string | undefined> => {
+    // A sign-out since this client was built, in this tab or another, ends its session too.
+    if (signOutCount() !== builtAt) return undefined;
+    if (isKeystoreSigner(s.signer) && !(await deviceIsActive(s.account, s.signer.publicKey))) return undefined;
     const exp = token ? jwtExpiryMs(token) : null;
     if (token && (exp === null || exp - Date.now() > 30_000)) return token;
     if (!inflight) {
@@ -663,7 +645,7 @@ function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: strin
         // Sealed: the token is the session, and the TLS ends outside the TD.
         fetch: relayTransportFetch(s.relayUrl),
         node: nodeKey,
-        deviceSecret: s.deviceSecret,
+        signer: s.signer,
         accountProof: s.credential,
         audience: defaultAudience(),
       })
@@ -844,7 +826,7 @@ export function buildDelegatedClient(
       relayUrl: s.relayUrl,
       authorAccount: s.account,
       authorProof: s.credential,
-      deviceSecret: s.deviceSecret,
+      signer: s.signer,
       // One sequence per relay, whatever context is chosen: `execute` takes a
       // context per call, so the nonce source must not depend on this one.
       nonces: persistedNonces(s.relayUrl),
@@ -861,7 +843,7 @@ export function buildDelegatedClient(
     // What this replaces is a session minted by `login()` plus the relay node's
     // signing key learned out of band — two inputs, one of which the cloud does
     // not publish, for an answer the certificate already gives.
-    proof: { credential: s.credential, deviceSecret: s.deviceSecret },
+    proof: { credential: s.credential, signer: s.signer },
     // A session, when this relay's node key is pinned. A hosted relay's
     // forward-auth accepts a Bearer token and not the proof above, so without
     // one every admin read there is a 401. Given a session the client uses it

@@ -16,6 +16,7 @@ import {
 } from '../relay/index.js';
 import { foundDelegatedNamespace, HA_ACCOUNT_NOT_LINKED_MESSAGE, HA_REFUSAL_MESSAGES } from './create-context.js';
 import { pinRelayNodeKey, rememberRelay } from './session.js';
+import { signerFromSecret } from '../signer/signer.js';
 
 const ACCOUNT = 'aa'.repeat(32);
 const EXECUTOR = '6a'.repeat(32);
@@ -41,8 +42,9 @@ vi.mock('../relay-attestation/index.js', async (importActual) => {
   };
 });
 const RELAY = 'https://relay.example';
+const SIGNER = await signerFromSecret('11'.repeat(32), 'deviceSecret');
 const session = (extra: Record<string, unknown> = {}) =>
-  ({ account: ACCOUNT, credential: 'cc', deviceSecret: '11'.repeat(32), relayUrl: RELAY, ...extra }) as never;
+  ({ account: ACCOUNT, credential: 'cc', signer: SIGNER, relayUrl: RELAY, ...extra }) as never;
 
 let found: any;
 let describe_: any;
@@ -189,7 +191,7 @@ describe('foundDelegatedNamespace', () => {
         salt: SALT,
         accountId: ACCOUNT,
         credential: 'cc',
-        deviceSecret: '11'.repeat(32),
+        signer: SIGNER,
         relayUrl: RELAY,
       });
     });

@@ -51,7 +51,6 @@ import { resolveRoot, type RootSource } from '../account/account.js';
 import { MeroClient } from '../transport/mero-client.js';
 import type { RelayObserveConfig } from '../transport/relay-observer.js';
 import type { Audience } from '../login/index.js';
-import { derivePublicKey, hex } from '../crypto/internal.js';
 import { createAttestedSealedFetch } from '../sealed/sealed.js';
 import type { VerifyTransportQuote } from '../sealed/sealed.js';
 

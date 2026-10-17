@@ -347,7 +347,7 @@ export function createAccountAdmin(
       const invitation = await signInvitation({
         groupId: namespaceId,
         inviterAccount: s.account,
-        deviceSecret: s.deviceSecret,
+        signer: s.signer,
         ...(relays.length > 0 ? { admitters: relays } : {}),
         members: members as never,
         applicationId: (info as { targetApplicationId?: string }).targetApplicationId,

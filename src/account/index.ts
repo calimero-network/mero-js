@@ -30,10 +30,7 @@ export type { DelegatedCredential, DelegatedSession as DelegatedAccountSession, 
 export {
   readDelegatedSession,
   saveDelegatedSession,
-  clearDelegatedSession,
   readDelegatedCredential,
-  saveDelegatedCredential,
-  clearDelegatedCredential,
   persistedNonces,
   markContextNonceSpent,
   pinRelayNodeKey,
@@ -54,6 +51,9 @@ export {
   listDelegatedContexts,
   listDelegatedNamespaces,
 } from './session.js';
+export { deviceIsActive, readDevice } from './device-store.js';
+export type { DeviceHandle } from './device-store.js';
+export { forgetAccount } from './forget.js';
 export { resolveRelayFromInvitation, normaliseAccount } from './relay-from-invitation.js';
 export type {
   RelayResolutionStep,
