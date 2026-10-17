@@ -1,3 +1,13 @@
+## [26.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.3...mero-js-v26.0.0) (2026-10-17)
+
+### ⚠ BREAKING CHANGES
+
+* **admin-api:** drop calls to routes core does not serve (#286)
+
+### Code Refactoring
+
+* **admin-api:** drop calls to routes core does not serve ([#286](https://github.com/calimero-network/mero-js/issues/286)) ([65f188c](https://github.com/calimero-network/mero-js/commit/65f188c3053dad999a3824cd82978125f5b8335b))
+
 ## [25.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.2...mero-js-v25.3.3) (2026-10-16)
 
 ### Bug Fixes
