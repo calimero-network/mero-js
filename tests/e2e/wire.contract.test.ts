@@ -129,6 +129,7 @@ const SPECS: Spec[] = [
     optional: [
       ns('name'),
       ns('appVersion'),
+      ns('appPackage'),
       ns('upgradePolicy'),
       ns('founding'),
     ],

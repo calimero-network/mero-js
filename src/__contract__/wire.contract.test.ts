@@ -122,6 +122,7 @@ const NAMESPACE_OPTIONAL = [
   namespace('upgradePolicy'),
   namespace('name'),
   namespace('appVersion'),
+  namespace('appPackage'),
   namespace('founding'),
   namespace('heldOps'),
 ];
@@ -172,6 +173,8 @@ const SPECS: Spec[] = [
       groupInfo('metadata'),
       groupInfo('activeUpgrade'),
       groupInfo('upgradePolicy'),
+      groupInfo('appPackage'),
+      groupInfo('appVersion'),
     ],
   },
   {
