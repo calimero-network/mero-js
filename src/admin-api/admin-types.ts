@@ -472,6 +472,8 @@ export interface Namespace {
    * cannot resolve it (raw-wasm app, legacy key, blob not retained locally).
    */
   appVersion?: string;
+  /** Package of the release the namespace targets; present before that release is installed here. */
+  appPackage?: string;
   /**
    * What the namespace id was derived from, on nodes that hold it. Every
    * namespace's id is derived from its founder since core's schema v10, so
@@ -1585,6 +1587,10 @@ export interface GroupInfo {
    * schema 18.
    */
   ownerOpCounter?: number;
+  /** Package of the release the group targets; present before that release is installed here. */
+  appPackage?: string;
+  /** Version of the release the group targets; absent until governance names one. */
+  appVersion?: string;
 }
 
 export type GroupInfoResponseData = GroupInfo;
