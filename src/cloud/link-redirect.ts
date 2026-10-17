@@ -8,19 +8,21 @@
  * signature, which only the holder can make. Neither side can do it alone.
  *
  * The cloud already implements its half: send a person to
- * `?link-account=<id>&callback-url=<url>`, it shows a consent screen and
- * redirects back with a **grant** — that login's sealed consent to link one
- * named account. This module is the missing other half, and it is deliberately
- * small: send them there, then spend what comes back.
+ * `?link-account=<id>&challenge=<sha256(verifier)>&callback-url=<url>`, it
+ * shows a consent screen and redirects back with a **grant** — that login's
+ * sealed consent to link one named account. This module is the missing other
+ * half, and it is deliberately small: send them there, then spend what comes
+ * back.
  *
  * ## Why a grant rather than a session
  *
- * A grant is spendable by anyone holding the account's root, and by nobody
- * else. That is what lets the page complete the link while holding **no cloud
- * session at all** — and it is why a wallet should never be handed one. A
- * session token is a credential for everything that login can do; a grant is a
- * credential for exactly one link, to exactly one account, sealed at the moment
- * the person read the id on screen and agreed to it.
+ * A grant is spendable only with the account's root and the verifier this
+ * browser kept when it began the link. That is what lets the page complete the
+ * link while holding **no cloud session at all** - and it is why a wallet
+ * should never be handed one. A session token is a credential for everything
+ * that login can do; a grant is a credential for exactly one link, to exactly
+ * one account, sealed at the moment the person read the id on screen and
+ * agreed to it.
  *
  * ## The account id is chosen by us and read by them
  *
@@ -34,7 +36,7 @@
 import { CloudClient } from './cloud-client.js';
 import type { CloudAccountLink } from './cloud-client.js';
 import { resolveRoot, type RootSource } from '../account/account.js';
-import { beginLinkState, takeLinkState, withoutLinkState } from './link-state.js';
+import { beginLinkState, linkGrantClaims, takeLinkVerifier, withoutLinkState } from './link-state.js';
 
 /** Where the consent screen lives. The web app, not the manager API. */
 const DEFAULT_CLOUD_WEB_URL = 'https://cloud.calimero.network';
@@ -53,17 +55,22 @@ export interface BeginCloudLinkOptions {
   cloudWebUrl?: string;
 }
 
-/** The consent URL to send a person to. Remembers the link so the callback can be matched. */
-export function cloudLinkUrl(options: BeginCloudLinkOptions): string {
+/**
+ * The consent URL to send a person to. Remembers the link, and the verifier its
+ * grant will be bound to, so only this browser can match the callback and spend it.
+ */
+export async function cloudLinkUrl(options: BeginCloudLinkOptions): Promise<string> {
   const url = new URL(options.cloudWebUrl ?? DEFAULT_CLOUD_WEB_URL);
+  const { callbackUrl, challenge } = await beginLinkState(options.accountId, options.returnTo);
   url.searchParams.set('link-account', options.accountId);
-  url.searchParams.set('callback-url', beginLinkState(options.accountId, options.returnTo));
+  url.searchParams.set('challenge', challenge);
+  url.searchParams.set('callback-url', callbackUrl);
   return url.toString();
 }
 
 /** Send the person to the cloud to consent. Does not return. */
-export function beginCloudLink(options: BeginCloudLinkOptions): never {
-  window.location.assign(cloudLinkUrl(options));
+export async function beginCloudLink(options: BeginCloudLinkOptions): Promise<never> {
+  window.location.assign(await cloudLinkUrl(options));
   // `assign` does not stop execution, and a caller that kept going would act on
   // a page already being replaced.
   throw new Error('redirecting to the cloud to authorise this link');
@@ -74,6 +81,10 @@ export interface CloudLinkCallback {
   grant: string;
   /** The account the cloud sealed into the grant. */
   account: string;
+  /** The cloud login that consented. Show it before spending: anyone holding the consent URL could have answered it. */
+  login: string;
+  /** This browser's secret for the grant, kept from the redirect. Spend it with the grant. */
+  verifier: string;
 }
 
 /**
@@ -89,7 +100,7 @@ export function readCloudLinkCallback(
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
   if (error) {
-    takeLinkState(location.search ?? '');
+    takeLinkVerifier(location.search ?? '', null);
     stripFragment();
     throw new Error(
       error === 'denied'
@@ -102,7 +113,9 @@ export function readCloudLinkCallback(
   const account = params.get('account');
   if (!grant || !account) return null;
 
-  if (takeLinkState(location.search ?? '')?.account !== account) {
+  const verifier = takeLinkVerifier(location.search ?? '', account);
+  const claims = linkGrantClaims(grant);
+  if (!verifier || claims?.account !== account) {
     stripFragment();
     throw new Error(
       'this account link answers a request this browser did not make - start the link again from here',
@@ -112,7 +125,7 @@ export function readCloudLinkCallback(
   // Consumed once. Leaving it in the bar means a reload replays a spent grant
   // and reports a confusing failure instead of the link that already worked.
   stripFragment();
-  return { grant, account };
+  return { grant, account, login: claims.login, verifier };
 }
 
 function stripFragment(): void {
@@ -153,5 +166,9 @@ export async function completeCloudLink(
     cloudBaseUrl: options.cloudBaseUrl,
     fetch: options.fetch,
   });
-  return cloud.linkAccountWithGrant({ grant: options.grant, signer: root.signer });
+  return cloud.linkAccountWithGrant({
+    grant: options.grant,
+    verifier: options.verifier,
+    signer: root.signer,
+  });
 }

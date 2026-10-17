@@ -75,8 +75,8 @@ describe('parseAuthCallback', () => {
     expect(parseAuthCallback(back)).toBeNull();
   });
 
-  it('does not accept the state of an account link as a login', () => {
-    const consent = cloudLinkUrl({ accountId: '1f'.repeat(32), returnTo: 'https://app.example/cb' });
+  it('does not accept the state of an account link as a login', async () => {
+    const consent = await cloudLinkUrl({ accountId: '1f'.repeat(32), returnTo: 'https://app.example/cb' });
     const linkState = new URL(new URL(consent).searchParams.get('callback-url')!).searchParams.get(
       'link_state',
     );
