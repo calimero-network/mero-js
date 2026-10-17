@@ -706,3 +706,52 @@ describe('SseClient redirects', () => {
   });
 });
 
+
+describe('SseClient superseded streams', () => {
+  // A stream whose body stays open until its request is aborted, then fails
+  // the way fetch fails it: with an AbortError, delivered asynchronously.
+  function openStreams() {
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init!.signal!;
+      signals.push(signal);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`data: {"type":"connect","session_id":"s${signals.length}"}\n\n`));
+          signal.addEventListener('abort', () =>
+            controller.error(new DOMException('This operation was aborted', 'AbortError')),
+          );
+        },
+      });
+      return new Response(body, { status: 200 });
+    });
+    return { fetchMock, signals };
+  }
+
+  // Hyperfeed reopens its stream after a re-login with close() then connect().
+  // The old stream's abort landed after connect() had cleared `closed`, so it
+  // was reported as an error and scheduled a reconnect, which aborted the new,
+  // healthy stream, whose abort scheduled the next: a stream torn down every
+  // reconnect delay, forever, with "This operation was aborted" each time.
+  it('a stream closed and reopened at once stays open, and says nothing', async () => {
+    const { fetchMock, signals } = openStreams();
+    const client = new SseClient({
+      baseUrl: 'http://localhost:4001',
+      getAuthToken: async () => 'test-token',
+      reconnectDelayMs: 20,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+
+    await client.connect();
+    client.close();
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(errors.map((e) => e.message)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals[1].aborted).toBe(false);
+    client.close();
+  });
+});
