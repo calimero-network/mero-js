@@ -1,3 +1,9 @@
+## [26.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.0.1...mero-js-v26.1.0) (2026-10-18)
+
+### Features
+
+* **invitations:** tell an already-used link and a removal apart from other refusals ([#287](https://github.com/calimero-network/mero-js/issues/287)) ([c4562ea](https://github.com/calimero-network/mero-js/commit/c4562ea257f31a93a3734f8a21323852081d3333))
+
 ## [26.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.0.0...mero-js-v26.0.1) (2026-10-18)
 
 ## [26.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.3...mero-js-v26.0.0) (2026-10-17)
