@@ -89,7 +89,9 @@ describe('redeemInvitation', () => {
       [400, 'a malformed invitation', 'invalid'],
       [403, 'node is not a member of group g', 'refused'],
       [409, 'invitation for group g expired at 1759000000 (unix seconds)', 'expired'],
-      [409, 'member was removed from group g', 'refused'],
+      [409, 'identity i was removed from group g and cannot rejoin; an admin must re-add them', 'removed'],
+      [409, 'identity i has already used this invitation to join group g; a new invitation is required', 'already-used'],
+      [409, 'some other conflict', 'refused'],
       [410, 'gone', 'expired'],
     ] as const)('a %i is final, so the invitation is dropped (%s)', async (status, message, reason) => {
       const out = await redeemInvitation(
@@ -116,6 +118,69 @@ describe('redeemInvitation', () => {
       );
       expect(out).toMatchObject({ status: 'failed', reason, retryable: true });
       expect(shouldRetain(out)).toBe(true);
+    });
+
+    // Core answers a join refusal with a `code` beside `error`; it names the
+    // refusal even where the status alone cannot (several share a 409).
+    it.each([
+      [409, 'invitation_already_used', 'already-used'],
+      [409, 'removed_from_group', 'removed'],
+      [409, 'invitation_expired', 'expired'],
+      [400, 'invitation_invalid', 'invalid'],
+      [409, 'reentry_blocked', 'refused'],
+    ] as const)('a %i with code %s is final (%s)', async (status, code, reason) => {
+      const err = new HTTPError(
+        status,
+        'Status',
+        'http://node/join',
+        new Headers(),
+        JSON.stringify({ error: 'no', code }),
+      );
+      const out = await redeemInvitation(PARSED, redeemer({ join: vi.fn().mockRejectedValue(err) }));
+      expect(out).toMatchObject({ status: 'failed', reason, retryable: false });
+    });
+
+    // Every peer that answered refused. A member quoting a removal or a spent
+    // link is final; anything else it said is shown, and the link is kept.
+    it("reads a refusing member's words inside a 503", async () => {
+      const refused = (error: string) =>
+        new HTTPError(
+          503,
+          'Service Unavailable',
+          'http://node/join',
+          new Headers(),
+          JSON.stringify({ error, code: 'join_refused_by_member' }),
+        );
+
+      const removed = await redeemInvitation(
+        PARSED,
+        redeemer({
+          join: vi
+            .fn()
+            .mockRejectedValue(
+              refused(
+                'join could not be endorsed: a member of this namespace refused it: identity i was removed from group g and cannot rejoin; an admin must re-add them',
+              ),
+            ),
+        }),
+      );
+      expect(removed).toMatchObject({ reason: 'removed', retryable: false });
+
+      const behind = await redeemInvitation(
+        PARSED,
+        redeemer({
+          join: vi
+            .fn()
+            .mockRejectedValue(
+              refused('join could not be endorsed: a member of this namespace refused it: group not found'),
+            ),
+        }),
+      );
+      expect(behind).toMatchObject({
+        reason: 'unknown',
+        retryable: true,
+        message: 'join could not be endorsed: a member of this namespace refused it: group not found',
+      });
     });
 
     it('reads an axios-style response status too', async () => {

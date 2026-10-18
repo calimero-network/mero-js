@@ -48,7 +48,14 @@ export type InviteFailureReason =
   | 'expired'
   /** The link is malformed or names nothing joinable. Only a new link helps. */
   | 'invalid'
-  /** The node refused this person (removed, blocked, not allowed). */
+  /**
+   * This person already joined with this link once, and has since left. A link
+   * admits each person once: only a new one helps.
+   */
+  | 'already-used'
+  /** An admin removed this person. No link readmits them; an admin must re-add them. */
+  | 'removed'
+  /** The node refused this person for another reason (blocked, not allowed). */
   | 'refused'
   /** This client's session with the node lapsed; signing in finishes it. */
   | 'signed-out'
@@ -100,8 +107,43 @@ export function shouldRetain(outcome: RedeemOutcome): boolean {
 }
 
 /**
+ * The refusal codes a join route answers with beside `error` (core's
+ * `join_refusal_code`), and what each one tells a person.
+ *
+ * `join_refused_by_member` is absent on purpose: a member that refused may only
+ * be behind, so it says nothing final on its own, and the member's own words
+ * (in the message) are read by {@link reasonFromMessage} instead.
+ */
+const REASON_FOR_CODE: Record<string, InviteFailureReason> = {
+  invitation_expired: 'expired',
+  invitation_invalid: 'invalid',
+  invitation_already_used: 'already-used',
+  removed_from_group: 'removed',
+  reentry_blocked: 'refused',
+};
+
+/**
+ * The machine-readable `code` a node put beside its `error`, if any: on
+ * mero-js's `HTTPError` it is in the body text, on an axios-style error in
+ * `response.data`.
+ */
+function refusalCodeOf(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const shaped = err as { bodyText?: unknown; response?: { data?: { code?: unknown } } };
+  if (typeof shaped.response?.data?.code === 'string') return shaped.response.data.code;
+  if (typeof shaped.bodyText !== 'string') return undefined;
+  try {
+    const body = JSON.parse(shaped.bodyText) as { code?: unknown } | null;
+    return typeof body?.code === 'string' ? body.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Which reason the message alone names, for a node that answers without a
- * useful status — older than rc.56, where every refusal was a bare 500.
+ * useful status — older than rc.56, where every refusal was a bare 500 — or
+ * without a `code`, or for a member's refusal quoted inside a retryable answer.
  *
  * Kept narrow on purpose. Anything not recognised here stays retryable, because
  * the cost of retrying a dead link is one more attempt, while the cost of
@@ -126,8 +168,18 @@ function reasonFromMessage(message: string): InviteFailureReason | null {
   ) {
     return 'invalid';
   }
+  // Core's own words for a spent link and a removal (`MembershipError`), which a
+  // refusing member also quotes back to the joiner.
+  if (m.includes('has already used this invitation')) return 'already-used';
+  if (/\bwas removed from group\b/.test(m)) return 'removed';
   return null;
 }
+
+/**
+ * The reasons that are final whatever status carried them: no later attempt
+ * with this link can succeed for this person.
+ */
+const FINAL_FROM_TEXT: ReadonlySet<InviteFailureReason> = new Set(['already-used', 'removed']);
 
 /**
  * Why a join failed, and whether a later attempt could work.
@@ -144,6 +196,19 @@ function classifyJoinFailure(
 ): { reason: InviteFailureReason; retryable: boolean } {
   const { kind, status } = classifyError(err);
   const fromText = reasonFromMessage(message);
+
+  // A code is the node naming the refusal itself: nothing below can know better.
+  const code = refusalCodeOf(err);
+  const fromCode = code ? REASON_FOR_CODE[code] : undefined;
+  if (fromCode) return { reason: fromCode, retryable: false };
+  // A spent link or a removal is final even when a member said it inside a
+  // retryable answer (a 503 for a join every peer refused): asking again only
+  // asks the same members, who will say the same.
+  if (fromText && FINAL_FROM_TEXT.has(fromText)) return { reason: fromText, retryable: false };
+  // Any other member refusal is not "no one is online": someone answered, and
+  // their words are the message. Kept, since a member behind on the team's
+  // history refuses what it has not seen yet.
+  if (code === 'join_refused_by_member') return { reason: 'unknown', retryable: true };
 
   if (status === 401) return { reason: 'signed-out', retryable: true };
   if (status === 400) return { reason: fromText ?? 'invalid', retryable: false };
