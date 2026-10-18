@@ -75,8 +75,11 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * "make public" should offer it to the creator alone.
  *
  * 25: no layout change; refused device link/unlink/descope ops are never logged.
+ *
+ * 26: verdicts read at the op's causal cut; Group envelopes carry the
+ * registered context id in the clear. No layout this module signs changes.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 25;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 26;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');

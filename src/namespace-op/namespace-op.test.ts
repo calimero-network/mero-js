@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
-import { encodeSignedInvitation } from './namespace-op.js';
+import { SIGNED_NAMESPACE_OP_SCHEMA_VERSION, encodeSignedInvitation } from './namespace-op.js';
 
 /**
  * A minimal well-formed invitation. The values are shaped, not meaningful — the
@@ -63,5 +63,11 @@ describe('encodeSignedInvitation', () => {
     expect(tail).toContain(first);
     expect(tail).toContain(second);
     expect(tail.indexOf(first)).toBeLessThan(tail.indexOf(second));
+  });
+});
+
+describe('SIGNED_NAMESPACE_OP_SCHEMA_VERSION', () => {
+  it('matches the schema version core signs and checks', () => {
+    expect(SIGNED_NAMESPACE_OP_SCHEMA_VERSION).toBe(26);
   });
 });
