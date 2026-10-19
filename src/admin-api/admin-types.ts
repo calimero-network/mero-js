@@ -1952,6 +1952,9 @@ export interface UpgradeGroupRequest {
    *  declared-migration or downgrade refusal. Wire name is camelCase passthrough;
    *  older nodes ignore the unknown field. Server default: false. */
   forceCodeOnly?: boolean;
+  /** Publish without first trialling the migration on the admin's own contexts.
+   *  Server default: false, so a migration that fails the trial is refused with a 409. */
+  skipTrial?: boolean;
 }
 
 export interface UpgradeGroupResponseData {
@@ -1960,6 +1963,8 @@ export interface UpgradeGroupResponseData {
   localContextsTotal?: number;
   localContextsSwapped?: number;
   localContextsFailed?: number;
+  contextsTrialled?: number;
+  contextsNotHeld?: number;
 }
 
 export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;

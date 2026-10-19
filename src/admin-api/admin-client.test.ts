@@ -1862,6 +1862,17 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('upgradeGroup forwards skipTrial to publish without the trial', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', contextsTrialled: 0, contextsNotHeld: 0 },
+      });
+      await client.upgradeGroup('g-1', { targetApplicationId: 'app-2', skipTrial: true });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        skipTrial: true,
+      });
+    });
+
     it('getGroupUpgradeStatus returns status', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', {
         data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', localContextsTotal: 3, localContextsSwapped: 3, localContextsFailed: 0, completedAt: 456 },
