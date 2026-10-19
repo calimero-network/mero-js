@@ -441,24 +441,6 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Specialized Node Invite', () => {
-    it('inviteSpecializedNode sends correct request and unwraps nonce', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite-specialized-node', { data: { nonce: 'abc123' } });
-      const result = await client.inviteSpecializedNode({ contextId: 'ctx-1', inviterId: 'pk-1' });
-      expect(result).toEqual({ nonce: 'abc123' });
-      expect(mock.getRequestBody('POST', '/admin-api/contexts/invite-specialized-node')).toEqual({
-        contextId: 'ctx-1',
-        inviterId: 'pk-1',
-      });
-    });
-
-    it('inviteSpecializedNode works without inviterId', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite-specialized-node', { data: { nonce: 'def456' } });
-      const result = await client.inviteSpecializedNode({ contextId: 'ctx-1' });
-      expect(result.nonce).toBe('def456');
-    });
-  });
-
   describe('Update Context Application', () => {
     it('updateContextApplication sends all fields', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/application', { data: {} });
@@ -842,32 +824,6 @@ describe('AdminApiClient', () => {
       expect(absent.deviceCertified).toBeUndefined();
       expect(absent.deviceAgreementKey).toBeUndefined();
       expect(absent.accountNamespaceId).toBeUndefined();
-    });
-
-    it('getNamespaceIdentity answers from the node-level route', async () => {
-      // The deprecated shape, kept working by delegation rather than by calling
-      // the superseded per-namespace endpoint. Nothing it returns varies by
-      // namespace, so `namespaceId` is the argument echoed back — asserted, so
-      // that stays a deliberate contract and not an accident of the reshape.
-      mock.setMockResponse('GET', '/admin-api/identity', {
-        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
-      });
-      expect(await client.getNamespaceIdentity('ns-1')).toEqual({
-        namespaceId: 'ns-1',
-        publicKey: 'pk-1',
-        account: 'ac-1',
-      });
-    });
-
-    it('getNamespaceIdentity gives the same answer for every namespace', async () => {
-      // The claim the deprecation rests on. If these ever differed, the
-      // parameter would be load-bearing and dropping it would lose information.
-      mock.setMockResponse('GET', '/admin-api/identity', {
-        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
-      });
-      const [a, b] = [await client.getNamespaceIdentity('ns-a'), await client.getNamespaceIdentity('ns-b')];
-      expect(a.account).toBe(b.account);
-      expect(a.publicKey).toBe(b.publicKey);
     });
 
     it('listNamespacesForApplication unwraps data', async () => {
@@ -2132,21 +2088,6 @@ describe('AdminApiClient', () => {
         nonce: 'a'.repeat(64),
         applicationId: 'app-1',
       });
-    });
-
-    it('teeVerifyQuote sends correct fields', async () => {
-      const quote = { header: {}, body: {}, signature: 'sig', attestationKey: 'ak', certificationData: {} };
-      mock.setMockResponse('POST', '/admin-api/tee/verify-quote', {
-        data: { quoteVerified: true, nonceVerified: true, applicationHashVerified: true, quote },
-      });
-      const result = await client.teeVerifyQuote({
-        quoteB64: 'base64...',
-        nonce: 'a'.repeat(64),
-        expectedApplicationHash: 'b'.repeat(64),
-      });
-      expect(result.quoteVerified).toBe(true);
-      expect(result.nonceVerified).toBe(true);
-      expect(result.applicationHashVerified).toBe(true);
     });
   });
 

@@ -135,14 +135,6 @@ describe('Admin API E2E — Namespace Model', () => {
       // it would fail on the very nodes a caller is most likely to have.
     });
 
-    it('should get namespace identity', async () => {
-      // Deprecated, and covered because it still has callers: it must keep
-      // answering from the node-level route, with the argument echoed back.
-      const identity = await mero.admin.getNamespaceIdentity(namespaceId);
-      expect(identity.namespaceId).toBe(namespaceId);
-      expect(identity.publicKey).toBeTruthy();
-    });
-
     it('should list namespaces for application', async () => {
       const namespaces = await mero.admin.listNamespacesForApplication(applicationId);
       expect(namespaces.length).toBeGreaterThan(0);
@@ -190,21 +182,21 @@ describe('Admin API E2E — Namespace Model', () => {
       // who it is and matching account against account — one id space. The
       // node's signing key would never match: entries are accounts, and an
       // account is a one-way hash of a genesis.
-      const me = await mero.admin.getNamespaceIdentity(namespaceGroupId);
+      const me = await mero.admin.getNodeIdentity();
 
-      // This suite runs against the RELEASED merod, which predates `account` on
+      // This suite runs against the RELEASED merod, which predates `accountId` on
       // the identity endpoint. Skip rather than fail: the assertion below is
       // about an id space the node has to report before it can be checked, and
       // a node that cannot report it is not a node this test has anything to
       // say about. It runs for real in the core repo's paired SDK E2E, which
       // builds merod from the PR.
-      if (!me.account) {
+      if (!me.accountId) {
         ctx.skip();
         return;
       }
 
       const response = await mero.admin.listGroupMembers(namespaceGroupId);
-      expect(response.members.some((m) => m.identity === me.account)).toBe(true);
+      expect(response.members.some((m) => m.identity === me.accountId)).toBe(true);
     });
 
     it('should get member capabilities', async () => {
