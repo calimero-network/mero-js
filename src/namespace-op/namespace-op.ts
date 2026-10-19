@@ -75,8 +75,13 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * "make public" should offer it to the creator alone.
  *
  * 25: no layout change; refused device link/unlink/descope ops are never logged.
+ *
+ * 26: no layout change. A device link's scope is judged against every
+ * application the group may have targeted at the link's cut, not its live
+ * target (calimero-network/core#4603), so replicas agree on a link that races
+ * a target change; older peers judge it by fold order.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 25;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 26;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
