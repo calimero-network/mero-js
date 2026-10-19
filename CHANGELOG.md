@@ -1,3 +1,9 @@
+## [26.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.1.0...mero-js-v26.2.0) (2026-10-19)
+
+### Features
+
+* **admin-api:** type the target release package on namespaces and groups ([#285](https://github.com/calimero-network/mero-js/issues/285)) ([4df00f2](https://github.com/calimero-network/mero-js/commit/4df00f2c2a22906a2ad45b97731a86292eeeeba8))
+
 ## [26.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.0.1...mero-js-v26.1.0) (2026-10-18)
 
 ### Features
