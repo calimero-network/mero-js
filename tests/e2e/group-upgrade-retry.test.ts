@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 
 import { MeroJs } from '../../src/mero-js.js';
+import { HTTPError } from '../../src/http-client/web-client.js';
 import { resolveBaseUrl, resolveCreds, runId } from './harness.js';
 
 const asset = (name: string): string => fileURLToPath(new URL(`./assets/${name}`, import.meta.url));
@@ -55,8 +56,12 @@ describe('Admin API E2E — Group upgrade retry', () => {
     const next = await mero.admin.installDevApplication({ path: asset('migration-check-fail-v2.mpk') });
     expect(next.applicationId).toBe(applicationId);
 
-    // The trial would refuse this failing migration before publishing; this test needs it published.
-    await mero.admin.upgradeGroup(namespaceId, { targetApplicationId: applicationId, cascade: true, skipTrial: true });
+    // A node that trials upgrades refuses this one with a 409; a released node knows no `skipTrial`.
+    const upgrade = { targetApplicationId: applicationId, cascade: true };
+    await mero.admin.upgradeGroup(namespaceId, upgrade).catch((err: unknown) => {
+      if (!(err instanceof HTTPError) || err.status !== 409) throw err;
+      return mero.admin.upgradeGroup(namespaceId, { ...upgrade, skipTrial: true });
+    });
 
     // The propagator's automatic rounds back off 5s, 10s, 20s before it stops.
     const stuck = await waitFor(async () => {
