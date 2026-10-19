@@ -55,7 +55,8 @@ describe('Admin API E2E — Group upgrade retry', () => {
     const next = await mero.admin.installDevApplication({ path: asset('migration-check-fail-v2.mpk') });
     expect(next.applicationId).toBe(applicationId);
 
-    await mero.admin.upgradeGroup(namespaceId, { targetApplicationId: applicationId, cascade: true });
+    // The trial would refuse this failing migration before publishing; this test needs it published.
+    await mero.admin.upgradeGroup(namespaceId, { targetApplicationId: applicationId, cascade: true, skipTrial: true });
 
     // The propagator's automatic rounds back off 5s, 10s, 20s before it stops.
     const stuck = await waitFor(async () => {
