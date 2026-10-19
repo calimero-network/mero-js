@@ -1,3 +1,9 @@
+## [26.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.1...mero-js-v26.2.2) (2026-10-19)
+
+### Bug Fixes
+
+* **cloud:** bind link grants to the browser that began the link ([#284](https://github.com/calimero-network/mero-js/issues/284)) ([5b25dd4](https://github.com/calimero-network/mero-js/commit/5b25dd410fc3c0d5c5232dfb3023761f1dbc6140))
+
 ## [26.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.0...mero-js-v26.2.1) (2026-10-19)
 
 ### Bug Fixes
