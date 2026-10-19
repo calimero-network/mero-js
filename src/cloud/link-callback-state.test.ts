@@ -22,10 +22,16 @@ function fakeStorage(): void {
   });
 }
 
+/** A grant shaped as the cloud seals one for `account`. */
+function grantFor(account: string): string {
+  const claims = { use: "account-link-grant", sub: "owner@example.com", acc: account, chal: "ab".repeat(32), exp: 1 };
+  return `${btoa(JSON.stringify(claims)).replace(/=+$/, "")}.dGFn`;
+}
+
 /** What the cloud sends the person back to: our callback URL plus the fragment. */
 function callbackFor(consentUrl: string, account: string): URL {
   const back = new URL(new URL(consentUrl).searchParams.get("callback-url")!);
-  back.hash = `grant=attacker-grant&account=${account}`;
+  back.hash = `grant=${grantFor(account)}&account=${account}`;
   return back;
 }
 
@@ -36,7 +42,7 @@ beforeEach(() => {
 });
 
 describe("readCloudLinkCallback", () => {
-  it("refuses a grant when this browser began no link", () => {
+  it("refuses a grant when this browser began no link", async () => {
     expect(() =>
       readCloudLinkCallback({
         hash: `#grant=attacker-grant&account=${ACCOUNT}`,
@@ -45,8 +51,8 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
   });
 
-  it("refuses a grant that carries the wrong state", () => {
-    cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+  it("refuses a grant that carries the wrong state", async () => {
+    await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
     expect(() =>
       readCloudLinkCallback({
         hash: `#grant=attacker-grant&account=${ACCOUNT}`,
@@ -55,9 +61,9 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
   });
 
-  it("refuses a grant sealed for a different account than the one this browser began for", () => {
+  it("refuses a grant sealed for a different account than the one this browser began for", async () => {
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       OTHER,
     );
     expect(() =>
@@ -65,8 +71,8 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
   });
 
-  it("drops the pending link when its callback names a different account", () => {
-    const consent = cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+  it("drops the pending link when its callback names a different account", async () => {
+    const consent = await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
     const wrong = callbackFor(consent, OTHER);
     const right = callbackFor(consent, ACCOUNT);
     expect(() =>
@@ -77,25 +83,27 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
   });
 
-  it("accepts the callback of the link this browser began, once", () => {
+  it("accepts the callback of the link this browser began, once", async () => {
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     expect(
       readCloudLinkCallback({ hash: back.hash, search: back.search }),
     ).toEqual({
-      grant: "attacker-grant",
+      grant: grantFor(ACCOUNT),
       account: ACCOUNT,
+      login: "owner@example.com",
+      verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     expect(() =>
       readCloudLinkCallback({ hash: back.hash, search: back.search }),
     ).toThrow(/did not make/);
   });
 
-  it("keeps the pending link when a foreign grant is refused", () => {
+  it("keeps the pending link when a foreign grant is refused", async () => {
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     expect(() =>
@@ -106,12 +114,12 @@ describe("readCloudLinkCallback", () => {
     ).toThrow(/did not make/);
     expect(
       readCloudLinkCallback({ hash: back.hash, search: back.search })?.grant,
-    ).toBe("attacker-grant");
+    ).toBe(grantFor(ACCOUNT));
   });
 });
 
 describe("CloudClient.readAccountLinkCallback", () => {
-  it("reports a grant this browser never asked for as an error, not a grant", () => {
+  it("reports a grant this browser never asked for as an error, not a grant", async () => {
     const out = CloudClient.readAccountLinkCallback(
       `${RETURN_TO}#grant=attacker-grant&account=${ACCOUNT}`,
     );
@@ -119,21 +127,23 @@ describe("CloudClient.readAccountLinkCallback", () => {
     expect(out.error).toBe("unexpected_callback");
   });
 
-  it("accepts the callback of a handoff this browser began", () => {
-    const { url } = CloudClient.accountLinkHandoff({
+  it("accepts the callback of a handoff this browser began", async () => {
+    const { url } = await CloudClient.accountLinkHandoff({
       portalUrl: "https://cloud.calimero.network",
       accountId: ACCOUNT,
       callbackUrl: RETURN_TO,
     });
     const back = callbackFor(url, ACCOUNT);
     expect(CloudClient.readAccountLinkCallback(back.toString())).toEqual({
-      grant: "attacker-grant",
+      grant: grantFor(ACCOUNT),
       accountId: ACCOUNT,
+      login: "owner@example.com",
+      verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
   });
 
-  it("refuses a grant sealed for a different account than the handoff named", () => {
-    const { url } = CloudClient.accountLinkHandoff({
+  it("refuses a grant sealed for a different account than the handoff named", async () => {
+    const { url } = await CloudClient.accountLinkHandoff({
       portalUrl: "https://cloud.calimero.network",
       accountId: ACCOUNT,
       callbackUrl: RETURN_TO,
@@ -147,7 +157,7 @@ describe("CloudClient.readAccountLinkCallback", () => {
 });
 
 describe("pending links", () => {
-  it("is found by a callback in another tab, which does not share session storage", () => {
+  it("is found by a callback in another tab, which does not share session storage", async () => {
     const unusable = () => {
       throw new Error("session storage is not shared with a noopener tab");
     };
@@ -157,7 +167,7 @@ describe("pending links", () => {
       removeItem: unusable,
     });
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     expect(
@@ -165,25 +175,25 @@ describe("pending links", () => {
     ).toBe(ACCOUNT);
   });
 
-  it("keeps an earlier consent URL valid when another is built for the same account", () => {
+  it("keeps an earlier consent URL valid when another is built for the same account", async () => {
     const first = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
-    cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+    await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
     expect(
       readCloudLinkCallback({ hash: first.hash, search: first.search })
         ?.account,
     ).toBe(ACCOUNT);
   });
 
-  it("keeps links for two accounts apart", () => {
+  it("keeps links for two accounts apart", async () => {
     const a = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     const b = callbackFor(
-      cloudLinkUrl({ accountId: OTHER, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: OTHER, returnTo: RETURN_TO }),
       OTHER,
     );
     expect(
@@ -194,10 +204,10 @@ describe("pending links", () => {
     ).toBe(ACCOUNT);
   });
 
-  it("refuses a callback after the link has expired", () => {
+  it("refuses a callback after the link has expired", async () => {
     vi.useFakeTimers();
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     vi.advanceTimersByTime(11 * 60 * 1000);
@@ -206,52 +216,52 @@ describe("pending links", () => {
     ).toThrow(/did not make/);
   });
 
-  it("does not replace a pending link when the return URL is invalid", () => {
+  it("does not replace a pending link when the return URL is invalid", async () => {
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
-    expect(() =>
+    await expect(
       cloudLinkUrl({ accountId: OTHER, returnTo: "/relative" }),
-    ).toThrow();
+    ).rejects.toThrow();
     expect(
       readCloudLinkCallback({ hash: back.hash, search: back.search })?.account,
     ).toBe(ACCOUNT);
   });
 
-  it("spends a handoff callback once", () => {
-    const { url } = CloudClient.accountLinkHandoff({
+  it("spends a handoff callback once", async () => {
+    const { url } = await CloudClient.accountLinkHandoff({
       portalUrl: "https://cloud.calimero.network",
       accountId: ACCOUNT,
       callbackUrl: RETURN_TO,
     });
     const back = callbackFor(url, ACCOUNT).toString();
     expect(CloudClient.readAccountLinkCallback(back).grant).toBe(
-      "attacker-grant",
+      grantFor(ACCOUNT),
     );
     expect(CloudClient.readAccountLinkCallback(back).error).toBe(
       "unexpected_callback",
     );
   });
 
-  it("refuses a handoff for an account id the cloud would reject", () => {
-    expect(() =>
+  it("refuses a handoff for an account id the cloud would reject", async () => {
+    await expect(
       CloudClient.accountLinkHandoff({
         portalUrl: "https://cloud.calimero.network",
         accountId: ACCOUNT.toUpperCase(),
         callbackUrl: RETURN_TO,
       }),
-    ).toThrow(/64 lowercase hex/);
+    ).rejects.toThrow(/64 lowercase hex/);
   });
 });
 
 describe("pending links hygiene", () => {
-  it("gives each consent URL its own state", () => {
+  it("gives each consent URL its own state", async () => {
     const a = new URL(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
     );
     const b = new URL(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
     );
     const state = (u: URL) =>
       new URL(u.searchParams.get("callback-url")!).searchParams.get(
@@ -260,9 +270,9 @@ describe("pending links hygiene", () => {
     expect(state(a)).not.toBe(state(b));
   });
 
-  it("forgets a link whose consent was declined", () => {
+  it("forgets a link whose consent was declined", async () => {
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     expect(() =>
@@ -273,7 +283,7 @@ describe("pending links hygiene", () => {
     ).toThrow(/did not make/);
   });
 
-  it("keeps link_state out of the address bar after a callback", () => {
+  it("keeps link_state out of the address bar after a callback", async () => {
     const replaceState = vi.fn();
     vi.stubGlobal("history", { replaceState });
     vi.stubGlobal("location", {
@@ -281,28 +291,28 @@ describe("pending links hygiene", () => {
       search: "?keep=1&link_state=abc",
     });
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     readCloudLinkCallback({ hash: back.hash, search: back.search });
     expect(replaceState).toHaveBeenCalledWith(null, "", "/connected?keep=1");
   });
 
-  it("survives corrupted storage", () => {
+  it("survives corrupted storage", async () => {
     localStorage.setItem("calimero.cloud.link.pending", '{"x":null}');
-    expect(() =>
+    await expect(
       cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
-    ).not.toThrow();
+    ).resolves.toBeTruthy();
     localStorage.setItem("calimero.cloud.link.pending", "null");
-    expect(() =>
+    await expect(
       cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
-    ).not.toThrow();
+    ).resolves.toBeTruthy();
   });
 
-  it("begins without storage and refuses the callback", () => {
+  it("begins without storage and refuses the callback", async () => {
     vi.stubGlobal("localStorage", undefined);
     const back = callbackFor(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO }),
       ACCOUNT,
     );
     expect(() =>
@@ -310,8 +320,8 @@ describe("pending links hygiene", () => {
     ).toThrow(/did not make/);
   });
 
-  it("refuses state values that name object prototype members", () => {
-    cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+  it("refuses state values that name object prototype members", async () => {
+    await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
     for (const state of [
       "__proto__",
       "constructor",
@@ -327,9 +337,9 @@ describe("pending links hygiene", () => {
     }
   });
 
-  it("bounds how many pending links are kept", () => {
+  it("bounds how many pending links are kept", async () => {
     for (let i = 0; i < 30; i++)
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: RETURN_TO });
     const kept = JSON.parse(
       localStorage.getItem("calimero.cloud.link.pending")!,
     );

@@ -32,6 +32,7 @@
  *
  *     CLOUD_URL=https://manager.cloud.calimero.network \
  *     GRANT=<one-time grant>   # or CLOUD_SESSION=<token> \
+ *     GRANT_VERIFIER=<64 hex>  # the verifier whose sha256 the grant was minted around \
  *     LIVE_ROOT_SECRET=<64 hex>  # or LIVE_ROOT_PHRASE='<24 words>' \
  *     npx vitest run src/__live__/account-link.live.test.ts
  *
@@ -57,12 +58,13 @@ const SESSION = process.env.CLOUD_SESSION;
  * grant is a credential for exactly one thing.
  */
 const GRANT = process.env.GRANT;
+const GRANT_VERIFIER = process.env.GRANT_VERIFIER;
 const ROOT_SECRET = process.env.LIVE_ROOT_SECRET;
 const ROOT_PHRASE = process.env.LIVE_ROOT_PHRASE;
 
 const haveRoot = Boolean(ROOT_SECRET || ROOT_PHRASE);
 const live = CLOUD && SESSION && haveRoot ? describe : describe.skip;
-const liveGrant = CLOUD && GRANT && haveRoot ? describe : describe.skip;
+const liveGrant = CLOUD && GRANT && GRANT_VERIFIER && haveRoot ? describe : describe.skip;
 
 /** Shared by both suites: a root from whichever form was supplied. */
 async function rootFromEnv(): Promise<ResolvedRoot> {
@@ -154,7 +156,7 @@ liveGrant('linking with a one-time grant', () => {
    */
   it('links the account, with no cloud session at all', async () => {
     const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
-    const link = await anonymous.linkAccountWithGrant({ grant: GRANT!, signer: root.signer });
+    const link = await anonymous.linkAccountWithGrant({ grant: GRANT!, verifier: GRANT_VERIFIER!, signer: root.signer });
 
     expect(link.accountId).toBe(root.accountId);
     console.log('linked:', { linkedAt: link.linkedAt, alreadyLinked: link.alreadyLinked });
@@ -170,7 +172,7 @@ liveGrant('linking with a one-time grant', () => {
   it('refuses the same grant a second time', async () => {
     const anonymous = new CloudClient({ cloudBaseUrl: CLOUD });
     const replayed = await anonymous
-      .linkAccountWithGrant({ grant: GRANT!, signer: root.signer })
+      .linkAccountWithGrant({ grant: GRANT!, verifier: GRANT_VERIFIER!, signer: root.signer })
       .then(() => null, (e: { status?: number }) => e);
 
     expect(replayed).not.toBeNull();

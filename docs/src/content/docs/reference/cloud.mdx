@@ -95,7 +95,7 @@ signed in, consents to linking one named account, and comes back holding a
 
 ```typescript
 // 1. Send them, having derived the account id — never let a user type it.
-const { url } = CloudClient.accountLinkHandoff({
+const { url } = await CloudClient.accountLinkHandoff({
   portalUrl: 'https://cloud.calimero.network',
   accountId: root.accountId,
   callbackUrl: window.location.origin + '/connected',
@@ -103,12 +103,13 @@ const { url } = CloudClient.accountLinkHandoff({
 window.open(url, '_blank');
 
 // 2. On the way back, read the fragment. Safe to call on every load.
-const { grant, error } = CloudClient.readAccountLinkCallback();
+const { grant, login, verifier, error } = CloudClient.readAccountLinkCallback();
 if (error === 'denied') return; // they pressed Cancel
 if (error === 'unexpected_callback') return; // a link this tab never began
 
-// 3. Spend it: the root signs the grant, and both halves go together.
-if (grant) await cloud.linkAccountWithGrant({ grant, rootSecret });
+// 3. Show `login` (the cloud login that consented) and let the person confirm,
+//    then spend it: the root signs the grant and the verifier goes with it.
+if (grant) await cloud.linkAccountWithGrant({ grant, verifier, rootSecret });
 ```
 
 **A grant is not a session token, and deliberately not a Google ID token.** It
@@ -123,6 +124,10 @@ this browser's `localStorage` for ten minutes, so the callback may return in a
 different tab (including one opened with `noopener`).
 A grant is returned only when the callback carries that state for the same account,
 so a forwarded redirect URL is refused instead of spent.
+The handoff also keeps a fresh 32-byte verifier with that state and sends the cloud only its SHA-256, as `challenge`.
+The cloud seals the challenge into the grant, so spending it needs the verifier, which never leaves this browser.
+`readAccountLinkCallback` returns the verifier and removes it from storage; `linkAccountWithGrant` refuses to sign without it, or when the grant carries another challenge or names another account.
+The challenge travels in the consent URL, so show the person `login` before spending: it is the cloud login the account will be linked to.
 Pass `linkAccountWithGrant` only a grant that `readAccountLinkCallback` returned.
 
 The callback origin must be allow-listed on the cloud
