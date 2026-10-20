@@ -1559,7 +1559,16 @@ export interface GroupInfo {
   contextCount: number;
   activeUpgrade?: GroupUpgradeStatus;
   defaultCapabilities: number;
+  /** How the group takes members: `'open'` inherits the parent's, `'restricted'` admits directly. */
   subgroupVisibility: string;
+  /**
+   * Who outside the group can reach it: `'restricted'` when this group or any
+   * group above it (short of the namespace root) is Restricted, `'open'` only on
+   * an Open chain to the namespace. Draw privacy (a lock) from this, not from
+   * `subgroupVisibility`: an Open folder inside a private one is `'open'` there
+   * and `'restricted'` here. Absent from nodes that predate it.
+   */
+  effectiveVisibility?: 'open' | 'restricted';
   /**
    * The group's generic metadata record (replaces the old `alias` field).
    * `null` if no metadata has ever been set for this group.

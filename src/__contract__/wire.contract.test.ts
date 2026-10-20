@@ -166,6 +166,7 @@ const SPECS: Spec[] = [
       groupInfo('subgroupVisibility'),
     ],
     optional: [
+      groupInfo('effectiveVisibility'),
       groupInfo('groupStateHash'),
       groupInfo('namespaceId'),
       groupInfo('ownerOpCounter'),
