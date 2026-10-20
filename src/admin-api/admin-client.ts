@@ -106,6 +106,8 @@ import type {
   MetadataRecord,
   GetMetadataResponseData,
   SyncGroupResponseData,
+  ActivateGroupUpgradeRequest,
+  ActivateGroupUpgradeResponseData,
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
@@ -1616,6 +1618,19 @@ export class AdminApiClient {
   async getCascadeStatus(namespaceId: string): Promise<CascadeStatusEntry[]> {
     return unwrap(
       await this.httpClient.get<{ data: CascadeStatusEntry[] }>(`/admin-api/groups/${pathSegment(namespaceId)}/cascade-status`),
+    );
+  }
+
+  /** Switch this node's contexts in a namespace onto its stored upgrade target; 409 if an `expected*` guard differs. */
+  async activateGroupUpgrade(
+    namespaceId: string,
+    request: ActivateGroupUpgradeRequest = {},
+  ): Promise<ActivateGroupUpgradeResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: ActivateGroupUpgradeResponseData }>(
+        `/admin-api/groups/${pathSegment(namespaceId)}/upgrade/activate`,
+        request,
+      ),
     );
   }
 
