@@ -129,7 +129,7 @@ export interface AccountAdminDeps {
  * that administers the namespace (#4400, rc.77), so they go to the relay.
  */
 const NODE_ONLY = new Set([
-  'upgradeGroup', 'retryGroupUpgrade', 'abortMigration', 'installApplication', 'installDevApplication',
+  'upgradeGroup', 'retryGroupUpgrade', 'activateGroupUpgrade', 'abortMigration', 'installApplication', 'installDevApplication',
   'uninstallApplication', 'generateContextIdentity', 'deleteContext',
   // A node's leaveContext is a local opt-out (a tombstone, its own identity rows)
   // and publishes nothing; an account has nothing local to opt out of, and

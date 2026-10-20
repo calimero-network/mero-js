@@ -1972,6 +1972,31 @@ export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;
 // Retry returns same shape as upgrade
 export type RetryGroupUpgradeResponseData = UpgradeGroupResponseData;
 
+export interface ActivateGroupUpgradeRequest {
+  /** Refuse with 409 unless this is the namespace's stored target application. */
+  expectedApplicationId?: string;
+  /** Refuse with 409 unless this is the target release's manifest version
+   *  (application ids do not change between versions). */
+  expectedVersion?: string;
+}
+
+export interface ActivateGroupUpgradeFailedContext {
+  contextId: string;
+  error: string;
+  /** False when the switch itself failed (a migration or load); a retry repeats it. */
+  retryable: boolean;
+}
+
+export interface ActivateGroupUpgradeResponseData {
+  targetApplicationId: string;
+  /** Contexts this call moved to the target; 0 when all were current. */
+  switchedContexts: number;
+  /** Held deltas replayed into the namespace's contexts. */
+  replayedDeltas: number;
+  /** Calling again retries only these. */
+  failedContexts: ActivateGroupUpgradeFailedContext[];
+}
+
 // ---- Group Reparent & Context Attachments ----
 
 export interface ReparentGroupRequest {

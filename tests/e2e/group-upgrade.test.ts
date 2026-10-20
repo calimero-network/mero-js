@@ -17,6 +17,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 
+import { HTTPError } from '../../src/http-client/web-client.js';
 import { MeroJs } from '../../src/mero-js.js';
 import { ensureApplication, resolveBaseUrl, resolveCreds, runId } from './harness.js';
 
@@ -67,6 +68,24 @@ describe('Admin API E2E — Group upgrade', () => {
     // A completed upgrade left nothing failed behind, so there is nothing to
     // retry: 409, where a group never upgraded answers 404 (the sweep pins that).
     await expect(mero.admin.retryGroupUpgrade(namespaceId)).rejects.toMatchObject({ status: 409 });
+  }, 120000);
+
+  it('activates the stored target, refusing a stale expected version', async (ctx) => {
+    // The upgrade above is the namespace's stored target, so activating it is idempotent.
+    const stale = await mero.admin
+      .activateGroupUpgrade(namespaceId, { expectedVersion: '0.11.0-rc.49' })
+      .catch((e: unknown) => e);
+    // A merod without the route answers 404 with no body; core's own 404s carry one.
+    if (stale instanceof HTTPError && stale.status === 404 && !stale.bodyText) ctx.skip();
+    expect(stale).toMatchObject({ status: 409 });
+
+    const activated = await mero.admin.activateGroupUpgrade(namespaceId, {
+      expectedApplicationId: applicationId,
+      expectedVersion: '0.11.0-rc.51',
+    });
+    expect(activated.targetApplicationId).toBe(applicationId);
+    expect(activated.switchedContexts).toBeGreaterThanOrEqual(0);
+    expect(activated.failedContexts).toEqual([]);
   }, 120000);
 });
 

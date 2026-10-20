@@ -1895,6 +1895,24 @@ describe('AdminApiClient', () => {
       const result = await client.retryGroupUpgrade('g-1');
       expect(result.status).toBe('in_progress');
     });
+
+    it('activateGroupUpgrade posts an empty body by default and unwraps data', async () => {
+      const data = { targetApplicationId: 'app-2', switchedContexts: 2, replayedDeltas: 1, failedContexts: [] };
+      mock.setMockResponse('POST', '/admin-api/groups/ns-1/upgrade/activate', { data });
+      expect(await client.activateGroupUpgrade('ns-1')).toEqual(data);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/ns-1/upgrade/activate')).toEqual({});
+    });
+
+    it('activateGroupUpgrade forwards expectedApplicationId and expectedVersion', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/ns-1/upgrade/activate', {
+        data: { targetApplicationId: 'app-2', switchedContexts: 0, replayedDeltas: 0, failedContexts: [] },
+      });
+      await client.activateGroupUpgrade('ns-1', { expectedApplicationId: 'app-2', expectedVersion: '2.0.0' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/ns-1/upgrade/activate')).toEqual({
+        expectedApplicationId: 'app-2',
+        expectedVersion: '2.0.0',
+      });
+    });
   });
 
   describe('Migration status', () => {
