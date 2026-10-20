@@ -1,3 +1,9 @@
+## [26.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.3.0...mero-js-v26.4.0) (2026-10-20)
+
+### Features
+
+* **admin-api:** activate a namespace's upgrade on this node ([#293](https://github.com/calimero-network/mero-js/issues/293)) ([d31a8ee](https://github.com/calimero-network/mero-js/commit/d31a8ee1b4d2634c5644ca72b842da56419d7d60))
+
 ## [26.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.2...mero-js-v26.3.0) (2026-10-20)
 
 ### Features
