@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SignedGroupOpenInvitation } from '../admin-api/admin-types.js';
-import { encodeSignedInvitation } from './namespace-op.js';
+import { encodeSignedInvitation, signMemberJoinOp } from './namespace-op.js';
 
 /**
  * A minimal well-formed invitation. The values are shaped, not meaningful — the
@@ -63,5 +63,21 @@ describe('encodeSignedInvitation', () => {
     expect(tail).toContain(first);
     expect(tail).toContain(second);
     expect(tail.indexOf(first)).toBeLessThan(tail.indexOf(second));
+  });
+});
+
+describe('signMemberJoinOp', () => {
+  it('leads the signed op with the schema version core 0.11 verifies', async () => {
+    const op = await signMemberJoinOp({
+      namespaceId: '04'.repeat(32),
+      member: '05'.repeat(32),
+      invitation: invitation([]),
+      credential: '06'.repeat(8),
+      deviceSecret: '07'.repeat(32),
+      nonce: 1,
+      joinedAt: 1_900_000_000,
+    });
+
+    expect(Number.parseInt(op.slice(0, 2), 16)).toBe(27);
   });
 });
