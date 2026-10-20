@@ -871,6 +871,22 @@ export class AdminApiClient {
   }
 
   /**
+   * Bring back a namespace the user removed from this node while the account
+   * stayed a member (POST /admin-api/namespaces/:namespace_id/join, no
+   * invitation). Such namespaces are the `forgotten` ones in
+   * {@link listNamespacesForApplication}.
+   */
+  async restoreNamespace(namespaceId: string): Promise<JoinNamespaceResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: JoinNamespaceResponseData }>(
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/join`,
+        {},
+        { timeoutMs: 65000 },
+      ),
+    );
+  }
+
+  /**
    * Join the namespace an invitation grants, and say what happened — including
    * when the request failed but the join landed anyway.
    *
@@ -1740,9 +1756,15 @@ export class AdminApiClient {
     await this.httpClient.post(`/admin-api/contexts/${pathSegment(contextId)}/leave`, {});
   }
 
-  /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
-  async leaveNamespace(namespaceId: string): Promise<void> {
-    await this.httpClient.post(`/admin-api/namespaces/${pathSegment(namespaceId)}/leave`, {});
+  /**
+   * Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave).
+   *
+   * With `purge`, every device of the account also takes the namespace off its
+   * disk. Core reads `purge` from the query string, so it is not in the body.
+   */
+  async leaveNamespace(namespaceId: string, options: { purge?: boolean } = {}): Promise<void> {
+    const query = options.purge ? '?purge=true' : '';
+    await this.httpClient.post(`/admin-api/namespaces/${pathSegment(namespaceId)}/leave${query}`, {});
   }
 
   /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */

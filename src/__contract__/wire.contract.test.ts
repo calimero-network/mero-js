@@ -50,6 +50,7 @@ import type {
   OwnerDeleteGroupRequest,
   GroupInfo,
   IntentRelayInfo,
+  JoinNamespaceResponseData,
   UpgradeGroupResponseData,
   ActivateGroupUpgradeRequest,
   ActivateGroupUpgradeResponseData,
@@ -100,6 +101,7 @@ const deviceEntry = key<AccountDeviceEntry>();
 const signRootReq = key<AccountSignWithRootRequest>();
 const signRootRes = key<AccountSignWithRootResponseData>();
 const namespace = key<Namespace>();
+const joinRes = key<JoinNamespaceResponseData>();
 const founding = key<NamespaceFounding>();
 const heldOps = key<NamespaceHeldOps>();
 const heldOp = key<NamespaceHeldOp>();
@@ -129,6 +131,7 @@ const NAMESPACE_OPTIONAL = [
   namespace('appPackage'),
   namespace('founding'),
   namespace('heldOps'),
+  namespace('forgotten'),
 ];
 
 // `jsonrpc/execute.res.json` is deliberately absent: its SDK counterpart is an
@@ -428,6 +431,14 @@ const SPECS: Spec[] = [
     path: 'data.0.founding',
     required: [founding('founderAccountId'), founding('salt')],
     optional: [],
+  },
+  // `name` is set only when the join restored a removed namespace.
+  {
+    type: 'JoinNamespaceResponseData',
+    file: 'namespaces/join.res.json',
+    path: 'data',
+    required: [joinRes('namespaceId'), joinRes('memberIdentity'), joinRes('memberAccount')],
+    optional: [joinRes('groupId'), joinRes('name')],
   },
   // A relay carrying a nodeless account's device link: both proofs are opaque
   // hex, and the response names the account and the device it bound.
