@@ -1,3 +1,9 @@
+## [26.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.2...mero-js-v26.3.0) (2026-10-20)
+
+### Features
+
+* **admin:** type the upgrade trial's skipTrial and its context counts ([#291](https://github.com/calimero-network/mero-js/issues/291)) ([644434c](https://github.com/calimero-network/mero-js/commit/644434ce79bf0d3ba5fc941b9e3e78249e40291d))
+
 ## [26.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.1...mero-js-v26.2.2) (2026-10-19)
 
 ### Bug Fixes
