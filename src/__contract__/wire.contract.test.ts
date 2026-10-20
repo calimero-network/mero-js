@@ -222,6 +222,8 @@ const SPECS: Spec[] = [
       upRes('localContextsTotal'),
       upRes('localContextsSwapped'),
       upRes('localContextsFailed'),
+      upRes('contextsTrialled'),
+      upRes('contextsNotHeld'),
     ],
   },
   {
