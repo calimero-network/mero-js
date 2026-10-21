@@ -119,6 +119,20 @@ export class AuthRevokedError extends HTTPError {
   }
 }
 
+/**
+ * A failure of a transport's `getAuthToken` that must stop the request.
+ *
+ * Any other error from `getAuthToken` is ignored and the request goes out
+ * without a token, which is right for a credential that is merely absent. This
+ * one says the credential could not be obtained at all — the login it needed
+ * was refused, or never reached the server — so sending the request anyway
+ * would only trade the real cause for the server's 401, or for the same
+ * transport error a second time. Thrown as is from the request.
+ */
+export class RequestAuthError extends Error {
+  name = 'RequestAuthError';
+}
+
 // Helper function to convert Headers to Record
 function headersToRecord(headers: Headers): Record<string, string> {
   const record: Record<string, string> = {};
@@ -606,7 +620,9 @@ export class WebHttpClient implements HttpClient {
           headers.Authorization = `Bearer ${token}`;
         }
       } catch (error) {
-        // Ignore auth token errors
+        // A credential that could not be obtained stops the request; any other
+        // failure leaves it unauthenticated, as before.
+        if (error instanceof RequestAuthError) throw error;
       }
     }
 

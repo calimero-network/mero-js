@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebHttpClient, HTTPError, AuthRevokedError } from './web-client.js';
+import { WebHttpClient, HTTPError, AuthRevokedError, RequestAuthError } from './web-client.js';
 import { Transport } from './http-types.js';
 
 describe('WebHttpClient - Token Refresh', () => {
@@ -679,5 +679,36 @@ describe('WebHttpClient - Token Refresh', () => {
         'Authentication revoked (token_revoked): HTTP 401 Unauthorized',
       );
     });
+  });
+});
+
+describe('WebHttpClient - getAuthToken failures', () => {
+  it('any other getAuthToken error sends the request without a token, as before', async () => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    const client = new WebHttpClient({
+      fetch,
+      baseUrl: 'https://api.example.com',
+      getAuthToken: async () => {
+        throw new Error('no token yet');
+      },
+    });
+    await client.get('/x');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const init = (fetch.mock.calls[0] as unknown[])[1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it('a RequestAuthError stops the request and reaches the caller as is', async () => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    const failure = new RequestAuthError('login refused');
+    const client = new WebHttpClient({
+      fetch,
+      baseUrl: 'https://api.example.com',
+      getAuthToken: async () => {
+        throw failure;
+      },
+    });
+    await expect(client.get('/x')).rejects.toBe(failure);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

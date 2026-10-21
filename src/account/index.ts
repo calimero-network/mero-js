@@ -104,5 +104,7 @@ export {
   NotForAccountError,
 } from './account-admin.js';
 export type { AccountAdminDeps } from './account-admin.js';
+export { RelayLoginError } from './relay-login-error.js';
+export type { RelayLoginFailureKind } from './relay-login-error.js';
 export { createNodeAdmin } from './node-admin.js';
 export type { NodeAdminDeps } from './node-admin.js';

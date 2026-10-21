@@ -1,3 +1,5 @@
+import { RelayLoginError } from '../account/relay-login-error.js';
+
 // ── What a failed request means, in terms a caller can act on ────────────────
 //
 // Core rc.56 onwards (calimero-network/core#4151 to #4164) answers a refused
@@ -159,6 +161,15 @@ export function messageOf(err: unknown, fallback = 'Request failed'): string {
  * own status-0 `HTTPError`.
  */
 export function classifyError(err: unknown): ClassifiedError {
+  // A relay login that failed before the request was sent: its own status is
+  // about the login, so it is read by what it means for the request — a
+  // refused credential is this client's session, anything else the relay's.
+  if (err instanceof RelayLoginError) {
+    const status = err.loginStatus;
+    const kind: ErrorKind =
+      err.kind === 'signed-out' ? 'unauthorized' : status ? kindForStatus(status) : 'unreachable';
+    return { kind, status, retryable: RETRYABLE[kind], message: messageOf(err) };
+  }
   const status = statusOf(err);
   let kind: ErrorKind;
   if (status !== undefined) {

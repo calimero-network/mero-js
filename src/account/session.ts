@@ -36,6 +36,7 @@ import {
 import {
   login,
 } from '../login/index.js';
+import { RelayLoginError } from './relay-login-error.js';
 import {
   SseClient,
 } from '../events/index.js';
@@ -647,9 +648,12 @@ export function relayTransportFetch(relayUrl: string): typeof fetch | undefined 
  * A hosted relay's `/admin-api/` sits behind the node's forward-auth, which
  * knows no request proof — it answers a Bearer token or 401. Logging in with
  * the device certificate is how a keyholder gets that token. Minted on first
- * use and re-minted once it has expired. On failure it yields `undefined`, the
- * admin request then goes out unauthenticated and the node's 401 is what the
- * caller sees; the next call tries to log in again.
+ * use and re-minted once it has expired. On failure it throws a
+ * {@link RelayLoginError}, which the HTTP client lets through instead of sending
+ * the admin request unauthenticated: the caller sees why the login failed —
+ * `signed-out` for a refused credential, `unavailable` for a relay that did not
+ * answer — rather than the node's 401 or the same transport error twice.
+ * Nothing is cached on failure, so the next call tries to log in again.
  */
 function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: string) {
   let token: string | null = null;
@@ -672,9 +676,8 @@ function relaySession(s: DelegatedSession & { relayUrl: string }, nodeKey: strin
           return token;
         })
         .catch((e: unknown) => {
-          console.warn('[mero-js] relay login failed', e);
           token = null;
-          return undefined;
+          throw new RelayLoginError(s.relayUrl, e);
         })
         .finally(() => {
           inflight = null;
