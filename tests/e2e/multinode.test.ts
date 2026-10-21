@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
 import type { CreateGroupInvitationResponseData } from '../../src/admin-api/admin-types.js';
+import type { GroupMembershipEventData } from '../../src/events/group.js';
 import { resolveCreds, ensureApplication, runId } from './harness.js';
 
 const N1 = process.env.MERO_NODE1_URL ?? 'http://localhost:4501';
@@ -23,6 +24,8 @@ let applicationId: string;
 let namespaceId: string;
 /** node-2's account in the namespace: what every member-addressing route takes. */
 let memberAccount: string;
+/** node-2's signing key in the namespace: what a direct add takes. */
+let memberIdentity: string;
 
 suite('Multi-node E2E — namespace invite/join', () => {
   beforeAll(async () => {
@@ -74,6 +77,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
     // cannot tell them apart - see the listing note in round-trip.test.ts.
     expect(joined.memberAccount).toMatch(/^[0-9a-f]{64}$/);
     memberAccount = joined.memberAccount;
+    memberIdentity = joined.memberIdentity;
   });
 
   /**
@@ -160,6 +164,43 @@ suite('Multi-node E2E — namespace invite/join', () => {
     await n1.admin.setMemberMetadata(namespaceId, memberAccount, { data: { tag } });
     const meta = await n1.admin.getMemberMetadata(namespaceId, memberAccount);
     expect(meta?.data).toMatchObject({ tag });
+  }, 60000);
+
+  it('node-1 receives a live GroupMembership event when it adds node-2 to a subgroup', async () => {
+    const { groupId } = await n1.admin.createGroup({
+      applicationId,
+      parentGroupId: namespaceId,
+      name: `evt-${RUN}`,
+    });
+    const events: GroupMembershipEventData[] = [];
+    const collect = (ev: unknown) => {
+      if (ev && typeof ev === 'object' && 'groupId' in ev) events.push(ev as GroupMembershipEventData);
+    };
+
+    try {
+      n1.events.on('event', collect);
+      // Subscribing before connecting makes 'connect' fire only once the subscription has landed.
+      await n1.events.subscribe({ groupIds: [groupId] });
+      const connected = new Promise<string>((resolve) => n1.events.on('connect', resolve));
+      await n1.events.connect();
+      await connected;
+
+      await n1.admin.addGroupMembers(groupId, {
+        members: [{ identity: memberIdentity, role: 'Member' }],
+      });
+
+      const hit = await waitFor(
+        async () => events.find((e) => e.type === 'MemberAdded'),
+        20000,
+      ).catch(() => {
+        throw new Error(`no MemberAdded event on node-1; saw: ${JSON.stringify(events)}`);
+      });
+      expect(hit.groupId).toBe(groupId);
+      expect(hit.data.memberAccount).toBe(memberAccount);
+    } finally {
+      n1.events.off('event', collect);
+      await n1.events.unsubscribe({ groupIds: [groupId] });
+    }
   }, 60000);
 
   // Last: node-2 is out of the namespace afterwards.
