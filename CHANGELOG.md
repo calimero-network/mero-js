@@ -1,3 +1,9 @@
+## [26.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.6.0...mero-js-v26.7.0) (2026-10-21)
+
+### Features
+
+* **admin:** leave a namespace with purge, restore a forgotten one ([#295](https://github.com/calimero-network/mero-js/issues/295)) ([c382ad1](https://github.com/calimero-network/mero-js/commit/c382ad1032494d18400c4af8ddfe69fe5911910d))
+
 ## [26.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.5.0...mero-js-v26.6.0) (2026-10-21)
 
 ### Features
