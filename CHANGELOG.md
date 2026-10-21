@@ -1,3 +1,9 @@
+## [26.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.7.0...mero-js-v26.8.0) (2026-10-21)
+
+### Features
+
+* **agent-gate:** verify a release's signed inference allowlist ([#302](https://github.com/calimero-network/mero-js/issues/302)) ([a1c4691](https://github.com/calimero-network/mero-js/commit/a1c4691631f02ba5185c2734a2dc5ae95847101b))
+
 ## [26.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.6.0...mero-js-v26.7.0) (2026-10-21)
 
 ### Features
