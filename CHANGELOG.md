@@ -1,3 +1,15 @@
+## [26.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.5.0...mero-js-v26.6.0) (2026-10-21)
+
+### Features
+
+* **account:** surface relay login failures as RelayLoginError ([#300](https://github.com/calimero-network/mero-js/issues/300)) ([7245bec](https://github.com/calimero-network/mero-js/commit/7245bec74aad00eeca045dad22067a18a59b992e))
+
+## [26.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.4.1...mero-js-v26.5.0) (2026-10-21)
+
+### Features
+
+* **account:** listing an account across relays says when none answered, and why ([#299](https://github.com/calimero-network/mero-js/issues/299)) ([066b43d](https://github.com/calimero-network/mero-js/commit/066b43da6293398e2311289b4da13bc7ce85c94f))
+
 ## [26.4.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.4.0...mero-js-v26.4.1) (2026-10-21)
 
 ## [26.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.3.0...mero-js-v26.4.0) (2026-10-20)

@@ -183,6 +183,7 @@ export {
   knownRelays,
   listDelegatedContexts,
   listDelegatedNamespaces,
+  RelaysUnavailableError,
   resolveRelayFromInvitation,
   normaliseAccount,
   joinWithNode,
@@ -207,6 +208,7 @@ export {
   InvitationNotClaimableError,
   NoRelayError,
   NotForAccountError,
+  RelayLoginError,
   createNodeAdmin,
 } from "./account/index.js";
 export type {
@@ -214,6 +216,8 @@ export type {
   DelegatedAccountSession,
   RelayMap,
   RelayNodeKeyAttempt,
+  RelayLoginFailureKind,
+  RelayListingFailure,
   RelayResolutionStep,
   RelayResolutionFailure,
   ResolvedInvitationRelay,
