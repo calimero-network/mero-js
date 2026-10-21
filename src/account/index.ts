@@ -26,7 +26,7 @@ export type { ResolvedRoot } from './account.js';
 // attested, founding and creating contexts under warrants, admin over the same
 // `AdminApiClient` shape on both transports, and joining from an invitation.
 // Framework-free: mero-react re-exports these under the same names.
-export type { DelegatedCredential, DelegatedSession as DelegatedAccountSession, RelayMap, RelayNodeKeyAttempt } from './session.js';
+export type { DelegatedCredential, DelegatedSession as DelegatedAccountSession, RelayMap, RelayNodeKeyAttempt, RelayListingFailure } from './session.js';
 export {
   readDelegatedSession,
   saveDelegatedSession,
@@ -53,7 +53,7 @@ export {
   knownRelays,
   listDelegatedContexts,
   listDelegatedNamespaces,
-  RelaysUnreachableError,
+  RelaysUnavailableError,
 } from './session.js';
 export { resolveRelayFromInvitation, normaliseAccount } from './relay-from-invitation.js';
 export type {

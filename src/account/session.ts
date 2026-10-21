@@ -975,14 +975,51 @@ export function knownRelays(s: DelegatedSession): string[] {
  * really "could not ask". A relay whose hostname no longer resolves (a node
  * rebuilt or deleted in the cloud) did exactly that.
  */
-export class RelaysUnreachableError extends Error {
-  constructor(
-    readonly relays: readonly string[],
-    readonly causes: readonly unknown[],
-  ) {
-    super(`none of this account's relays answered: ${relays.join(', ')}`);
-    this.name = 'RelaysUnreachableError';
+/**
+ * Why one relay did not answer a listing.
+ *
+ * `refused`: its attestation did not verify (an untrusted image, a release
+ * below the floor). Asking again cannot change that, and it may be worth a
+ * closer look. `unavailable`: something on the way did not answer, or the
+ * relay refused the request itself; trying again later may.
+ */
+export interface RelayListingFailure {
+  relayUrl: string;
+  kind: 'refused' | 'unavailable';
+  error: unknown;
+}
+
+export class RelaysUnavailableError extends Error {
+  readonly relays: readonly string[];
+  constructor(readonly failures: readonly RelayListingFailure[]) {
+    super(`none of this account's relays answered: ${failures.map((f) => `${f.relayUrl} (${f.kind})`).join(', ')}`);
+    this.name = 'RelaysUnavailableError';
+    this.relays = failures.map((f) => f.relayUrl);
   }
+
+  /** Every relay refused its attestation: retrying will not help. */
+  get refused(): boolean {
+    return this.failures.every((f) => f.kind === 'refused');
+  }
+}
+
+/**
+ * One relay's client for a listing, or the failure that stopped it. The key's
+ * own outcome is kept, so a refused attestation is not reported as a relay
+ * that merely did not answer.
+ */
+async function listingClient(
+  s: DelegatedSession,
+  relayUrl: string,
+): Promise<{ client: MeroClient } | { failure: RelayListingFailure }> {
+  const key = await attemptRelayNodeKey(relayUrl);
+  if (key.kind !== 'learned') {
+    console.warn('[mero-js] could not learn the relay node key from its attestation', key.error);
+    return { failure: { relayUrl, kind: key.kind, error: key.error } };
+  }
+  const client = buildDelegatedClient({ ...s, relayUrl }, null);
+  if (!client) return { failure: { relayUrl, kind: 'unavailable', error: new Error(`no client for ${relayUrl}`) } };
+  return { client };
 }
 
 type ListedContext = Awaited<ReturnType<MeroClient['admin']['getContexts']>>['contexts'][number];
@@ -994,7 +1031,7 @@ type ListedContext = Awaited<ReturnType<MeroClient['admin']['getContexts']>>['co
  * Each relay answers only for itself and only for this caller, so the union is
  * exactly the account's contexts across relays. A relay that cannot be reached
  * or logged in to is skipped (its contexts simply do not appear), not fatal,
- * unless it is every relay: then {@link RelaysUnreachableError}.
+ * unless it is every relay: then {@link RelaysUnavailableError}.
  */
 export async function listDelegatedContexts(
   s: DelegatedSession,
@@ -1002,24 +1039,27 @@ export async function listDelegatedContexts(
   const out: Array<ListedContext & { relayUrl: string }> = [];
   const map = readRelayMap(s.account);
   const relays = knownRelays(s);
-  const causes: unknown[] = [];
+  const failures: RelayListingFailure[] = [];
   for (const relayUrl of relays) {
+    const got = await listingClient(s, relayUrl);
+    if ('failure' in got) {
+      failures.push(got.failure);
+      continue;
+    }
+    const { client } = got;
     try {
-      if (!(await resolveRelayNodeKey(relayUrl))) throw new Error(`no node key for ${relayUrl}`);
-      const client = buildDelegatedClient({ ...s, relayUrl }, null);
-      if (!client) throw new Error(`no client for ${relayUrl}`);
       const { contexts } = await client.admin.getContexts();
       for (const c of contexts ?? []) {
         out.push({ ...c, relayUrl });
         map.contexts[c.id] = relayUrl;
       }
     } catch (e) {
-      causes.push(e);
+      failures.push({ relayUrl, kind: 'unavailable', error: e });
       console.warn(`[mero-js] could not list contexts on ${relayUrl}`, e);
     }
   }
   writeRelayMap(s.account, map);
-  if (relays.length > 0 && causes.length === relays.length) throw new RelaysUnreachableError(relays, causes);
+  if (relays.length > 0 && failures.length === relays.length) throw new RelaysUnavailableError(failures);
   return out;
 }
 
@@ -1030,7 +1070,7 @@ type ListedNamespace = Awaited<ReturnType<MeroClient['admin']['listNamespaces']>
  * that listed it and recorded as that namespace's relay. Same rules as
  * {@link listDelegatedContexts}: each relay answers for itself and this caller
  * only (`namespace:list-own`); an unreachable relay is skipped, and every
- * relay unreachable is {@link RelaysUnreachableError}.
+ * relay unreachable is {@link RelaysUnavailableError}.
  */
 export async function listDelegatedNamespaces(
   s: DelegatedSession,
@@ -1039,12 +1079,15 @@ export async function listDelegatedNamespaces(
   const seen = new Set<string>();
   const map = readRelayMap(s.account);
   const relays = knownRelays(s);
-  const causes: unknown[] = [];
+  const failures: RelayListingFailure[] = [];
   for (const relayUrl of relays) {
+    const got = await listingClient(s, relayUrl);
+    if ('failure' in got) {
+      failures.push(got.failure);
+      continue;
+    }
+    const { client } = got;
     try {
-      if (!(await resolveRelayNodeKey(relayUrl))) throw new Error(`no node key for ${relayUrl}`);
-      const client = buildDelegatedClient({ ...s, relayUrl }, null);
-      if (!client) throw new Error(`no client for ${relayUrl}`);
       for (const ns of await client.admin.listNamespaces()) {
         if (seen.has(ns.namespaceId)) continue;
         seen.add(ns.namespaceId);
@@ -1052,11 +1095,11 @@ export async function listDelegatedNamespaces(
         map.namespaces[ns.namespaceId] ??= relayUrl;
       }
     } catch (e) {
-      causes.push(e);
+      failures.push({ relayUrl, kind: 'unavailable', error: e });
       console.warn(`[mero-js] could not list namespaces on ${relayUrl}`, e);
     }
   }
   writeRelayMap(s.account, map);
-  if (relays.length > 0 && causes.length === relays.length) throw new RelaysUnreachableError(relays, causes);
+  if (relays.length > 0 && failures.length === relays.length) throw new RelaysUnavailableError(failures);
   return out;
 }

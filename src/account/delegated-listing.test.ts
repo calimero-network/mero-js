@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { answers, createMeroClient } = vi.hoisted(() => {
+const { answers, createMeroClient, attest } = vi.hoisted(() => {
   // Per relay: what `getContexts` / `listNamespaces` do there.
   const answers = new Map<string, { contexts?: () => Promise<unknown>; namespaces?: () => Promise<unknown> }>();
   const createMeroClient = vi.fn((config: { relay: { relayUrl: string } }) => {
@@ -16,8 +16,16 @@ const { answers, createMeroClient } = vi.hoisted(() => {
       close: vi.fn(),
     };
   });
-  return { answers, createMeroClient };
+  const attest = vi.fn(async () => {
+    throw new Error('attest must not be reached for a pinned relay');
+  });
+  return { answers, createMeroClient, attest };
 });
+
+vi.mock('../relay-attestation/index.js', async (importActual) => ({
+  ...(await importActual<typeof import('../relay-attestation/index.js')>()),
+  attestRelayNodeKey: attest,
+}));
 
 vi.mock('../transport/index.js', async (importActual) => ({
   ...(await importActual<typeof import('../transport/index.js')>()),
@@ -25,7 +33,7 @@ vi.mock('../transport/index.js', async (importActual) => ({
 }));
 
 import {
-  RelaysUnreachableError,
+  RelaysUnavailableError,
   listDelegatedContexts,
   listDelegatedNamespaces,
   pinRelayNodeKey,
@@ -41,6 +49,7 @@ const unresolved = () => Promise.reject(new TypeError('Failed to fetch'));
 beforeEach(() => {
   localStorage.clear();
   answers.clear();
+  vi.clearAllMocks();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   // Pinned while the relays were alive: no attestation is fetched again.
   pinRelayNodeKey(GONE, 'ab'.repeat(32));
@@ -65,10 +74,27 @@ describe('listing an account across its relays', () => {
   it('says so when every relay is down, rather than reporting an empty account', async () => {
     answers.set(GONE, { contexts: unresolved, namespaces: unresolved });
 
-    await expect(listDelegatedContexts(S)).rejects.toBeInstanceOf(RelaysUnreachableError);
+    await expect(listDelegatedContexts(S)).rejects.toBeInstanceOf(RelaysUnavailableError);
     const err = await listDelegatedNamespaces(S).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(RelaysUnreachableError);
-    expect((err as RelaysUnreachableError).relays).toEqual([GONE]);
+    expect(err).toBeInstanceOf(RelaysUnavailableError);
+    expect((err as RelaysUnavailableError).relays).toEqual([GONE]);
+    expect((err as RelaysUnavailableError).failures[0]!.kind).toBe('unavailable');
+    expect((err as RelaysUnavailableError).refused).toBe(false);
+  });
+
+  it('a relay whose node key cannot be learned counts as failed, and says it was refused', async () => {
+    // Not pinned: the key comes from the relay's attestation, which does not
+    // verify. That relay is not skipped as if it had answered.
+    localStorage.clear();
+    attest.mockRejectedValueOnce(new Error('quote is not of a trusted image'));
+
+    const err = await listDelegatedContexts(S).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RelaysUnavailableError);
+    expect((err as RelaysUnavailableError).failures).toEqual([
+      { relayUrl: GONE, kind: 'refused', error: expect.any(Error) },
+    ]);
+    expect((err as RelaysUnavailableError).refused).toBe(true);
+    expect(createMeroClient).not.toHaveBeenCalled();
   });
 
   it('an empty answer is still an empty account', async () => {
