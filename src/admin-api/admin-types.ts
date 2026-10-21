@@ -476,6 +476,12 @@ export interface Namespace {
    * current on another. Absent when nothing is held, and on nodes that predate it.
    */
   heldOps?: NamespaceHeldOps;
+  /**
+   * The user removed this namespace from this node and the account is still a
+   * member. Set only by {@link AdminApiClient.listNamespacesForApplication};
+   * {@link AdminApiClient.restoreNamespace} brings it back.
+   */
+  forgotten?: boolean;
 }
 
 /** The group ops a namespace holds unapplied on the node that answered. */
@@ -787,6 +793,8 @@ export interface JoinNamespaceResponseData {
    * is how the caller addresses the member it just became.
    */
   memberAccount: string;
+  /** The name a restored namespace had when it was removed. Set only by a restore. */
+  name?: string;
 }
 
 export interface CreateGroupInNamespaceRequest {

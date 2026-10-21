@@ -902,6 +902,37 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
+    it('restoreNamespace joins with an empty body and returns the restored name', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
+        data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64), name: 'Team' },
+      });
+      const result = await client.restoreNamespace('ns-1');
+      expect(result.name).toBe('Team');
+      // No invitation: core reads an empty body as "restore what this node forgot".
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/join')).toEqual({});
+    });
+
+    it('leaveNamespace sends no purge by default', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/leave', { data: {} });
+      await client.leaveNamespace('ns-1');
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/leave')).toEqual({});
+    });
+
+    it('leaveNamespace asks for a purge in the query, not the body', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/leave?purge=true', { data: {} });
+      await client.leaveNamespace('ns-1', { purge: true });
+      // Core reads `purge` from the query string and ignores it in the body.
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces/ns-1/leave?purge=true')).toEqual({});
+    });
+
+    it('listNamespacesForApplication keeps the forgotten flag', async () => {
+      mock.setMockResponse('GET', '/admin-api/namespaces/for-application/app-1', {
+        data: [{ namespaceId: 'ns-1', forgotten: true }],
+      });
+      const [ns] = await client.listNamespacesForApplication('app-1');
+      expect(ns.forgotten).toBe(true);
+    });
+
     it('redeemInvitation joins with the groupName and reports joined', async () => {
       mock.setMockResponse('POST', '/admin-api/namespaces/ns-1/join', {
         data: { namespaceId: 'ns-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },
