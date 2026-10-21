@@ -53,6 +53,7 @@ export {
   knownRelays,
   listDelegatedContexts,
   listDelegatedNamespaces,
+  RelaysUnreachableError,
 } from './session.js';
 export { resolveRelayFromInvitation, normaliseAccount } from './relay-from-invitation.js';
 export type {

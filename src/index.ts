@@ -183,6 +183,7 @@ export {
   knownRelays,
   listDelegatedContexts,
   listDelegatedNamespaces,
+  RelaysUnreachableError,
   resolveRelayFromInvitation,
   normaliseAccount,
   joinWithNode,

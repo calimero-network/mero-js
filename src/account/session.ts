@@ -965,6 +965,26 @@ export function knownRelays(s: DelegatedSession): string[] {
   return [...new Set(all)];
 }
 
+/**
+ * Thrown by {@link listDelegatedContexts} and {@link listDelegatedNamespaces}
+ * when the account knows relays and **none** of them answered.
+ *
+ * One relay down is skipped, as before: the others still answer for what they
+ * serve. Every relay down is different. Returning `[]` then reads as "a member
+ * of nothing", and an app renders an empty account, with no error, for what is
+ * really "could not ask". A relay whose hostname no longer resolves (a node
+ * rebuilt or deleted in the cloud) did exactly that.
+ */
+export class RelaysUnreachableError extends Error {
+  constructor(
+    readonly relays: readonly string[],
+    readonly causes: readonly unknown[],
+  ) {
+    super(`none of this account's relays answered: ${relays.join(', ')}`);
+    this.name = 'RelaysUnreachableError';
+  }
+}
+
 type ListedContext = Awaited<ReturnType<MeroClient['admin']['getContexts']>>['contexts'][number];
 
 /**
@@ -973,28 +993,33 @@ type ListedContext = Awaited<ReturnType<MeroClient['admin']['getContexts']>>['co
  *
  * Each relay answers only for itself and only for this caller, so the union is
  * exactly the account's contexts across relays. A relay that cannot be reached
- * or logged in to is skipped (its contexts simply do not appear), not fatal.
+ * or logged in to is skipped (its contexts simply do not appear), not fatal,
+ * unless it is every relay: then {@link RelaysUnreachableError}.
  */
 export async function listDelegatedContexts(
   s: DelegatedSession,
 ): Promise<Array<ListedContext & { relayUrl: string }>> {
   const out: Array<ListedContext & { relayUrl: string }> = [];
   const map = readRelayMap(s.account);
-  for (const relayUrl of knownRelays(s)) {
+  const relays = knownRelays(s);
+  const causes: unknown[] = [];
+  for (const relayUrl of relays) {
     try {
-      if (!(await resolveRelayNodeKey(relayUrl))) continue;
+      if (!(await resolveRelayNodeKey(relayUrl))) throw new Error(`no node key for ${relayUrl}`);
       const client = buildDelegatedClient({ ...s, relayUrl }, null);
-      if (!client) continue;
+      if (!client) throw new Error(`no client for ${relayUrl}`);
       const { contexts } = await client.admin.getContexts();
       for (const c of contexts ?? []) {
         out.push({ ...c, relayUrl });
         map.contexts[c.id] = relayUrl;
       }
     } catch (e) {
+      causes.push(e);
       console.warn(`[mero-js] could not list contexts on ${relayUrl}`, e);
     }
   }
   writeRelayMap(s.account, map);
+  if (relays.length > 0 && causes.length === relays.length) throw new RelaysUnreachableError(relays, causes);
   return out;
 }
 
@@ -1004,7 +1029,8 @@ type ListedNamespace = Awaited<ReturnType<MeroClient['admin']['listNamespaces']>
  * This account's namespaces on every relay it knows, each tagged with the relay
  * that listed it and recorded as that namespace's relay. Same rules as
  * {@link listDelegatedContexts}: each relay answers for itself and this caller
- * only (`namespace:list-own`); an unreachable relay is skipped.
+ * only (`namespace:list-own`); an unreachable relay is skipped, and every
+ * relay unreachable is {@link RelaysUnreachableError}.
  */
 export async function listDelegatedNamespaces(
   s: DelegatedSession,
@@ -1012,11 +1038,13 @@ export async function listDelegatedNamespaces(
   const out: Array<ListedNamespace & { relayUrl: string }> = [];
   const seen = new Set<string>();
   const map = readRelayMap(s.account);
-  for (const relayUrl of knownRelays(s)) {
+  const relays = knownRelays(s);
+  const causes: unknown[] = [];
+  for (const relayUrl of relays) {
     try {
-      if (!(await resolveRelayNodeKey(relayUrl))) continue;
+      if (!(await resolveRelayNodeKey(relayUrl))) throw new Error(`no node key for ${relayUrl}`);
       const client = buildDelegatedClient({ ...s, relayUrl }, null);
-      if (!client) continue;
+      if (!client) throw new Error(`no client for ${relayUrl}`);
       for (const ns of await client.admin.listNamespaces()) {
         if (seen.has(ns.namespaceId)) continue;
         seen.add(ns.namespaceId);
@@ -1024,9 +1052,11 @@ export async function listDelegatedNamespaces(
         map.namespaces[ns.namespaceId] ??= relayUrl;
       }
     } catch (e) {
+      causes.push(e);
       console.warn(`[mero-js] could not list namespaces on ${relayUrl}`, e);
     }
   }
   writeRelayMap(s.account, map);
+  if (relays.length > 0 && causes.length === relays.length) throw new RelaysUnreachableError(relays, causes);
   return out;
 }
