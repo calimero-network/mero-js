@@ -21,18 +21,13 @@
  * `signer == credential.statement.sign_pk` before applying a join — so an
  * admitter can carry this and can never author it: it cannot admit a different
  * account, change the group, or grant a role. It can refuse, and that is all.
- * This is also why the fleet ingress leaves the route unauthenticated, and why
- * this posts with `fetch` rather than through `AdminApiClient`, which is built
- * around a node credential this caller does not have.
- *
- * ## Why it lives here and not in mero-js
- *
- * Two reasons. `mero-js` is read-only for this change by instruction, and the
- * shape that is actually useful to a caller is the one that hands back a
- * {@link DelegatedSession} — the node that admitted you is the node to connect
- * through — which is `mero-react`'s concern. The pieces that are pure SDK, the
- * borsh op layout and the request type, are used from `mero-js` unchanged and
- * are not reimplemented here.
+ * This is also why core serves the route without a credential (it sits on the
+ * public admin router, beside `/health` and the intent routes, on every node
+ * whatever its auth mode), why the fleet ingress exempts the one anchored path,
+ * and why this posts with `fetch` rather than through `AdminApiClient`, which is
+ * built around a node credential this caller does not have. A node that predates
+ * that change and runs embedded auth answers 401 here; the failure is reported at
+ * the `admit` step like any other refusal.
  *
  * ## Why the op has no parents
  *

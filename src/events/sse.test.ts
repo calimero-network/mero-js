@@ -625,3 +625,133 @@ describe('SseClient connect failures carry the auth reason', () => {
   });
 });
 
+describe('SseClient redirects', () => {
+  const redirected = () =>
+    new Response(null, { status: 307, headers: { location: 'https://elsewhere.example/sse' } });
+
+  function clientWith(fetchMock: ReturnType<typeof vi.fn>, withProof: boolean) {
+    return new SseClient({
+      baseUrl: 'http://localhost:4001',
+      fetch: fetchMock as unknown as typeof fetch,
+      reconnectDelayMs: 60_000,
+      ...(withProof
+        ? { authorize: async () => ({ 'X-Calimero-Proof': 'aa' }) }
+        : { getAuthToken: async () => 'test-token' }),
+    });
+  }
+
+  const connectError = async (client: SseClient): Promise<Error> => {
+    const failed = new Promise<Error>((resolve) => client.on('error', resolve));
+    await client.connect();
+    const err = await failed;
+    client.close();
+    return err;
+  };
+
+  const subscribeError = (client: SseClient) =>
+    (client as any).postSubscription('subscribe', { contextIds: ['ctx-1'] }) as Promise<Error | null>;
+
+  describe('carrying a proof', () => {
+    it('opens the stream without following redirects and reports one as an error', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(redirected());
+      const err = await connectError(clientWith(fetchMock, true));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
+      expect(err).toBeInstanceOf(HTTPError);
+      expect(err.message).toMatch(/X-Calimero-Proof/);
+    });
+
+    it('posts a subscription without following redirects and reports one as an error', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(redirected());
+      const err = await subscribeError(clientWith(fetchMock, true));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
+      expect(err).toBeInstanceOf(HTTPError);
+      expect(err?.message).toMatch(/X-Calimero-Proof/);
+    });
+
+    it('treats an opaque redirect the same way', async () => {
+      const opaque = {
+        ok: false,
+        status: 0,
+        statusText: '',
+        type: 'opaqueredirect',
+        headers: new Headers(),
+        text: async () => '',
+      };
+      const err = await subscribeError(clientWith(vi.fn().mockResolvedValue(opaque), true));
+      expect(err?.message).toMatch(/X-Calimero-Proof/);
+    });
+  });
+
+  describe('carrying no proof', () => {
+    it('leaves redirect handling to the platform on both calls', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(redirected());
+      const client = clientWith(fetchMock, false);
+      await connectError(client);
+      await subscribeError(client);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][1].redirect).toBeUndefined();
+      expect(fetchMock.mock.calls[1][1].redirect).toBeUndefined();
+    });
+
+    it('reports a redirect as a plain HTTP error', async () => {
+      const err = await subscribeError(clientWith(vi.fn().mockResolvedValue(redirected()), false));
+      expect(err).toBeInstanceOf(HTTPError);
+      expect(err?.message).not.toMatch(/X-Calimero-Proof/);
+    });
+  });
+});
+
+
+describe('SseClient superseded streams', () => {
+  // A stream whose body stays open until its request is aborted, then fails
+  // the way fetch fails it: with an AbortError, delivered asynchronously.
+  function openStreams() {
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init!.signal!;
+      signals.push(signal);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`data: {"type":"connect","session_id":"s${signals.length}"}\n\n`));
+          signal.addEventListener('abort', () =>
+            controller.error(new DOMException('This operation was aborted', 'AbortError')),
+          );
+        },
+      });
+      return new Response(body, { status: 200 });
+    });
+    return { fetchMock, signals };
+  }
+
+  // Hyperfeed reopens its stream after a re-login with close() then connect().
+  // The old stream's abort landed after connect() had cleared `closed`, so it
+  // was reported as an error and scheduled a reconnect, which aborted the new,
+  // healthy stream, whose abort scheduled the next: a stream torn down every
+  // reconnect delay, forever, with "This operation was aborted" each time.
+  it('a stream closed and reopened at once stays open, and says nothing', async () => {
+    const { fetchMock, signals } = openStreams();
+    const client = new SseClient({
+      baseUrl: 'http://localhost:4001',
+      getAuthToken: async () => 'test-token',
+      reconnectDelayMs: 20,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+
+    await client.connect();
+    client.close();
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(errors.map((e) => e.message)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals[1].aborted).toBe(false);
+    client.close();
+  });
+});

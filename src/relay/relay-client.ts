@@ -93,9 +93,9 @@ export interface RelayClientConfig {
   /**
    * Where nonces come from. See {@link NonceSource} — a reset replays.
    *
-   * A client whose storage may be cleared between sessions should wrap its
-   * counter in `createRecoveringNonceSource`, which asks the node where the
-   * sequence actually stands before the first mint instead of restarting at 1.
+   * Persist it (`createLocalStorageNonceSource` in a browser): the node keeps
+   * the spent ledger but serves no lookup of it, so the client's own counter is
+   * the only record of where the sequence stands.
    */
   nonces: NonceSource;
   /**

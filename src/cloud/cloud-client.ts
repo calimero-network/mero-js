@@ -35,7 +35,14 @@ import {
 } from '../account/index.js';
 import { HTTPError } from '../http-client/web-client.js';
 import { pathSegment } from '../http-client/path-segment.js';
-import { ACCOUNT_HEX, beginLinkState, takeLinkState } from './link-state.js';
+import {
+  ACCOUNT_HEX,
+  VERIFIER_HEX,
+  beginLinkState,
+  linkChallenge,
+  linkGrantClaims,
+  takeLinkVerifier,
+} from './link-state.js';
 import type { Signer } from '../signer/signer.js';
 import {
   routingProofHeaders,
@@ -464,6 +471,10 @@ export interface AccountLinkCallback {
   grant?: string;
   /** The account the grant is for, as the portal echoed it. */
   accountId?: string;
+  /** The cloud login that consented. Show it before spending: anyone holding the handoff URL could have answered it. */
+  login?: string;
+  /** This browser's secret for the grant. Pass it to {@link CloudClient.linkAccountWithGrant}. */
+  verifier?: string;
   /** `'denied'` when the person cancelled, `'unexpected_callback'` for a grant this browser never asked for. */
   error?: string;
 }
@@ -1396,18 +1407,20 @@ export class CloudClient {
    * Static, so it needs no client and no session: there is nothing to
    * authenticate as yet.
    */
-  static accountLinkHandoff(options: {
+  static async accountLinkHandoff(options: {
     /** The cloud portal's origin, e.g. `https://cloud.calimero.network`. */
     portalUrl: string;
     /** The account to be linked, 64 hex — derive it, never let a user type it. */
     accountId: string;
     /** Where to come back to. */
     callbackUrl: string;
-  }): AccountLinkHandoff {
+  }): Promise<AccountLinkHandoff> {
     const portal = options.portalUrl.replace(/\/+$/, '');
+    const { callbackUrl, challenge } = await beginLinkState(options.accountId, options.callbackUrl);
     const query = new URLSearchParams({
       'link-account': options.accountId,
-      'callback-url': beginLinkState(options.accountId, options.callbackUrl),
+      challenge,
+      'callback-url': callbackUrl,
     });
     return { url: `${portal}/?${query.toString()}`, accountId: options.accountId };
   }
@@ -1439,11 +1452,15 @@ export class CloudClient {
     const accountId = params.get('account');
     const error = params.get('error');
     const out: AccountLinkCallback = {};
-    if (error) takeLinkState(search);
-    if (grant && takeLinkState(search)?.account !== accountId) {
-      return { error: 'unexpected_callback' };
+    if (error) takeLinkVerifier(search, null);
+    if (grant) {
+      const verifier = takeLinkVerifier(search, accountId);
+      const claims = linkGrantClaims(grant);
+      if (!verifier || claims?.account !== accountId) return { error: 'unexpected_callback' };
+      out.grant = grant;
+      out.login = claims.login;
+      out.verifier = verifier;
     }
-    if (grant) out.grant = grant;
     if (accountId) out.accountId = accountId;
     if (error) out.error = error;
     return out;
@@ -1459,8 +1476,9 @@ export class CloudClient {
    *
    * The signature is an ordinary account-link signature with the grant as the
    * nonce, so the same {@link signAccountLink} every other link path uses signs
-   * this one. Both halves are required: a grant without the key links nothing,
-   * which is what makes it safe to carry through a browser redirect.
+   * this one. The grant is bound to the verifier of the browser that asked for
+   * it, and is refused here, before the root signs, unless it carries that
+   * verifier's challenge and names this root's account.
    *
    * A `403` means the grant was bad, expired, already spent, or signed by a key
    * that names a different account; `409` that the account belongs to another
@@ -1468,6 +1486,8 @@ export class CloudClient {
    */
   async linkAccountWithGrant(options: {
     grant: string;
+    /** The verifier {@link readAccountLinkCallback} returned with the grant. */
+    verifier: string;
     /** The root of the account the grant names, 64 hex. */
     rootSecret?: string;
     /**
@@ -1476,16 +1496,32 @@ export class CloudClient {
      */
     signer?: Signer;
   }): Promise<CloudAccountLink> {
+    if (typeof options.verifier !== 'string' || !VERIFIER_HEX.test(options.verifier)) {
+      throw new Error('no verifier for this grant - start the link again from this browser');
+    }
+    const claims = linkGrantClaims(options.grant);
+    if (claims?.challenge !== (await linkChallenge(options.verifier))) {
+      throw new Error(
+        'this grant was not issued to this link request - start the link again from this browser',
+      );
+    }
     const { signer, publicKey, accountId } = await resolveRootPair(
       options.rootSecret,
       options.signer,
     );
+    if (claims.account !== accountId) {
+      throw new Error(
+        `this grant is for account ${claims.account}, but the root here derives ` +
+          `${accountId} - it was minted for a different account`,
+      );
+    }
     const body = await this.request<Record<string, unknown>>(
       'POST',
       '/api/cloud/accounts/link',
       {
         body: {
           grant: options.grant,
+          verifier: options.verifier,
           root_public_key: publicKey,
           signature: await signAccountLink({
             signer,

@@ -97,6 +97,19 @@ describe('Admin API E2E — Coverage filler', () => {
     await mero.admin.setGroupMetadata(namespaceId, { name: `cov-meta-${RUN}` });
   });
 
+  it('lists namespace revoked devices (namespaces/:id/revoked-devices)', async () => {
+    try {
+      const res = await mero.admin.listNamespaceRevokedDevices(namespaceId);
+      expect(Array.isArray(res.revokedDevices)).toBe(true);
+      expect(Array.isArray(res.withdrawnSlots)).toBe(true);
+    } catch (e) {
+      // A 404 means a merod that predates the route; core's coverage gate still
+      // fails if its own build answers 404 here.
+      if ((e as { status?: number }).status !== 404) throw e;
+      console.log(`(cover) listNamespaceRevokedDevices: ${(e as Error).message}`);
+    }
+  });
+
   // NOTE: contexts/:id/resync is baselined (uncovered): core returns an empty 2xx
   // body and the SDK's JSON parse chokes on it — a separate SDK-robustness finding
   // (empty-body handling) to fix before this route can be smoke-tested.

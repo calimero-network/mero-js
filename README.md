@@ -210,10 +210,10 @@ import {
 } from '@calimero-network/mero-js';
 
 // 1. Enrol: the wallet certifies a device key this app generated and keeps.
-//    (first visit)  beginDeviceEnrolment({ walletUrl, devicePublicKey, kemPublicKey, returnTo, state });
+//    (first visit)  beginDeviceEnrolment({ walletUrl, devicePublicKey, kemPublicKey, returnTo });
 //    (on return)
-const callback = readEnrolmentCallback(window.location.href);
-const enrolled = await completeDeviceEnrolment({ ...callback, expectState: state });
+const callback = readEnrolmentCallback(); // null on an ordinary load
+const enrolled = await completeDeviceEnrolment({ ...callback, devicePublicKey, kemPublicKey });
 let session: DelegatedAccountSession = {
   account: enrolled.account, credential: enrolled.credential, deviceSecret, relayUrl: null,
 };

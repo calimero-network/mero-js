@@ -23,6 +23,15 @@ const ROOT_PUBLIC_KEY =
   'a021d221f1e7601e8d280c857f8a667383e3923dda13b55f21ca2d928b79c70c';
 const ACCOUNT_ID =
   'ca7645ffd4d0621d00c6c88743aeace5797135ab298c49e77de066206090b778';
+const VERIFIER = 'cd'.repeat(32);
+const CHALLENGE = '7969ec0fcb8b648dfde24b1d0ae24568d398dcc3a83b80a850f973238cdfd3d9'; // sha256(VERIFIER)
+
+/** A grant shaped as the cloud seals one, bound to VERIFIER. */
+function grantFor(tag: string): string {
+  const claims = { use: 'account-link-grant', sub: 'owner@example.com', acc: ACCOUNT_ID, chal: CHALLENGE, exp: 1 };
+  return `${btoa(JSON.stringify(claims)).replace(/=+$/, '')}.${tag}`;
+}
+const GRANT = grantFor('dGFn');
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -52,8 +61,8 @@ function scriptedFetch(responses: Array<{ status?: number; body?: unknown }>): {
 }
 
 describe('CloudClient.accountLinkHandoff', () => {
-  it('builds the URL the portal parses', () => {
-    const { url } = CloudClient.accountLinkHandoff({
+  it('builds the URL the portal parses', async () => {
+    const { url } = await CloudClient.accountLinkHandoff({
       portalUrl: 'https://cloud.calimero.network/',
       accountId: ACCOUNT_ID,
       callbackUrl: 'https://demo.example/app?keep=this',
@@ -61,6 +70,7 @@ describe('CloudClient.accountLinkHandoff', () => {
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe('https://cloud.calimero.network/');
     expect(parsed.searchParams.get('link-account')).toBe(ACCOUNT_ID);
+    expect(parsed.searchParams.get('challenge')).toMatch(/^[0-9a-f]{64}$/);
     // Encoded as one parameter, so a callback carrying its own query does not
     // arrive as extra parameters of ours.
     const back = new URL(parsed.searchParams.get('callback-url')!);
@@ -76,17 +86,22 @@ describe('CloudClient.accountLinkHandoff', () => {
 });
 
 describe('CloudClient.readAccountLinkCallback', () => {
-  it('reads a grant out of the fragment', () => {
-    const { url } = CloudClient.accountLinkHandoff({
+  it('reads a grant out of the fragment', async () => {
+    const { url } = await CloudClient.accountLinkHandoff({
       portalUrl: 'https://cloud.calimero.network',
       accountId: ACCOUNT_ID,
       callbackUrl: 'https://demo.example/app',
     });
     const back = new URL(new URL(url).searchParams.get('callback-url')!);
     const out = CloudClient.readAccountLinkCallback(
-      `${back.toString()}#grant=sealed.token&account=${ACCOUNT_ID}`,
+      `${back.toString()}#grant=${GRANT}&account=${ACCOUNT_ID}`,
     );
-    expect(out).toEqual({ grant: 'sealed.token', accountId: ACCOUNT_ID });
+    expect(out).toEqual({
+      grant: GRANT,
+      accountId: ACCOUNT_ID,
+      login: 'owner@example.com',
+      verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   it('reports a refusal as a refusal', () => {
@@ -118,11 +133,12 @@ describe('CloudClient.linkAccountWithGrant', () => {
     ]);
     const client = new CloudClient({ cloudBaseUrl: 'https://cloud.test', fetch });
 
-    const link = await client.linkAccountWithGrant({ grant: 'sealed.token', rootSecret: ROOT_SECRET });
+    const link = await client.linkAccountWithGrant({ grant: GRANT, verifier: VERIFIER, rootSecret: ROOT_SECRET });
 
     expect(calls[0]?.url).toBe('https://cloud.test/api/cloud/accounts/link');
     const sent = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>;
-    expect(sent.grant).toBe('sealed.token');
+    expect(sent.grant).toBe(GRANT);
+    expect(sent.verifier).toBe(VERIFIER);
     expect(sent.root_public_key).toBe(ROOT_PUBLIC_KEY);
     expect(typeof sent.signature).toBe('string');
     // No email and no account id: the grant carries the consenting login sealed
@@ -145,7 +161,7 @@ describe('CloudClient.linkAccountWithGrant', () => {
       fetch,
     });
 
-    await client.linkAccountWithGrant({ grant: 'sealed.token', rootSecret: ROOT_SECRET });
+    await client.linkAccountWithGrant({ grant: GRANT, verifier: VERIFIER, rootSecret: ROOT_SECRET });
 
     const headers = calls[0]?.init?.headers as Record<string, string> | undefined;
     expect(headers?.Authorization).toBeUndefined();
@@ -153,10 +169,11 @@ describe('CloudClient.linkAccountWithGrant', () => {
 
   it('signs the grant itself, so a different grant is a different signature', async () => {
     const signatures: string[] = [];
-    for (const grant of ['grant.one', 'grant.two']) {
+    for (const grant of [grantFor('b25l'), grantFor('dHdv')]) {
       const { fetch, calls } = scriptedFetch([{ body: { account_id: ACCOUNT_ID } }]);
       await new CloudClient({ cloudBaseUrl: 'https://cloud.test', fetch }).linkAccountWithGrant({
         grant,
+        verifier: VERIFIER,
         rootSecret: ROOT_SECRET,
       });
       signatures.push(String(JSON.parse(String(calls[0]?.init?.body)).signature));
@@ -170,7 +187,7 @@ describe('CloudClient.linkAccountWithGrant', () => {
     ]);
     const client = new CloudClient({ cloudBaseUrl: 'https://cloud.test', fetch });
     await expect(
-      client.linkAccountWithGrant({ grant: 'spent.token', rootSecret: ROOT_SECRET }),
+      client.linkAccountWithGrant({ grant: GRANT, verifier: VERIFIER, rootSecret: ROOT_SECRET }),
     ).rejects.toThrow(/already been used/);
   });
 });

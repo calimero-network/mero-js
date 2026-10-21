@@ -51,6 +51,8 @@ import type {
   GroupInfo,
   IntentRelayInfo,
   UpgradeGroupResponseData,
+  ActivateGroupUpgradeRequest,
+  ActivateGroupUpgradeResponseData,
 } from '../admin-api/admin-types.js';
 import type { ExecuteParams } from '../rpc/index.js';
 
@@ -84,6 +86,8 @@ const reReq = key<ReparentGroupRequest>();
 const reRes = key<ReparentGroupResponseData>();
 const exec = key<ExecuteParams>();
 const upRes = key<UpgradeGroupResponseData>();
+const actReq = key<ActivateGroupUpgradeRequest>();
+const actRes = key<ActivateGroupUpgradeResponseData>();
 const upStatus = key<GroupUpgradeStatus>();
 const mStatus = key<MigrationStatus>();
 const mRollup = key<MigrationStatusRollup>();
@@ -122,6 +126,7 @@ const NAMESPACE_OPTIONAL = [
   namespace('upgradePolicy'),
   namespace('name'),
   namespace('appVersion'),
+  namespace('appPackage'),
   namespace('founding'),
   namespace('heldOps'),
 ];
@@ -173,6 +178,8 @@ const SPECS: Spec[] = [
       groupInfo('metadata'),
       groupInfo('activeUpgrade'),
       groupInfo('upgradePolicy'),
+      groupInfo('appPackage'),
+      groupInfo('appVersion'),
     ],
   },
   {
@@ -220,7 +227,27 @@ const SPECS: Spec[] = [
       upRes('localContextsTotal'),
       upRes('localContextsSwapped'),
       upRes('localContextsFailed'),
+      upRes('contextsTrialled'),
+      upRes('contextsNotHeld'),
     ],
+  },
+  {
+    type: 'ActivateGroupUpgradeRequest',
+    file: 'groups/activate.req.json',
+    required: [],
+    optional: [actReq('expectedApplicationId'), actReq('expectedVersion')],
+  },
+  {
+    type: 'ActivateGroupUpgradeResponseData',
+    file: 'groups/activate.res.json',
+    path: 'data',
+    required: [
+      actRes('targetApplicationId'),
+      actRes('switchedContexts'),
+      actRes('replayedDeltas'),
+      actRes('failedContexts'),
+    ],
+    optional: [],
   },
   {
     type: 'GroupUpgradeStatus',

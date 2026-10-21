@@ -1,6 +1,8 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
 import { AuthRevokedError, HTTPError } from '../http-client/index.js';
+import { carriesProof, refuseProofRedirect } from '../http-client/web-client.js';
+import { signedPath } from '../request-proof/authorizer.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone, mirroring
@@ -214,17 +216,22 @@ export class SseClient {
       return;
     }
     this.closed = false;
-    this.abortController = new AbortController();
+    const controller = new AbortController();
+    this.abortController = controller;
 
     try {
       const url = `${this.baseUrl}/sse`;
+      const headers = {
+        ...(await this.authorize({ method: 'GET', path: signedPath(url) })),
+        'Accept': 'text/event-stream',
+      };
+      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
-        headers: {
-          ...(await this.authorize({ method: 'GET', path: new URL(url).pathname })),
-          'Accept': 'text/event-stream',
-        },
-        signal: this.abortController.signal,
+        headers,
+        signal: controller.signal,
+        ...(proofAttached && { redirect: 'manual' as const }),
       });
+      if (proofAttached) refuseProofRedirect(response, url);
 
       if (!response.ok) {
         // Throw the same typed errors the request path throws. A bare
@@ -260,14 +267,14 @@ export class SseClient {
         throw new Error('SSE response has no body');
       }
 
-      this.readStream(response.body).catch((err) => {
-        if (this.closed) return;
+      this.readStream(response.body, controller).catch((err) => {
+        if (this.superseded(controller)) return;
         const error = err instanceof Error ? err : new Error(String(err));
         this.emit('error', error);
         this.scheduleReconnect();
       });
     } catch (err) {
-      if (this.closed) return;
+      if (this.superseded(controller)) return;
       const error = err instanceof Error ? err : new Error(String(err));
       this.emit('error', error);
       // Reconnecting against a revoked token family is a timer that never
@@ -278,7 +285,18 @@ export class SseClient {
     }
   }
 
-  private async readStream(body: ReadableStream<Uint8Array>): Promise<void> {
+  /**
+   * Whether `controller`'s connection is no longer the one this client holds:
+   * closed, or replaced by a later connect. Its abort lands asynchronously,
+   * after a `close()` + `connect()` has already cleared `closed`, so `closed`
+   * alone cannot tell; reporting it, and reconnecting for it, would abort the
+   * live connection, whose own abort would do the same, without end.
+   */
+  private superseded(controller: AbortController): boolean {
+    return this.closed || controller.signal.aborted || this.abortController !== controller;
+  }
+
+  private async readStream(body: ReadableStream<Uint8Array>, controller: AbortController): Promise<void> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -312,13 +330,13 @@ export class SseClient {
         }
       }
     } catch (err) {
-      if (this.closed) return;
+      if (this.superseded(controller)) return;
       const error = err instanceof Error ? err : new Error(String(err));
       this.emit('error', error);
     }
 
     // Stream ended, reconnect
-    if (!this.closed) {
+    if (!this.superseded(controller)) {
       this.scheduleReconnect();
     }
   }
@@ -479,15 +497,19 @@ export class SseClient {
       // differ in key order, which fails as a refused credential rather than as
       // anything that names the real cause.
       const body = JSON.stringify({ id: this.sessionId, method, params });
+      const headers = {
+        ...(await this.authorize({ method: 'POST', path: signedPath(url), body })),
+        'Content-Type': 'application/json',
+      };
+      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
         method: 'POST',
-        headers: {
-          ...(await this.authorize({ method: 'POST', path: new URL(url).pathname, body })),
-          'Content-Type': 'application/json',
-        },
+        headers,
         body,
         signal: timeout.signal,
+        ...(proofAttached && { redirect: 'manual' as const }),
       });
+      if (proofAttached) refuseProofRedirect(response, url);
       if (!response.ok) {
         // The subscribe path used to report only the status. On the one failure
         // that matters it is the whole of what the caller got: a revoked family

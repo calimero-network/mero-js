@@ -1,3 +1,76 @@
+## [26.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.3.0...mero-js-v26.4.0) (2026-10-20)
+
+### Features
+
+* **admin-api:** activate a namespace's upgrade on this node ([#293](https://github.com/calimero-network/mero-js/issues/293)) ([d31a8ee](https://github.com/calimero-network/mero-js/commit/d31a8ee1b4d2634c5644ca72b842da56419d7d60))
+
+## [26.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.2...mero-js-v26.3.0) (2026-10-20)
+
+### Features
+
+* **admin:** type the upgrade trial's skipTrial and its context counts ([#291](https://github.com/calimero-network/mero-js/issues/291)) ([644434c](https://github.com/calimero-network/mero-js/commit/644434ce79bf0d3ba5fc941b9e3e78249e40291d))
+
+## [26.2.2](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.1...mero-js-v26.2.2) (2026-10-19)
+
+### Bug Fixes
+
+* **cloud:** bind link grants to the browser that began the link ([#284](https://github.com/calimero-network/mero-js/issues/284)) ([5b25dd4](https://github.com/calimero-network/mero-js/commit/5b25dd410fc3c0d5c5232dfb3023761f1dbc6140))
+
+## [26.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.2.0...mero-js-v26.2.1) (2026-10-19)
+
+### Bug Fixes
+
+* **namespace-op:** sign at namespace op schema version 26 ([#290](https://github.com/calimero-network/mero-js/issues/290)) ([b6be1fe](https://github.com/calimero-network/mero-js/commit/b6be1fe905a45b31f6dc08f77199831994a8b2db))
+
+## [26.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.1.0...mero-js-v26.2.0) (2026-10-19)
+
+### Features
+
+* **admin-api:** type the target release package on namespaces and groups ([#285](https://github.com/calimero-network/mero-js/issues/285)) ([4df00f2](https://github.com/calimero-network/mero-js/commit/4df00f2c2a22906a2ad45b97731a86292eeeeba8))
+
+## [26.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.0.1...mero-js-v26.1.0) (2026-10-18)
+
+### Features
+
+* **invitations:** tell an already-used link and a removal apart from other refusals ([#287](https://github.com/calimero-network/mero-js/issues/287)) ([c4562ea](https://github.com/calimero-network/mero-js/commit/c4562ea257f31a93a3734f8a21323852081d3333))
+
+## [26.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.0.0...mero-js-v26.0.1) (2026-10-18)
+
+## [26.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.3...mero-js-v26.0.0) (2026-10-17)
+
+### ⚠ BREAKING CHANGES
+
+* **admin-api:** drop calls to routes core does not serve (#286)
+
+### Code Refactoring
+
+* **admin-api:** drop calls to routes core does not serve ([#286](https://github.com/calimero-network/mero-js/issues/286)) ([65f188c](https://github.com/calimero-network/mero-js/commit/65f188c3053dad999a3824cd82978125f5b8335b))
+
+## [25.3.3](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.2...mero-js-v25.3.3) (2026-10-16)
+
+### Bug Fixes
+
+* **sse:** a superseded stream's abort no longer tears down the live one ([#283](https://github.com/calimero-network/mero-js/issues/283)) ([f2ef5ae](https://github.com/calimero-network/mero-js/commit/f2ef5ae515871739d9379b2c35fc0650b9fea72e))
+
+## [25.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.1...mero-js-v25.3.2) (2026-10-15)
+
+### Bug Fixes
+
+* **auth:** match login and enrolment callbacks to a request this browser began ([#271](https://github.com/calimero-network/mero-js/issues/271)) ([07951f5](https://github.com/calimero-network/mero-js/commit/07951f51df451bb97160dfaeb24dbbe2ad07774d))
+
+## [25.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v25.3.0...mero-js-v25.3.1) (2026-10-15)
+
+### Bug Fixes
+
+* **http-client:** do not follow redirects on requests carrying a proof ([#268](https://github.com/calimero-network/mero-js/issues/268)) ([c5f57fe](https://github.com/calimero-network/mero-js/commit/c5f57fed2ad571de32c9aa94bbc5cd51569d913c))
+* **request:** sign the path and query in request proofs ([#262](https://github.com/calimero-network/mero-js/issues/262)) ([f323b65](https://github.com/calimero-network/mero-js/commit/f323b65822b5e2af08e4aeff0eadc47f3038752f))
+
+## [25.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.2.0...mero-js-v25.3.0) (2026-10-15)
+
+### Features
+
+* **client:** add listNamespaceRevokedDevices ([#281](https://github.com/calimero-network/mero-js/issues/281)) ([aef5d7f](https://github.com/calimero-network/mero-js/commit/aef5d7fd165080cd3dd579ba3337d1919b25c3fa))
+
 ## [25.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v25.1.1...mero-js-v25.2.0) (2026-10-14)
 
 ### Features

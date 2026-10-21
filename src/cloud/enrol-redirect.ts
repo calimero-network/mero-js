@@ -44,21 +44,24 @@
  * {@link completeDeviceEnrolment} does all three and throws on any of them,
  * before the caller has anything to store. What none of them establish is that
  * the account is the *person's* — anyone can mint a root offline and certify
- * any public key with it. That is what {@link DeviceEnrolmentOptions.state}
- * narrows: it proves the answer belongs to the request this app started, rather
- * than to a link someone sent.
+ * any public key with it, and a device key is public once enrolled. That is
+ * what the state narrows: {@link deviceEnrolmentUrl} remembers each request, and
+ * {@link completeDeviceEnrolment} refuses an answer to a request this browser did
+ * not start, rather than to a link someone sent.
  */
 
 import {
   verifyDeviceCredential,
   type DeviceCredential,
 } from '../device-cert/index.js';
+import { beginState, takeState } from './link-state.js';
 
 /** Query parameters the wallet reads. Mirrors the cloud's `link-account` shape. */
 const DEVICE_PARAM = 'enrol-device';
 const KEM_PARAM = 'enrol-kem';
 const CALLBACK_PARAM = 'callback-url';
 const STATE_PARAM = 'state';
+const PENDING_KEY = 'calimero.device.enrol.pending';
 
 export interface DeviceEnrolmentOptions {
   /**
@@ -83,17 +86,6 @@ export interface DeviceEnrolmentOptions {
    * localhost — see {@link assertSafeReturnTo}.
    */
   returnTo: string;
-  /**
-   * An opaque value echoed back unchanged, to be compared on return.
-   *
-   * Optional, and worth setting: without it, any link that lands on the app's
-   * callback with a well-formed fragment enrols an account of the sender's
-   * choosing, and everything the app then does is filed under it. Store it
-   * where the round trip survives but another origin cannot read it —
-   * `sessionStorage` — and pass it to {@link completeDeviceEnrolment} as
-   * `expectState`.
-   */
-  state?: string;
 }
 
 /**
@@ -102,6 +94,9 @@ export interface DeviceEnrolmentOptions {
  * Built rather than documented as a string so the parameter names live in one
  * place: a wallet and an app that disagree about them fail as a blank consent
  * screen, which looks like an outage rather than a contract mismatch.
+ *
+ * Remembers the request under a fresh state the wallet echoes back, so
+ * {@link completeDeviceEnrolment} can match the answer to it.
  */
 export function deviceEnrolmentUrl(options: DeviceEnrolmentOptions): string {
   assertHex(options.devicePublicKey, 'devicePublicKey');
@@ -113,7 +108,7 @@ export function deviceEnrolmentUrl(options: DeviceEnrolmentOptions): string {
   url.searchParams.set(DEVICE_PARAM, options.devicePublicKey);
   url.searchParams.set(KEM_PARAM, options.kemPublicKey);
   url.searchParams.set(CALLBACK_PARAM, options.returnTo);
-  if (options.state) url.searchParams.set(STATE_PARAM, options.state);
+  url.searchParams.set(STATE_PARAM, beginState(PENDING_KEY, {}));
   return url.toString();
 }
 
@@ -133,7 +128,7 @@ export interface DeviceEnrolmentCallback {
   account: string;
   /** The device id the wallet minted, 64 hex. */
   device: string;
-  /** Whatever {@link DeviceEnrolmentOptions.state} was sent, if any. */
+  /** The state the wallet echoed back from {@link deviceEnrolmentUrl}. */
   state?: string;
 }
 
@@ -155,6 +150,7 @@ export function readEnrolmentCallback(
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const error = params.get('error');
   if (error) {
+    takeState(PENDING_KEY, params.get(STATE_PARAM));
     stripFragment();
     throw new Error(
       error === 'denied' || error === 'cancelled'
@@ -192,15 +188,6 @@ export interface CompleteDeviceEnrolmentOptions extends DeviceEnrolmentCallback 
   devicePublicKey: string;
   /** The delivery key asked about, 64 hex. Checked when supplied. */
   kemPublicKey?: string;
-  /**
-   * The {@link DeviceEnrolmentOptions.state} this app sent, if it sent one.
-   *
-   * Supplied and mismatched is a refusal. Not supplied is accepted — an app may
-   * legitimately have none to compare against, having been reloaded — and the
-   * gap is documented rather than closed here, because forcing it would break
-   * the app whose session storage the reload cleared.
-   */
-  expectState?: string;
 }
 
 /** A device this app may now sign as. */
@@ -223,14 +210,16 @@ export interface EnrolledDevice {
  * deliberate: the cheap local comparisons first, so a fragment aimed at the
  * wrong app is rejected without a signature verification, and the message names
  * what disagreed rather than reporting "invalid credential".
+ *
+ * The state is spent on the first call, so an answer is accepted at most once.
  */
 export async function completeDeviceEnrolment(
   options: CompleteDeviceEnrolmentOptions,
 ): Promise<EnrolledDevice> {
-  if (options.expectState !== undefined && options.expectState !== options.state) {
+  if (!takeState(PENDING_KEY, options.state)) {
     throw new Error(
-      'this enrolment answers a request this app did not make — the state it ' +
-        'carries is not the one sent',
+      'this enrolment answers a request this app did not make - start the ' +
+        'enrolment again from here',
     );
   }
 

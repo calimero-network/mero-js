@@ -95,12 +95,21 @@ jobs:
   plan:
     name: Decide which repositories to touch
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       repos: ${{ steps.pick.outputs.repos }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # A bump started right after the publish resolved against a registry that
+      # did not serve the new version yet, and failed with ERR_PNPM_NO_MATCHING_VERSION.
+      - name: Wait for npm to serve the versions being bumped to
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086 # PACKAGES is a space-separated list of specs
+          .github/scripts/wait-for-npm.sh $PACKAGES
 
       - name: Select the npm consumers
         id: pick

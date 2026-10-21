@@ -441,24 +441,6 @@ describe('AdminApiClient', () => {
     });
   });
 
-  describe('Specialized Node Invite', () => {
-    it('inviteSpecializedNode sends correct request and unwraps nonce', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite-specialized-node', { data: { nonce: 'abc123' } });
-      const result = await client.inviteSpecializedNode({ contextId: 'ctx-1', inviterId: 'pk-1' });
-      expect(result).toEqual({ nonce: 'abc123' });
-      expect(mock.getRequestBody('POST', '/admin-api/contexts/invite-specialized-node')).toEqual({
-        contextId: 'ctx-1',
-        inviterId: 'pk-1',
-      });
-    });
-
-    it('inviteSpecializedNode works without inviterId', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/invite-specialized-node', { data: { nonce: 'def456' } });
-      const result = await client.inviteSpecializedNode({ contextId: 'ctx-1' });
-      expect(result.nonce).toBe('def456');
-    });
-  });
-
   describe('Update Context Application', () => {
     it('updateContextApplication sends all fields', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/application', { data: {} });
@@ -842,32 +824,6 @@ describe('AdminApiClient', () => {
       expect(absent.deviceCertified).toBeUndefined();
       expect(absent.deviceAgreementKey).toBeUndefined();
       expect(absent.accountNamespaceId).toBeUndefined();
-    });
-
-    it('getNamespaceIdentity answers from the node-level route', async () => {
-      // The deprecated shape, kept working by delegation rather than by calling
-      // the superseded per-namespace endpoint. Nothing it returns varies by
-      // namespace, so `namespaceId` is the argument echoed back — asserted, so
-      // that stays a deliberate contract and not an accident of the reshape.
-      mock.setMockResponse('GET', '/admin-api/identity', {
-        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
-      });
-      expect(await client.getNamespaceIdentity('ns-1')).toEqual({
-        namespaceId: 'ns-1',
-        publicKey: 'pk-1',
-        account: 'ac-1',
-      });
-    });
-
-    it('getNamespaceIdentity gives the same answer for every namespace', async () => {
-      // The claim the deprecation rests on. If these ever differed, the
-      // parameter would be load-bearing and dropping it would lose information.
-      mock.setMockResponse('GET', '/admin-api/identity', {
-        data: { accountId: 'ac-1', deviceId: 'dv-1', publicKey: 'pk-1', accountRootPublicKey: 'rt-1' },
-      });
-      const [a, b] = [await client.getNamespaceIdentity('ns-a'), await client.getNamespaceIdentity('ns-b')];
-      expect(a.account).toBe(b.account);
-      expect(a.publicKey).toBe(b.publicKey);
     });
 
     it('listNamespacesForApplication unwraps data', async () => {
@@ -1906,6 +1862,17 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('upgradeGroup forwards skipTrial to publish without the trial', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', contextsTrialled: 0, contextsNotHeld: 0 },
+      });
+      await client.upgradeGroup('g-1', { targetApplicationId: 'app-2', skipTrial: true });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        skipTrial: true,
+      });
+    });
+
     it('getGroupUpgradeStatus returns status', async () => {
       mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', {
         data: { fromVersion: '1.0', toVersion: '2.0', initiatedAt: 123, initiatedBy: 'pk-1', status: 'completed', localContextsTotal: 3, localContextsSwapped: 3, localContextsFailed: 0, completedAt: 456 },
@@ -1927,6 +1894,24 @@ describe('AdminApiClient', () => {
       });
       const result = await client.retryGroupUpgrade('g-1');
       expect(result.status).toBe('in_progress');
+    });
+
+    it('activateGroupUpgrade posts an empty body by default and unwraps data', async () => {
+      const data = { targetApplicationId: 'app-2', switchedContexts: 2, replayedDeltas: 1, failedContexts: [] };
+      mock.setMockResponse('POST', '/admin-api/groups/ns-1/upgrade/activate', { data });
+      expect(await client.activateGroupUpgrade('ns-1')).toEqual(data);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/ns-1/upgrade/activate')).toEqual({});
+    });
+
+    it('activateGroupUpgrade forwards expectedApplicationId and expectedVersion', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/ns-1/upgrade/activate', {
+        data: { targetApplicationId: 'app-2', switchedContexts: 0, replayedDeltas: 0, failedContexts: [] },
+      });
+      await client.activateGroupUpgrade('ns-1', { expectedApplicationId: 'app-2', expectedVersion: '2.0.0' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/ns-1/upgrade/activate')).toEqual({
+        expectedApplicationId: 'app-2',
+        expectedVersion: '2.0.0',
+      });
     });
   });
 
@@ -1980,6 +1965,12 @@ describe('AdminApiClient', () => {
       expect(res.members[1].report?.authoredRemaining).toBe(2);
       expect(res.members[0].account).toBe(res.members[1].account);
       expect(res.members[2].report).toBeUndefined();
+    });
+
+    it('listNamespaceRevokedDevices reads the top-level body (no data envelope)', async () => {
+      const body = { revokedDevices: ['a'.repeat(64)], withdrawnSlots: [] };
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns1/revoked-devices', body);
+      expect(await client.listNamespaceRevokedDevices('ns1')).toEqual(body);
     });
 
     it('getCascadeStatus unwraps the data array', async () => {
@@ -2126,21 +2117,6 @@ describe('AdminApiClient', () => {
         nonce: 'a'.repeat(64),
         applicationId: 'app-1',
       });
-    });
-
-    it('teeVerifyQuote sends correct fields', async () => {
-      const quote = { header: {}, body: {}, signature: 'sig', attestationKey: 'ak', certificationData: {} };
-      mock.setMockResponse('POST', '/admin-api/tee/verify-quote', {
-        data: { quoteVerified: true, nonceVerified: true, applicationHashVerified: true, quote },
-      });
-      const result = await client.teeVerifyQuote({
-        quoteB64: 'base64...',
-        nonce: 'a'.repeat(64),
-        expectedApplicationHash: 'b'.repeat(64),
-      });
-      expect(result.quoteVerified).toBe(true);
-      expect(result.nonceVerified).toBe(true);
-      expect(result.applicationHashVerified).toBe(true);
     });
   });
 

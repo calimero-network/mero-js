@@ -48,6 +48,8 @@ jobs:
       # The e2e suite needs a node to run, but its types don't - so a stale key
       # or dropped field fails here rather than mid-run against a live merod.
       - run: pnpm typecheck:e2e
+      - run: bash .github/scripts/tests/bump-fleet.test.sh
+      - run: bash .github/scripts/tests/wait-for-npm.test.sh
       - run: pnpm lint
 
   e2e:

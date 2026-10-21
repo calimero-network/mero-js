@@ -16,12 +16,5 @@ export type {
 export {
   createMemoryNonceSource,
   createLocalStorageNonceSource,
-  createRecoveringNonceSource,
-  authorNonceLookup,
-  WarrantNonceExhaustedError,
 } from './nonce-source.js';
-export type {
-  NonceSource,
-  WarrantNonceLookup,
-  RecoveringNonceSourceOptions,
-} from './nonce-source.js';
+export type { NonceSource } from './nonce-source.js';

@@ -40,7 +40,7 @@ export interface ProofCredential {
 /** One request, as the proof has to see it. */
 export interface RequestToAuthorize {
   method: string;
-  /** Path only — a query string is excluded from the signature by design. */
+  /** Path and query, as `signedPath` reads them from the URL being fetched. */
   path: string;
   /** The body exactly as it will be sent, if there is one. */
   body?: string | Uint8Array;
@@ -88,15 +88,10 @@ export function createProofAuthorizer(credential: ProofCredential): RequestAutho
   };
 }
 
-/**
- * The path a proof must be signed over, taken from a URL.
- *
- * Callers hold a base URL and a relative path; the proof commits to the path the
- * node will see, which is their join with the query dropped. Deriving it from
- * the assembled URL rather than concatenating strings is what keeps a base URL
- * carrying its own prefix (`…/admin-api`) from signing a path the node never
- * receives.
- */
+/** The path and query a proof signs, read from the parsed URL: the serialization
+ * `fetch` puts on the request line, base-URL prefix and escapes included. */
 export function signedPath(url: string): string {
-  return new URL(url).pathname;
+  // A relative URL resolves as `fetch` resolves it: against the page, if any.
+  const parsed = new URL(url, globalThis.location?.href ?? 'http://localhost');
+  return parsed.pathname + parsed.search;
 }

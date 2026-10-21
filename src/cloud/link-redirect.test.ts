@@ -24,9 +24,9 @@ beforeEach(() => {
 });
 
 describe('cloudLinkUrl', () => {
-  it('names the account and where to come back to', () => {
+  it('names the account and where to come back to', async () => {
     const url = new URL(
-      cloudLinkUrl({ accountId: ACCOUNT, returnTo: 'https://app.example/back' }),
+      await cloudLinkUrl({ accountId: ACCOUNT, returnTo: 'https://app.example/back' }),
     );
     expect(url.origin).toBe('https://cloud.calimero.network');
     expect(url.searchParams.get('link-account')).toBe(ACCOUNT);
@@ -35,12 +35,12 @@ describe('cloudLinkUrl', () => {
     expect(back.searchParams.get('link_state')).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('refuses an account id the cloud would reject anyway', () => {
+  it('refuses an account id the cloud would reject anyway', async () => {
     // The consent page validates /^[0-9a-f]{64}$/ and renders nothing
     // otherwise, so an uppercase id would strand the person on a blank screen.
-    expect(() =>
+    await expect(
       cloudLinkUrl({ accountId: ACCOUNT.toUpperCase(), returnTo: 'https://app.example' }),
-    ).toThrow(/64 lowercase hex/);
+    ).rejects.toThrow(/64 lowercase hex/);
   });
 });
 
@@ -49,14 +49,21 @@ describe('readCloudLinkCallback', () => {
     expect(readCloudLinkCallback({ hash: '' })).toBeNull();
   });
 
-  it('reads the grant the cloud handed back', () => {
-    const consent = cloudLinkUrl({ accountId: ACCOUNT, returnTo: 'https://app.example/back' });
+  it('reads the grant the cloud handed back', async () => {
+    const consent = await cloudLinkUrl({ accountId: ACCOUNT, returnTo: 'https://app.example/back' });
     const back = new URL(new URL(consent).searchParams.get('callback-url')!);
+    const claims = { use: 'account-link-grant', sub: 'owner@example.com', acc: ACCOUNT, chal: 'ab'.repeat(32), exp: 1 };
+    const grant = `${btoa(JSON.stringify(claims)).replace(/=+$/, '')}.dGFn`;
     const got = readCloudLinkCallback({
-      hash: `#grant=abc.def&account=${ACCOUNT}`,
+      hash: `#grant=${grant}&account=${ACCOUNT}`,
       search: back.search,
     });
-    expect(got).toEqual({ grant: 'abc.def', account: ACCOUNT });
+    expect(got).toEqual({
+      grant,
+      account: ACCOUNT,
+      login: 'owner@example.com',
+      verifier: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   it('throws when the person declined, rather than waiting forever', () => {
@@ -71,6 +78,8 @@ describe('completeCloudLink', () => {
       completeCloudLink({
         grant: 'abc.def',
         account: 'aa'.repeat(32),
+        login: 'owner@example.com',
+        verifier: 'cd'.repeat(32),
         root: '07'.repeat(32),
         fetch: fetchSpy as unknown as typeof fetch,
       }),
