@@ -60,7 +60,7 @@ export interface VerifySignedAgentPolicyOptions {
   issuer?: string;
   /**
    * The image role the allowlist must be for: `agent` (the default), or
-   * `inference`, the release's `inference-attestation-policy.<profile>.json`
+   * `inference`, the release's `kms-inference-attestation-policy.<profile>.json`
    * for its private inference image. Both have the same shape and signer.
    */
   role?: 'agent' | 'inference';
