@@ -83,6 +83,12 @@ describe('a signed agent policy', () => {
     await expect(verifySignedAgentPolicy(kms.body, kms.bundle)).rejects.toThrow('not an agent one');
   });
 
+  it('names the role it asked for: an inference allowlist is not the KMS policy either', async () => {
+    await expect(verifySignedAgentPolicy(kms.body, kms.bundle, { role: 'inference' })).rejects.toThrow(
+      'not an inference one',
+    );
+  });
+
   it('refuses a file signed by any other workflow', async () => {
     await expect(verifySignedAgentPolicy(node.body, node.bundle)).rejects.toThrow('release-kms.yaml');
   });

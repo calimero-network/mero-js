@@ -58,12 +58,18 @@ export interface VerifySignedAgentPolicyOptions {
   identity?: string;
   /** The OIDC issuer required. Defaults to {@link KMS_RELEASE_SIGNER}'s. */
   issuer?: string;
+  /**
+   * The image role the allowlist must be for: `agent` (the default), or
+   * `inference`, the release's `kms-inference-attestation-policy.<profile>.json`
+   * for its private inference image. Both have the same shape and signer.
+   */
+  role?: 'agent' | 'inference';
 }
 
 /**
  * Verify an agent allowlist against its cosign bundle, as `cosign verify-blob`
  * would, and return it parsed. Rejects unless it was signed by the KMS release
- * workflow, it is an agent allowlist (`role: "agent"`) for the profile asked
+ * workflow, it is an allowlist for `options.role` (default `agent`) and the profile asked
  * for, every list in it is non-empty, and `expectedVersion`, when given, is its
  * `version`.
  */
@@ -83,8 +89,9 @@ export async function verifySignedAgentPolicy(
   } catch {
     throw new Error('The signed agent policy is not JSON');
   }
-  if (parsed?.role !== 'agent') {
-    throw new Error(`The signed file is a ${JSON.stringify(parsed?.role)} policy, not an agent one`);
+  const role = options.role ?? 'agent';
+  if (parsed?.role !== role) {
+    throw new Error(`The signed file is a ${JSON.stringify(parsed?.role)} policy, not an ${role} one`);
   }
   const profile = options.profile ?? PRODUCTION_PROFILE;
   if (parsed.profile !== profile) {
