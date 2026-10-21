@@ -290,7 +290,8 @@ interface GroupInfo {              // = GroupInfoResponseData
   memberCount: number;
   contextCount: number;
   defaultCapabilities: number;    // capability bitmask
-  subgroupVisibility: string;
+  subgroupVisibility: string;     // how it takes members: 'open' inherits the parent's
+  effectiveVisibility?: 'open' | 'restricted'; // who outside can reach it; draw privacy from this
   metadata?: MetadataRecord | null;
   activeUpgrade?: GroupUpgradeStatus;
 }
