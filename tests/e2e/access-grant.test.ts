@@ -9,6 +9,10 @@
  *
  * The guest client is a fresh `MeroJs` that never authenticated: the route is
  * public on every node and the token in the body is its whole credential.
+ *
+ * Skipped against a merod that predates the routes: the listing answers 404
+ * for a context this node holds only when the route is absent. Core's paired
+ * SDK e2e runs it against its own build, where a 404 fails the coverage gate.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 
@@ -23,6 +27,7 @@ describe('access grants E2E', () => {
   let owner: MeroJs;
   let guest: MeroJs;
   let contextId: string;
+  let routesMissing = false;
 
   beforeAll(async () => {
     owner = new MeroJs({ baseUrl: NODE_URL });
@@ -40,9 +45,18 @@ describe('access grants E2E', () => {
     });
 
     guest = new MeroJs({ baseUrl: NODE_URL });
+
+    try {
+      await owner.admin.listAccessGrants(contextId);
+    } catch (e) {
+      if ((e as { status?: number }).status !== 404) throw e;
+      routesMissing = true;
+      console.log('(skip) access grant routes absent - this merod predates them');
+    }
   });
 
-  it('lets a token call the methods it names, and only those, until revoked', async () => {
+  it('lets a token call the methods it names, and only those, until revoked', async (ctx) => {
+    if (routesMissing) return ctx.skip();
     const grant = await owner.admin.createAccessGrant(contextId, {
       methods: ['get'],
       label: `e2e ${RUN}`,
@@ -88,7 +102,8 @@ describe('access grants E2E', () => {
     expect(after).toBe(`hello-${RUN}`);
   });
 
-  it('refuses a token the node never issued', async () => {
+  it('refuses a token the node never issued', async (ctx) => {
+    if (routesMissing) return ctx.skip();
     await expect(
       guest.admin.callWithAccessGrant(contextId, {
         token: 'ab'.repeat(32),
@@ -98,7 +113,8 @@ describe('access grants E2E', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('refuses to grant a method name that could widen the permission', async () => {
+  it('refuses to grant a method name that could widen the permission', async (ctx) => {
+    if (routesMissing) return ctx.skip();
     await expect(
       owner.admin.createAccessGrant(contextId, { methods: ['get],admin'] }),
     ).rejects.toMatchObject({ status: 400 });
