@@ -354,6 +354,41 @@ describe('AdminApiClient', () => {
     });
   });
 
+  describe('Access Grants', () => {
+    const grant = { grantId: 'g1', methods: ['book'], label: 'l', createdAt: 1, notAfter: null };
+
+    it('createAccessGrant posts methods, label and expiry, and unwraps the token', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/grants', {
+        data: { ...grant, token: 'aa' },
+      });
+      const result = await client.createAccessGrant('ctx-1', { methods: ['book'], label: 'l' });
+      expect(result.token).toBe('aa');
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/grants')).toEqual({
+        methods: ['book'],
+        label: 'l',
+        notAfter: null,
+      });
+    });
+
+    it('listAccessGrants and revokeAccessGrant unwrap data', async () => {
+      mock.setMockResponse('GET', '/admin-api/contexts/ctx-1/grants', { data: [grant] });
+      expect(await client.listAccessGrants('ctx-1')).toEqual([grant]);
+      mock.setMockResponse('DELETE', '/admin-api/contexts/ctx-1/grants/g1', {
+        data: { grantId: 'g1' },
+      });
+      expect(await client.revokeAccessGrant('ctx-1', 'g1')).toEqual({ grantId: 'g1' });
+    });
+
+    it('callWithAccessGrant posts the token, method and args untouched', async () => {
+      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/grant-calls', {
+        data: { returns: [1, 2] },
+      });
+      const request = { token: 'aa', method: 'slots', argsJson: { from_ms: 1 } };
+      expect(await client.callWithAccessGrant('ctx-1', request)).toEqual({ returns: [1, 2] });
+      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/grant-calls')).toEqual(request);
+    });
+  });
+
   describe('Context Identity', () => {
     it('generateContextIdentity unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/identity/context', { data: { publicKey: 'pk-1' } });
