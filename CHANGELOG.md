@@ -1,3 +1,9 @@
+## [26.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.8.0...mero-js-v26.9.0) (2026-10-23)
+
+### Features
+
+* **admin:** access grant client methods and e2e ([#303](https://github.com/calimero-network/mero-js/issues/303)) ([3c4eeca](https://github.com/calimero-network/mero-js/commit/3c4eecaefc3f5c4a208e8f7cd6cc82eeda9d5ba4))
+
 ## [26.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.7.0...mero-js-v26.8.0) (2026-10-21)
 
 ### Features
