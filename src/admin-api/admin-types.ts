@@ -581,6 +581,61 @@ export interface QueryContextRequest {
   argsJson: unknown;
 }
 
+/**
+ * `POST /admin-api/contexts/:contextId/grants` — let whoever holds the returned
+ * token call these methods in the context, as the node that issued it.
+ */
+export interface CreateAccessGrantRequest {
+  /**
+   * Bare method names (`[A-Za-z0-9_]`). Each must be one the caller's own token
+   * may execute in the context, or the node refuses with `403`.
+   */
+  methods: string[];
+  /** The grantor's own note, for listing. Never shown to the holder. */
+  label?: string;
+  /** Unix seconds after which the grant is refused. Absent: until revoked. */
+  notAfter?: number | null;
+}
+
+/** One access grant, as its grantor sees it. The token is never in here. */
+export interface AccessGrant {
+  /** Hex. What {@link AdminApiClient.revokeAccessGrant} names. */
+  grantId: string;
+  methods: string[];
+  label: string;
+  /** Unix seconds. */
+  createdAt: number;
+  /** Unix seconds; `null` means until revoked. */
+  notAfter: number | null;
+}
+
+export interface CreatedAccessGrant extends AccessGrant {
+  /**
+   * Hex. The credential the holder presents. The node keeps only its hash, so
+   * this is the one time it can be read.
+   */
+  token: string;
+}
+
+export interface RevokeAccessGrantResponseData {
+  grantId: string;
+}
+
+/** `POST /admin-api/contexts/:contextId/grant-calls`. */
+export interface AccessGrantCallRequest {
+  /** Hex, as {@link AdminApiClient.createAccessGrant} returned it. */
+  token: string;
+  /** One of the methods the grant names. */
+  method: string;
+  /** Its arguments, as the JSON the guest will receive. */
+  argsJson: unknown;
+}
+
+export interface AccessGrantCallResponseData {
+  /** The method's own return value. */
+  returns: unknown | null;
+}
+
 export interface QueryContextResponseData {
   /** The method's own return value. */
   returns: unknown | null;

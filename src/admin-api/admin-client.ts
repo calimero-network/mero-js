@@ -138,6 +138,12 @@ import type {
   SealedEnvelope,
   AdmitJoinRequest,
   AdmitJoinResponseData,
+  CreateAccessGrantRequest,
+  AccessGrant,
+  CreatedAccessGrant,
+  RevokeAccessGrantResponseData,
+  AccessGrantCallRequest,
+  AccessGrantCallResponseData,
 } from './admin-types.js';
 import { redeemInvitation, type RedeemOutcome } from './redeem-invitation.js';
 
@@ -748,6 +754,66 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.post<{ data: QueryContextResponseData }>(
         `/admin-api/contexts/${pathSegment(contextId)}/query`,
+        request,
+      ),
+    );
+  }
+
+  /**
+   * Issue an access grant: a token whose holder may call `request.methods` in
+   * `contextId`, as this node, with no session of its own.
+   *
+   * A grant only narrows: each method must be one this session's own token may
+   * execute in the context (`403` otherwise), and an account session is refused
+   * (`403`), since a granted call runs as the node. The token is in the answer
+   * once and never again; the node keeps only its hash.
+   */
+  async createAccessGrant(
+    contextId: string,
+    request: CreateAccessGrantRequest,
+  ): Promise<CreatedAccessGrant> {
+    return unwrap(
+      await this.httpClient.post<{ data: CreatedAccessGrant }>(
+        `/admin-api/contexts/${pathSegment(contextId)}/grants`,
+        { methods: request.methods, label: request.label ?? '', notAfter: request.notAfter ?? null },
+      ),
+    );
+  }
+
+  /** The access grants of `contextId` this session could have issued. */
+  async listAccessGrants(contextId: string): Promise<AccessGrant[]> {
+    return unwrap(
+      await this.httpClient.get<{ data: AccessGrant[] }>(
+        `/admin-api/contexts/${pathSegment(contextId)}/grants`,
+      ),
+    );
+  }
+
+  /** Revoke an access grant. A grant this session cannot see is a `404`. */
+  async revokeAccessGrant(
+    contextId: string,
+    grantId: string,
+  ): Promise<RevokeAccessGrantResponseData> {
+    return unwrap(
+      await this.httpClient.delete<{ data: RevokeAccessGrantResponseData }>(
+        `/admin-api/contexts/${pathSegment(contextId)}/grants/${pathSegment(grantId)}`,
+      ),
+    );
+  }
+
+  /**
+   * Call one method under an access grant. The token is the whole credential:
+   * the route is public on every node, so this works from a client holding no
+   * session at all. A method the grant does not name, an unknown or revoked
+   * token, and an expired grant are each a `403`.
+   */
+  async callWithAccessGrant(
+    contextId: string,
+    request: AccessGrantCallRequest,
+  ): Promise<AccessGrantCallResponseData> {
+    return unwrap(
+      await this.httpClient.post<{ data: AccessGrantCallResponseData }>(
+        `/admin-api/contexts/${pathSegment(contextId)}/grant-calls`,
         request,
       ),
     );
