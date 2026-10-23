@@ -214,7 +214,7 @@ const SPECS: Spec[] = [
     via: 'listGroupMembers',
     sample: () => members as unknown as Record<string, unknown>[],
     required: [member('identity'), member('role')],
-    optional: [member('name')],
+    optional: [member('name'), member('direct')],
   },
   // No policy is set on the provisioned namespace, so this is the disabled
   // answer. `mode` is optional in the SDK type because a node before
