@@ -88,8 +88,9 @@ describe('Account devices & pairing E2E', () => {
       for (const ns of device.namespaces) {
         expect(ns).toMatch(HEX_32_BYTES);
         // The listing is built from the namespaces this node takes part in, so
-        // one it does not is a namespace the join leaked in from somewhere.
-        expect(participating).toContain(ns);
+        // one it does not is a namespace the join leaked in from somewhere. The
+        // account namespace is the one it takes part in without listing.
+        if (ns !== identity.accountNamespaceId) expect(participating).toContain(ns);
       }
     }
 
