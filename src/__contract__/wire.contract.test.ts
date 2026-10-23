@@ -461,7 +461,7 @@ const SPECS: Spec[] = [
     file: 'groups/members.res.json',
     path: 'members.2',
     required: [member('identity'), member('role')],
-    optional: [member('name')],
+    optional: [member('name'), member('direct')],
   },
   // The signed-release form, which is the one a hosted relay fleet uses; `mode`
   // is what decides replica or relay.

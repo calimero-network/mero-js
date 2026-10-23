@@ -1665,6 +1665,9 @@ export interface GroupMember {
   identity: string;
   role: GroupMemberRole;
   name?: string;
+  /** Whether the group holds its own row for this member, not one inherited from
+   * an ancestor. Absent on a merod that predates the field. */
+  direct?: boolean;
 }
 
 export interface ListGroupMembersResponseData {
