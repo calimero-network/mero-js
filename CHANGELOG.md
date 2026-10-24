@@ -1,3 +1,9 @@
+## [26.9.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.9.0...mero-js-v26.9.1) (2026-10-24)
+
+### Bug Fixes
+
+* **namespace-op:** sign at schema 27 ([#292](https://github.com/calimero-network/mero-js/issues/292)) ([1536a0a](https://github.com/calimero-network/mero-js/commit/1536a0afaab3b16cf310a54407417732e7f3ac88))
+
 ## [26.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.8.0...mero-js-v26.9.0) (2026-10-23)
 
 ### Features
