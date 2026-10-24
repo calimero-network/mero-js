@@ -114,7 +114,7 @@ function client(s: DelegatedSession, relayUrl: string, nonces: NonceSource, fetc
     relayUrl,
     authorAccount: s.account,
     authorProof: s.credential,
-    deviceSecret: s.deviceSecret,
+    signer: s.signer,
     nonces,
     fetch: fetch ?? relayTransportFetch(relayUrl),
   });
@@ -351,7 +351,7 @@ async function enableHaBestEffort(
       salt,
       accountId: s.account,
       credential: s.credential,
-      deviceSecret: s.deviceSecret,
+      signer: s.signer,
       // The relay that founded it: the cloud hands it to the fleet node as its
       // admitter, so the node does not have to find it by discovery.
       relayUrl,

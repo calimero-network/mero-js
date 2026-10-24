@@ -47,10 +47,10 @@ import {
   domainHash,
   fromHex,
   hex,
-  importSigningKey,
   u32le,
   u64le,
 } from "../crypto/internal.js";
+import { resolveSigner, type Signer } from "../signer/signer.js";
 
 export const SIGN_DOMAIN = new TextEncoder().encode("calimero.auth.request.v2");
 
@@ -116,8 +116,11 @@ export interface RequestSigInput {
    * three-link chain, the device key on the two-link one.
    *
    * Never sent anywhere. It signs locally and only the signature travels.
+   * Or pass `signer`.
    */
-  signerSecret: string;
+  signerSecret?: string;
+  /** The same key as a signer, for a key that cannot be exported to hex. */
+  signer?: Signer;
 }
 
 /**
@@ -129,7 +132,7 @@ export interface RequestSigInput {
  * disagree with what was signed.
  */
 export async function signRequest(input: RequestSigInput): Promise<string> {
-  const key = await importSigningKey(input.signerSecret);
+  const signer = await resolveSigner(input.signerSecret, input.signer, 'signerSecret');
   const bodyHash = await requestBodyHash(input.body);
 
   const issuedAt = u64le(input.issuedAt);
@@ -144,9 +147,7 @@ export async function signRequest(input: RequestSigInput): Promise<string> {
     expiresAt,
   ]);
 
-  const signature = new Uint8Array(
-    await crypto.subtle.sign({ name: "Ed25519" }, key, preimage),
-  );
+  const signature = await signer.sign(preimage);
 
   return hex(
     concat(
