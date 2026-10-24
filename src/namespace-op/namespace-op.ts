@@ -80,8 +80,13 @@ import { resolveSigner, type Signer } from '../signer/signer.js';
  * application the group may have targeted at the link's cut, not its live
  * target (calimero-network/core#4603), so replicas agree on a link that races
  * a target change; older peers judge it by fold order.
+ *
+ * 27: no layout change. The namespace founder is seated as an admin by the
+ * genesis op itself, so a founder who transfers ownership stays a member
+ * (calimero-network/core#4625); older peers seat her from the root's current
+ * owner and drop her.
  */
-export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 26;
+export const SIGNED_NAMESPACE_OP_SCHEMA_VERSION = 27;
 
 /** Domain prefixed to the signable bytes; core's `NAMESPACE_GOVERNANCE_SIGN_DOMAIN`. */
 const NAMESPACE_SIGN_DOMAIN = new TextEncoder().encode('calimero.namespace.v1');
