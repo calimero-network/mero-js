@@ -163,7 +163,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
     expect(meta?.data).toMatchObject({ tag });
   }, 60000);
 
-  // Last: node-2 is out of the namespace afterwards.
+  // Leaves node-2 out of the namespace until the rejoin below.
   it('node-2 leaves the namespace', async () => {
     await n2.admin.leaveNamespace(namespaceId);
     await waitFor(async () => ((await roleOnNode1(namespaceId)) === undefined ? true : undefined), 60000);
