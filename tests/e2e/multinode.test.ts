@@ -168,6 +168,14 @@ suite('Multi-node E2E — namespace invite/join', () => {
     await n2.admin.leaveNamespace(namespaceId);
     await waitFor(async () => ((await roleOnNode1(namespaceId)) === undefined ? true : undefined), 60000);
   }, 120000);
+
+  // The namespace root is the one group an invitation may still target.
+  it('node-2 rejoins the namespace with a group invitation for its root', async () => {
+    const { invitation } = await n1.admin.createGroupInvitation(namespaceId, {});
+    const joined = await n2.admin.joinGroup({ invitation });
+    expect(joined.groupId).toBe(namespaceId);
+    await waitFor(async () => roleOnNode1(namespaceId), 60000);
+  }, 120000);
 });
 
 /**
