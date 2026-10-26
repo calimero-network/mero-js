@@ -1,3 +1,9 @@
+## [26.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.9.1...mero-js-v26.10.0) (2026-10-26)
+
+### Features
+
+* **admin:** approve a publisher's outbound requests per namespace ([#307](https://github.com/calimero-network/mero-js/issues/307)) ([bf2d55c](https://github.com/calimero-network/mero-js/commit/bf2d55c45bcf42b98b2bd4436045e26665722721))
+
 ## [26.9.1](https://github.com/calimero-network/mero-js/compare/mero-js-v26.9.0...mero-js-v26.9.1) (2026-10-24)
 
 ### Bug Fixes
