@@ -347,3 +347,6 @@ export * from "./agent-gate/index.js";
 // A relay's node key, learned from its TEE attestation rather than pasted in.
 export { attestRelayNodeKey, attestKeyBinding, reportDataOf } from "./relay-attestation/index.js";
 export type { AttestedNodeKey, AttestRelayNodeKeyOptions } from "./relay-attestation/index.js";
+
+// Calimero cloud (release-v2): attested nodes, sealed channel, passkeys, one log per app
+export * from './cloud-v2/index.js';

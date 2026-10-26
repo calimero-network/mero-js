@@ -274,6 +274,32 @@ await provisionAgent({ gateUrl, agent, ownerSecret: owner.secret, verifier, secr
 - Secrets are sealed with RFC 9180 HPKE in Auth mode (X25519, HKDF-SHA256, ChaCha20-Poly1305) to the gate's in-memory key, for that agent id only.
 - `releaseAgent` stops the agent and erases its slot; a fresh quote must name no owner.
 
+## Calimero Cloud (release-v2)
+
+`CalimeroClient` talks to a release-v2 cluster (`merod-v2`): it verifies the node's
+TDX attestation, seals every request (Noise NK, `calimero/sealed-http/v2`) and signs
+in with a WebAuthn passkey or a `cal_...` API key.
+
+```ts
+import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
+
+const client = new CalimeroClient({
+  baseUrl: 'https://eu1.cloud.calimero.network',
+  policy: { allowMock: false, verifyQuote, appHash }, // verifyQuote: your DCAP check
+});
+await client.signUp(browserPasskey(), 'alice');
+const bundle = await client.uploadBundle(wasmBytes);
+const app = await client.createApp('kv', bundle, { confirmMethods: ['transfer'] });
+await client.call(app, 'set', { key: 'a', value: '1' });
+const { result } = await client.view(app, 'get', { key: 'a' });
+await client.callConfirmed(app, 'transfer', { to: 'bob' }, browserPasskey()); // passkey consent
+for await (const event of client.events(app)) console.log(event);
+```
+
+Tests run against real nodes: build `merod-v2` and the kv-store fixture in `core`
+(branch `release-v2`), then
+`MEROD_V2_BINARY=.../merod-v2 KV_STORE_WASM=.../kv_store.wasm npm run test:cloud-v2`.
+
 ## Lower-level HTTP client
 
 If you need raw HTTP against a node (without the `MeroJs` facade), the SDK

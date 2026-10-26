@@ -58,7 +58,8 @@
     "test:contract": "vitest run --config vitest.config.ts src/__contract__",
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract"
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract",
+    "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts"
   },
   "files": [
     "dist"
