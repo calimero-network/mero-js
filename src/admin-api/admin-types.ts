@@ -789,12 +789,55 @@ export interface CreateNamespaceRequest {
   name?: string;
   /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
   appKey?: string;
+  /**
+   * Approve outbound requests for the app's publisher in the new namespace, in
+   * the same call. Absent approves none, and the app's requests are refused
+   * (`NotApproved`) until an admin approves them.
+   */
+  approveOutbound?: OutboundSelection;
 }
 
 export interface CreateNamespaceResponseData {
   namespaceId: string;
   /** What the id was derived from. Absent on nodes that predate derived ids. */
   founding?: NamespaceFounding;
+  /** What the namespace approves for the app's publisher; present only when the request set `approveOutbound`. */
+  outboundApproval?: OutboundApproval;
+}
+
+/**
+ * Which outbound URL prefixes a namespace approves for an app's publisher:
+ * `'manifest'` approves every prefix the app's manifest declares, a list
+ * approves exactly those prefixes. The node rejects any other string.
+ */
+export type OutboundSelection = 'manifest' | string[];
+
+/**
+ * What a namespace approves for one publisher (the bundle signer): the URL
+ * prefixes its apps may send outbound requests under, and the prefixes an
+ * approver was shown.
+ */
+export interface OutboundApproval {
+  /** The publisher's signer id (`did:key`). */
+  signer: string;
+  prefixes: string[];
+  reviewed: string[];
+}
+
+/**
+ * `PUT /admin-api/namespaces/:namespaceId/outbound-approvals` — set what the
+ * namespace approves for an installed app's publisher to exactly `approve`.
+ * `[]` revokes everything.
+ */
+export interface SetOutboundApprovalRequest {
+  applicationId: string;
+  approve: OutboundSelection;
+}
+
+export interface SetOutboundApprovalResponseData extends OutboundApproval {
+  namespaceId: string;
+  /** `false` when nothing changed, so no op was published. */
+  published: boolean;
 }
 
 export interface DeleteNamespaceResponseData {
@@ -2027,6 +2070,10 @@ export interface UpgradeGroupRequest {
   /** Publish without first trialling the migration on the admin's own contexts.
    *  Server default: false, so a migration that fails the trial is refused with a 409. */
   skipTrial?: boolean;
+  /** Approve outbound requests for the target's publisher in the group's
+   *  namespace before upgrading. Added to what the namespace already approves;
+   *  a prefix the target declares that nobody approved waits (`AwaitingApproval`). */
+  approveOutbound?: OutboundSelection;
 }
 
 export interface UpgradeGroupResponseData {
@@ -2037,6 +2084,8 @@ export interface UpgradeGroupResponseData {
   localContextsFailed?: number;
   contextsTrialled?: number;
   contextsNotHeld?: number;
+  /** What the namespace approves for the target's publisher; present only when the request set `approveOutbound`. */
+  outboundApproval?: OutboundApproval;
 }
 
 export type GroupUpgradeStatusResponseData = GroupUpgradeStatus | null;

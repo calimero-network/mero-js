@@ -48,6 +48,9 @@ import type {
   ListNamespacesResponseData,
   CreateNamespaceRequest,
   CreateNamespaceResponseData,
+  OutboundApproval,
+  SetOutboundApprovalRequest,
+  SetOutboundApprovalResponseData,
   DeleteNamespaceResponseData,
   CreateNamespaceInvitationRequest,
   CreateNamespaceInvitationResponseData,
@@ -855,6 +858,33 @@ export class AdminApiClient {
   async createNamespace(request: CreateNamespaceRequest): Promise<CreateNamespaceResponseData> {
     return unwrap(
       await this.httpClient.post<{ data: CreateNamespaceResponseData }>('/admin-api/namespaces', request),
+    );
+  }
+
+  /** What `namespaceId` approves for outbound requests, one entry per publisher. */
+  async listOutboundApprovals(namespaceId: string): Promise<OutboundApproval[]> {
+    return unwrap(
+      await this.httpClient.get<{ data: OutboundApproval[] }>(
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/outbound-approvals`,
+      ),
+    );
+  }
+
+  /**
+   * Set what `namespaceId` approves for the publisher of `request.applicationId`
+   * to exactly `request.approve`: `'manifest'` or a list of URL prefixes, and
+   * `[]` revokes everything. Takes effect at the app's next run.
+   */
+  async setOutboundApproval(
+    namespaceId: string,
+    request: SetOutboundApprovalRequest,
+  ): Promise<SetOutboundApprovalResponseData> {
+    return unwrap(
+      await this.httpClient.put<{ data: SetOutboundApprovalResponseData }>(
+        `/admin-api/namespaces/${pathSegment(namespaceId)}/outbound-approvals`,
+        // Core declares this body `deny_unknown_fields`, so send exactly these.
+        { applicationId: request.applicationId, approve: request.approve },
+      ),
     );
   }
 
