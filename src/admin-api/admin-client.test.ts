@@ -2207,14 +2207,6 @@ describe('AdminApiClient', () => {
       expect(result).toEqual({ invitation: mockInvitation, groupName: 'Lobby' });
     });
 
-    it('createGroupInvitation with recursive returns list', async () => {
-      mock.setMockResponse('POST', '/admin-api/groups/g-1/invite', {
-        data: { invitations: [{ groupId: 'g-1', invitation: mockInvitation, groupName: 'Lobby' }] },
-      });
-      const result = await client.createGroupInvitation('g-1', { recursive: true });
-      expect('invitations' in result).toBe(true);
-    });
-
     it('joinGroup sends invitation and unwraps response', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/join', {
         data: { groupId: 'g-1', memberIdentity: 'pk-1', memberAccount: 'c'.repeat(64) },

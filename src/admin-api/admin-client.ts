@@ -54,7 +54,6 @@ import type {
   DeleteNamespaceResponseData,
   CreateNamespaceInvitationRequest,
   CreateNamespaceInvitationResponseData,
-  CreateRecursiveInvitationResponseData,
   JoinNamespaceRequest,
   JoinNamespaceResponseData,
   CreateGroupInNamespaceRequest,
@@ -125,7 +124,6 @@ import type {
   IssueOwnershipProofResponseData,
   CreateGroupInvitationRequest,
   CreateGroupInvitationResponseData,
-  CreateRecursiveGroupInvitationResponseData,
   JoinGroupRequest,
   JoinGroupResponseData,
   TeeInfoResponseData,
@@ -903,9 +901,9 @@ export class AdminApiClient {
   async createNamespaceInvitation(
     namespaceId: string,
     request?: CreateNamespaceInvitationRequest,
-  ): Promise<CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData> {
+  ): Promise<CreateNamespaceInvitationResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData | CreateRecursiveInvitationResponseData }>(
+      await this.httpClient.post<{ data: CreateNamespaceInvitationResponseData }>(
         `/admin-api/namespaces/${pathSegment(namespaceId)}/invite`,
         request ?? {},
       ),
@@ -1783,9 +1781,9 @@ export class AdminApiClient {
   async createGroupInvitation(
     groupId: string,
     request?: CreateGroupInvitationRequest,
-  ): Promise<CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData> {
+  ): Promise<CreateGroupInvitationResponseData> {
     return unwrap(
-      await this.httpClient.post<{ data: CreateGroupInvitationResponseData | CreateRecursiveGroupInvitationResponseData }>(
+      await this.httpClient.post<{ data: CreateGroupInvitationResponseData }>(
         `/admin-api/groups/${pathSegment(groupId)}/invite`,
         request ?? {},
       ),

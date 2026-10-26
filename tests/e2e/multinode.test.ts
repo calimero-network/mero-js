@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MeroJs } from '../../src/mero-js.js';
-import type { CreateGroupInvitationResponseData } from '../../src/admin-api/admin-types.js';
 import { resolveCreds, ensureApplication, runId } from './harness.js';
 
 const N1 = process.env.MERO_NODE1_URL ?? 'http://localhost:4501';
@@ -23,6 +22,7 @@ let applicationId: string;
 let namespaceId: string;
 /** node-2's account in the namespace: what every member-addressing route takes. */
 let memberAccount: string;
+let memberKey: string;
 
 suite('Multi-node E2E — namespace invite/join', () => {
   beforeAll(async () => {
@@ -74,6 +74,7 @@ suite('Multi-node E2E — namespace invite/join', () => {
     // cannot tell them apart - see the listing note in round-trip.test.ts.
     expect(joined.memberAccount).toMatch(/^[0-9a-f]{64}$/);
     memberAccount = joined.memberAccount;
+    memberKey = joined.memberIdentity;
   });
 
   /**
@@ -133,14 +134,14 @@ suite('Multi-node E2E — namespace invite/join', () => {
     expect(info.size).toBe(bytes.length);
   }, 180000);
 
-  it('node-2 joins a subgroup by invitation, then leaves it', async () => {
-    const subgroupId = await subgroupJoinedByNode2(`leave-${RUN}`);
+  it('a member of a private space leaves it', async () => {
+    const subgroupId = await privateSpaceWithNode2(`leave-${RUN}`);
     await n2.admin.leaveGroup(subgroupId);
     await waitFor(async () => ((await roleOnNode1(subgroupId)) === undefined ? true : undefined), 60000);
   }, 120000);
 
-  it('node-1 removes node-2 from a subgroup it joined', async () => {
-    const subgroupId = await subgroupJoinedByNode2(`remove-${RUN}`);
+  it('node-1 removes node-2 from a private space', async () => {
+    const subgroupId = await privateSpaceWithNode2(`remove-${RUN}`);
     await n1.admin.removeGroupMembers(subgroupId, { members: [memberAccount] });
     expect(await roleOnNode1(subgroupId)).toBeUndefined();
   }, 120000);
@@ -170,26 +171,14 @@ suite('Multi-node E2E — namespace invite/join', () => {
 });
 
 /**
- * node-1 creates a subgroup of the namespace and invites node-2, which joins
- * it. Resolves once node-1 lists node-2 as a member, so a call that addresses
- * node-2 there cannot race the join.
+ * node-1 creates a private space (a Restricted subgroup) and adds node-2 to it.
+ * Resolves once node-1 lists node-2 as a member, so a call that addresses
+ * node-2 there cannot race the add.
  */
-async function subgroupJoinedByNode2(name: string): Promise<string> {
-  // Restricted: an Open subgroup (the default) already counts every namespace
-  // member, node-2 included, so there would be nothing to join by invitation.
-  // The namespace route, because it names `visibility` on released merods too;
-  // `POST /admin-api/groups` only learned it in core#4543.
-  const { groupId } = await n1.admin.createGroupInNamespace(namespaceId, {
-    groupName: name,
-    visibility: 'restricted',
-  });
-  // Not recursive, so the single-invitation shape.
-  const { invitation } = (await n1.admin.createGroupInvitation(
-    groupId,
-    {},
-  )) as CreateGroupInvitationResponseData;
-  const joined = await n2.admin.joinGroup({ invitation });
-  expect(joined.groupId).toBe(groupId);
+async function privateSpaceWithNode2(name: string): Promise<string> {
+  const { groupId } = await n1.admin.createGroupInNamespace(namespaceId, { groupName: name });
+  await n1.admin.setSubgroupVisibility(groupId, { subgroupVisibility: 'restricted' });
+  await n1.admin.addGroupMembers(groupId, { members: [{ identity: memberKey, role: 'Member' }] });
   await waitFor(async () => roleOnNode1(groupId), 60000);
   return groupId;
 }

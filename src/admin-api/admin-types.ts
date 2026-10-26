@@ -432,12 +432,6 @@ export interface SignedGroupOpenInvitation {
   readonly __nodeSigned: never;
 }
 
-export interface RecursiveInvitationEntry {
-  groupId: string;
-  invitation: SignedGroupOpenInvitation;
-  groupName?: string;
-}
-
 // ---- Namespaces ----
 
 export interface Namespace {
@@ -846,16 +840,11 @@ export interface DeleteNamespaceResponseData {
 
 export interface CreateNamespaceInvitationRequest {
   expirationTimestamp?: number;
-  recursive?: boolean;
 }
 
 export interface CreateNamespaceInvitationResponseData {
   invitation: SignedGroupOpenInvitation;
   groupName?: string;
-}
-
-export interface CreateRecursiveInvitationResponseData {
-  invitations: RecursiveInvitationEntry[];
 }
 
 export interface JoinNamespaceRequest {
@@ -2180,7 +2169,6 @@ export interface IssueOwnershipProofResponseData {
 
 export interface CreateGroupInvitationRequest {
   expirationTimestamp?: number;
-  recursive?: boolean;
   /**
    * Accounts permitted to admit a claim of this invitation, 64 hex each.
    *
@@ -2210,10 +2198,6 @@ export interface CreateGroupInvitationRequest {
 export interface CreateGroupInvitationResponseData {
   invitation: SignedGroupOpenInvitation;
   groupName?: string;
-}
-
-export interface CreateRecursiveGroupInvitationResponseData {
-  invitations: RecursiveInvitationEntry[];
 }
 
 export interface JoinGroupRequest {

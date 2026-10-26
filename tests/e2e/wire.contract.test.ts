@@ -267,11 +267,7 @@ describe('live wire contract (merod responses ↔ SDK types)', () => {
     contexts = (await mero.admin.getContexts()).contexts;
     namespaces = await mero.admin.listNamespaces();
 
-    const invited = await mero.admin.createGroupInvitation(namespaceId, {});
-    if (!('invitation' in invited)) {
-      throw new Error('createGroupInvitation returned a recursive payload');
-    }
-    invitation = invited;
+    invitation = await mero.admin.createGroupInvitation(namespaceId, {});
 
     memberDeviceEntries = (await mero.admin.listMemberDevices(namespaceId)).members;
     const { accountId } = await mero.admin.getNodeIdentity();
