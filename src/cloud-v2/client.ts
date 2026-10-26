@@ -196,7 +196,13 @@ export class CalimeroClient {
   async createApp(
     name: string,
     bundle: string,
-    options: { org?: string; access?: Record<string, unknown>; confirmMethods?: string[] } = {},
+    options: {
+      org?: string;
+      access?: Record<string, unknown>;
+      confirmMethods?: string[];
+      /** Arguments for the app's `init`. A failed init rejects with code `INIT_FAILED`. */
+      initArgs?: unknown;
+    } = {},
   ): Promise<string> {
     const { appId } = await this.post<{ appId: string }>('apps', { name, bundle, ...options });
     return appId;
