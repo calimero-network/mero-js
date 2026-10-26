@@ -67,6 +67,8 @@ const ROUTES: Array<[string, (c: AdminApiClient, id: string) => Promise<unknown>
   ['namespaces groups create', (c, id) => c.createGroupInNamespace(id, body), (e) => `POST /admin-api/namespaces/${e}/groups`],
   ['namespaces groups list', (c, id) => c.listNamespaceGroups(id), (e) => `GET /admin-api/namespaces/${e}/groups`],
   ['namespaces admin', (c, id) => c.changeNamespaceAdmin(id, body), (e) => `POST /admin-api/namespaces/${e}/admin`],
+  ['namespaces outbound list', (c, id) => c.listOutboundApprovals(id), (e) => `GET /admin-api/namespaces/${e}/outbound-approvals`],
+  ['namespaces outbound set', (c, id) => c.setOutboundApproval(id, { applicationId: 'app', approve: [] }), (e) => `PUT /admin-api/namespaces/${e}/outbound-approvals`],
   ['namespaces leave', (c, id) => c.leaveNamespace(id), (e) => `POST /admin-api/namespaces/${e}/leave`],
   ['namespaces account revoke', (c, id) => c.revokeAccountDevice(id, body), (e) => `POST /admin-api/namespaces/${e}/account/revoke`],
   ['namespaces account link', (c, id) => c.linkAccountDevice(id, body), (e) => `POST /admin-api/namespaces/${e}/account/link-device`],

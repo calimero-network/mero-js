@@ -121,6 +121,8 @@ A standalone helper `compareSemver(a, b): number` sorts version strings ascendin
 | `listNamespacesForApplication(applicationId): Promise<ListNamespacesResponseData>` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): Promise<CreateNamespaceResponseData>` | `POST /namespaces` |
 | `deleteNamespace(namespaceId): Promise<DeleteNamespaceResponseData>` | `DELETE /namespaces/{namespaceId}` |
+| `listOutboundApprovals(namespaceId): Promise<OutboundApproval[]>` | `GET /namespaces/{namespaceId}/outbound-approvals` |
+| `setOutboundApproval(namespaceId, request): Promise<SetOutboundApprovalResponseData>` | `PUT /namespaces/{namespaceId}/outbound-approvals` |
 | `createNamespaceInvitation(namespaceId, request?): Promise<…InvitationResponseData>` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): Promise<JoinNamespaceResponseData>` | `POST /namespaces/{namespaceId}/join` |
 | `redeemInvitation(namespaceId, invitation, options?): Promise<RedeemOutcome>` | `POST /namespaces/{namespaceId}/join`, then `GET /namespaces`; see [following an invitation](/guides/groups-and-governance/#following-an-invitation) |

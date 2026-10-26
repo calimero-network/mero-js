@@ -887,6 +887,69 @@ describe('AdminApiClient', () => {
       });
     });
 
+    it('createNamespace forwards approveOutbound "manifest" and unwraps the approval', async () => {
+      const approval = { signer: 'did:key:z1', prefixes: ['https://api.example.com/'], reviewed: ['https://api.example.com/'] };
+      mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1', outboundApproval: approval } });
+      const result = await client.createNamespace({ applicationId: 'app-1', approveOutbound: 'manifest' });
+      expect(result.outboundApproval).toEqual(approval);
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        applicationId: 'app-1',
+        approveOutbound: 'manifest',
+      });
+    });
+
+    it('createNamespace forwards approveOutbound as a prefix list', async () => {
+      mock.setMockResponse('POST', '/admin-api/namespaces', { data: { namespaceId: 'ns-1' } });
+      await client.createNamespace({ applicationId: 'app-1', approveOutbound: ['https://api.stripe.com/v1/'] });
+      expect(mock.getRequestBody('POST', '/admin-api/namespaces')).toEqual({
+        applicationId: 'app-1',
+        approveOutbound: ['https://api.stripe.com/v1/'],
+      });
+    });
+
+    it('listOutboundApprovals unwraps one entry per publisher', async () => {
+      const approvals = [
+        { signer: 'did:key:z1', prefixes: ['https://a.example/'], reviewed: ['https://a.example/'] },
+        { signer: 'did:key:z2', prefixes: [], reviewed: ['https://b.example/'] },
+      ];
+      mock.setMockResponse('GET', '/admin-api/namespaces/ns-1/outbound-approvals', { data: approvals });
+      expect(await client.listOutboundApprovals('ns-1')).toEqual(approvals);
+    });
+
+    it('setOutboundApproval PUTs exactly applicationId and approve, and unwraps the flattened answer', async () => {
+      const data = {
+        namespaceId: 'ns-1',
+        signer: 'did:key:z1',
+        prefixes: ['https://a.example/'],
+        reviewed: ['https://a.example/'],
+        published: true,
+      };
+      mock.setMockResponse('PUT', '/admin-api/namespaces/ns-1/outbound-approvals', { data });
+      // An extra key on the request object must not reach the wire: core
+      // declares this body `deny_unknown_fields`.
+      const request = { applicationId: 'app-1', approve: ['https://a.example/'], extra: 1 };
+      expect(await client.setOutboundApproval('ns-1', request)).toEqual(data);
+      expect(mock.getRequestBody('PUT', '/admin-api/namespaces/ns-1/outbound-approvals')).toEqual({
+        applicationId: 'app-1',
+        approve: ['https://a.example/'],
+      });
+    });
+
+    it.each([
+      ['manifest', 'manifest' as const],
+      ['an empty list (revoke everything)', [] as string[]],
+    ])('setOutboundApproval sends approve as %s', async (_label, approve) => {
+      mock.setMockResponse('PUT', '/admin-api/namespaces/ns-1/outbound-approvals', {
+        data: { namespaceId: 'ns-1', signer: 'did:key:z1', prefixes: [], reviewed: [], published: false },
+      });
+      const result = await client.setOutboundApproval('ns-1', { applicationId: 'app-1', approve });
+      expect(result.published).toBe(false);
+      expect(mock.getRequestBody('PUT', '/admin-api/namespaces/ns-1/outbound-approvals')).toEqual({
+        applicationId: 'app-1',
+        approve,
+      });
+    });
+
     it('deleteNamespace sends an empty JSON body', async () => {
       mock.setMockResponse('DELETE', '/admin-api/namespaces/ns-1', { data: { isDeleted: true } });
       const result = await client.deleteNamespace('ns-1');
@@ -1936,6 +1999,33 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
         targetApplicationId: 'app-2',
         skipTrial: true,
+      });
+    });
+
+    it('upgradeGroup forwards approveOutbound and unwraps the approval', async () => {
+      const approval = { signer: 'did:key:z1', prefixes: ['https://api.stripe.com/v1/'], reviewed: ['https://api.stripe.com/v1/'] };
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress', contextsTrialled: 0, contextsNotHeld: 0, outboundApproval: approval },
+      });
+      const result = await client.upgradeGroup('g-1', {
+        targetApplicationId: 'app-2',
+        approveOutbound: ['https://api.stripe.com/v1/'],
+      });
+      expect(result.outboundApproval).toEqual(approval);
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        approveOutbound: ['https://api.stripe.com/v1/'],
+      });
+    });
+
+    it('upgradeGroup forwards approveOutbound "manifest"', async () => {
+      mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade', {
+        data: { groupId: 'g-1', status: 'in_progress' },
+      });
+      await client.upgradeGroup('g-1', { targetApplicationId: 'app-2', approveOutbound: 'manifest' });
+      expect(mock.getRequestBody('POST', '/admin-api/groups/g-1/upgrade')).toEqual({
+        targetApplicationId: 'app-2',
+        approveOutbound: 'manifest',
       });
     });
 
