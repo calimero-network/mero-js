@@ -164,7 +164,7 @@ await client.call(app, 'set', { key: 'a', value: '1' });
 const { result } = await client.view(app, 'get', { key: 'a' });
 await client.callConfirmed(app, 'transfer', { to: 'bob' }, browserPasskey()); // passkey consent
 for await (const event of client.events(app)) console.log(event);
-await client.upgradeApp(app, { version: '1.1.0' });
+await client.upgradeApp(app, { version: '1.1.0' }, browserPasskey()); // the owner approves
 ```
 
 The check matches core's Rust client (`Measurements::Release`):
@@ -186,7 +186,7 @@ Packages:
 - `uploadBundle(wasm)` takes raw WASM, on development clusters only.
 
 Tests run against real nodes: build `merod` and the kv-store fixture in `core`
-(branch `release-v2`), then
+(branch `release-v2-parity`), then
 `MEROD_BINARY=.../merod KV_STORE_WASM=.../kv_store.wasm npm run test:cloud-v2`.
 
 ## Lower-level HTTP client
