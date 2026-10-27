@@ -97,6 +97,19 @@ describe('cloud v2', () => {
     await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('stores an app\'s blobs and serves them only to that app', async () => {
+    const [alice] = await person(0, 'alice-blobs');
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const app = await alice.createApp('files', bundle);
+    const other = await alice.createApp('other', bundle);
+    const data = new TextEncoder().encode('%PDF-1.7 '.repeat(500));
+    const up = await alice.uploadBlob(app, data);
+    expect(up.size).toBe(data.length);
+    expect(await alice.downloadBlob(app, up.blobId)).toEqual(data);
+    expect(await alice.downloadBlob(app, up.id)).toEqual(data);
+    await expect(alice.downloadBlob(other, up.blobId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('keeps serving after a node dies', async () => {
     const [alice, pk] = await person(1, 'alice-failover');
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));

@@ -193,6 +193,22 @@ export class CalimeroClient {
     return hash;
   }
 
+  /** Upload a blob for `app`: `blobId` is base58 (what apps print), `id` hex. */
+  uploadBlob(app: string, data: Uint8Array): Promise<{ blobId: string; id: string; size: number }> {
+    return this.json('POST', `apps/${app}/blobs`, undefined, data);
+  }
+
+  /** One of `app`'s blobs, by id (base58 or hex). */
+  async downloadBlob(app: string, id: string): Promise<Uint8Array> {
+    const response = await this.request('GET', `apps/${app}/blobs/${id}`);
+    if (!response.ok) {
+      const text = await response.text();
+      const value = text ? JSON.parse(text) : {};
+      throw new CalimeroError(response.status, value.error ?? 'ERROR', value.message ?? '', value.details ?? {});
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   async createApp(
     name: string,
     bundle: string,
