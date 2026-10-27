@@ -32,7 +32,6 @@ import {
   derivePublicKey,
   fromHex,
   hex,
-  importSigningKey,
 } from '../crypto/internal.js';
 import { accountForRoot, accountForRootPublicKey } from '../device-cert/index.js';
 import { resolveSigner, signerFromSecret, type Signer } from '../signer/signer.js';

@@ -2,6 +2,15 @@ import { describe, it, expect } from 'vitest';
 
 import { CloudClient } from './cloud-client.js';
 import { routingProofHeaders, signRoutingChallenge } from './routing-proof.js';
+import { signerFromCryptoKey, signerFromSecret } from '../signer/signer.js';
+
+/** The same seed as a key that signs and can never be exported, as a browser holds it. */
+async function unexportableDevice() {
+  const prefix = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+  const seed = DEVICE_SECRET.match(/../g)!.map((b) => parseInt(b, 16));
+  const key = await crypto.subtle.importKey('pkcs8', new Uint8Array([...prefix, ...seed]), { name: 'Ed25519' }, false, ['sign']);
+  return signerFromCryptoKey(key, (await signerFromSecret(DEVICE_SECRET)).publicKey);
+}
 
 /**
  * The credential and device key from MDMA's `tests/test_routing_proof.py`.
@@ -59,12 +68,24 @@ describe('signRoutingChallenge', () => {
     expect(other).not.toBe(EXPECTED_SIGNATURE);
   });
 
+  it('signs the same bytes through a key that cannot be exported', async () => {
+    expect(await signRoutingChallenge(NONCE, await unexportableDevice())).toBe(EXPECTED_SIGNATURE);
+  });
+
   it('refuses a device secret that is not 32 bytes', async () => {
     await expect(signRoutingChallenge(NONCE, 'ef26')).rejects.toThrow(/deviceSecret/);
   });
 });
 
 describe('routingProofHeaders', () => {
+  it('takes a signer in place of the secret', async () => {
+    const headers = await routingProofHeaders(
+      { namespaceId: NS, nonce: NONCE, expiresAtMs: 0 },
+      { credential: CREDENTIAL, signer: await unexportableDevice() },
+    );
+    expect(headers['X-Calimero-Signature']).toBe(EXPECTED_SIGNATURE);
+  });
+
   it('carries the certificate and the nonce beside the signature', async () => {
     const headers = await routingProofHeaders(
       { namespaceId: NS, nonce: NONCE, expiresAtMs: 0 },

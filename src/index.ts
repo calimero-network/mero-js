@@ -160,10 +160,10 @@ export type {
 export {
   readDelegatedSession,
   saveDelegatedSession,
-  clearDelegatedSession,
   readDelegatedCredential,
-  saveDelegatedCredential,
-  clearDelegatedCredential,
+  readDevice,
+  deviceIsActive,
+  forgetAccount,
   persistedNonces,
   markContextNonceSpent,
   pinRelayNodeKey,
