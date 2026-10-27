@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CalimeroClient, CalimeroError } from '../../src/cloud-v2/index.js';
 import { KV_STORE_WASM, startCluster, type LocalCluster } from './cluster.js';
+import { publisher, signedMpk, variant } from './mpk.js';
 import { SoftPasskey } from './soft-passkey.js';
 
 const ORIGIN = 'http://localhost:3000';
@@ -108,6 +109,84 @@ describe('cloud v2', () => {
     expect(await alice.downloadBlob(app, up.blobId)).toEqual(data);
     expect(await alice.downloadBlob(app, up.id)).toEqual(data);
     await expect(alice.downloadBlob(other, up.blobId)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('installs signed packages, refuses unsigned ones, upgrades by version, uninstalls and deletes', async () => {
+    const [alice] = await person(0, 'alice-packages');
+    const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
+    const key = publisher();
+
+    // An archive with no signature is refused.
+    await expect(alice.uploadPackage(new Uint8Array([1, 2, 3]))).rejects.toMatchObject({ code: 'BAD_PACKAGE' });
+
+    const installed = await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.0', kv, key));
+    expect(installed).toMatchObject({ package: 'com.mero-js.kv', version: '1.0.0', signerId: key.signerId });
+    // Another key cannot release the same package.
+    await expect(alice.uploadPackage(signedMpk('com.mero-js.kv', '1.1.0', kv, publisher()))).rejects.toMatchObject({
+      status: 403,
+    });
+
+    const app = await alice.createApp('pkg-kv', { package: 'com.mero-js.kv', version: '1.0.0' });
+    await alice.call(app, 'set', { key: 'a', value: '1' });
+    expect((await alice.listApps({ package: 'com.mero-js.kv' }))[0]).toMatchObject({ appId: app, version: '1.0.0' });
+
+    await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.1', variant(kv, 'v101'), key));
+    const up = await alice.upgradeApp(app, { version: '1.0.1' });
+    expect(up.status).toBe('ok');
+    expect((await alice.view(app, 'get', { key: 'a' })).result).toBe('1');
+    const info = await alice.package('com.mero-js.kv');
+    expect(info.latest).toBe('1.0.1');
+    expect(info.versions.map((v) => v.version)).toEqual(['1.0.0', '1.0.1']);
+
+    await expect(alice.uninstallPackage('com.mero-js.kv', '1.0.1')).rejects.toThrow(/still runs/);
+    await alice.uninstallPackage('com.mero-js.kv', '1.0.0');
+    await alice.deleteApp(app);
+    await expect(alice.getApp(app)).rejects.toMatchObject({ status: 404 });
+    await alice.uninstallPackage('com.mero-js.kv');
+    expect((await alice.packages()).map((p) => p.package)).not.toContain('com.mero-js.kv');
+  });
+
+  it('covers the rest of the API: passkeys, API keys, access, orgs and teams', async () => {
+    const [alice, pk] = await person(0, 'alice-api');
+    const [bob] = await person(1, 'bob-api');
+    const bobId = (await bob.me()).accountId as string;
+
+    // A second passkey is another device; it can be removed again.
+    const second = new SoftPasskey('localhost', ORIGIN);
+    const cred = await alice.addPasskey(second);
+    const viaSecond = client(2);
+    await viaSecond.signIn(second);
+    expect((await viaSecond.me()).accountId).toBe((await alice.me()).accountId);
+    await alice.removePasskey(cred);
+    await expect(client(2).signIn(second)).rejects.toBeInstanceOf(CalimeroError);
+    void pk;
+
+    const { keyId } = await alice.createApiKey({ label: 'ci' });
+    expect((await alice.listApiKeys()).map((k) => k.keyId)).toContain(keyId);
+    await alice.revokeApiKey(keyId);
+    expect((await alice.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
+
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const app = await alice.createApp('shared', bundle);
+    await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await alice.setAccess(app, { kind: 'accounts', accounts: [bobId] });
+    await new Promise((r) => setTimeout(r, 300));
+    await bob.call(app, 'set', { key: 'x', value: 'y' });
+
+    const org = await alice.createOrg('Initech');
+    await alice.setMember(org, bobId, 'member');
+    const team = await alice.createTeam(org, 'ops', 'invite');
+    await alice.setTeamMember(org, team, bobId, { role: 'readOnly' });
+    expect(await alice.getTeam(org, team)).toMatchObject({ teamId: team });
+    await alice.updateTeam(org, team, { name: 'platform', metadata: { colour: 'blue' } });
+    expect(await alice.getTeam(org, team)).toMatchObject({ name: 'platform' });
+    await alice.setCapabilities(org, 0, { account: bobId });
+    await alice.removeTeamMember(org, team, bobId);
+    await alice.deleteTeam(org, team);
+    await expect(alice.getTeam(org, team)).rejects.toMatchObject({ status: 404 });
+    const token = await alice.invite(org, 'guest', [], { ttlSecs: 60, uses: 1 });
+    expect(token).toBeTruthy();
+    expect(await alice.getOrg(org)).toMatchObject({ orgId: org });
   });
 
   it('keeps serving after a node dies', async () => {

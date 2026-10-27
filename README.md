@@ -285,16 +285,36 @@ import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
 
 const client = new CalimeroClient({
   baseUrl: 'https://eu1.cloud.calimero.network',
-  policy: { allowMock: false, verifyQuote, appHash }, // verifyQuote: your DCAP check
+  // Trust the signed mero-tee release the node names, from this one up.
+  policy: { release: { minReleaseVersion: '2.3.109' } },
 });
 await client.signUp(browserPasskey(), 'alice');
-const bundle = await client.uploadBundle(wasmBytes);
-const app = await client.createApp('kv', bundle, { confirmMethods: ['transfer'] });
+await client.installPackage('com.example.kv', '1.0.0'); // signed .mpk from the registry
+const app = await client.createApp('kv', { package: 'com.example.kv', version: '1.0.0' }, { confirmMethods: ['transfer'] });
 await client.call(app, 'set', { key: 'a', value: '1' });
 const { result } = await client.view(app, 'get', { key: 'a' });
 await client.callConfirmed(app, 'transfer', { to: 'bob' }, browserPasskey()); // passkey consent
 for await (const event of client.events(app)) console.log(event);
+await client.upgradeApp(app, { version: '1.1.0' });
 ```
+
+The check matches core's Rust client (`Measurements::Release`):
+
+1. The node names the mero-tee release it runs. A release below `minReleaseVersion` is refused before anything is fetched.
+2. The release's `published-mrtds.json` is fetched and its Sigstore signature is checked against the node release workflow.
+   By default it comes from the `cloud.calimero.network` mirror; `releaseSource: 'github'` reads it from the GitHub release instead, as the Rust client does (Node only: GitHub sends no CORS headers).
+3. The quote is checked against Intel's collateral with `@phala/dcap-qvl`, taken from Intel's PCS unless you give `fetchCollateral`. That covers the signature chain and the TCB status.
+4. A debug TD is refused.
+5. The registers must be the release's `locked-read-only` image. A debug profile is trusted only with `allowDebugProfile`.
+
+Mock quotes pass only with `policy.allowMock`, which development clusters need; nothing is read from the environment. Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
+
+Packages:
+
+- `installPackage(package, version)` installs from the cluster's registry.
+- `uploadPackage(mpk)` installs a signed `.mpk` file.
+- `packages()`, `package(name)` and `uninstallPackage(name, version?)` list, inspect and uninstall.
+- `uploadBundle(wasm)` takes raw WASM, on development clusters only.
 
 Tests run against real nodes: build `merod-v2` and the kv-store fixture in `core`
 (branch `release-v2`), then

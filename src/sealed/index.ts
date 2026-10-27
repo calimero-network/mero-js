@@ -23,10 +23,12 @@ export type {
 } from './verify.js';
 export {
   DEFAULT_RELEASE_MIRROR,
+  GITHUB_RELEASES,
   NODE_RELEASE_SIGNER,
   cloudNodeReleaseUrl,
   createSignedReleaseSealedFetch,
   createSignedReleaseVerifier,
+  fetchGithubNodeRelease,
   fetchNodeRelease,
   fetchNodeReleaseVersion,
   nodeReleaseVersionFromImage,

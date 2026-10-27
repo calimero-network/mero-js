@@ -227,6 +227,31 @@ async function readNodeReleaseVersion(baseUrl: string, givenFetch: typeof fetch)
   return nodeReleaseVersionFromImage(osImage);
 }
 
+/** Where mero-tee publishes its releases' assets, as core's `calimero-tee-release` fetches them. */
+export const GITHUB_RELEASES = 'https://github.com/calimero-network/mero-tee/releases/download';
+
+/**
+ * Node release `version` straight from its GitHub release (`mero-tee-v{version}`):
+ * `published-mrtds.json` and its cosign bundle, the files core's Rust client
+ * verifies. Only fetched: verify it with {@link trustSignedRelease}. GitHub's
+ * downloads send no CORS headers, so in a browser use a mirror
+ * ({@link cloudNodeReleaseUrl}) instead.
+ */
+export async function fetchGithubNodeRelease(
+  version: string,
+  options: { fetch?: typeof fetch; base?: string } = {},
+): Promise<SignedNodeRelease> {
+  const tag = `mero-tee-v${releaseVersion(version, 'version')}`;
+  const base = `${(options.base ?? GITHUB_RELEASES).replace(/\/+$/, '')}/${tag}/published-mrtds.json`;
+  const get = async (url: string): Promise<string> => {
+    const response = await (options.fetch ?? fetch)(url);
+    if (!response.ok) throw new Error(`Fetching ${url} failed: HTTP ${response.status}`);
+    return response.text();
+  };
+  const [publishedMrtds, bundle] = await Promise.all([get(base), get(`${base}.bundle.json`)]);
+  return { version, publishedMrtds, bundle };
+}
+
 /** Where the cloud at `cloudUrl` (e.g. `https://cloud.calimero.network`) mirrors node release `version`. */
 export function cloudNodeReleaseUrl(cloudUrl: string, version: string): string {
   return `${cloudUrl.replace(/\/+$/, '')}/api/tee/node-releases/${releaseVersion(version, 'version')}`;
@@ -417,7 +442,7 @@ export function createSignedReleaseSealedFetch(options: SignedReleaseSealedFetch
 const RELEASE_VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 
 /** `value` if it is a release version (`2.3.87`, `2.3.88-rc.1`); throws otherwise. */
-function releaseVersion(value: unknown, what: string): string {
+export function releaseVersion(value: unknown, what: string): string {
   const match = typeof value === 'string' ? RELEASE_VERSION.exec(value) : null;
   const pre = match?.[4];
   if (!match || (pre !== undefined && pre.split('.').some((id) => id === ''))) {
@@ -431,7 +456,7 @@ function releaseVersion(value: unknown, what: string): string {
  * `compare_release_versions`: numerically by `X.Y.Z`, a pre-release before its
  * release, build metadata ignored.
  */
-function compareReleaseVersions(a: string, b: string): number {
+export function compareReleaseVersions(a: string, b: string): number {
   const [aCore, aPre] = splitVersion(a);
   const [bCore, bPre] = splitVersion(b);
   for (let i = 0; i < 3; i += 1) {
