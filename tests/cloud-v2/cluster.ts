@@ -1,7 +1,7 @@
 /** Start a local merod cluster (dev mode: mock quotes) for tests. */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -31,6 +31,7 @@ export async function startCluster(n = 3): Promise<LocalCluster> {
   const ports = await Promise.all(Array.from({ length: n }, freePort));
   const urls = ports.map((p) => `http://127.0.0.1:${p}`);
   const peers = urls.map((u, i) => `${i + 1}=${u}/`).join(',');
+  const dirs = urls.map(() => mkdtempSync(join(tmpdir(), 'merod-')));
   const procs: Array<ChildProcess | undefined> = urls.map((url, i) =>
     spawn(
       BINARY,
@@ -40,7 +41,7 @@ export async function startCluster(n = 3): Promise<LocalCluster> {
         '--node-id', String(i + 1),
         '--listen', `127.0.0.1:${ports[i]}`,
         '--public-url', `${url}/`,
-        '--data-dir', mkdtempSync(join(tmpdir(), 'merod-')),
+        '--data-dir', dirs[i],
         '--peers', peers,
         '--cluster', 'mero-js-test',
         '--dev',
@@ -71,6 +72,11 @@ export async function startCluster(n = 3): Promise<LocalCluster> {
       for (const j of idx) {
         procs[j]?.kill('SIGKILL');
         procs[j] = undefined;
+      }
+      // The whole cluster stopped: its data goes too (a single node stopped
+      // for a failover test keeps its directory).
+      if (i === undefined) {
+        for (const d of dirs) rmSync(d, { recursive: true, force: true, maxRetries: 3 });
       }
     },
   };
