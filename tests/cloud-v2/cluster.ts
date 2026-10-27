@@ -1,4 +1,4 @@
-/** Start a local merod-v2 cluster (dev mode: mock quotes) for tests. */
+/** Start a local merod cluster (dev mode: mock quotes) for tests. */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -6,7 +6,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-export const BINARY = process.env.MEROD_V2_BINARY ?? resolve(__dirname, '../../../core/target/debug/merod-v2');
+export const BINARY =
+  process.env.MEROD_BINARY ?? process.env.MEROD_V2_BINARY ?? resolve(__dirname, '../../../core/target/debug/merod');
 export const KV_STORE_WASM =
   process.env.KV_STORE_WASM ?? resolve(__dirname, '../../../core/target/wasm32-unknown-unknown/app-release/kv_store.wasm');
 
@@ -33,11 +34,13 @@ export async function startCluster(n = 3): Promise<LocalCluster> {
   const procs: Array<ChildProcess | undefined> = urls.map((url, i) =>
     spawn(
       BINARY,
+      // `merod run FLAGS`: a node from flags alone, no `init`.
       [
+        'run',
         '--node-id', String(i + 1),
         '--listen', `127.0.0.1:${ports[i]}`,
         '--public-url', `${url}/`,
-        '--data-dir', mkdtempSync(join(tmpdir(), 'merod-v2-')),
+        '--data-dir', mkdtempSync(join(tmpdir(), 'merod-')),
         '--peers', peers,
         '--cluster', 'mero-js-test',
         '--dev',

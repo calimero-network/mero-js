@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Runs against a local merod-v2 cluster (core release-v2): set MEROD_V2_BINARY and
+// Runs against a local merod cluster (core release-v2): set MEROD_BINARY and
 // KV_STORE_WASM, or build both in a sibling `core` checkout.
 export default defineConfig({
   test: {

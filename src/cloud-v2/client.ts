@@ -349,12 +349,31 @@ export class CalimeroClient {
   /**
    * Move an app to another release of its package (`{ version }`), another
    * package, or a bundle hash, running its migration. Answers the entry's status.
+   * Where the owner holds app upgrades, the node asks for the owner's approval
+   * (`412 CONFIRM_REQUIRED`), which `passkey` gives.
    */
   upgradeApp(
     app: string,
     target: { version?: string; package?: string; service?: string; bundle?: string; migrate?: string },
+    passkey?: PasskeyProvider,
   ): Promise<{ index: number; status: string; error: unknown }> {
-    return this.post(`apps/${seg(app)}/upgrade`, target);
+    const path = `apps/${seg(app)}/upgrade`;
+    return passkey ? this.postConfirmed(path, target, passkey) : this.post(path, target);
+  }
+
+  /**
+   * POST `body` to `path`, answering a `412 CONFIRM_REQUIRED` with `passkey`'s
+   * assertion over the node's challenge (deleting an org, approving a release, ...).
+   */
+  async postConfirmed<T>(path: string, body: Record<string, unknown>, passkey: PasskeyProvider): Promise<T> {
+    try {
+      return await this.post<T>(path, body);
+    } catch (error) {
+      if (!(error instanceof CalimeroError) || error.code !== 'CONFIRM_REQUIRED') throw error;
+      const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
+      const assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
+      return this.post<T>(path, { ...body, confirm: { challengeId: d.challengeId, assertion } });
+    }
   }
 
   /**
@@ -394,19 +413,7 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     idempotencyKey?: string,
   ): Promise<CallResult> {
-    try {
-      return await this.call(app, method, args, idempotencyKey);
-    } catch (error) {
-      if (!(error instanceof CalimeroError) || error.code !== 'CONFIRM_REQUIRED') throw error;
-      const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
-      const assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
-      return this.post(`apps/${seg(app)}/intents`, {
-        method,
-        args,
-        idempotencyKey,
-        confirm: { challengeId: d.challengeId, assertion },
-      });
-    }
+    return this.postConfirmed(`apps/${seg(app)}/intents`, { method, args, idempotencyKey }, passkey);
   }
 
   /** Run a read-only method: strong by default, or stale from any replica. */

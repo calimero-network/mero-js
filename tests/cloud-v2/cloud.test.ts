@@ -112,14 +112,16 @@ describe('cloud v2', () => {
   });
 
   it('installs signed packages, refuses unsigned ones, upgrades by version, uninstalls and deletes', async () => {
-    const [alice] = await person(0, 'alice-packages');
+    const [alice, alicePk] = await person(0, 'alice-packages');
     const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
     const key = publisher();
 
     // An archive with no signature is refused.
     await expect(alice.uploadPackage(new Uint8Array([1, 2, 3]))).rejects.toMatchObject({ code: 'BAD_PACKAGE' });
 
-    const installed = await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.0', kv, key));
+    // Its own bytes: other tests' apps run kv-store uploaded raw, and a bundle is
+    // its hash, so 1.0.0 would count as running there and could not be removed.
+    const installed = await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.0', variant(kv, 'v100'), key));
     expect(installed).toMatchObject({ package: 'com.mero-js.kv', version: '1.0.0', signerId: key.signerId });
     // Another key cannot release the same package.
     await expect(alice.uploadPackage(signedMpk('com.mero-js.kv', '1.1.0', kv, publisher()))).rejects.toMatchObject({
@@ -131,7 +133,9 @@ describe('cloud v2', () => {
     expect((await alice.listApps({ package: 'com.mero-js.kv' }))[0]).toMatchObject({ appId: app, version: '1.0.0' });
 
     await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.1', variant(kv, 'v101'), key));
-    const up = await alice.upgradeApp(app, { version: '1.0.1' });
+    // The owner approves an upgrade with their passkey.
+    await expect(alice.upgradeApp(app, { version: '1.0.1' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    const up = await alice.upgradeApp(app, { version: '1.0.1' }, alicePk);
     expect(up.status).toBe('ok');
     expect((await alice.view(app, 'get', { key: 'a' })).result).toBe('1');
     const info = await alice.package('com.mero-js.kv');

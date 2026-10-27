@@ -276,7 +276,7 @@ await provisionAgent({ gateUrl, agent, ownerSecret: owner.secret, verifier, secr
 
 ## Calimero Cloud (release-v2)
 
-`CalimeroClient` talks to a release-v2 cluster (`merod-v2`): it verifies the node's
+`CalimeroClient` talks to a release-v2 cluster (`merod`): it verifies the node's
 TDX attestation, seals every request (Noise NK, `calimero/sealed-http/v2`) and signs
 in with a WebAuthn passkey or a `cal_...` API key.
 
@@ -316,9 +316,9 @@ Packages:
 - `packages()`, `package(name)` and `uninstallPackage(name, version?)` list, inspect and uninstall.
 - `uploadBundle(wasm)` takes raw WASM, on development clusters only.
 
-Tests run against real nodes: build `merod-v2` and the kv-store fixture in `core`
+Tests run against real nodes: build `merod` and the kv-store fixture in `core`
 (branch `release-v2`), then
-`MEROD_V2_BINARY=.../merod-v2 KV_STORE_WASM=.../kv_store.wasm npm run test:cloud-v2`.
+`MEROD_BINARY=.../merod KV_STORE_WASM=.../kv_store.wasm npm run test:cloud-v2`.
 
 ## Lower-level HTTP client
 
