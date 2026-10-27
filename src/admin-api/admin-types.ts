@@ -1523,6 +1523,12 @@ export interface CreateGroupResponseData {
   groupId: string;
 }
 
+export interface MissingRelease {
+  package: string;
+  version: string;
+  applicationId: string;
+}
+
 export interface GroupUpgradeStatus {
   fromVersion: string;
   toVersion: string;

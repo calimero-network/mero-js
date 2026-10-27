@@ -2044,6 +2044,20 @@ describe('AdminApiClient', () => {
       expect(result).toBeNull();
     });
 
+    it('getGroupMissingReleases returns the list in order', async () => {
+      const missing = [
+        { applicationId: 'a1', package: 'com.acme.app', version: '1.1.0' },
+        { applicationId: 'a2', package: 'com.acme.app', version: '2.0.0' },
+      ];
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', { data: null, missingReleases: missing });
+      expect(await client.getGroupMissingReleases('g-1')).toEqual(missing);
+    });
+
+    it('getGroupMissingReleases returns [] when the server omits the field', async () => {
+      mock.setMockResponse('GET', '/admin-api/groups/g-1/upgrade/status', { data: null });
+      expect(await client.getGroupMissingReleases('g-1')).toEqual([]);
+    });
+
     it('retryGroupUpgrade unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/groups/g-1/upgrade/retry', {
         data: { groupId: 'g-1', status: 'in_progress', localContextsTotal: 3, localContextsSwapped: 1, localContextsFailed: 0 },
