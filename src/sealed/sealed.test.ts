@@ -2,9 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { concat, fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
 import { SymmetricState, dh, initiate, x25519KeyPair, type X25519KeyPair } from './noise.js';
-import { RelayClient } from '../relay/relay-client.js';
-import { createMemoryNonceSource } from '../relay/nonce-source.js';
-import { parseWarrant } from '../warrant/warrant.js';
 import {
   HANDSHAKE_PATH,
   SEALED_CONTENT_TYPE,
@@ -440,9 +437,6 @@ describe('fetchAttestedTransportKey', () => {
 
 describe('createAttestedSealedFetch', () => {
   const baseUrl = StandInNode.baseUrl;
-  const CONTEXT = '01'.repeat(32);
-  const EXECUTOR = '4d'.repeat(32);
-  const EXECUTOR_KEY = 'ec'.repeat(32);
 
   /**
    * The stand-in node, plus the one unsealed route a client needs first:
@@ -497,60 +491,5 @@ describe('createAttestedSealedFetch', () => {
     await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toThrow(/did not verify/);
     expect(node.handshakes).toBe(0);
     expect(node.requests).toHaveLength(0);
-  });
-
-  /**
-   * Delegated execution to a TEE relay: the warrant and the method's arguments
-   * reach only the relay's TD. Whatever sits in front of it (the host's
-   * ingress, where TLS ends) carries opaque envelopes.
-   */
-  it('carries a RelayClient intent to the relay sealed, warrant and arguments included', async () => {
-    const { node, fetch: fetchImpl } = await attestingNode((head) =>
-      head.method === 'GET'
-        ? ok(
-            JSON.stringify({
-              data: {
-                executorAccount: EXECUTOR,
-                executorKey: EXECUTOR_KEY,
-                canAuthorOnBehalf: true,
-                groupId: 'ab'.repeat(32),
-                releaseBytecodeId: 'b1'.repeat(32),
-                releaseVersion: '1.2.0',
-              },
-            }),
-          )
-        : ok('{"data":{"rootHash":"root-1","returns":"ok"}}'),
-    );
-    const relay = new RelayClient({
-      relayUrl: baseUrl,
-      executorAccount: EXECUTOR,
-      authorAccount: '0e'.repeat(32),
-      authorProof: 'aa',
-      deviceSecret: '77'.repeat(32),
-      nonces: createMemoryNonceSource(1),
-      fetch: createAttestedSealedFetch({ baseUrl, verify: reportDataVerifier, fetch: fetchImpl }),
-    });
-
-    const result = await relay.execute(CONTEXT, 'transfer_secret_amount', { to: 'bob', amount: 4242 });
-
-    expect(result).toEqual({ rootHash: 'root-1', returns: 'ok' });
-    // Discovery first, sealed like the write: it names the key the warrant carries.
-    const [discovery, intent] = node.requests;
-    expect(discovery.head.method).toBe('GET');
-    expect(intent.head.method).toBe('POST');
-    expect(intent.head.path).toBe(`/admin-api/contexts/${CONTEXT}/intents`);
-    const sent = JSON.parse(intent.body) as { method: string; argsJson: unknown; warrant: string };
-    expect(sent.method).toBe('transfer_secret_amount');
-    expect(sent.argsJson).toEqual({ to: 'bob', amount: 4242 });
-    expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
-    expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
-    expect(parseWarrant(sent.warrant).releaseBytecodeId).toBe('b1'.repeat(32));
-
-    const wire = node.fetch.mock.calls
-      .map(([, init]) => new TextDecoder('latin1').decode(init.body as Uint8Array))
-      .join('');
-    expect(wire).not.toContain('transfer_secret_amount');
-    expect(wire).not.toContain('4242');
-    expect(wire).not.toContain(sent.warrant.slice(0, 32));
   });
 });

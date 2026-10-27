@@ -331,7 +331,7 @@ export interface SignedReleaseVerifierOptions extends Omit<TrustSignedReleaseOpt
  * The node's choice of release is the one thing taken from it, and it is
  * bounded: only a genuinely signed release at or above `minReleaseVersion`
  * passes, and the quote must then be of exactly that release's image. Use it
- * as `connectCloud`'s `seal`, or with `createAttestedSealedFetch`;
+ * with `createAttestedSealedFetch`;
  * {@link createSignedReleaseSealedFetch} does the latter for you.
  */
 export function createSignedReleaseVerifier(options: SignedReleaseVerifierOptions): QuoteVerifier {
@@ -397,16 +397,13 @@ export interface SignedReleaseSealedFetchOptions extends Omit<SignedReleaseVerif
  * ```ts
  * import { verify as dcapVerify } from '@phala/dcap-qvl';
  *
- * const relay = new RelayClient({
- *   relayUrl,
- *   fetch: createSignedReleaseSealedFetch({
- *     baseUrl: relayUrl,
- *     dcapVerify,
- *     profile: 'locked-read-only',
- *     minReleaseVersion: '2.3.87',
- *   }),
- *   ...
+ * const sealedFetch = createSignedReleaseSealedFetch({
+ *   baseUrl,
+ *   dcapVerify,
+ *   profile: 'locked-read-only',
+ *   minReleaseVersion: '2.3.87',
  * });
+ * const response = await sealedFetch(`${baseUrl}/admin-api/health`);
  * ```
  */
 export function createSignedReleaseSealedFetch(options: SignedReleaseSealedFetchOptions): typeof fetch {

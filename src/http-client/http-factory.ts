@@ -11,7 +11,6 @@ export function createBrowserHttpClient(options: {
   baseUrl: string;
   fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
-  getProof?: Transport['getProof'];
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
@@ -37,7 +36,6 @@ export function createBrowserHttpClient(options: {
       options.fetch ? options.fetch(url, init) : globalThis.fetch(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
-    getProof: options.getProof,
     onTokenRefresh: options.onTokenRefresh,
     refreshToken: options.refreshToken,
     onAuthRevoked: options.onAuthRevoked,
@@ -55,7 +53,6 @@ export function createNodeHttpClient(options: {
   baseUrl: string;
   fetch?: typeof fetch; // Allow injection of undici.fetch or other fetch implementations
   getAuthToken?: () => Promise<string | undefined>;
-  getProof?: Transport['getProof'];
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.
@@ -98,7 +95,6 @@ export function createNodeHttpClient(options: {
       : (url: RequestInfo | URL, init?: RequestInit) => fetchImpl(url, init),
     baseUrl: options.baseUrl,
     getAuthToken: options.getAuthToken,
-    getProof: options.getProof,
     onTokenRefresh: options.onTokenRefresh,
     refreshToken: options.refreshToken,
     onAuthRevoked: options.onAuthRevoked,
@@ -116,7 +112,6 @@ export function createUniversalHttpClient(options: {
   baseUrl: string;
   fetch?: typeof fetch;
   getAuthToken?: () => Promise<string | undefined>;
-  getProof?: Transport['getProof'];
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.

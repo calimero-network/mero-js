@@ -1,8 +1,8 @@
 /**
  * Byte-level primitives shared by everything in this package that signs.
  *
- * Extracted from `warrant/warrant.ts` when the device-cert signer arrived and
- * needed the same `domainHash`, hex handling and ed25519 import. Keeping one
+ * Shared by the device-cert, login and account signers, which need the same
+ * `domainHash`, hex handling and ed25519 import. Keeping one
  * copy is the point: these have to stay byte-identical with core, and two
  * copies drifting apart is exactly the failure the byte-parity e2e exists to
  * catch. Internal — not exported from the package root.
@@ -113,9 +113,8 @@ export async function importSigningKey(secretHex: string): Promise<CryptoKey> {
     // package targets ES2020, where `Error` has no `cause` option.
     const detail = cause instanceof Error ? `: ${cause.message}` : '';
     throw new Error(
-      'this runtime has no WebCrypto Ed25519, so a warrant cannot be signed ' +
-        'here. Node 18.4+, Safari 17+, Firefox 129+ and Chrome 137+ have it; ' +
-        'otherwise mint the warrant with `merod account warrant`' +
+      'this runtime has no WebCrypto Ed25519, so nothing can be signed ' +
+        'here. Node 18.4+, Safari 17+, Firefox 129+ and Chrome 137+ have it' +
         detail,
     );
   }

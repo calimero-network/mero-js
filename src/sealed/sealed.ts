@@ -198,15 +198,12 @@ export interface AttestedSealedFetchOptions {
  * one call that needs no credential and is never sealed), and seals everything
  * else to it. A restarted node is attested again, through the same verifier.
  *
- * This is what to hand a {@link RelayClient} for a TEE relay, so the warrant
- * and the method's arguments reach only the attested TD:
+ * Hand it to any client that takes a `fetch`, so its requests reach only the
+ * attested TD:
  *
  * ```ts
- * const relay = new RelayClient({
- *   relayUrl,
- *   fetch: createAttestedSealedFetch({ baseUrl: relayUrl, verify: createQuoteVerifier(...) }),
- *   ...
- * });
+ * const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: createQuoteVerifier(...) });
+ * const response = await sealedFetch(`${baseUrl}/admin-api/health`);
  * ```
  */
 export function createAttestedSealedFetch(options: AttestedSealedFetchOptions): typeof fetch {

@@ -24,14 +24,10 @@ export const CAPABILITIES = {
   CAN_MANAGE_METADATA: 1 << 8,
   /**
    * Publish writes attributed to ANOTHER member, under a warrant that member
-   * signed — the grant delegated execution runs on.
+   * signed — the grant v1's delegated execution ran on.
    *
-   * Implied by nothing: not by membership, not by admin, and not propagated by
-   * the subgroup-admit cascade. So every group is authorship-closed until an
-   * admin sets this bit, and a relay without it is refused at
-   * `performIntent` before anything executes. That is why it is worth naming
-   * here rather than leaving callers to write `1 << 9`: a client granting it
-   * has to be able to say what it is granting.
+   * Kept so the bitmask still names every bit a v1 node reports; release-v2
+   * has no delegated execution, and this SDK no longer signs warrants.
    */
   CAN_AUTHOR_ON_BEHALF: 1 << 9,
 } as const;
@@ -40,8 +36,7 @@ export type CapabilityName = keyof typeof CAPABILITIES;
 export type CapabilityBit = (typeof CAPABILITIES)[CapabilityName];
 
 /**
- * Ready-made masks for `setDefaultCapabilities` / `setMemberCapabilities` and
- * `RelayClient.foundNamespace({ defaultCapabilities })`, so an app can name the
+ * Ready-made masks for `setDefaultCapabilities` / `setMemberCapabilities`, so an app can name the
  * default it gives members instead of passing a bare number.
  *
  * Why this matters: a namespace's default mask is copied into a non-admin

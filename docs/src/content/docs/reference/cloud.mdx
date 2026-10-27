@@ -10,10 +10,10 @@ import { Aside } from '@astrojs/starlight/components';
 `CloudClient` talks to **Calimero Cloud** — the control plane that knows which
 namespaces an account owns and which attested TEE nodes are assigned to each.
 
-It is the discovery half of [delegated
-execution](/reference/relay/): a caller who runs no node cannot know which relay
-serves their namespace, or which account that relay writes as, and a warrant is
-unusable without both. The cloud answers that.
+It is v1's cloud control plane. The relay listings below describe the fleet rows
+the cloud reports; writing through a relay (delegated execution) is no longer in
+this SDK. For release-v2's attested cloud, use `CalimeroClient` (see the
+README's *Calimero Cloud (release-v2)* section).
 
 ```typescript
 import { CloudClient } from '@calimero-network/mero-js';
@@ -426,8 +426,7 @@ visible cause.
 
 ## Setting a namespace up
 
-These three are the owner's side of the flow, and they need a node — see the
-[end-to-end guide](/guides/delegated-execution/).
+These three are the owner's side of the flow, and they need a node.
 
 ```typescript
 // Proof from a node that is a DIRECT ADMIN of the namespace; merod refuses

@@ -6,8 +6,6 @@ import {
   ResponseParser,
 } from './http-types.js';
 import { combineSignals, createTimeoutSignal } from './signal-utils.js';
-import { signedPath } from '../request-proof/authorizer.js';
-import { REQUEST_PROOF_HEADER } from '../request-proof/request-proof.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone.
@@ -142,8 +140,9 @@ function headersToRecord(headers: Headers): Record<string, string> {
   return record;
 }
 
-/** Runtimes disagree on sending a bare `?`, so the URL parser drops it once and
- * the URL signed and the URL fetched are one string. */
+/** Runtimes disagree on sending a bare `?` (browsers keep it, Node's fetch
+ * drops it), so the URL parser drops it once and every runtime fetches the same
+ * string. */
 function withoutBareQuery(url: string): string {
   let parsed: URL;
   try {
@@ -153,31 +152,6 @@ function withoutBareQuery(url: string): string {
   }
   if (parsed.search === '') parsed.search = '';
   return parsed.href;
-}
-
-/** Whether `headers` carry a request proof, which must never follow a redirect. */
-export function carriesProof(headers: Record<string, string>): boolean {
-  return Object.keys(headers).some(
-    (name) => name.toLowerCase() === REQUEST_PROOF_HEADER.toLowerCase(),
-  );
-}
-
-/**
- * Throws when a proof-carrying request was answered with a redirect, which
- * fetch reports as an opaque response with status 0 under redirect: 'manual'.
- */
-export function refuseProofRedirect(response: Response, url: string): void {
-  const redirected =
-    response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
-  if (!redirected) return;
-  // Status 0 marks a withheld response; its explanation is the body text.
-  throw new HTTPError(
-    0,
-    'Redirect Not Followed',
-    url,
-    response.headers,
-    `the node answered with a redirect; a request carrying ${REQUEST_PROOF_HEADER} is not followed to another location`,
-  );
 }
 
 // Web Standards HTTP client implementation
@@ -293,29 +267,6 @@ export class WebHttpClient implements HttpClient {
     
     const method = init?.method || 'GET';
 
-    // A credential that commits to the request can only be produced here, where
-    // the method, the assembled path and query, and the body are all known.
-    if (this.transport.authorizeRequest) {
-      const body = init?.body;
-      if (body !== undefined && typeof body !== 'string' && !(body instanceof Uint8Array)) {
-        throw new Error(
-          'this transport authorizes each request against its body, so the body must be a string ' +
-            'or Uint8Array — a stream cannot be signed, because the signature would have to read ' +
-            'bytes the request then cannot send.',
-        );
-      }
-      Object.assign(
-        headersObj,
-        await this.transport.authorizeRequest({
-          method,
-          path: signedPath(url),
-          // Narrowed by the guard above; `BodyInit` is wider than what can be
-          // signed.
-          body: body as string | Uint8Array | undefined,
-        }),
-      );
-    }
-
     const requestInit: RequestInit = {
       method,
       headers: headersObj,
@@ -384,34 +335,8 @@ export class WebHttpClient implements HttpClient {
       requestInit.keepalive = init.keepalive;
     }
 
-    // Signed here rather than in `buildHeaders`, which sees neither the method
-    // nor the body — and a proof commits to both. Signed AFTER the body is
-    // settled above, so what is hashed is what is sent.
-    //
-    // The path and query come from the built URL, not from the `path` argument,
-    // which may be relative to a base URL that contributes its own prefix.
-    if (this.transport.getProof) {
-      const proof = await this.transport.getProof({
-        method: requestInit.method ?? 'GET',
-        path: signedPath(url),
-        body: requestInit.body,
-      });
-      if (proof) {
-        headersObj['X-Calimero-Proof'] = proof;
-      }
-    }
-
-    // fetch forwards custom headers across redirects, so a proof must never be
-    // sent anywhere but where it was signed for.
-    const proofAttached = carriesProof(headersObj);
-    if (proofAttached && requestInit.redirect !== 'error') {
-      requestInit.redirect = 'manual';
-    }
-
     try {
       const response = await this.transport.fetch(url, requestInit);
-
-      if (proofAttached) refuseProofRedirect(response, url);
 
       if (!response.ok) {
         const bodyText = await this.getBodyText(response);

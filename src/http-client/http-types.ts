@@ -9,39 +9,6 @@ export interface Transport {
   baseUrl: string;
   defaultHeaders?: Record<string, string>;
   getAuthToken?: () => Promise<string | undefined>;
-  /**
-   * Per-request authorization, for a credential that commits to the request.
-   *
-   * `getAuthToken` returns one value reused across requests; a request proof
-   * signs the method, the path and the body, so it can only be produced where
-   * those are known. This is called with exactly that, and whatever it returns
-   * is merged into the headers.
-   *
-   * It runs AFTER `getAuthToken`, so a transport holding both sends both and
-   * lets the node decide — which it does by answering a request carrying a token
-   * by that token, and consulting a proof only when there is none.
-   */
-  authorizeRequest?: (request: {
-    method: string;
-    /** The path and query the node will see, as `signedPath` reads them. */
-    path: string;
-    body?: string | Uint8Array;
-  }) => Promise<Record<string, string>>;
-  /**
-   * Sign each request instead of, or alongside, presenting a session.
-   *
-   * Called per call with the method, the path the node will see, and the exact
-   * body — a proof commits to all three, so unlike `getAuthToken` it cannot be
-   * resolved once and reused. Returning `undefined` sends no proof header,
-   * which is how a client that only sometimes has a key stays usable.
-   *
-   * `createProofSigner` builds one of these from a credential and a key.
-   */
-  getProof?: (request: {
-    method: string;
-    path: string;
-    body?: unknown;
-  }) => Promise<string | undefined>;
   onTokenRefresh?: (newToken: string) => Promise<void>;
   /**
    * Callback to refresh the access token when a 401 error with 'token_expired' is detected.

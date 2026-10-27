@@ -1,6 +1,5 @@
 import { HttpClient, withRetry } from '../http-client/index.js';
 import { pathSegment } from '../http-client/path-segment.js';
-import { CAPABILITIES, hasCap, withCap } from '../capabilities.js';
 import type {
   HealthStatus,
   ReadinessStatus,
@@ -132,9 +131,6 @@ import type {
   TeeInfoResponseData,
   TeeAttestRequest,
   TeeAttestResponseData,
-  PerformIntentRequest,
-  PerformIntentResponseData,
-  IntentRelayInfo,
   QueryContextRequest,
   QueryContextResponseData,
   ListMemberDevicesResponseData,
@@ -705,51 +701,12 @@ export class AdminApiClient {
   }
 
   /**
-   * Ask this node to run one method on a member's behalf, under a warrant that
-   * member signed.
-   *
-   * The node executes and signs the envelope with its own key; the change is
-   * attributed to the **author**. Both halves travel together, so every peer
-   * re-checks that the member consented instead of trusting the relay.
-   *
-   * Three things have to be true first, and none is implied by the others:
-   *
-   * - the author's **account** is a member of the group owning the context —
-   *   their device joins nothing and is in no group's binding rows, which is
-   *   exactly the case a device certificate covers;
-   * - this node holds `CAN_AUTHOR_ON_BEHALF` on that group, which is implied by
-   *   neither membership nor admin;
-   * - the warrant has not been spent. It is single-use: presenting a valid one
-   *   twice is refused, because the signature stays valid forever and replay is
-   *   not forgery.
-   *
-   * A refusal comes back as a `403` carrying the reason — "an admin must grant
-   * CAN_AUTHOR_ON_BEHALF to …", or that the nonce is already spent — so a caller
-   * can tell which precondition failed rather than only that one did.
-   *
-   * Mint the warrant with {@link signWarrant}; see
-   * {@link PerformIntentRequest.warrant}.
-   */
-  async performIntent(
-    contextId: string,
-    request: PerformIntentRequest,
-  ): Promise<PerformIntentResponseData> {
-    return unwrap(
-      await this.httpClient.post<{ data: PerformIntentResponseData }>(
-        `/admin-api/contexts/${pathSegment(contextId)}/intents`,
-        request,
-      ),
-    );
-  }
-
-  /**
-   * Read a context as the session's ACCOUNT, without minting a warrant.
+   * Read a context as the session's ACCOUNT.
    *
    * Needs an account-authenticated session — one from {@link login}, not the
    * admin password login — and refuses otherwise with a `401`. The account must
    * be a member of the group owning the context (`403` if not), and the method
-   * must be declared read-only in the app's ABI (`409` if not; a write needs
-   * {@link performIntent}).
+   * must be declared read-only in the app's ABI (`409` if not).
    */
   async queryContext(
     contextId: string,
@@ -819,35 +776,6 @@ export class AdminApiClient {
       await this.httpClient.post<{ data: AccessGrantCallResponseData }>(
         `/admin-api/contexts/${pathSegment(contextId)}/grant-calls`,
         request,
-      ),
-    );
-  }
-
-  /**
-   * Ask what this node can do for a member in `contextId`, before they sign
-   * anything.
-   *
-   * The facts {@link performIntent} needs and a client cannot derive: whose
-   * account and key go in the warrant's `executor` and `executor_key`, which
-   * release it pins, and whether this node holds `CAN_AUTHOR_ON_BEHALF` on the
-   * owning group.
-   * `canAuthorOnBehalf: false` comes back as an answer rather than an error, as
-   * it is the default state of every context, so a caller can say "an admin of
-   * `groupId` must grant it to `executorAccount`" instead of presenting a
-   * warrant that will be refused after the author has spent a nonce on it.
-   *
-   * `404` means the context belongs to no group, this node holds no account or
-   * identity in it yet, or its group names no release yet; no warrant can be
-   * spent here until that changes.
-   *
-   * For a caller with no credential on the node at all — a browser tab holding
-   * one signing key — use `RelayClient`, which reads this same route on a node
-   * run as a relay.
-   */
-  async getIntentRelay(contextId: string): Promise<IntentRelayInfo> {
-    return unwrap(
-      await this.httpClient.get<{ data: IntentRelayInfo }>(
-        `/admin-api/contexts/${pathSegment(contextId)}/intents`,
       ),
     );
   }
@@ -1468,92 +1396,6 @@ export class AdminApiClient {
     request: SetDefaultCapabilitiesRequest,
   ): Promise<void> {
     await this.httpClient.put(`/admin-api/groups/${pathSegment(groupId)}/settings/default-capabilities`, request);
-  }
-
-  /**
-   * Make every member admitted to `groupId` from now on able to relay a
-   * delegated write, without a per-node governance op each time.
-   *
-   * `CAN_AUTHOR_ON_BEHALF` is implied by nothing — not membership, not admin —
-   * so every group is authorship-closed and each fleet relay otherwise needs an
-   * admin to grant it individually, at the moment the relay is assigned and the
-   * admin is not watching. Setting it in the group's DEFAULT mask is core's own
-   * answer to that: `add_member` seeds a non-admin's capability row from the
-   * default, so an attested node admitted afterwards lands open.
-   *
-   * Call it on the NAMESPACE (the root group). A grant resolves through the
-   * membership anchor, so one at the root reaches every Open subgroup beneath
-   * it, which is where contexts actually live; a `Restricted` subgroup is a
-   * membership boundary and needs its own call.
-   *
-   * ### Two things this does not do
-   *
-   * **It is not retroactive.** The default is copied into a member's row when
-   * that member is admitted, so nodes already admitted keep the row they got.
-   * Use {@link grantAuthorship} for those — or call this at namespace creation,
-   * which is the only point that needs no backfill at all.
-   *
-   * **It does not reach admins.** Core seeds the default only for non-admin
-   * roles, and `CAN_AUTHOR_ON_BEHALF` is deliberately not implied by admin. An
-   * admin's own node therefore stays closed and needs {@link grantAuthorship}.
-   *
-   * ### What it widens
-   *
-   * Every future non-admin member of the group, not only attested TEE nodes, so
-   * any of them may be named as a warrant's `executor`. The bound worth knowing
-   * before deciding: an executor cannot FORGE. A delegated write is authorized
-   * by the author's own warrant — signed by their device key, committed to one
-   * context, method and exact arguments, with its nonce checked unspent — so a
-   * holder can only spend a warrant it was deliberately handed. What it does
-   * gain is the arguments in cleartext and the choice of when, or whether, to
-   * publish.
-   *
-   * Read-modify-write rather than a blind set: core seeds a new group's default
-   * with `CAN_JOIN_OPEN_SUBGROUPS`, and overwriting that would quietly stop
-   * every later member inheriting into Open subgroups.
-   *
-   * Returns the resulting mask and whether an op was published — it is a no-op
-   * when the bit is already set, so it is safe to call on every startup.
-   */
-  async openToDelegatedExecution(
-    groupId: string,
-  ): Promise<{ changed: boolean; defaultCapabilities: number }> {
-    const current = await this.getDefaultCapabilities(groupId);
-    if (hasCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
-      return { changed: false, defaultCapabilities: current };
-    }
-    const next = withCap(current, CAPABILITIES.CAN_AUTHOR_ON_BEHALF);
-    await this.setDefaultCapabilities(groupId, { defaultCapabilities: next });
-    return { changed: true, defaultCapabilities: next };
-  }
-
-  /**
-   * Grant `account` the authorship bit on `groupId`, leaving its other
-   * capabilities alone.
-   *
-   * The per-member counterpart to {@link openToDelegatedExecution}, and what
-   * closes the gap that method cannot: a relay admitted BEFORE the default was
-   * set, and an admin's own node, which never receives the default at all.
-   *
-   * `account` is the member's ACCOUNT id (64 hex) as `listGroupMembers` returns
-   * it — for a fleet relay, the `account` the cloud reports for that node. Not
-   * the signing key that added them; both are 64 hex, so nothing but the source
-   * tells them apart.
-   *
-   * Read-modify-write, so it adds the bit rather than replacing the member's
-   * mask. A no-op when the member already holds it.
-   */
-  async grantAuthorship(
-    groupId: string,
-    account: string,
-  ): Promise<{ changed: boolean; capabilities: number }> {
-    const { capabilities } = await this.getMemberCapabilities(groupId, account);
-    if (hasCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF)) {
-      return { changed: false, capabilities };
-    }
-    const next = withCap(capabilities, CAPABILITIES.CAN_AUTHOR_ON_BEHALF);
-    await this.setMemberCapabilities(groupId, account, { capabilities: next });
-    return { changed: true, capabilities: next };
   }
 
   async setSubgroupVisibility(

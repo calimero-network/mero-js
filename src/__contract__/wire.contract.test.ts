@@ -50,7 +50,6 @@ import type {
   ChangeNamespaceAdminRequest,
   OwnerDeleteGroupRequest,
   GroupInfo,
-  IntentRelayInfo,
   JoinNamespaceResponseData,
   UpgradeGroupResponseData,
   ActivateGroupUpgradeRequest,
@@ -97,7 +96,6 @@ const mRollup = key<MigrationStatusRollup>();
 const mEntry = key<MemberMigrationStatusEntry>();
 const mReport = key<MemberMigrationReport>();
 const nodeId = key<NodeIdentity>();
-const intentRelay = key<IntentRelayInfo>();
 const pairInitReq = key<AccountPairInitRequest>();
 const deviceEntry = key<AccountDeviceEntry>();
 const signRootReq = key<AccountSignWithRootRequest>();
@@ -342,21 +340,6 @@ const SPECS: Spec[] = [
       nodeId('accountNamespaceId'),
       nodeId('revokedFrom'),
     ],
-  },
-  {
-    type: 'IntentRelayInfo',
-    file: 'contexts/intent_relay.res.json',
-    path: 'data',
-    required: [
-      intentRelay('executorAccount'),
-      intentRelay('executorKey'),
-      intentRelay('canAuthorOnBehalf'),
-      intentRelay('groupId'),
-      intentRelay('releaseBytecodeId'),
-      intentRelay('releaseVersion'),
-    ],
-    optional: [],
-    ignoredCoreKeys: ['grantedOnGroupId'],
   },
   {
     type: 'AccountPairInitRequest',

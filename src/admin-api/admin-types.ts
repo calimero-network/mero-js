@@ -524,57 +524,13 @@ export type ListNamespacesResponseData = Namespace[];
  * the endpoint behind it takes none.
  */
 /**
- * A member's request that a node run one method on their behalf.
- *
- * Delegated authorship exists for a holder that cannot run the application
- * itself — a device with only a signing key, which can neither compile the WASM
- * nor decrypt the state. What makes the resulting write *theirs* is the warrant:
- * a statement they signed, which travels with the change so every peer verifies
- * they consented rather than taking the node's word.
- */
-export interface PerformIntentRequest {
-  /** The method to run. */
-  method: string;
-  /** Its arguments, as the JSON the guest will receive. */
-  argsJson: unknown;
-  /**
-   * The author's consent: hex-encoded borsh of a `Warrant`.
-   *
-   * Opaque on purpose. Its canonical form is those bytes — the signature covers
-   * them — so re-describing the fields as JSON would create a second spelling
-   * that could disagree with what was signed.
-   *
-   * Mint it with {@link signWarrant}, or out of band with `merod account
-   * warrant` / `meroctl context intent`.
-   *
-   * Signing here needs no dependency, which is why it is available at all: the
-   * hash is WebCrypto SHA-256, the signature is WebCrypto Ed25519, and every
-   * field of a warrant is fixed-width so the encoding is concatenation rather
-   * than borsh. The byte contract is pinned on the node's side, at
-   * `crates/account/src/tests/warrant_wire_fixture.rs`, because a drift there
-   * would otherwise surface here as a 403 rather than as an encoding error.
-   */
-  warrant: string;
-  /**
-   * Hex-encoded borsh of the author's `AccountProof<DeviceCert>`, proving the
-   * key that signed the warrant is a device of the account it names.
-   *
-   * Only the author's own half. The node attaches its own credential, which must
-   * match the `executor` and `executor_key` the warrant names.
-   */
-  authorProof: string;
-}
-
-/** What a performed intent reports back. */
-/**
- * A read of a context, run as the caller's account. Needs no warrant: a read
- * publishes nothing, so there is no peer to convince.
+ * A read of a context, run as the caller's account. A read publishes nothing,
+ * so there is no peer to convince.
  */
 export interface QueryContextRequest {
   /**
    * The method to call. It must be declared read-only in the application's ABI
-   * (a `&self` method in a Rust app); anything else is refused with a `409`,
-   * because a write needs a warrant ({@link PerformIntentRequest}).
+   * (a `&self` method in a Rust app); anything else is refused with a `409`.
    */
   method: string;
   /** Its arguments, as the JSON the guest will receive. */
@@ -639,62 +595,6 @@ export interface AccessGrantCallResponseData {
 export interface QueryContextResponseData {
   /** The method's own return value. */
   returns: unknown | null;
-}
-
-export interface PerformIntentResponseData {
-  /**
-   * The context's scope root after the run — how a caller sees that it wrote.
-   *
-   * Worth asserting on rather than the status alone: an accepted intent that
-   * advanced no state is a real failure mode, and it is cheaper to catch here
-   * than on a later read of a value that was never written.
-   */
-  rootHash: string;
-  /** The method's own return value, if it had one. */
-  returns: unknown | null;
-}
-
-/**
- * What a node says about running intents in one context — read before minting a
- * warrant, not after being refused one.
- *
- * Every input to a warrant is something the author already holds except three:
- * whose account and key go in `executor` and `executor_key`, which release it
- * pins, and whether that node may act here at all. The node knows them, so they
- * are answered here, on the path the intent will be presented to.
- *
- * Reading it first is what lets a client fail before signing. A warrant spends a
- * nonce from a monotonic per-device sequence, and one naming the wrong executor
- * is unspendable — the number is gone and the write never happened.
- */
-export interface IntentRelayInfo {
-  /** The account a warrant for this node must name as its `executor`, 64 hex. */
-  executorAccount: string;
-  /**
-   * The signing key a warrant for this node must name as its `executor_key`, 64
-   * hex: the one device that may spend it. A re-key voids unspent warrants.
-   */
-  executorKey: string;
-  /**
-   * Whether this node holds `CAN_AUTHOR_ON_BEHALF` on the group owning the
-   * context.
-   *
-   * `false` is an answer, not an error, and it is the *default* state of every
-   * context — the capability is implied by neither membership nor admin, and is
-   * not propagated by the subgroup cascade. A client reads it to tell "ask an
-   * admin of `groupId`" from "retry later".
-   */
-  canAuthorOnBehalf: boolean;
-  /** The group whose admin must grant that capability, 64 hex. */
-  groupId: string;
-  /**
-   * The blob id of the release that group names, 64 hex: what a warrant for this
-   * node must pin as `release_bytecode_id`. The route answers 404 while the group
-   * names no release.
-   */
-  releaseBytecodeId: string;
-  /** That release's semver, for the warrant's `release_version`. */
-  releaseVersion: string;
 }
 
 export interface NodeIdentity {

@@ -629,14 +629,12 @@ describe('SseClient redirects', () => {
   const redirected = () =>
     new Response(null, { status: 307, headers: { location: 'https://elsewhere.example/sse' } });
 
-  function clientWith(fetchMock: ReturnType<typeof vi.fn>, withProof: boolean) {
+  function clientWith(fetchMock: ReturnType<typeof vi.fn>) {
     return new SseClient({
       baseUrl: 'http://localhost:4001',
       fetch: fetchMock as unknown as typeof fetch,
       reconnectDelayMs: 60_000,
-      ...(withProof
-        ? { authorize: async () => ({ 'X-Calimero-Proof': 'aa' }) }
-        : { getAuthToken: async () => 'test-token' }),
+      getAuthToken: async () => 'test-token',
     });
   }
 
@@ -651,58 +649,20 @@ describe('SseClient redirects', () => {
   const subscribeError = (client: SseClient) =>
     (client as any).postSubscription('subscribe', { contextIds: ['ctx-1'] }) as Promise<Error | null>;
 
-  describe('carrying a proof', () => {
-    it('opens the stream without following redirects and reports one as an error', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(redirected());
-      const err = await connectError(clientWith(fetchMock, true));
+  it('leaves redirect handling to the platform on both calls', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(redirected());
+    const client = clientWith(fetchMock);
+    await connectError(client);
+    await subscribeError(client);
 
-      expect(fetchMock).toHaveBeenCalledOnce();
-      expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
-      expect(err).toBeInstanceOf(HTTPError);
-      expect(err.message).toMatch(/X-Calimero-Proof/);
-    });
-
-    it('posts a subscription without following redirects and reports one as an error', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(redirected());
-      const err = await subscribeError(clientWith(fetchMock, true));
-
-      expect(fetchMock).toHaveBeenCalledOnce();
-      expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
-      expect(err).toBeInstanceOf(HTTPError);
-      expect(err?.message).toMatch(/X-Calimero-Proof/);
-    });
-
-    it('treats an opaque redirect the same way', async () => {
-      const opaque = {
-        ok: false,
-        status: 0,
-        statusText: '',
-        type: 'opaqueredirect',
-        headers: new Headers(),
-        text: async () => '',
-      };
-      const err = await subscribeError(clientWith(vi.fn().mockResolvedValue(opaque), true));
-      expect(err?.message).toMatch(/X-Calimero-Proof/);
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].redirect).toBeUndefined();
+    expect(fetchMock.mock.calls[1][1].redirect).toBeUndefined();
   });
 
-  describe('carrying no proof', () => {
-    it('leaves redirect handling to the platform on both calls', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(redirected());
-      const client = clientWith(fetchMock, false);
-      await connectError(client);
-      await subscribeError(client);
-
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(fetchMock.mock.calls[0][1].redirect).toBeUndefined();
-      expect(fetchMock.mock.calls[1][1].redirect).toBeUndefined();
-    });
-
-    it('reports a redirect as a plain HTTP error', async () => {
-      const err = await subscribeError(clientWith(vi.fn().mockResolvedValue(redirected()), false));
-      expect(err).toBeInstanceOf(HTTPError);
-      expect(err?.message).not.toMatch(/X-Calimero-Proof/);
-    });
+  it('reports a redirect as a plain HTTP error', async () => {
+    const err = await subscribeError(clientWith(vi.fn().mockResolvedValue(redirected())));
+    expect(err).toBeInstanceOf(HTTPError);
   });
 });
 
