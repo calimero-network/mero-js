@@ -35,6 +35,7 @@ import type {
   MemberMigrationReport,
   MemberMigrationStatusEntry,
   MigrationStatus,
+  MissingRelease,
   MigrationStatusRollup,
   Namespace,
   NamespaceFounding,
@@ -90,6 +91,7 @@ const upRes = key<UpgradeGroupResponseData>();
 const actReq = key<ActivateGroupUpgradeRequest>();
 const actRes = key<ActivateGroupUpgradeResponseData>();
 const upStatus = key<GroupUpgradeStatus>();
+const missingRel = key<MissingRelease>();
 const mStatus = key<MigrationStatus>();
 const mRollup = key<MigrationStatusRollup>();
 const mEntry = key<MemberMigrationStatusEntry>();
@@ -269,6 +271,13 @@ const SPECS: Spec[] = [
       upStatus('localContextsFailed'),
       upStatus('completedAt'),
     ],
+  },
+  {
+    type: 'MissingRelease',
+    file: 'groups/upgrade_status.res.json',
+    path: 'missingReleases.0',
+    required: [missingRel('package'), missingRel('version'), missingRel('applicationId')],
+    optional: [],
   },
   {
     type: 'MigrationStatus',

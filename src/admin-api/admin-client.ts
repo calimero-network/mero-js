@@ -114,6 +114,7 @@ import type {
   UpgradeGroupRequest,
   UpgradeGroupResponseData,
   GroupUpgradeStatusResponseData,
+  MissingRelease,
   MigrationStatus,
   NamespaceRevokedDevices,
   CascadeStatusEntry,
@@ -1710,6 +1711,12 @@ export class AdminApiClient {
     return unwrap(
       await this.httpClient.get<{ data: GroupUpgradeStatusResponseData }>(`/admin-api/groups/${pathSegment(groupId)}/upgrade/status`),
     );
+  }
+
+  /** Releases to install before activating the upgrade, in list order (oldest first). An older server returns []. */
+  async getGroupMissingReleases(groupId: string): Promise<MissingRelease[]> {
+    const res = await this.httpClient.get<{ missingReleases?: MissingRelease[] }>(`/admin-api/groups/${pathSegment(groupId)}/upgrade/status`);
+    return res.missingReleases ?? [];
   }
 
   /**
