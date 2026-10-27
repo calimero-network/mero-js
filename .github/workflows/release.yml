@@ -86,18 +86,3 @@ jobs:
         run: |
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push origin HEAD:master --follow-tags || true
-
-  # Opens the pull request that moves every consumer in .github/fleet.json onto
-  # the version just published. Majors are skipped by default -- see the header
-  # of fleet-bump.yml for why.
-  fleet-bump:
-    name: Open dependency bump PRs
-    needs: release
-    if: needs.release.outputs.new_release == 'true'
-    uses: ./.github/workflows/fleet-bump.yml
-    with:
-      packages: "@calimero-network/mero-js=${{ needs.release.outputs.version }}"
-      label: mero-js-${{ needs.release.outputs.version }}
-    # GH_APP_PRIVATE_KEY, which the called workflow uses to mint a
-    # per-repository installation token.
-    secrets: inherit

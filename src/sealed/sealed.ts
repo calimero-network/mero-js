@@ -8,7 +8,7 @@
  * produce a response the client accepts.
  *
  * The client opens a session with a Noise NK handshake to the X25519 transport
- * key the node's quote commits to ({@link fetchAttestedTransportKey}). The
+ * key the node's quote commits to (`CalimeroClient` attests it first). The
  * transport key only authenticates the node: the session keys come from both
  * sides' ephemeral keys, so once a session is gone (an hour at most) what was
  * sent in it cannot be opened, not even with the transport key. Each request
@@ -17,7 +17,7 @@
  * refuses one inside the envelope with a 501.
  *
  * The node's side, and the wire format this implements byte for byte, are in
- * core's `crates/server/src/sealed.rs`:
+ * core's `crates/sealed`:
  *
  * ```text
  * handshake   Noise_NK_25519_AESGCM_SHA256, prologue "calimero/sealed-http/v2"
@@ -33,11 +33,10 @@
  *   inner     u32 BE head length || head (JSON) || body
  * ```
  *
- * Use it by handing {@link createSealedFetch} to `MeroJsConfig.fetch`.
+ * `CalimeroClient` opens it with {@link createSealedFetch}.
  */
 
-import { concat, fromHex, hex } from '../crypto/internal.js';
-import type { TeeAttestRequest, TeeAttestResponseData } from '../admin-api/admin-types.js';
+import { concat } from '../crypto/internal.js';
 import { initiate } from './noise.js';
 import type { DcapCollateral } from './verify.js';
 
@@ -134,116 +133,12 @@ export interface VerifyTransportQuote {
   readonly includeCollateral?: boolean;
 }
 
-/**
- * Ask a node for its transport key and accept it only if a quote you verified
- * commits to it.
- *
- * `applicationHash` (hex), when given, is the bytecode hash you expect the
- * attested application to have; the node is asked to bind that application,
- * and the quote only verifies if it runs that exact bytecode.
- */
-export async function fetchAttestedTransportKey(
-  admin: { teeAttest(request: TeeAttestRequest): Promise<TeeAttestResponseData> },
-  verify: VerifyTransportQuote,
-  options: { applicationId?: string; applicationHash?: string } = {},
-): Promise<Uint8Array> {
-  if ((options.applicationId === undefined) !== (options.applicationHash === undefined)) {
-    throw new Error('applicationId and applicationHash are given together or not at all');
-  }
-  const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
-  const attested = await admin.teeAttest({
-    nonce,
-    applicationId: options.applicationId,
-    bindTransportKey: true,
-    ...(verify.includeCollateral ? { includeCollateral: true } : {}),
-  });
-  if (!attested.transportPublicKey) {
-    throw new Error('The node did not report a transport key; it predates sealed transport');
-  }
-  const transportKey = fromHex(attested.transportPublicKey, 'transportPublicKey', 32);
-  const inner = options.applicationHash
-    ? fromHex(options.applicationHash, 'applicationHash', 32)
-    : new Uint8Array(32);
-  const reportDataSuffix = hex(await transportKeyBinding(inner, transportKey));
-  const verified = await verify({
-    quoteB64: attested.quoteB64,
-    nonce,
-    reportDataSuffix,
-    collateral: attested.collateral,
-  });
-  if (!verified) {
-    throw new Error('The attestation did not verify, so its transport key is not trusted');
-  }
-  return transportKey;
-}
-
-export interface AttestedSealedFetchOptions {
+export interface SealedFetchOptions {
   /** The node's base URL. */
   baseUrl: string;
   /**
-   * Decides whether the node's quote is one you trust — typically
-   * {@link createQuoteVerifier}. Asked again whenever the node restarts.
-   */
-  verify: VerifyTransportQuote;
-  /** Also require the node to run this application with this bytecode hash. */
-  applicationId?: string;
-  applicationHash?: string;
-  /** Fetch that carries the attestation and the envelopes. Defaults to global `fetch`. */
-  fetch?: typeof fetch;
-}
-
-/**
- * {@link createSealedFetch} for a node you know only by URL: it attests the
- * node's transport key with `verify`, over `POST /admin-api/tee/attest` (the
- * one call that needs no credential and is never sealed), and seals everything
- * else to it. A restarted node is attested again, through the same verifier.
- *
- * This is what to hand a {@link RelayClient} for a TEE relay, so the warrant
- * and the method's arguments reach only the attested TD:
- *
- * ```ts
- * const relay = new RelayClient({
- *   relayUrl,
- *   fetch: createAttestedSealedFetch({ baseUrl: relayUrl, verify: createQuoteVerifier(...) }),
- *   ...
- * });
- * ```
- */
-export function createAttestedSealedFetch(options: AttestedSealedFetchOptions): typeof fetch {
-  const baseFetch = options.fetch ?? ((input, init) => fetch(input, init));
-  const attestUrl = `${options.baseUrl.replace(/\/+$/, '')}/admin-api/tee/attest`;
-  const admin = {
-    async teeAttest(request: TeeAttestRequest): Promise<TeeAttestResponseData> {
-      const response = await baseFetch(attestUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-      if (!response.ok) {
-        throw new Error(`The node refused to attest: HTTP ${response.status}`);
-      }
-      const body = (await response.json()) as { data?: TeeAttestResponseData };
-      if (!body.data) throw new Error('The attestation response is malformed');
-      return body.data;
-    },
-  };
-  return createSealedFetch({
-    baseUrl: options.baseUrl,
-    transportPublicKey: () =>
-      fetchAttestedTransportKey(admin, options.verify, {
-        applicationId: options.applicationId,
-        applicationHash: options.applicationHash,
-      }),
-    fetch: baseFetch,
-  });
-}
-
-export interface SealedFetchOptions {
-  /** The node's base URL, as given to `MeroJsConfig.baseUrl`. */
-  baseUrl: string;
-  /**
    * The node's attested transport key, or a function that attests and returns
-   * it — typically `() => fetchAttestedTransportKey(admin, verify)`. Given a
+   * it (as `CalimeroClient` does). Given a
    * function, a restarted node is handled: the key is attested again, through
    * your verifier, and the request retried once. Given bytes, a restart
    * surfaces as {@link StaleTransportKeyError}.
@@ -255,7 +150,6 @@ export interface SealedFetchOptions {
 
 /**
  * A `fetch` that seals every request to the node's attested transport key.
- * Pass it as `MeroJsConfig.fetch`.
  *
  * A request for any URL outside `baseUrl` is refused rather than sent in the
  * clear: falling back to plaintext would silently undo the point of sealing.

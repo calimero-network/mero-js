@@ -23,8 +23,7 @@ import type { VerifyTransportQuote } from './sealed.js';
 /**
  * The collateral a quote is verified against — TCB info, QE identity, CRLs and
  * their chains — in dcap-qvl's form: byte fields are hex strings or byte
- * arrays. What `/admin-api/tee/attest` returns with `includeCollateral`, and
- * what `@phala/dcap-qvl`'s `getCollateral` fetches.
+ * arrays. What `@phala/dcap-qvl`'s `getCollateral` fetches.
  */
 export interface DcapCollateral {
   pck_crl_issuer_chain: string;
@@ -116,7 +115,7 @@ export interface QuoteVerifierOptions {
   now?: () => number;
 }
 
-/** A verifier for {@link fetchAttestedTransportKey}, which asks the node for collateral. */
+/** A verifier that asks the node for collateral. */
 export type QuoteVerifier = VerifyTransportQuote & { readonly includeCollateral: true };
 
 const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
@@ -144,10 +143,7 @@ const REGISTERS = ['mrtd', 'rtmr0', 'rtmr1', 'rtmr2', 'rtmr3'] as const;
  *   dcapVerify,
  *   ...trustedMeasurementsFromReleases([publishedMrtds], { profile: 'locked-read-only' }),
  * });
- * const fetch = createSealedFetch({
- *   baseUrl,
- *   transportPublicKey: () => fetchAttestedTransportKey(admin, verifier),
- * });
+ * const client = new CalimeroClient({ baseUrl, policy: { verifyQuote: verifier } });
  * ```
  */
 export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifier {

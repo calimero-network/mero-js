@@ -9,10 +9,8 @@ import {
   DEFAULT_RELEASE_MIRROR,
   NODE_RELEASE_SIGNER,
   cloudNodeReleaseUrl,
-  createSignedReleaseSealedFetch,
   createSignedReleaseVerifier,
   fetchNodeRelease,
-  fetchNodeReleaseVersion,
   nodeReleaseVersionFromImage,
   trustSignedRelease,
   verifySignedNodeRelease,
@@ -355,16 +353,13 @@ describe('fetching a release', () => {
 
 const RELEASED_IMAGE = 'merotee-ubuntu-questing-25-10-locked-read-only-2-3-87';
 
-describe('the release a node names', () => {
-  it('reads it from the image name of a released image', async () => {
+describe('the release a node image names', () => {
+  it('reads it from the image name of a released image', () => {
     expect(nodeReleaseVersionFromImage(RELEASED_IMAGE)).toBe('2.3.87');
     expect(nodeReleaseVersionFromImage('merotee-ubuntu-questing-25-10-debug-read-only-2-3-100')).toBe('2.3.100');
-    const fetch = vi.fn(async () => json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } }));
-    await expect(fetchNodeReleaseVersion('https://relay.example/', { fetch })).resolves.toBe('2.3.87');
-    expect(fetch).toHaveBeenCalledWith('https://relay.example/admin-api/tee/info', expect.anything());
   });
 
-  it('refuses an image that is not a released mero-tee node image', async () => {
+  it('refuses an image that is not a released mero-tee node image', () => {
     for (const name of [
       'unknown',
       'ubuntu-2404-tdx-v20250115',
@@ -373,20 +368,6 @@ describe('the release a node names', () => {
     ]) {
       expect(() => nodeReleaseVersionFromImage(name)).toThrow('not the image of a mero-tee node release');
     }
-    await expect(
-      fetchNodeReleaseVersion('https://relay.example', { fetch: vi.fn(async () => json({ data: {} })) }),
-    ).rejects.toThrow("did not name the node's image");
-  });
-
-  it('says so when a node that requires sealing refuses /tee/info unsealed, and fails on other refusals', async () => {
-    const refusing = (code: string) =>
-      vi.fn(async () => json({ error: { code, message: 'refused' } }, 403)) as unknown as typeof globalThis.fetch;
-    await expect(
-      fetchNodeReleaseVersion('https://relay.example', { fetch: refusing('sealed_required') }),
-    ).rejects.toThrow('the node requires sealing and is too old to name its release');
-    await expect(fetchNodeReleaseVersion('https://relay.example', { fetch: refusing('forbidden') })).rejects.toThrow(
-      'HTTP 403',
-    );
   });
 });
 
@@ -420,98 +401,5 @@ describe('createSignedReleaseVerifier', () => {
       'SHA-256',
     );
     expect(() => verifier(async () => signed('2.3.87'), 'latest')).toThrow('minReleaseVersion');
-  });
-});
-
-describe('createSignedReleaseSealedFetch', () => {
-  const RELAY = 'https://relay.example';
-  const CLOUD = 'https://cloud.example';
-  /**
-   * A relay that names release 2.3.87 in its `/tee/info` and attests with the
-   * real sample quote, bound to the transport key; and two mirrors serving
-   * `{data: SignedNodeRelease}` for that release.
-   */
-  const network = ({ infoRefused = false } = {}) => {
-    const transportKey = new Uint8Array(32).fill(0x44);
-    const requests: string[] = [];
-    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push(url);
-      if (url === `${RELAY}/admin-api/tee/info`) {
-        // A node that requires sealing and predates core#4196 refuses it unsealed.
-        return infoRefused
-          ? json({ error: { code: 'sealed_required', message: 'sealed only' } }, 403)
-          : json({ data: { cloudProvider: 'gcp', osImage: RELEASED_IMAGE, mrtd: '' } });
-      }
-      if ([DEFAULT_RELEASE_MIRROR, CLOUD].some((mirror) => url === `${mirror}/api/tee/node-releases/2.3.87`)) {
-        return json({ data: signed('2.3.87') });
-      }
-      if (url === `${RELAY}/admin-api/tee/attest`) {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ bindTransportKey: true, includeCollateral: true });
-        return json({
-          data: { quoteB64: QUOTE_B64, quote: {}, transportPublicKey: hex(transportKey), collateral: COLLATERAL },
-        });
-      }
-      return new Response('unexpected', { status: 500 });
-    }) as unknown as typeof globalThis.fetch;
-    return { fetch, requests };
-  };
-  const options = { baseUrl: RELAY, dcapVerify, profile: 'locked-read-only', minReleaseVersion: '2.3.86', now: () => AT };
-
-  it('gets the release the relay names from the public mirror, and refuses a quote not of it', async () => {
-    const { fetch, requests } = network();
-    const sealed = createSignedReleaseSealedFetch({ ...options, fetch });
-    await expect(sealed(`${RELAY}/admin-api/health`)).rejects.toThrow('are not an image this verifier trusts');
-    expect(requests).toEqual([
-      `${RELAY}/admin-api/tee/attest`,
-      `${RELAY}/admin-api/tee/info`,
-      `${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`,
-    ]);
-  });
-
-  it('takes the release from another mirror, or from a function, given the version', async () => {
-    const byUrl = network();
-    await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch: byUrl.fetch, releaseSource: CLOUD })(`${RELAY}/x`),
-    ).rejects.toThrow('are not an image this verifier trusts');
-    expect(byUrl.requests).toContain(`${CLOUD}/api/tee/node-releases/2.3.87`);
-    expect(byUrl.requests).not.toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
-
-    const byFunction = network();
-    const releaseSource = vi.fn(async ({ version }: { version: string }) => signed(version));
-    await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch: byFunction.fetch, releaseSource })(`${RELAY}/x`),
-    ).rejects.toThrow('are not an image this verifier trusts');
-    expect(releaseSource).toHaveBeenCalledWith({ baseUrl: RELAY, version: '2.3.87', fetch: byFunction.fetch });
-  });
-
-  it('takes releaseVersion when a node that requires sealing will not name its release, and only then', async () => {
-    const refusing = network({ infoRefused: true });
-    await expect(createSignedReleaseSealedFetch({ ...options, fetch: refusing.fetch })(`${RELAY}/x`)).rejects.toThrow(
-      '`releaseVersion`',
-    );
-
-    const pinned = network({ infoRefused: true });
-    await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch: pinned.fetch, releaseVersion: '2.3.87' })(`${RELAY}/x`),
-    ).rejects.toThrow('are not an image this verifier trusts');
-    expect(pinned.requests).toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
-
-    // A node that names its release is taken at its word, as untrusted as ever.
-    const answering = network();
-    await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch: answering.fetch, releaseVersion: '2.3.99' })(`${RELAY}/x`),
-    ).rejects.toThrow('are not an image this verifier trusts');
-    expect(answering.requests).toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.87`);
-    expect(answering.requests).not.toContain(`${DEFAULT_RELEASE_MIRROR}/api/tee/node-releases/2.3.99`);
-
-    expect(() => createSignedReleaseSealedFetch({ ...options, releaseVersion: 'latest' })).toThrow('releaseVersion');
-  });
-
-  it('refuses a relay that serves a release below the minimum, before trusting its quote', async () => {
-    const { fetch } = network();
-    await expect(
-      createSignedReleaseSealedFetch({ ...options, fetch, minReleaseVersion: '2.3.88' })(`${RELAY}/x`),
-    ).rejects.toThrow('Release 2.3.87 is older than the minimum trusted, 2.3.88');
   });
 });

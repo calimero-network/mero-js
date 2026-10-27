@@ -1,151 +1,59 @@
 ---
 title: Quickstart
-description: Install Mero.js, connect to a node, authenticate, and make your first admin and RPC calls — in a few minutes.
+description: Install mero-js, verify a cloud node, sign in with a passkey and call an app.
 sidebar:
   order: 1
 ---
 
-import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+## Installation
 
-Mero.js is the JavaScript SDK for a [Calimero](https://calimero-network.github.io/core/)
-node. This page gets you from an empty project to a live call: install, create a
-client, authenticate, list contexts, and execute a WASM method.
+```bash
+npm install @calimero-network/mero-js
+```
 
-## Install
+The package ships ESM, CommonJS and a minified browser build, with its own
+TypeScript declarations. Its one dependency is `@phala/dcap-qvl`, for TDX quote
+verification.
 
-<Tabs syncKey="pkg">
-  <TabItem label="npm">
-    ```bash
-    npm install @calimero-network/mero-js
-    ```
-  </TabItem>
-  <TabItem label="pnpm">
-    ```bash
-    pnpm add @calimero-network/mero-js
-    ```
-  </TabItem>
-  <TabItem label="yarn">
-    ```bash
-    yarn add @calimero-network/mero-js
-    ```
-  </TabItem>
-</Tabs>
+## Quick start
 
-Requires **Node.js 18+** or any modern browser. Zero runtime dependencies — the
-SDK is built on the Fetch API (including streaming responses for SSE),
-`WebSocket`, and `AbortController`. (`sdk.ws` needs a global `WebSocket`, which
-on Node requires v22+.)
+```ts
+import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
 
-## Your first calls
-
-<Steps>
-
-1. **Create an SDK instance.** Point it at your node's URL.
-
-   ```typescript
-   import { MeroJs } from '@calimero-network/mero-js';
-
-   const sdk = new MeroJs({
-     baseUrl: 'http://localhost:2428',
-     timeoutMs: 10_000, // optional, default 10s
-   });
-   ```
-
-2. **Authenticate.** Exchange a username and password for a JWT access +
-   refresh token pair. The tokens are held in memory and attached to every
-   subsequent request.
-
-   ```typescript
-   await sdk.authenticate({
-     username: 'admin',
-     password: 'your-password',
-   });
-
-   console.log(sdk.isAuthenticated()); // true
-   ```
-
-3. **List contexts** through the admin API.
-
-   ```typescript
-   const res = await sdk.admin.getContexts();
-   console.log(res.contexts); // ContextWithGroup[]
-   ```
-
-4. **Execute a WASM method** over JSON-RPC. `execute<T>` returns the decoded
-   return value directly.
-
-   ```typescript
-   const value = await sdk.rpc.execute<{ value: string }>({
-     contextId: 'ctx-id-here',
-     method: 'get_value',
-     argsJson: { key: 'hello' },
-   });
-   console.log(value);
-   ```
-
-5. **Clean up.** Close any open SSE/WebSocket connections when you're done (e.g.
-   on unmount or process exit).
-
-   ```typescript
-   sdk.close();
-   ```
-
-</Steps>
-
-<Aside type="tip">
-  `sdk.rpc`, `sdk.events`, and `sdk.ws` are created lazily on first access — you
-  pay nothing for the ones you don't use. `sdk.auth` and `sdk.admin` are always
-  available.
-</Aside>
-
-## Persist tokens across reloads
-
-By default tokens live in memory and are lost on page reload. Pass a
-`tokenStore` to persist and restore them automatically:
-
-```typescript
-import { MeroJs, LocalStorageTokenStore } from '@calimero-network/mero-js';
-
-const sdk = new MeroJs({
-  baseUrl: 'http://localhost:2428',
-  tokenStore: new LocalStorageTokenStore('my-app-tokens'),
+const client = new CalimeroClient({
+  baseUrl: 'https://eu1.cloud.calimero.network',
+  policy: { allowMock: false, verifyQuote, appHash }, // verifyQuote: see below
 });
-
-// On the next page load, tokens are restored from localStorage.
-// sdk.isAuthenticated() is true if a valid token pair exists.
+await client.signUp(browserPasskey(), 'alice');
+const bundle = await client.uploadBundle(wasmBytes);
+const app = await client.createApp('kv', bundle, { confirmMethods: ['transfer'] });
+await client.call(app, 'set', { key: 'a', value: '1' });
+const { result } = await client.view(app, 'get', { key: 'a' });
+await client.callConfirmed(app, 'transfer', { to: 'bob' }, browserPasskey()); // passkey consent
+for await (const event of client.events(app)) console.log(event);
 ```
 
-## Handle errors
+The client also covers blobs (`uploadBlob`, `downloadBlob`), organizations, teams
+and invites (`createOrg`, `createTeam`, `invite`), API keys and further passkeys.
 
-Every failure mode maps to a typed error. The three you'll see most:
+## Verifying the node
 
-```typescript
-import { HTTPError, RpcError } from '@calimero-network/mero-js';
+`policy.verifyQuote` decides whether a node's quote is one you trust. It is usually
+`createQuoteVerifier` trusting a signed mero-tee release:
 
-try {
-  const result = await sdk.rpc.execute({
-    contextId: 'ctx-id',
-    method: 'get_value',
-    argsJson: { key: 'hello' },
-  });
-} catch (err) {
-  if (err instanceof RpcError) {
-    console.error(`RPC error ${err.code}: ${err.message}`);
-  } else if (err instanceof HTTPError) {
-    console.error(`HTTP ${err.status}: ${err.statusText}`);
-  } else if (err instanceof Error && err.name === 'AbortError') {
-    console.log('Request timed out or was cancelled');
-  }
-}
+```ts
+import { verify as dcapVerify } from '@phala/dcap-qvl';
+import {
+  createQuoteVerifier, fetchNodeRelease, cloudNodeReleaseUrl, trustSignedRelease, DEFAULT_RELEASE_MIRROR,
+} from '@calimero-network/mero-js';
+
+const release = await fetchNodeRelease(cloudNodeReleaseUrl(DEFAULT_RELEASE_MIRROR, '2.3.87'));
+const verifyQuote = createQuoteVerifier({
+  dcapVerify,
+  ...(await trustSignedRelease({ release, profile: 'locked-read-only', minReleaseVersion: '2.3.87' })),
+});
 ```
 
-See the [error model](/reference/error-model/) for the full hierarchy, and the
-[401-handled-internally](/reference/error-model/#note-on-401s) note.
-
-## Next steps
-
-- **[Authentication](/get-started/authentication/)** — password login, Desktop
-  SSO, the login-redirect flow, and the token lifecycle.
-- **[System overview](/understand/system-overview/)** — how the SDK is layered.
-- **[Executing methods](/guides/executing-methods/)** — the RPC client in depth.
-- **[Subscriptions](/guides/subscriptions/)** — real-time events over SSE.
+`createSignedReleaseVerifier` does the same for whichever signed release, at or
+above a floor, the node runs. Development clusters (`merod-v2 local`) use mock
+quotes, so set `policy.allowMock: true` for them only.

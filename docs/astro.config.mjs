@@ -47,50 +47,10 @@ export default defineConfig({
           href: 'https://github.com/calimero-network/mero-js',
         },
       ],
-      // Explicit, grouped navigation: Get Started → Understand → Guides → Reference.
+      // Explicit navigation.
       sidebar: [
         { label: 'Home', link: '/' },
-        {
-          label: 'Get Started',
-          items: ['get-started/quickstart', 'get-started/authentication'],
-        },
-        {
-          label: 'Understand',
-          items: ['understand/system-overview', 'understand/glossary'],
-        },
-        {
-          label: 'Guides',
-          items: [
-            'guides/contexts-and-apps',
-            'guides/executing-methods',
-            'guides/subscriptions',
-            'guides/groups-and-governance',
-            'guides/blobs',
-            'guides/http-transport',
-            'guides/bundling-and-runtimes',
-            'guides/high-availability',
-            'guides/delegated-execution',
-            'guides/one-app-two-transports',
-            'guides/sealed-transport',
-          ],
-        },
-        {
-          label: 'Reference',
-          items: [
-            'reference/mero-js',
-            'reference/admin-api',
-            'reference/auth-api',
-            'reference/rpc',
-            'reference/transport',
-            'reference/relay',
-            'reference/connect-cloud',
-            'reference/events',
-            'reference/cloud',
-            'reference/account-roots',
-            'reference/capabilities',
-            'reference/error-model',
-          ],
-        },
+        { label: 'Get Started', items: ['get-started/quickstart'] },
       ],
     }),
   ],

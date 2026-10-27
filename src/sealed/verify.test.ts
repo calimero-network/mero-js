@@ -5,7 +5,7 @@ import { verify as dcapVerify } from '@phala/dcap-qvl';
 import { describe, expect, it, vi } from 'vitest';
 
 import { hex } from '../crypto/internal.js';
-import { fetchAttestedTransportKey, transportKeyBinding } from './sealed.js';
+import { transportKeyBinding } from './sealed.js';
 import {
   createQuoteVerifier,
   trustedMeasurementsFromReleases,
@@ -306,39 +306,5 @@ describe('trustedMeasurementsFromReleases', () => {
         { profile: 'locked-read-only' },
       ),
     ).toThrow('no TCB status in common');
-  });
-});
-
-describe('fetchAttestedTransportKey with a verifier that wants collateral', () => {
-  const transportKey = new Uint8Array(32).fill(0x44);
-
-  it('asks the node for collateral and hands it to the verifier', async () => {
-    const teeAttest = vi.fn(async () => ({
-      quoteB64: 'AA==',
-      quote: {} as never,
-      transportPublicKey: hex(transportKey),
-      collateral: COLLATERAL,
-    }));
-    const verify = Object.assign(
-      vi.fn(async ({ collateral, reportDataSuffix }: { collateral?: DcapCollateral; reportDataSuffix: string }) => {
-        expect(collateral).toBe(COLLATERAL);
-        expect(reportDataSuffix).toBe(hex(await transportKeyBinding(new Uint8Array(32), transportKey)));
-        return true;
-      }),
-      { includeCollateral: true as const },
-    );
-    await expect(fetchAttestedTransportKey({ teeAttest }, verify)).resolves.toEqual(transportKey);
-    expect(teeAttest).toHaveBeenCalledWith(expect.objectContaining({ includeCollateral: true }));
-  });
-
-  it('does not send the field to a verifier that has no use for it', async () => {
-    // A node that predates `includeCollateral` refuses unknown fields.
-    const teeAttest = vi.fn(async () => ({
-      quoteB64: 'AA==',
-      quote: {} as never,
-      transportPublicKey: hex(transportKey),
-    }));
-    await fetchAttestedTransportKey({ teeAttest }, async () => true);
-    expect(teeAttest.mock.calls[0][0]).not.toHaveProperty('includeCollateral');
   });
 });
