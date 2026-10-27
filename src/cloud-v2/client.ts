@@ -10,7 +10,7 @@
  * ```
  */
 
-import { createSealedFetch } from '../sealed/sealed.js';
+import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type CloudPolicy } from './attestation.js';
 import { fromB64url, type PasskeyProvider } from './passkey.js';
 
@@ -94,6 +94,18 @@ export class CalimeroError extends Error {
   }
 }
 
+/**
+ * The node refuses an envelope past its 64 MiB sealed cap with `413` in the
+ * clear, before opening it, so the refusal arrives as the transport's. To the
+ * caller it is the API's `TOO_LARGE`, as the Rust client reports it.
+ */
+function sealedError(error: unknown): unknown {
+  if (error instanceof SealedTransportError && error.status === 413) {
+    return new CalimeroError(413, 'TOO_LARGE', error.message.replace(/^Sealed request refused: /, ''));
+  }
+  return error;
+}
+
 export interface CalimeroClientOptions {
   /** One node of the cluster. */
   baseUrl: string;
@@ -150,7 +162,11 @@ export class CalimeroClient {
       headers['content-type'] = 'application/json';
       payload = JSON.stringify(body);
     }
-    return this.sealed(`${this.base}/${path}`, { method, headers, body: payload });
+    try {
+      return await this.sealed(`${this.base}/${path}`, { method, headers, body: payload });
+    } catch (error) {
+      throw sealedError(error);
+    }
   }
 
   private async json<T>(
