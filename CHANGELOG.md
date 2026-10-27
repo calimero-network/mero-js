@@ -1,3 +1,9 @@
+## [26.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.10.0...mero-js-v26.11.0) (2026-10-27)
+
+### Features
+
+* **admin-api:** expose missingReleases from group upgrade status ([#309](https://github.com/calimero-network/mero-js/issues/309)) ([55bc59d](https://github.com/calimero-network/mero-js/commit/55bc59d432a93cf8f85ae00a75720f49b6411806))
+
 ## [26.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.9.1...mero-js-v26.10.0) (2026-10-26)
 
 ### Features
