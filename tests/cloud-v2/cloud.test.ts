@@ -193,6 +193,26 @@ describe('cloud v2', () => {
     expect(await alice.getOrg(org)).toMatchObject({ orgId: org });
   });
 
+  it('sets aliases, deletes an org with the owner\'s passkey and signs out everywhere', async () => {
+    const [alice, pk] = await person(0, 'alice-aliases');
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const app = await alice.createApp('kv-alias', bundle);
+    await alice.setAlias('notes', app);
+    expect(await alice.aliases()).toEqual({ notes: app });
+    await alice.deleteAlias('notes');
+    expect(await alice.aliases()).toEqual({});
+
+    const org = await alice.createOrg('doomed');
+    await expect(alice.delete(`orgs/${org}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.deleteOrg(org, pk);
+    await expect(alice.getOrg(org)).rejects.toMatchObject({ status: 404 });
+
+    const laptop = client(1);
+    await laptop.signIn(pk);
+    await alice.signOutEverywhere();
+    await expect(laptop.me()).rejects.toMatchObject({ status: 401 });
+  });
+
   it('keeps serving after a node dies', async () => {
     const [alice, pk] = await person(1, 'alice-failover');
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));

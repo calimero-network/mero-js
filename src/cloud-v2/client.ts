@@ -193,8 +193,12 @@ export class CalimeroClient {
     return this.json<T>('GET', path);
   }
 
-  delete<T = Record<string, unknown>>(path: string): Promise<T> {
-    return this.json<T>('DELETE', path);
+  put<T = Record<string, unknown>>(path: string, body: unknown = {}): Promise<T> {
+    return this.json<T>('PUT', path, body);
+  }
+
+  delete<T = Record<string, unknown>>(path: string, body?: unknown): Promise<T> {
+    return this.json<T>('DELETE', path, body);
   }
 
   // ---------------------------------------------------------------- identity
@@ -238,6 +242,13 @@ export class CalimeroClient {
 
   async signOut(): Promise<void> {
     await this.post('auth/logout');
+    this.auth = undefined;
+    this.current = undefined;
+  }
+
+  /** End every session of the signed-in account, on every device, this one too. */
+  async signOutEverywhere(): Promise<void> {
+    await this.post('auth/logout-all');
     this.auth = undefined;
     this.current = undefined;
   }
@@ -364,7 +375,8 @@ export class CalimeroClient {
 
   /**
    * Move an app to another release of its package (`{ version }`), another
-   * package, or a bundle hash, running its migration. Answers the entry's status.
+   * package, or a bundle hash, running its migration. Answers the upgrade's
+   * entry; a failed migration rejects with code `UPGRADE_FAILED` (422).
    * Where the owner holds app upgrades, the node asks for the owner's approval
    * (`412 CONFIRM_REQUIRED`), which `passkey` gives.
    */
@@ -381,14 +393,28 @@ export class CalimeroClient {
    * POST `body` to `path`, answering a `412 CONFIRM_REQUIRED` with `passkey`'s
    * assertion over the node's challenge (deleting an org, approving a release, ...).
    */
-  async postConfirmed<T>(path: string, body: Record<string, unknown>, passkey: PasskeyProvider): Promise<T> {
+  postConfirmed<T>(path: string, body: Record<string, unknown>, passkey: PasskeyProvider): Promise<T> {
+    return this.confirmed<T>('POST', path, body, passkey);
+  }
+
+  /** {@link postConfirmed} for a DELETE (deleting an organization). */
+  deleteConfirmed<T>(path: string, passkey: PasskeyProvider, body: Record<string, unknown> = {}): Promise<T> {
+    return this.confirmed<T>('DELETE', path, body, passkey);
+  }
+
+  private async confirmed<T>(
+    method: 'POST' | 'DELETE',
+    path: string,
+    body: Record<string, unknown>,
+    passkey: PasskeyProvider,
+  ): Promise<T> {
     try {
-      return await this.post<T>(path, body);
+      return await this.json<T>(method, path, body);
     } catch (error) {
       if (!(error instanceof CalimeroError) || error.code !== 'CONFIRM_REQUIRED') throw error;
       const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
       const assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
-      return this.post<T>(path, { ...body, confirm: { challengeId: d.challengeId, assertion } });
+      return this.json<T>(method, path, { ...body, confirm: { challengeId: d.challengeId, assertion } });
     }
   }
 
@@ -481,6 +507,23 @@ export class CalimeroClient {
     }
   }
 
+  // ---------------------------------------------------------------- aliases
+
+  /** Name an app (its id or context id) for this account. */
+  async setAlias(alias: string, app: string): Promise<void> {
+    await this.put(`auth/aliases/${seg(alias)}`, { app });
+  }
+
+  /** This account's aliases, alias → app id. */
+  async aliases(): Promise<Record<string, string>> {
+    const { aliases } = await this.get<{ aliases: Record<string, string> }>('auth/aliases');
+    return aliases;
+  }
+
+  async deleteAlias(alias: string): Promise<void> {
+    await this.delete(`auth/aliases/${seg(alias)}`);
+  }
+
   // ---------------------------------------------------------------- organizations
 
   async createOrg(name: string): Promise<string> {
@@ -491,6 +534,14 @@ export class CalimeroClient {
   /** The organization, with the teams this caller reaches or manages. */
   getOrg(org: string): Promise<Record<string, unknown>> {
     return this.get(`orgs/${seg(org)}`);
+  }
+
+  /**
+   * Delete an organization with its teams, invites and apps (its owner only).
+   * The node asks for the owner's passkey (`412 CONFIRM_REQUIRED`), which `passkey` gives.
+   */
+  async deleteOrg(org: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`orgs/${seg(org)}`, passkey);
   }
 
   /** Add a member, or change their role. */

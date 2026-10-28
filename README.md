@@ -185,6 +185,14 @@ Packages:
 - `packages()`, `package(name)` and `uninstallPackage(name, version?)` list, inspect and uninstall.
 - `uploadBundle(wasm)` takes raw WASM, on development clusters only.
 
+Account and organization housekeeping:
+
+- `setAlias(alias, app)`, `aliases()` and `deleteAlias(alias)` name apps for the account.
+- `deleteOrg(org, passkey)` deletes an organization with its teams, invites and apps; the owner approves with their passkey.
+- `signOutEverywhere()` ends every session of the account, on every device; `signOut()` ends this one.
+- `get`, `post`, `put` and `delete` reach any route; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
+- `upgradeApp` rejects a failed migration with code `UPGRADE_FAILED` (422).
+
 Tests run against real nodes: build `merod` and the kv-store fixture in `core`
 (branch `release-v2-parity`), then
 `MEROD_BINARY=.../merod KV_STORE_WASM=.../kv_store.wasm npm run test:cloud-v2`.
