@@ -17,23 +17,17 @@ permissions:
 
 env:
   NODE_VERSION: '20'
-  # core >= 0.11.0-rc.17 removed the first-login bootstrap secret: a node mints
-  # its admin root key at `merod init` (or at startup when unbootstrapped) from
-  # these env vars, and enforces an 8-char minimum password at creation
-  # (core#3081). The `merod init` steps below inherit this env, so the admin
-  # account exists before the node listens, and the e2e login (same creds, via
-  # MERO_E2E_USER/PASS) signs straight in. CI-only values for ephemeral nodes.
-  MERO_AUTH_ADMIN_USER: dev
-  MERO_AUTH_ADMIN_PASSWORD: dev-password
 
 jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -46,185 +40,48 @@ jobs:
       - run: bash .github/scripts/tests/wait-for-npm.test.sh
       - run: pnpm lint
 
+  # The cluster suite (tests/cloud-v2) starts its own three `merod run --dev`
+  # nodes with 1.0's flags (tests/cloud-v2/cluster.ts), so this job only has to
+  # fetch a released 1.0 merod and the kv-store fixture built with it. Core's
+  # e2e.yml (`clients`) runs the same suite against core's own tree.
   e2e:
-    name: E2E (vs released merod)
+    name: E2E (vs released merod 1.0)
     runs-on: ubuntu-latest
     needs: build-and-test
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
-      - name: Download released merod
+      - name: Download released merod 1.0
+        id: merod
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/download-released-merod.sh
 
-      - name: Serve the test bundle from a fixture registry
-        # The node installs by `package@version` from its one configured
-        # registry, so a successful POST /install-application needs one that has
-        # the bundle. This is the downloader's layout
-        # (artifacts/{package}/{version}/{package}-{version}.mpk), keyed by the
-        # manifest's own package and appVersion, which the node checks the
-        # bundle against.
-        run: |
-          MPK=tests/e2e/assets/kv-store.mpk
-          PKG=$(tar -xzOf "$MPK" manifest.json | jq -r .package)
-          VER=$(tar -xzOf "$MPK" manifest.json | jq -r .appVersion)
-          mkdir -p "fixture-registry/artifacts/$PKG/$VER"
-          cp "$MPK" "fixture-registry/artifacts/$PKG/$VER/$PKG-$VER.mpk"
-          (cd fixture-registry && exec python3 -m http.server 4021 --bind 127.0.0.1) > registry.log 2>&1 &
-          echo $! > registry.pid
-          echo "MERO_FIXTURE_REGISTRY_APP=$PKG@$VER" >> "$GITHUB_ENV"
-
-      - name: Boot merod (embedded auth, single node)
-        run: |
-          ./merod --home ./e2e-node --node e2e init \
-            --server-port 4001 --swarm-port 4002 --auth-mode embedded
-          CALIMERO_REGISTRY_MODE=http CALIMERO_REGISTRY_URL=http://127.0.0.1:4021/ \
-            ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
-          echo $! > merod.pid
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && { echo "merod healthy"; break; }
-            sleep 2
-            [ "$i" = "30" ] && { echo "merod did not become healthy"; exit 1; }
-          done
-
-      - name: Boot a fresh merod to pair onto the main node's account
-        # account-pairing-two-node pairs this node onto the e2e node's account,
-        # then names, rescopes and revokes it. It has to be a node that has joined
-        # nothing, and it is spent by the run. No network link to the e2e node is
-        # needed: every call the suite makes is answered by the holder.
-        run: |
-          ./merod --home ./pair-node --node pair init \
-            --server-port 4011 --swarm-port 4012 --auth-mode embedded
-          ./merod --home ./pair-node --node pair run > merod-pair.log 2>&1 &
-          echo $! > merod-pair.pid
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:4011/admin-api/health >/dev/null 2>&1 && { echo "pair merod healthy"; break; }
-            sleep 2
-            [ "$i" = "30" ] && { echo "pair merod did not become healthy"; exit 1; }
-          done
-
-      # The e2e harness self-provisions (installs kv-store if absent) and reads
-      # NODE_URL / MERO_E2E_USER, so no manual token/install bootstrapping is needed.
-      - name: Run e2e against released merod
+      - name: Run the cluster tests against merod ${{ steps.merod.outputs.tag }}
         env:
-          NODE_URL: http://localhost:4001
-          MERO_E2E_USER: dev
-          MERO_E2E_PASS: dev-password
-          NO_COLOR: '1'
-          MERO_PAIR_NODE_URL: http://localhost:4011
-        run: |
-          set -o pipefail
-          pnpm test:e2e 2>&1 | tee e2e.log
-          # Guard against a vacuous/all-skipped green: require at least one passing test.
-          grep -qE "[1-9][0-9]* passed" e2e.log \
-            || { echo "::error::e2e produced no passing tests — refusing a vacuous pass"; exit 1; }
-          # Require that the two-node pairing suite RAN (it skips without
-          # MERO_PAIR_NODE_URL); `skipIf` reports a skipped file with no test count.
-          grep -qE "account-pairing-two-node\.test\.ts.*\([0-9]+ tests?\)" e2e.log \
-            || { echo "::error::account-pairing-two-node suite did not run — MERO_PAIR_NODE_URL unset or the pair node unusable"; exit 1; }
-          # And the registry install, which skips without MERO_FIXTURE_REGISTRY_APP.
-          ! grep -E "coverage-sweep\.test\.ts.*skipped" e2e.log \
-            || { echo "::error::coverage-sweep skipped a test — the fixture registry is not set up"; exit 1; }
-
-      - name: Upload e2e logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-logs
-          path: |
-            e2e.log
-            merod.log
-            merod-pair.log
-            registry.log
-          if-no-files-found: warn
-
-      - name: Stop merod
-        if: always()
-        run: |
-          kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true
-          kill "$(cat merod-pair.pid 2>/dev/null)" 2>/dev/null || true
-          kill "$(cat registry.pid 2>/dev/null)" 2>/dev/null || true
-
-  multinode:
-    name: Multi-node E2E (vs released merod)
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-
-      - name: Download released merod
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/download-released-merod.sh
-
-      - name: Boot 2 merod nodes (embedded auth)
-        run: |
-          # --mdns is load-bearing, not tidy-up. These two nodes have no
-          # bootstrap peer and no rendezvous, so mDNS is their ONLY discovery
-          # path. merod left it on by default until core#3620 ("leave mDNS off
-          # unless asked for"), which first shipped in 0.11.0-rc.26 — and this
-          # job downloads the LATEST release, so it broke the moment rc.26 was
-          # cut, on a run that changed nothing here.
-          #
-          # The symptom points nowhere near the cause: node-2 finds no mesh
-          # peer, falls back to gossip, KeyDelivery times out after 5s, and the
-          # join refuses with a 500. That refusal is correct — a member that
-          # cannot decrypt anything should not land — so the bug reads as
-          # "namespace join is broken" rather than "the nodes never met".
-          ./merod --home ./n1 --node n1 init --server-port 4501 --swarm-port 4601 --auth-mode embedded --mdns
-          ./merod --home ./n2 --node n2 init --server-port 4502 --swarm-port 4602 --auth-mode embedded --mdns
-          ./merod --home ./n1 --node n1 run > n1.log 2>&1 & echo $! > n1.pid
-          ./merod --home ./n2 --node n2 run > n2.log 2>&1 & echo $! > n2.pid
-          for port in 4501 4502; do
-            for i in $(seq 1 30); do
-              curl -sf "http://localhost:$port/admin-api/health" >/dev/null 2>&1 && break
-              sleep 2
-              [ "$i" = "30" ] && { echo "merod on $port did not become healthy"; exit 1; }
-            done
-          done
-          echo "both nodes healthy"
-
-      - name: Run multi-node e2e
-        env:
-          MERO_MULTINODE: "1"
-          MERO_NODE1_URL: http://localhost:4501
-          MERO_NODE2_URL: http://localhost:4502
-          MERO_E2E_USER: dev
-          MERO_E2E_PASS: dev-password
+          MEROD_BINARY: ${{ github.workspace }}/merod
+          KV_STORE_WASM: ${{ github.workspace }}/kv_store.wasm
           NO_COLOR: '1'
         run: |
           set -o pipefail
-          pnpm vitest run --config vitest.e2e.config.ts tests/e2e/multinode.test.ts 2>&1 | tee mn.log
-          # The multi-node test is MERO_MULTINODE-gated; require it actually ran (not skipped).
-          grep -qE "[1-9][0-9]* passed" mn.log \
-            || { echo "::error::multi-node test did not run (skipped/vacuous) — failing"; exit 1; }
+          pnpm test:cloud-v2 2>&1 | tee cluster.log
+          # Guard against a vacuous green: the suite must have run, not skipped.
+          grep -qE "Tests +[1-9][0-9]* passed" cluster.log \
+            || { echo "::error::the cluster suite produced no passing tests"; exit 1; }
 
-      - name: Upload multi-node logs
+      - name: Upload the cluster log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: multinode-logs
-          path: |
-            mn.log
-            n1.log
-            n2.log
+          name: cluster-log
+          path: cluster.log
           if-no-files-found: warn
-
-      - name: Stop nodes
-        if: always()
-        run: kill "$(cat n1.pid 2>/dev/null)" "$(cat n2.pid 2>/dev/null)" 2>/dev/null || true
