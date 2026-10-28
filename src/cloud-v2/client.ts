@@ -11,7 +11,7 @@
  */
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
-import { fetchAttestedKey, type CloudPolicy } from './attestation.js';
+import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
 import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
 
@@ -93,6 +93,50 @@ export interface AppInfo {
   version: string | null;
 }
 
+/**
+ * An organization-wide upgrade run, as `upgradeOrg`, `upgradeRun` and
+ * `retryUpgradeRun` answer it (core's `UpgradeRun`).
+ */
+export interface UpgradeRun {
+  runId: string;
+  package: string;
+  version: string;
+  team?: string;
+  cascade: boolean;
+  /** The account that started it, or `operator`. */
+  by: string;
+  startedAt: number;
+  apps: string[];
+  done: string[];
+  /** App id -> why its upgrade failed. */
+  failed: Record<string, unknown>;
+  finished: boolean;
+}
+
+/** One of an app's blobs: `blobId` base58 (what apps print), `id` hex. */
+export interface BlobInfo {
+  blobId: string;
+  id: string;
+  size: number;
+}
+
+/** One device present in an app (`publishPresence`); `state` hex, `null` once retracted. */
+export interface PresenceEntry {
+  account: string;
+  device: string;
+  state: string | null;
+}
+
+/** What an organization-wide upgrade targets. */
+export interface OrgUpgradeTarget {
+  package: string;
+  version: string;
+  /** Only this team's apps (and, with `cascade`, those of the teams below it). */
+  team?: string;
+  cascade?: boolean;
+  migrate?: string;
+}
+
 /** One URL path segment, so an id cannot reach another route. */
 function seg(value: string): string {
   return encodeURIComponent(value);
@@ -123,6 +167,44 @@ async function refusal(response: Response): Promise<CalimeroError> {
     body = { message: text };
   }
   return errorFrom(response.status, body, response.headers.get('retry-after'));
+}
+
+/** Server-sent event frames from a response body: `{ id, kind, data }` each, `data` parsed as JSON when it is. */
+async function* sseFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<CloudEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let cut: number;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      let id = '';
+      let kind = '';
+      let data = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('id:')) id = line.slice(3).trim();
+        else if (line.startsWith('event:')) kind = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      if (!kind && !data) continue;
+      let parsed: unknown = data;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        /* plain text */
+      }
+      yield { id, kind, data: parsed };
+    }
+  }
+}
+
+/** Bytes as lower-case hex. */
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -173,6 +255,8 @@ export interface CalimeroClientOptions {
 export class CalimeroClient {
   private readonly base: string;
   private readonly sealed: typeof fetch;
+  /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
+  private readonly raw: typeof fetch;
   private auth: string | undefined;
   private current: CalimeroSession | undefined;
   private readonly retry: Required<CloudRetryOptions>;
@@ -195,6 +279,7 @@ export class CalimeroClient {
         throw error;
       }
     };
+    this.raw = raw;
     this.sealed = createSealedFetch({
       baseUrl: this.base,
       transportPublicKey: () => fetchAttestedKey(this.base, options.policy, raw),
@@ -373,6 +458,27 @@ export class CalimeroClient {
     await this.delete(`auth/passkeys/${seg(credentialId)}`);
   }
 
+  /** Name one of the account's passkeys (a device label); `''` clears the name. */
+  async labelPasskey(credentialId: string, label: string): Promise<void> {
+    await this.post(`auth/passkeys/${seg(credentialId)}`, { label });
+  }
+
+  /** What this account uses (apps, bundle bytes, API keys, owned orgs), with the cluster's quotas. */
+  usage(): Promise<Record<string, unknown>> {
+    return this.get('auth/usage');
+  }
+
+  /**
+   * The node's attestation document, unverified: for display only. Every
+   * request this client sends is sealed to a key it verified itself first.
+   */
+  async attestation(): Promise<AttestationDoc> {
+    const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const response = await this.raw(`${this.base}/attestation?nonce=${nonce}`);
+    if (!response.ok) throw await refusal(response);
+    return (await response.json()) as AttestationDoc;
+  }
+
   /** The account's API keys (never the keys themselves). */
   async listApiKeys(): Promise<Array<Record<string, unknown>>> {
     const { keys } = await this.get<{ keys: Array<Record<string, unknown>> }>('auth/apikeys');
@@ -413,6 +519,22 @@ export class CalimeroClient {
     const response = await this.request('GET', `apps/${seg(app)}/blobs/${seg(id)}`);
     if (!response.ok) throw await refusal(response);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /** `app`'s blobs. */
+  async listBlobs(app: string): Promise<BlobInfo[]> {
+    const { blobs } = await this.get<{ blobs: BlobInfo[] }>(`apps/${seg(app)}/blobs`);
+    return blobs;
+  }
+
+  /** One of `app`'s blobs' id and size; `NotFound` if the app has no such blob. */
+  blobInfo(app: string, id: string): Promise<BlobInfo> {
+    return this.get(`apps/${seg(app)}/blobs/${seg(id)}/info`);
+  }
+
+  /** Delete one of `app`'s blobs (its owner, or an admin of its organization). */
+  async deleteBlob(app: string, id: string): Promise<void> {
+    await this.delete(`apps/${seg(app)}/blobs/${seg(id)}`);
   }
 
   // ---------------------------------------------------------------- packages
@@ -467,6 +589,29 @@ export class CalimeroClient {
   /** Who may reach the app: `{ kind: 'owner' | 'org' | 'public' | 'accounts' | 'team', ... }`. */
   async setAccess(app: string, access: Record<string, unknown>): Promise<void> {
     await this.post(`apps/${seg(app)}/access`, { access });
+  }
+
+  /** Set the app instance's metadata (its owner, or an admin of its organization); at most 16 KiB. */
+  async setAppMetadata(app: string, metadata: unknown): Promise<void> {
+    await this.post(`apps/${seg(app)}/metadata`, { metadata });
+  }
+
+  /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
+  appStorage(app: string): Promise<Record<string, unknown>> {
+    return this.get(`apps/${seg(app)}/storage`);
+  }
+
+  /** The ABI the app's bundle embeds: `{ bundle, abi }`. */
+  appAbi(app: string): Promise<Record<string, unknown>> {
+    return this.get(`apps/${seg(app)}/abi`);
+  }
+
+  /**
+   * Hand the app to another account (an organization's app only to one of its
+   * members). The owner approves with `passkey`.
+   */
+  async transferApp(app: string, to: string, passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed(`apps/${seg(app)}/transfer`, { to }, passkey);
   }
 
   /**
@@ -586,41 +731,43 @@ export class CalimeroClient {
   }
 
   /** Committed events from index `from`, then live, until `signal` aborts. */
-  async *events(app: string, from = 0, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
+  events(app: string, from = 0, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
+    return this.stream(`apps/${seg(app)}/events?from=${from}`, signal);
+  }
+
+  /** A server-sent event stream on `path`, sealed like every other answer. */
+  private async *stream(path: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
     const headers: Record<string, string> = {};
     if (this.auth) headers.authorization = `Bearer ${this.auth}`;
-    const response = await this.sealed(`${this.base}/apps/${seg(app)}/events?from=${from}`, { headers, signal });
+    const response = await this.sealed(`${this.base}/${path}`, { headers, signal });
     if (!response.ok) throw await refusal(response);
     if (!response.body) throw new CalimeroError(response.status, 'EVENTS', 'the event stream has no body');
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buffer += decoder.decode(value, { stream: true });
-      let cut: number;
-      while ((cut = buffer.indexOf('\n\n')) >= 0) {
-        const frame = buffer.slice(0, cut);
-        buffer = buffer.slice(cut + 2);
-        let id = '';
-        let kind = '';
-        let data = '';
-        for (const line of frame.split('\n')) {
-          if (line.startsWith('id:')) id = line.slice(3).trim();
-          else if (line.startsWith('event:')) kind = line.slice(6).trim();
-          else if (line.startsWith('data:')) data += line.slice(5).trim();
-        }
-        if (!kind && !data) continue;
-        let parsed: unknown = data;
-        try {
-          parsed = JSON.parse(data);
-        } catch {
-          /* plain text */
-        }
-        yield { id, kind, data: parsed };
-      }
-    }
+    yield* sseFrames(response.body);
+  }
+
+  // ---------------------------------------------------------------- presence
+
+  /**
+   * Publish this device's presence in `app`: `state` (at most 4 KiB) or `null`
+   * to retract it. The newest `seq` wins; send the same `seq` and state again
+   * as a heartbeat, since an entry not refreshed within 7 s is gone.
+   */
+  async publishPresence(app: string, seq: number, state: Uint8Array | null): Promise<void> {
+    await this.post(`apps/${seg(app)}/presence`, { seq, state: state === null ? null : toHex(state) });
+  }
+
+  /** Who is present in `app` now. */
+  async presence(app: string): Promise<PresenceEntry[]> {
+    const { present } = await this.get<{ present: PresenceEntry[] }>(`apps/${seg(app)}/presence`);
+    return present;
+  }
+
+  /**
+   * Presence as a stream until `signal` aborts: a `snapshot` event (`data` the
+   * entries present), then a `presence` event (`data` one entry) per change.
+   */
+  presenceStream(app: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
+    return this.stream(`apps/${seg(app)}/presence/stream`, signal);
   }
 
   // ---------------------------------------------------------------- aliases
@@ -634,6 +781,12 @@ export class CalimeroClient {
   async aliases(): Promise<Record<string, string>> {
     const { aliases } = await this.get<{ aliases: Record<string, string> }>('auth/aliases');
     return aliases;
+  }
+
+  /** The app an alias names. */
+  async alias(alias: string): Promise<string> {
+    const { appId } = await this.get<{ appId: string }>(`auth/aliases/${seg(alias)}`);
+    return appId;
   }
 
   async deleteAlias(alias: string): Promise<void> {
@@ -660,6 +813,73 @@ export class CalimeroClient {
     await this.deleteConfirmed(`orgs/${seg(org)}`, passkey);
   }
 
+  /** Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB. */
+  async setOrgMetadata(org: string, metadata: unknown): Promise<void> {
+    await this.post(`orgs/${seg(org)}/metadata`, { metadata });
+  }
+
+  /** Set a member's metadata (theirs, or an admin's); `null` clears it. */
+  async setMemberMetadata(org: string, account: string, metadata: unknown): Promise<void> {
+    await this.post(`orgs/${seg(org)}/members/${seg(account)}/metadata`, { metadata });
+  }
+
+  /**
+   * Upgrade every app of `org` that runs `target.package` to `target.version`
+   * (optionally one team's, with `cascade` the teams below it). The org's owner,
+   * or a holder of `MANAGE_APPLICATION`, approves the whole run with `passkey`.
+   * Answers the run; {@link upgradeRun} follows it.
+   */
+  upgradeOrg(org: string, target: OrgUpgradeTarget, passkey: PasskeyProvider): Promise<UpgradeRun> {
+    return this.postConfirmed(`orgs/${seg(org)}/upgrade`, { ...target }, passkey);
+  }
+
+  /** An organization-wide upgrade run: its apps, those done and those that failed. */
+  upgradeRun(org: string, run: string): Promise<UpgradeRun> {
+    return this.get(`orgs/${seg(org)}/upgrades/${seg(run)}`);
+  }
+
+  /** Run the apps that failed in `run` again, as a new run, approved with `passkey`. */
+  retryUpgradeRun(org: string, run: string, passkey: PasskeyProvider): Promise<UpgradeRun> {
+    return this.postConfirmed(`orgs/${seg(org)}/upgrades/${seg(run)}/retry`, {}, passkey);
+  }
+
+  /**
+   * Approve a mero-tee release to hold the apps of `org`, or of this account
+   * outside any organization (`org` `null`); `approved: false` withdraws it.
+   * Until then, nodes on that release get none of those apps' data. The owner
+   * approves with `passkey`.
+   */
+  async approveRelease(
+    org: string | null,
+    version: string,
+    passkey: PasskeyProvider,
+    approved = true,
+  ): Promise<Record<string, unknown>> {
+    const path = org === null ? 'auth/releases' : `orgs/${seg(org)}/releases`;
+    return this.postConfirmed(path, { version, approved }, passkey);
+  }
+
+  /**
+   * Approve the URL prefixes apps from `pkg`'s publisher may call out to, for
+   * `org`'s apps or this account's own (`org` `null`). `prefixes` `'manifest'`
+   * (the default) approves every prefix the package's latest release declares;
+   * `replace` sets exactly `prefixes`, which is how one is revoked. Approved
+   * with `passkey`.
+   */
+  async approveOutbound(
+    org: string | null,
+    pkg: string,
+    passkey: PasskeyProvider,
+    options: { prefixes?: string[] | 'manifest'; replace?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
+    const path = org === null ? 'auth/outbound' : `orgs/${seg(org)}/outbound`;
+    return this.postConfirmed(
+      path,
+      { package: pkg, prefixes: options.prefixes ?? 'manifest', replace: options.replace ?? false },
+      passkey,
+    );
+  }
+
   /** Add a member, or change their role. */
   async setMember(org: string, account: string, role: 'guest' | 'member' | 'admin' | 'owner'): Promise<void> {
     await this.post(`orgs/${seg(org)}/members`, { account, role });
@@ -670,8 +890,9 @@ export class CalimeroClient {
   }
 
   /**
-   * Set v1's capability bits: for a member (`account`), for a member of one
-   * team (`account` and `team`), or the organization's default (neither).
+   * Set capability bits ({@link ORG_CAPABILITIES}): for a member (`account`),
+   * for a member of one team (`account` and `team`), or the organization's
+   * default (neither).
    */
   async setCapabilities(org: string, capabilities: number, at: { account?: string; team?: string } = {}): Promise<void> {
     await this.post(`orgs/${seg(org)}/capabilities`, { capabilities, ...at });

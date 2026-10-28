@@ -213,6 +213,106 @@ describe('cloud v2', () => {
     await expect(laptop.me()).rejects.toMatchObject({ status: 401 });
   });
 
+  it("runs the console's passkey actions: org upgrade runs, outbound and release approvals", async () => {
+    const [alice, pk] = await person(0, 'alice-console');
+    const [bob] = await person(1, 'bob-console');
+    const bobId = (await bob.me()).accountId as string;
+    // Signed in again elsewhere, as the console does with a fresh tab.
+    const tab = client(2);
+    expect((await tab.signIn(pk)).accountId).toBe((await alice.me()).accountId);
+
+    const org = await tab.createOrg('Console Co');
+    const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
+    const key = publisher();
+    await tab.uploadPackage(signedMpk('com.mero-js.console', '1.0.0', variant(kv, 'c100'), key));
+    await tab.uploadPackage(signedMpk('com.mero-js.console', '1.0.1', variant(kv, 'c101'), key));
+    // A dev cluster has no registry: the install reaches the node and is refused there.
+    await expect(tab.installPackage('com.mero-js.console', '1.0.1')).rejects.toMatchObject({ code: 'NO_REGISTRY' });
+
+    const app = await tab.createApp('console-kv', { package: 'com.mero-js.console', version: '1.0.0' }, { org });
+    await tab.call(app, 'set', { key: 'a', value: '1' });
+
+    // One passkey approval for the whole run, then follow it.
+    await expect(tab.post(`orgs/${org}/upgrade`, { package: 'com.mero-js.console', version: '1.0.1' })).rejects.toMatchObject({
+      code: 'CONFIRM_REQUIRED',
+    });
+    let run = await tab.upgradeOrg(org, { package: 'com.mero-js.console', version: '1.0.1' }, pk);
+    expect(run).toMatchObject({ package: 'com.mero-js.console', version: '1.0.1', apps: [app] });
+    for (let i = 0; i < 50 && !run.finished; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      run = await tab.upgradeRun(org, run.runId);
+    }
+    expect(run).toMatchObject({ finished: true, done: [app], failed: {} });
+    expect((await tab.listApps({ package: 'com.mero-js.console' }))[0]).toMatchObject({ appId: app, version: '1.0.1' });
+    expect((await tab.view(app, 'get', { key: 'a' })).result).toBe('1');
+    // Nothing failed, so a retry has nothing to run.
+    const retried = await tab.retryUpgradeRun(org, run.runId, pk);
+    expect(retried.apps).toEqual([]);
+    expect(retried.runId).not.toBe(run.runId);
+
+    // Outbound: the release declares no prefixes; approving and revoking them is the owner's.
+    await tab.approveOutbound(org, 'com.mero-js.console', pk);
+    await tab.approveOutbound(org, 'com.mero-js.console', pk, { prefixes: [], replace: true });
+    await tab.approveOutbound(null, 'com.mero-js.console', pk);
+
+    // Releases: approve one for the org and for the account, then withdraw it.
+    await tab.approveRelease(org, '2.3.200', pk);
+    await tab.approveRelease(null, '2.3.200', pk);
+    await tab.approveRelease(null, '2.3.200', pk, false);
+
+    const { key: apiKey, keyId } = await tab.createApiKey({ label: 'console', apps: [app], readOnly: true });
+    expect(apiKey).toBeTruthy();
+    await tab.revokeApiKey(keyId);
+    expect((await tab.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
+    const token = await tab.invite(org, 'member');
+    await bob.redeemInvite(token);
+    expect(bobId).toBeTruthy();
+  });
+
+  it("covers the rest of 1.0's routes: metadata, usage, blobs, presence, transfer", async () => {
+    const [alice, pk] = await person(0, 'alice-rest');
+    const [bob] = await person(1, 'bob-rest');
+    const bobId = (await bob.me()).accountId as string;
+    const me = await alice.me();
+
+    await alice.labelPasskey(me.passkeyId as string, 'laptop');
+    expect(await alice.usage()).toBeTruthy();
+    const doc = await alice.attestation();
+    expect(doc.mock).toBe(true);
+
+    const org = await alice.createOrg('Rest Co');
+    await alice.setMember(org, bobId, 'member');
+    await alice.setOrgMetadata(org, { colour: 'teal' });
+    await bob.setMemberMetadata(org, bobId, { title: 'engineer' });
+    await alice.setMemberMetadata(org, bobId, null);
+
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const app = await alice.createApp('rest-kv', bundle, { org });
+    await alice.setAlias('rest', app);
+    expect(await alice.alias('rest')).toBe(app);
+    await alice.setAppMetadata(app, { icon: 'k' });
+    await alice.call(app, 'set', { key: 'a', value: '1' });
+    expect(await alice.appStorage(app)).toHaveProperty('keys');
+    expect(await alice.appAbi(app)).toHaveProperty('bundle');
+
+    const up = await alice.uploadBlob(app, new TextEncoder().encode('hello blob'));
+    expect((await alice.listBlobs(app)).map((b) => b.id)).toContain(up.id);
+    expect(await alice.blobInfo(app, up.blobId)).toMatchObject({ id: up.id, size: 10 });
+    await alice.deleteBlob(app, up.blobId);
+    await expect(alice.blobInfo(app, up.blobId)).rejects.toMatchObject({ status: 404 });
+
+    await alice.publishPresence(app, 1, new Uint8Array([1, 2, 3]));
+    expect(await alice.presence(app)).toContainEqual(expect.objectContaining({ state: '010203' }));
+    const ac = new AbortController();
+    const first = await alice.presenceStream(app, ac.signal).next();
+    ac.abort();
+    expect(first.value?.kind).toBe('snapshot');
+    await alice.publishPresence(app, 2, null);
+
+    await alice.transferApp(app, bobId, pk);
+    expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
+  });
+
   it('keeps serving after a node dies', async () => {
     const [alice, pk] = await person(1, 'alice-failover');
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));

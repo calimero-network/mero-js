@@ -31,6 +31,8 @@ describe('the package root', () => {
       'AppError',
       'TrapError',
       'UnavailableError',
+      'ORG_CAPABILITIES',
+      'orgCapabilities',
       'createSealedFetch',
       'transportKeyBinding',
       'createQuoteVerifier',
