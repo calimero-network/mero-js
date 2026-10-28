@@ -137,12 +137,27 @@ function newIdempotencyKey(): string {
   return `node:c-${b64url(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 
-/** How a 503 is retried (D70): with the same key, exponential backoff, at most this many times. */
+/**
+ * How a call or a view is sent again while the node is unavailable (D70): with
+ * the same key, after a backoff that starts at `baseDelayMs` and doubles up to
+ * `maxDelayMs`, no jitter, at most `retries` times. The defaults are the Rust
+ * client's: 6 retries, 200 ms doubling, at most 2 s (about 9 s in all, past a
+ * leader election).
+ */
 export interface CloudRetryOptions {
-  /** Retries after the first attempt. Default 3. */
+  /** Retries after the first attempt. Default 6. */
   retries?: number;
-  /** The first backoff; each retry doubles it. Default 250 ms. */
+  /** The first backoff; each retry doubles it. Default 200 ms. */
   baseDelayMs?: number;
+  /** The longest backoff. Default 2 s. */
+  maxDelayMs?: number;
+}
+
+export const DEFAULT_RETRY = { retries: 6, baseDelayMs: 200, maxDelayMs: 2000 } as const;
+
+/** The backoff before retry `retry` (0 for the first): `baseDelayMs` doubling, at most `maxDelayMs`. */
+export function retryDelayMs(retry: number, options: { baseDelayMs: number; maxDelayMs: number }): number {
+  return Math.min(options.baseDelayMs * 2 ** retry, options.maxDelayMs);
 }
 
 export interface CalimeroClientOptions {
@@ -151,7 +166,7 @@ export interface CalimeroClientOptions {
   policy: CloudPolicy;
   /** Fetch that carries attestation and envelopes. Defaults to global `fetch`. */
   fetch?: typeof fetch;
-  /** How calls and views retry a 503. */
+  /** How calls and views retry a 503 or a failed connection. */
   retry?: CloudRetryOptions;
 }
 
@@ -160,14 +175,26 @@ export class CalimeroClient {
   private readonly sealed: typeof fetch;
   private auth: string | undefined;
   private current: CalimeroSession | undefined;
-  private readonly retries: number;
-  private readonly baseDelayMs: number;
+  private readonly retry: Required<CloudRetryOptions>;
+  /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
+  private readonly networkFailures = new WeakSet<object>();
 
   constructor(options: CalimeroClientOptions) {
     this.base = options.baseUrl.replace(/\/+$/, '');
-    this.retries = options.retry?.retries ?? 3;
-    this.baseDelayMs = options.retry?.baseDelayMs ?? 250;
-    const raw = options.fetch ?? ((input, init) => fetch(input, init));
+    this.retry = { ...DEFAULT_RETRY, ...options.retry };
+    const given = options.fetch ?? ((input, init) => fetch(input, init));
+    // `fetch` rejects with a `TypeError` when it gets no answer: the connection
+    // was refused, reset or dropped before the response. The sealed fetch passes
+    // that rejection on unchanged, so it is recognised here, at its source, and
+    // not by its type alone (a bad URL is a `TypeError` too, and is not retried).
+    const raw: typeof fetch = async (input, init) => {
+      try {
+        return await given(input, init);
+      } catch (error) {
+        if (error instanceof TypeError) this.networkFailures.add(error);
+        throw error;
+      }
+    };
     this.sealed = createSealedFetch({
       baseUrl: this.base,
       transportPublicKey: () => fetchAttestedKey(this.base, options.policy, raw),
@@ -228,20 +255,33 @@ export class CalimeroClient {
   }
 
   /**
-   * {@link json} for a call or a view: a 503 is sent again, the same request
-   * with the same idempotency key, after an exponential backoff (or the pause
-   * the node asked for, if longer), at most `retries` times (D70). Every other
-   * status is final. The last 503 surfaces as {@link UnavailableError}.
+   * {@link json} for a call or a view (D70): while the node answers 503 or
+   * cannot be reached, the same request, with the same idempotency key, is sent
+   * again after {@link retryDelayMs} (or the pause the node asked for, if
+   * longer), at most `retries` times. Every other answer is final. The last
+   * failure surfaces as {@link UnavailableError}: the node's 503, or reason
+   * `network` for a connection that failed, whose `committed` is `'unknown'`.
+   * `retries` 0 sends the request exactly once.
    */
-  private async retried<T>(method: string, path: string, body: Record<string, unknown>): Promise<T> {
+  private async retried<T>(
+    method: string,
+    path: string,
+    body: Record<string, unknown>,
+    retries = this.retry.retries,
+  ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
+      let unavailable: UnavailableError;
       try {
         return await this.json<T>(method, path, body);
       } catch (error) {
-        if (!(error instanceof UnavailableError) || attempt >= this.retries) throw error;
-        const backoff = this.baseDelayMs * 2 ** attempt;
-        await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (error.retryAfter ?? 0) * 1000)));
+        if (error instanceof UnavailableError) unavailable = error;
+        else if (error instanceof TypeError && this.networkFailures.has(error)) {
+          unavailable = new UnavailableError('NETWORK', `the node could not be reached: ${error.message}`, {}, undefined, error);
+        } else throw error;
       }
+      if (attempt >= retries) throw unavailable;
+      const backoff = retryDelayMs(attempt, this.retry);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (unavailable.retryAfter ?? 0) * 1000)));
     }
   }
 

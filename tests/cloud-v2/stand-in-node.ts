@@ -21,6 +21,8 @@ export interface Reply {
   json?: unknown;
   /** An event stream: SSE frames written as they come, kept open until the client goes. */
   events?: string[];
+  /** Drop the connection after reading the request, answering nothing (`status` is ignored). */
+  drop?: boolean;
 }
 
 export class StandInCloudNode {
@@ -116,6 +118,10 @@ export class StandInCloudNode {
     const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
     this.requests.push({ head, body });
     const reply = this.answer(head, body);
+    if (reply.drop) {
+      req.socket.destroy();
+      return;
+    }
 
     let index = 0;
     const frame = async (kind: number, data: Uint8Array) => {

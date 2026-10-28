@@ -120,22 +120,27 @@ export class TrapError extends CalimeroError {
 export type Committed = false | 'unknown';
 
 /**
- * Any `503`, after the client's retries with the same idempotency key ran out.
- * `reason` is the node's code in lower case (`timeout`, `migrating`,
- * `unavailable`, ...).
+ * Any `503`, or a connection that failed, after the client's retries with the
+ * same idempotency key ran out. `reason` is the node's code in lower case
+ * (`timeout`, `migrating`, `unavailable`, ...), or `network` when the node gave
+ * no answer at all (code `NETWORK`, `cause` the `fetch` failure); such a call
+ * may have committed, so its `committed` is `'unknown'`.
  */
 export class UnavailableError extends CalimeroError {
   readonly reason: string;
   readonly committed: Committed;
   /** Seconds the node asked to wait, when it said. */
   readonly retryAfter: number | undefined;
+  /** What failed, when the node gave no answer. */
+  readonly cause: unknown;
 
-  constructor(code: string, message: string, details: Record<string, unknown> = {}, retryAfter?: number) {
+  constructor(code: string, message: string, details: Record<string, unknown> = {}, retryAfter?: number, cause?: unknown) {
     super(503, code, message, details);
     this.name = 'UnavailableError';
     this.reason = code.toLowerCase();
     this.committed = code === 'TIMEOUT' || code === 'MIGRATING' ? false : 'unknown';
     this.retryAfter = retryAfter;
+    this.cause = cause;
   }
 }
 
