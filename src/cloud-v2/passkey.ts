@@ -41,7 +41,6 @@ export function fromB64url(s: string): Uint8Array {
 
 const buf = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 
-/** The platform authenticator (Touch ID, Face ID, Windows Hello, a security key, a synced passkey). */
 /** A dismissed prompt, named as WebAuthn names one (`NotAllowedError`), so a confirmation reads it as declined. */
 function cancelled(message: string): Error {
   const error = new Error(message);
@@ -49,6 +48,7 @@ function cancelled(message: string): Error {
   return error;
 }
 
+/** The platform authenticator (Touch ID, Face ID, Windows Hello, a security key, a synced passkey). */
 export function browserPasskey(): PasskeyProvider {
   return {
     async create(options) {
