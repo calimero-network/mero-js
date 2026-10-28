@@ -21,13 +21,12 @@
  * - the minimum release you pass, below which no release is accepted.
  *
  * What is not: the transport, the server that serves the release, and the
- * relay's choice of release. A relay can present any genuinely signed release
+ * node's choice of release. A node can present any genuinely signed release
  * at or above the minimum, and no other; its quote must then match that
  * release's measurements exactly, so it cannot claim one release and run
  * another.
  */
 
-import { createAttestedSealedFetch } from './sealed.js';
 import { verifyCosignBundle, type SignerIdentity } from './sigstore.js';
 import {
   createQuoteVerifier,
@@ -165,68 +164,6 @@ export async function fetchNodeRelease(
   return { version: release.version, publishedMrtds: release.publishedMrtds, bundle: release.bundle };
 }
 
-/**
- * The release a mero-tee node image was built from, read from its name, e.g.
- * `merotee-ubuntu-questing-25-10-locked-read-only-2-3-87` is `2.3.87`. Throws
- * for any other name, including the suffixed images of unreleased builds.
- */
-export function nodeReleaseVersionFromImage(osImage: string): string {
-  const match = /^merotee-.+-(\d+)-(\d+)-(\d+)$/.exec(osImage);
-  if (!match) throw new Error(`${JSON.stringify(osImage)} is not the image of a mero-tee node release`);
-  return `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`;
-}
-
-/**
- * The release the TEE node at `baseUrl` says it runs, from the image name its
- * `GET /admin-api/tee/info` reports. The node's own claim, and not trusted:
- * it only picks which signed release to fetch, and the quote must then match
- * that release's measurements.
- *
- * `/tee/info` is read in the clear, before any session exists. A node that
- * requires sealing serves it unsealed from core#4196 on; an older one refuses
- * it with `403 sealed_required`, and then this throws saying so.
- */
-export async function fetchNodeReleaseVersion(
-  baseUrl: string,
-  options: { fetch?: typeof fetch } = {},
-): Promise<string> {
-  const version = await readNodeReleaseVersion(baseUrl, options.fetch ?? fetch);
-  if (version === undefined) {
-    throw new Error(
-      `${infoUrl(baseUrl)} was refused unsealed: the node requires sealing and is too old to name its ` +
-        "release before a session exists. Name the release it runs yourself (createSignedReleaseSealedFetch's " +
-        '`releaseVersion`), or upgrade the node',
-    );
-  }
-  return version;
-}
-
-function infoUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/admin-api/tee/info`;
-}
-
-/** As {@link fetchNodeReleaseVersion}, but `undefined` when the node refuses `/tee/info` as `sealed_required`. */
-async function readNodeReleaseVersion(baseUrl: string, givenFetch: typeof fetch): Promise<string | undefined> {
-  const url = infoUrl(baseUrl);
-  const response = await givenFetch(url, { headers: { accept: 'application/json' } });
-  if (response.status === 403) {
-    const code = await response
-      .json()
-      .then((body: { error?: { code?: unknown } } | undefined) => body?.error?.code)
-      .catch(() => undefined);
-    if (code === 'sealed_required') return undefined;
-  }
-  if (!response.ok) throw new Error(`Fetching ${url} failed: HTTP ${response.status}`);
-  let osImage: unknown;
-  try {
-    osImage = ((await response.json()) as { data?: { osImage?: unknown } })?.data?.osImage;
-  } catch {
-    throw new Error(`${url} did not answer with JSON`);
-  }
-  if (typeof osImage !== 'string') throw new Error(`${url} did not name the node's image`);
-  return nodeReleaseVersionFromImage(osImage);
-}
-
 /** Where mero-tee publishes its releases' assets, as core's `calimero-tee-release` fetches them. */
 export const GITHUB_RELEASES = 'https://github.com/calimero-network/mero-tee/releases/download';
 
@@ -262,7 +199,7 @@ export interface TrustSignedReleaseOptions extends TrustedProfileOptions {
   release: SignedNodeRelease;
   /**
    * The oldest release accepted, e.g. `2.3.87`. Required: every release ever
-   * signed stays validly signed, so without a floor a relay could present an
+   * signed stays validly signed, so without a floor a node could present an
    * old release, with a flaw since fixed, and a quote from that old image
    * would pass. Raise it when a release must no longer be trusted.
    */
@@ -280,7 +217,7 @@ export interface TrustSignedReleaseOptions extends TrustedProfileOptions {
  * file.
  *
  * ```ts
- * const version = await fetchNodeReleaseVersion(relayUrl);
+ * const version = claimedRelease(attestationDoc, '2.3.109'); // the release the node names
  * const release = await fetchNodeRelease(cloudNodeReleaseUrl(DEFAULT_RELEASE_MIRROR, version));
  * const verifier = createQuoteVerifier({
  *   dcapVerify,
@@ -330,9 +267,8 @@ export interface SignedReleaseVerifierOptions extends Omit<TrustSignedReleaseOpt
  *
  * The node's choice of release is the one thing taken from it, and it is
  * bounded: only a genuinely signed release at or above `minReleaseVersion`
- * passes, and the quote must then be of exactly that release's image. Use it
- * with `createAttestedSealedFetch`;
- * {@link createSignedReleaseSealedFetch} does the latter for you.
+ * passes, and the quote must then be of exactly that release's image. Pass it
+ * as `CloudPolicy.verifyQuote` to choose where the release comes from yourself.
  */
 export function createSignedReleaseVerifier(options: SignedReleaseVerifierOptions): QuoteVerifier {
   releaseVersion(options.minReleaseVersion, 'minReleaseVersion');
@@ -353,87 +289,6 @@ export function createSignedReleaseVerifier(options: SignedReleaseVerifierOption
     })(args);
   };
   return Object.assign(verifier, { includeCollateral: true as const });
-}
-
-export interface SignedReleaseSealedFetchOptions extends Omit<SignedReleaseVerifierOptions, 'release'> {
-  /** The TEE node's (the relay's) base URL. */
-  baseUrl: string;
-  /**
-   * Where to get the release the node says it runs, the version read from its
-   * `GET /admin-api/tee/info` each time it is attested. A string is the base
-   * URL of a mirror serving {@link cloudNodeReleaseUrl}'s path, defaulting to
-   * {@link DEFAULT_RELEASE_MIRROR}; a function gets the version and returns
-   * the release, e.g. from a file bundled with the app. Whichever it is, it is
-   * not trusted: the release is verified. `/tee/info` is read in the clear;
-   * for a node that refuses that, see `releaseVersion`.
-   */
-  releaseSource?:
-    | string
-    | ((context: { baseUrl: string; version: string; fetch: typeof fetch }) => Promise<SignedNodeRelease>);
-  /**
-   * The release to fetch when the node will not name one: a node that
-   * requires sealing (`[server.sealed] required`) and predates core#4196
-   * refuses `/tee/info` unsealed. Used only then; a node that answers is
-   * taken at its word. Either way untrusted: the quote must match the signed
-   * release, so a wrong version only fails the attestation.
-   */
-  releaseVersion?: string;
-  /** Also require the node to run this application with this bytecode hash. */
-  applicationId?: string;
-  applicationHash?: string;
-  /** Fetch for the release, the attestation and the envelopes. Defaults to global `fetch`. */
-  fetch?: typeof fetch;
-}
-
-/**
- * {@link createAttestedSealedFetch} for a TEE node known only by URL, trusting
- * whatever signed release at or above `minReleaseVersion` it runs: it reads
- * the release the node names from its `/tee/info` (or takes `releaseVersion`
- * when a node too old to serve that unsealed requires sealing), gets that release from
- * `releaseSource` (the public mirror unless you say otherwise), verifies its
- * signature, builds the quote verifier from its measurements, attests the node
- * and seals everything to it.
- *
- * ```ts
- * import { verify as dcapVerify } from '@phala/dcap-qvl';
- *
- * const sealedFetch = createSignedReleaseSealedFetch({
- *   baseUrl,
- *   dcapVerify,
- *   profile: 'locked-read-only',
- *   minReleaseVersion: '2.3.87',
- * });
- * const response = await sealedFetch(`${baseUrl}/admin-api/health`);
- * ```
- */
-export function createSignedReleaseSealedFetch(options: SignedReleaseSealedFetchOptions): typeof fetch {
-  const {
-    baseUrl,
-    releaseSource,
-    releaseVersion: fallbackVersion,
-    applicationId,
-    applicationHash,
-    fetch: givenFetch,
-    ...verifierOptions
-  } = options;
-  if (fallbackVersion !== undefined) releaseVersion(fallbackVersion, 'releaseVersion');
-  const baseFetch: typeof fetch = givenFetch ?? ((input, init) => fetch(input, init));
-  const release = async (): Promise<SignedNodeRelease> => {
-    const version =
-      fallbackVersion === undefined
-        ? await fetchNodeReleaseVersion(baseUrl, { fetch: baseFetch })
-        : ((await readNodeReleaseVersion(baseUrl, baseFetch)) ?? fallbackVersion);
-    return typeof releaseSource === 'function'
-      ? releaseSource({ baseUrl, version, fetch: baseFetch })
-      : fetchNodeRelease(cloudNodeReleaseUrl(releaseSource ?? DEFAULT_RELEASE_MIRROR, version), { fetch: baseFetch });
-  };
-  return createAttestedSealedFetch({
-    baseUrl,
-    verify: createSignedReleaseVerifier({ ...verifierOptions, release }),
-    applicationId,
-    applicationHash,
-    fetch: baseFetch,
-  });
 }
 
 const RELEASE_VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;

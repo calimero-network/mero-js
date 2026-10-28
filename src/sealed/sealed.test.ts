@@ -8,9 +8,7 @@ import {
   SEALED_PATH,
   SealedTransportError,
   StaleTransportKeyError,
-  createAttestedSealedFetch,
   createSealedFetch,
-  fetchAttestedTransportKey,
   openResponse,
   sealRequest,
   sessionFrom,
@@ -397,99 +395,5 @@ describe('createSealedFetch', () => {
     await expect(sealedFetch('https://elsewhere.example/node/jsonrpc')).rejects.toThrow(/Refusing/);
     await expect(sealedFetch('https://tee-node.example/other/jsonrpc')).rejects.toThrow(/Refusing/);
     expect(carrier).not.toHaveBeenCalled();
-  });
-});
-
-describe('fetchAttestedTransportKey', () => {
-  const attested = (transportPublicKey?: string) => ({
-    teeAttest: vi.fn().mockResolvedValue({ quoteB64: 'quote', quote: {}, transportPublicKey }),
-  });
-
-  it('asks the verifier to check the binding of the reported key', async () => {
-    const admin = attested(TRANSPORT_PUBLIC_VECTOR);
-    const verify = vi.fn().mockResolvedValue(true);
-
-    const key = await fetchAttestedTransportKey(admin, verify);
-
-    expect(hex(key)).toBe(TRANSPORT_PUBLIC_VECTOR);
-    const request = admin.teeAttest.mock.calls[0][0];
-    expect(request.bindTransportKey).toBe(true);
-    const expected = hex(await transportKeyBinding(new Uint8Array(32), key));
-    expect(verify).toHaveBeenCalledWith({
-      quoteB64: 'quote',
-      nonce: request.nonce,
-      reportDataSuffix: expected,
-    });
-  });
-
-  it('refuses a key whose quote did not verify', async () => {
-    await expect(
-      fetchAttestedTransportKey(attested(TRANSPORT_PUBLIC_VECTOR), vi.fn().mockResolvedValue(false)),
-    ).rejects.toThrow(/did not verify/);
-  });
-
-  it('refuses a node that reports no transport key', async () => {
-    await expect(
-      fetchAttestedTransportKey(attested(undefined), vi.fn().mockResolvedValue(true)),
-    ).rejects.toThrow(/predates sealed transport/);
-  });
-});
-
-describe('createAttestedSealedFetch', () => {
-  const baseUrl = StandInNode.baseUrl;
-
-  /**
-   * The stand-in node, plus the one unsealed route a client needs first:
-   * `POST /admin-api/tee/attest`, answered with the node's transport key and a
-   * "quote" that is only its report data, so a verifier can check the binding.
-   */
-  async function attestingNode(answer: (head: RequestHead, body: string) => Answer) {
-    const node = await StandInNode.start(answer);
-    const attests: string[] = [];
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === `${baseUrl}/admin-api/tee/attest`) {
-        const request = JSON.parse(String(init?.body)) as { nonce: string };
-        attests.push(request.nonce);
-        const suffix = hex(await transportKeyBinding(new Uint8Array(32), node.transportKey));
-        const quote = fromHex(request.nonce + suffix, 'report data', 64);
-        return new Response(
-          JSON.stringify({
-            data: { quoteB64: btoa(String.fromCharCode(...quote)), transportPublicKey: hex(node.transportKey) },
-          }),
-          { headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return node.fetch(url, init as RequestInit);
-    }) as unknown as typeof fetch;
-    return { node, fetch: fetchImpl, attests };
-  }
-
-  /** Accepts a "quote" that is exactly `nonce || reportDataSuffix`. */
-  const reportDataVerifier = vi.fn(async ({ quoteB64, nonce, reportDataSuffix }) => {
-    const quote = Uint8Array.from(atob(quoteB64), (c) => c.charCodeAt(0));
-    return hex(quote) === nonce + reportDataSuffix;
-  });
-
-  it('attests the node, then seals everything to the key its quote commits to', async () => {
-    const { node, fetch: fetchImpl, attests } = await attestingNode(() => ok('{"data":{"alive":true}}'));
-    const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: reportDataVerifier, fetch: fetchImpl });
-
-    const response = await sealedFetch(`${baseUrl}/admin-api/health`);
-    expect(await response.json()).toEqual({ data: { alive: true } });
-    await sealedFetch(`${baseUrl}/admin-api/health`);
-
-    expect(attests).toHaveLength(1);
-    expect(node.handshakes).toBe(1);
-    expect(node.requests.map((r) => r.head.path)).toEqual(['/admin-api/health', '/admin-api/health']);
-  });
-
-  it('sends nothing sealed to a node whose quote the verifier refuses', async () => {
-    const { node, fetch: fetchImpl } = await attestingNode(() => ok());
-    const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: async () => false, fetch: fetchImpl });
-
-    await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toThrow(/did not verify/);
-    expect(node.handshakes).toBe(0);
-    expect(node.requests).toHaveLength(0);
   });
 });

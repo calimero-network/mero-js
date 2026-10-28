@@ -1,7 +1,7 @@
 {
   "name": "@calimero-network/mero-js",
   "version": "26.11.0",
-  "description": "Pure JavaScript SDK for Calimero",
+  "description": "JavaScript client for Calimero 1.0: attested TEE nodes, a sealed channel, passkeys and API keys",
   "type": "module",
   "exports": {
     ".": {
@@ -44,22 +44,14 @@
     "prepare": "npm run build",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test:e2e:watch": "vitest --config vitest.e2e.config.ts",
-    "test:e2e:auth": "vitest run --config vitest.e2e.config.ts tests/e2e/auth-api.test.ts",
-    "test:e2e:admin": "vitest run --config vitest.e2e.config.ts tests/e2e/admin-api.test.ts",
-    "test:e2e:examples": "vitest run --config vitest.e2e.config.ts tests/e2e/examples.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "eslint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
     "typecheck:consumer": "tsc --noEmit -p tsconfig.consumer.json",
-    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
-    "test:contract": "vitest run --config vitest.config.ts src/__contract__",
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract",
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer",
     "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts"
   },
   "files": [
@@ -69,8 +61,9 @@
     "calimero",
     "mero",
     "javascript",
-    "p2p",
-    "blockchain",
+    "tee",
+    "confidential-computing",
+    "passkeys",
     "sdk"
   ],
   "license": "MIT",

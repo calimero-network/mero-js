@@ -1,5 +1,5 @@
 /**
- * Client for the Calimero cloud (release-v2): one app = one replicated log on
+ * Client for Calimero 1.0, the confidential cloud: one app = one replicated log on
  * attested nodes; this client verifies the node, seals every request to it,
  * signs people in with passkeys and machines with API keys.
  *

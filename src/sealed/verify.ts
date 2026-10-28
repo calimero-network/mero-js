@@ -5,9 +5,8 @@
  * signatures against Intel's root, the TCB status of the platform, the
  * measurements of the image, and that its report data is the nonce and the
  * binding this client asked for. {@link createQuoteVerifier} does all of that
- * here, with nothing but the node: the node hands over the Intel-signed
- * collateral with its quote (`includeCollateral`), and a node cannot forge
- * collateral, only choose which valid collateral to serve.
+ * here. A Calimero 1.0 node sends no collateral: the verifier fetches Intel's
+ * (`fetchCollateral`), which the node can neither forge nor choose.
  *
  * The DCAP verification itself — parsing the quote, checking its signature
  * chain and appraising its TCB level against the collateral — comes from a
@@ -23,8 +22,7 @@ import type { VerifyTransportQuote } from './sealed.js';
 /**
  * The collateral a quote is verified against — TCB info, QE identity, CRLs and
  * their chains — in dcap-qvl's form: byte fields are hex strings or byte
- * arrays. What `/admin-api/tee/attest` returns with `includeCollateral`, and
- * what `@phala/dcap-qvl`'s `getCollateral` fetches.
+ * arrays. What `@phala/dcap-qvl`'s `getCollateral` fetches.
  */
 export interface DcapCollateral {
   pck_crl_issuer_chain: string;
@@ -106,17 +104,16 @@ export interface QuoteVerifierOptions {
    */
   allowedTcbStatuses?: string[];
   /**
-   * Where to get collateral when the node sends none (it predates
-   * `includeCollateral`): for example
+   * Where to get collateral (a Calimero 1.0 node sends none): for example
    * `(quote) => getCollateral(PHALA_PCCS_URL, quote)` from `@phala/dcap-qvl`.
-   * Without it, such a node's quote is refused.
+   * Without it, a quote that came without collateral is refused.
    */
   fetchCollateral?: (quote: Uint8Array) => Promise<DcapCollateral>;
   /** The current time in milliseconds; defaults to `Date.now`. For tests. */
   now?: () => number;
 }
 
-/** A verifier for {@link fetchAttestedTransportKey}, which asks the node for collateral. */
+/** A quote verifier as this package builds one ({@link createQuoteVerifier}). */
 export type QuoteVerifier = VerifyTransportQuote & { readonly includeCollateral: true };
 
 const MEASUREMENT_HEX = /^[0-9a-f]{96}$/;
@@ -144,10 +141,7 @@ const REGISTERS = ['mrtd', 'rtmr0', 'rtmr1', 'rtmr2', 'rtmr3'] as const;
  *   dcapVerify,
  *   ...trustedMeasurementsFromReleases([publishedMrtds], { profile: 'locked-read-only' }),
  * });
- * const fetch = createSealedFetch({
- *   baseUrl,
- *   transportPublicKey: () => fetchAttestedTransportKey(admin, verifier),
- * });
+ * const client = new CalimeroClient({ baseUrl, policy: { verifyQuote: verifier } });
  * ```
  */
 export function createQuoteVerifier(options: QuoteVerifierOptions): QuoteVerifier {
