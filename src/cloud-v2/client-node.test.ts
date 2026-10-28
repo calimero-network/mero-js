@@ -257,3 +257,34 @@ describe('a connection that fails is retried like a 503 (D70)', () => {
     expect(node.requests.filter((r) => r.head.path === '/apps')).toHaveLength(1);
   });
 });
+
+describe('the confirmed attempt is sent exactly once (its challenge is single-use)', () => {
+  it('a 503 on the confirmed attempt is not retried, and is UnavailableError', async () => {
+    node.answer = (_, body) => (body.confirm ? refused(503, 'UNAVAILABLE') : refused(412, 'CONFIRM_REQUIRED', challenge));
+    const error = await failure(client().callConfirmed('app-1', 'adminRelease', { id: 'b1' }, signingPasskey));
+    expect(error).toBeInstanceOf(UnavailableError);
+    expect(error).toMatchObject({ code: 'UNAVAILABLE', committed: 'unknown' });
+    expect(intents().filter((r) => r.body.confirm)).toHaveLength(1);
+    expect(intents()).toHaveLength(2);
+  });
+
+  it('a dropped connection on the confirmed attempt is not retried, and is UnavailableError', async () => {
+    node.answer = (_, body) => (body.confirm ? { status: 0, drop: true } : refused(412, 'CONFIRM_REQUIRED', challenge));
+    const error = await failure(client().callConfirmed('app-1', 'adminRelease', { id: 'b1' }, signingPasskey));
+    expect(error).toMatchObject({ name: 'UnavailableError', reason: 'network', committed: 'unknown' });
+    expect(intents().filter((r) => r.body.confirm)).toHaveLength(1);
+  });
+
+  it('the first, unconfirmed attempt still retries a 503 before the challenge', async () => {
+    let attempts = 0;
+    node.answer = (_, body) => {
+      if (body.confirm) return { status: 200, json: { index: 9, result: 'ok', events: [] } };
+      return ++attempts === 1 ? refused(503, 'UNAVAILABLE') : refused(412, 'CONFIRM_REQUIRED', challenge);
+    };
+    const answer = await client().callConfirmed('app-1', 'adminRelease', { id: 'b1' }, signingPasskey);
+    expect(answer.result).toBe('ok');
+    const sent = intents();
+    expect(sent.map((r) => r.body.confirm === undefined)).toEqual([true, true, false]);
+    expect(new Set(sent.map((r) => r.body.idempotencyKey)).size).toBe(1);
+  });
+});

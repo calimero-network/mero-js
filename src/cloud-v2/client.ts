@@ -568,8 +568,10 @@ export class CalimeroClient {
   ): Promise<CallResult> {
     const path = `apps/${seg(app)}/intents`;
     const key = idempotencyKey ?? newIdempotencyKey();
+    // The confirmed attempt goes out exactly once: its challenge is single-use,
+    // so a resend would be refused on the challenge, not answered from the key.
     return this.confirmed<CallResult>('POST', path, { method, args, idempotencyKey: key }, passkey, (body) =>
-      this.retried<CallResult>('POST', path, body),
+      this.retried<CallResult>('POST', path, body, body.confirm === undefined ? this.retry.retries : 0),
     );
   }
 
