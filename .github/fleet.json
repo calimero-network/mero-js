@@ -8,7 +8,6 @@
     "  cargo — pins calimero-network/core by git tag. Recorded so this file stays",
     "          the same shape across every producer; a release HERE never touches",
     "          it, and fleet-bump.yml selects npm consumers only",
-    "  tauri — ships a merod binary rather than linking an SDK. Same: not ours",
     "",
     "A repository's DEFAULT BRANCH is deliberately not recorded here. The fleet is",
     "split roughly evenly between master and main, and a hand-maintained table of",
@@ -41,9 +40,15 @@
     { "repo": "apps", "surfaces": ["cargo", "npm"] },
     { "repo": "mero-ar", "surfaces": ["cargo"] },
     { "repo": "mero-tag", "surfaces": ["cargo"] },
-    { "repo": "tauri-app", "surfaces": ["npm", "tauri"] },
     { "repo": "app-registry", "surfaces": ["npm"] }
   ],
+
+  "_retired_note": [
+    "Consumers that no longer get a bump. tauri-app (Calimero Desktop) is",
+    "deprecated and archived: a bump would fail pushing its branch. Listing it",
+    "here stops it being re-added."
+  ],
+  "_retired": ["tauri-app"],
 
   "_migrated_note": [
     "Each entry below was its own repository with its own package.json and its",
