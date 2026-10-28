@@ -10,6 +10,7 @@ export const ORG_CAPABILITIES = {
   INVITE_MEMBERS: 1 << 1,
   /** Inherited into open teams; denying it keeps a member out of them. */
   JOIN_OPEN_TEAMS: 1 << 2,
+  /** Add and remove a team's members. */
   MANAGE_MEMBERS: 1 << 3,
   /** Upgrade the organization's apps, start org upgrade runs, approve outbound hosts (org-wide). */
   MANAGE_APPLICATION: 1 << 4,
@@ -17,7 +18,9 @@ export const ORG_CAPABILITIES = {
   CREATE_TEAM: 1 << 5,
   /** Delete a team, and what it holds, without being an admin. */
   DELETE_TEAM: 1 << 6,
+  /** Change who may join a team (open or invite-only). */
   MANAGE_VISIBILITY: 1 << 7,
+  /** Set the organization's and its teams' metadata. */
   MANAGE_METADATA: 1 << 8,
 } as const;
 

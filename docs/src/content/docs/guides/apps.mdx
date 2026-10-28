@@ -1,0 +1,128 @@
+---
+title: Apps and packages
+description: Install signed packages, create app instances, call and view methods with idempotency and retries, follow events, store blobs, publish presence, and upgrade.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Packages
+
+A package is a signed `.mpk` release. The node verifies the publisher's
+signature and every digest before it records the release, and pins the
+package to its first signer: another key cannot release the same package.
+
+```ts
+await client.installPackage('com.example.kv', '1.0.0'); // from the cluster's registry
+await client.uploadPackage(mpkBytes);                    // a signed .mpk file
+const all = await client.packages();
+const kv = await client.package('com.example.kv');       // { latest, versions: [...] }
+await client.uninstallPackage('com.example.kv', '1.0.0'); // refused while an app runs it
+```
+
+A cluster without `--registry-url` answers an install with `NO_REGISTRY`.
+`uploadBundle(wasm)` takes raw WASM and answers its hash, on development
+clusters only.
+
+## App instances
+
+```ts
+const app = await client.createApp('notes', { package: 'com.example.kv', version: '1.0.0' }, {
+  org,                       // an organization's app (else your own)
+  access: { kind: 'org' },   // who may reach it: owner, org, public, accounts, team
+  confirmMethods: ['clear'], // methods that need the caller's passkey
+  initArgs: { title: 'Notes' },
+});
+
+await client.listApps({ package: 'com.example.kv' });
+await client.getApp(app);
+await client.setAccess(app, { kind: 'accounts', accounts: [bobId] });
+await client.setAppMetadata(app, { colour: 'teal' }); // at most 16 KiB
+await client.appStorage(app); // { keys, bytes, blobs, blobBytes }
+await client.appAbi(app);     // the ABI the bundle embeds
+await client.setAlias('notes', app);
+await client.transferApp(app, bobId, passkey); // the owner's passkey
+await client.deleteApp(app);
+```
+
+A missing app and one you may not reach answer the same `NotFound`.
+
+## Calls and views
+
+```ts
+const { index, result, events } = await client.call(app, 'set', { key: 'a', value: '1' });
+const { result: value } = await client.view(app, 'get', { key: 'a' });
+const stale = await client.view(app, 'get', { key: 'a' }, { stale: true, minIndex: index });
+```
+
+A call always carries an idempotency key: yours (kept 24 hours), or one the
+client makes (`node:c-…`, kept 10 minutes). While the node answers `503` or
+cannot be reached, the client sends the same call again with the same key, by
+default 6 times from 200 ms doubling to 2 s (`retry` in the options). A call
+that did commit is answered from its record, never run twice. When the retries
+run out it rejects with `UnavailableError`, whose `committed` is `false` or
+`'unknown'`.
+
+```ts
+await client.call(app, 'transfer', { to: 'bob', amount: 5 }, 'transfer-42'); // your own key
+await client.callConfirmed(app, 'clear', {}, passkey); // a confirm method
+```
+
+The app's own refusals are `AppError` (`appCode`, `fields`), a trap is
+`TrapError`; see the [error model](/reference/error-model/).
+
+## Events
+
+```ts
+const ac = new AbortController();
+for await (const { id, kind, data } of client.events(app, 0, ac.signal)) {
+  // committed events from index 0, then live
+}
+ac.abort(); // ends the stream within a few hundred milliseconds
+```
+
+## Blobs
+
+```ts
+const { blobId, id, size } = await client.uploadBlob(app, bytes); // blobId base58, id hex
+const back = await client.downloadBlob(app, blobId);
+await client.listBlobs(app);
+await client.blobInfo(app, blobId);
+await client.deleteBlob(app, blobId);
+```
+
+A blob over 47 MiB is refused with `TOO_LARGE`, by the node or, past 64 MiB,
+by the sealed envelope.
+
+## Presence
+
+Who is in an app now: in memory on every node, never logged.
+
+```ts
+await client.publishPresence(app, seq, new TextEncoder().encode(JSON.stringify({ cursor: 12 })));
+const present = await client.presence(app); // [{ account, device, state }], state hex
+for await (const e of client.presenceStream(app, signal)) {
+  // 'snapshot' first, then 'presence' per change
+}
+await client.publishPresence(app, seq + 1, null); // leave
+```
+
+The newest `seq` wins; send the same `seq` and state again as a heartbeat
+within 7 seconds, or the entry is gone.
+
+## Upgrades
+
+```ts
+await client.upgradeApp(app, { version: '1.1.0' }, passkey); // the owner approves
+```
+
+The node plans the migration from the two ABIs and runs the target's migrate
+edge; a failed migration is `UPGRADE_FAILED` (422) and the app keeps its
+release. To upgrade every app of an organization at once, see
+[upgrade runs](/guides/organizations/#upgrade-runs).
+
+<Aside type="note">
+  Where the cluster gives app upgrades to the operator (`--app-upgrades
+  operator`), the owner's upgrade is refused with `403`.
+</Aside>

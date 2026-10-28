@@ -12,7 +12,7 @@ export default defineConfig({
     starlight({
       title: 'Mero.js',
       description:
-        'The pure-JavaScript SDK for Calimero — authenticate to a node, drive the admin API, execute WASM methods over JSON-RPC, and stream real-time events. Zero dependencies, browser + Node + edge.',
+        'The JavaScript client for Calimero 1.0 — verify a node\'s TDX attestation, seal every request to it, sign in with passkeys or API keys, and run apps on their own replicated log.',
       logo: {
         light: './src/assets/logo-light.svg',
         dark: './src/assets/logo-dark.svg',
@@ -61,30 +61,15 @@ export default defineConfig({
         {
           label: 'Guides',
           items: [
-            'guides/contexts-and-apps',
-            'guides/executing-methods',
-            'guides/subscriptions',
-            'guides/groups-and-governance',
-            'guides/blobs',
-            'guides/http-transport',
-            'guides/bundling-and-runtimes',
-            'guides/high-availability',
+            'guides/apps',
+            'guides/organizations',
             'guides/sealed-transport',
+            'guides/bundling-and-runtimes',
           ],
         },
         {
           label: 'Reference',
-          items: [
-            'reference/mero-js',
-            'reference/admin-api',
-            'reference/auth-api',
-            'reference/rpc',
-            'reference/events',
-            'reference/cloud',
-            'reference/account-roots',
-            'reference/capabilities',
-            'reference/error-model',
-          ],
+          items: ['reference/client', 'reference/error-model', 'reference/migrating-from-v1'],
         },
       ],
     }),

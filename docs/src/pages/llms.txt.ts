@@ -10,10 +10,10 @@ const SITE = 'https://calimero-network.github.io';
 const BASE = '/mero-js';
 
 const TRACKS: Record<string, string> = {
-  'get-started': 'Get Started — install, authenticate, and make your first call',
-  understand: 'Understand — the SDK architecture, token lifecycle, and glossary',
-  guides: 'Guides — contexts & apps, RPC, subscriptions, groups, blobs, transport, HA',
-  reference: 'Reference — MeroJs, the admin & auth API surface, and the error model',
+  'get-started': 'Get Started — install, sign in with a passkey, and make your first call',
+  understand: 'Understand — how a request reaches an app, and the glossary',
+  guides: 'Guides — apps and packages, organizations and approvals, trust and the sealed channel',
+  reference: 'Reference — CalimeroClient, the error model, and migrating from v1',
 };
 
 export const GET: APIRoute = async () => {
@@ -34,11 +34,10 @@ export const GET: APIRoute = async () => {
   const lines: string[] = [
     '# Mero.js',
     '',
-    '> The pure-JavaScript SDK for Calimero: authenticate to a node, drive the',
-    '> admin API, execute WASM contract methods over JSON-RPC, and stream',
-    '> real-time events over SSE/WebSocket. Zero dependencies — built on fetch,',
-    '> EventSource, WebSocket, and AbortController; runs in the browser, Node 18+,',
-    '> and edge runtimes.',
+    '> The JavaScript client for Calimero 1.0, the confidential cloud: it verifies',
+    "> a node's TDX attestation, seals every request to it end to end, signs people",
+    '> in with passkeys and machines with API keys, and calls apps that each run on',
+    '> their own replicated log. Runs in the browser and Node 18+.',
     '',
     `Docs site: ${SITE}${BASE}/`,
     '',

@@ -1,20 +1,16 @@
 ---
 title: Bundling & runtimes
-description: How the package ships (ESM, CJS, and a browser build), how it tree-shakes, which runtimes support which features, and the browser-only gotchas (CORS, SSR).
+description: How the package ships (ESM, CJS and a browser build), its one dependency, which runtimes it runs on, and the browser concerns (origins, passkeys, CORS).
 sidebar:
   order: 8
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Mero.js is a zero-dependency package built on Web Platform APIs. This guide
-covers how it's packaged, which runtimes support which features, and the
-browser-specific concerns (CORS, SSR).
-
 ## Module formats
 
-The package is `"type": "module"` and ships three builds, selected automatically
-through its `exports` map:
+The package is `"type": "module"` and ships three builds through its `exports`
+map:
 
 | Condition | File | Format |
 | --- | --- | --- |
@@ -23,78 +19,47 @@ through its `exports` map:
 | `browser` (bundler browser target) | `dist/index.browser.mjs` | ESM, minified |
 | `types` | `dist/index.d.ts` | TypeScript declarations |
 
-```typescript
-// ESM / TypeScript
-import { createMeroJs } from '@calimero-network/mero-js';
+```ts
+import { CalimeroClient } from '@calimero-network/mero-js';
+// or: const { CalimeroClient } = require('@calimero-network/mero-js');
 ```
 
-```javascript
-// CommonJS
-const { createMeroJs } = require('@calimero-network/mero-js');
-```
+It sets `"sideEffects": false`, so a bundler drops what you do not import.
 
-The package sets `"sideEffects": false`, so a modern bundler (esbuild, Rollup,
-Vite, webpack) tree-shakes away everything you don't import — pull in just
-`createMeroJs`, or only a helper like `withRetry`, and the rest is dropped.
+## The one dependency
 
-## Runtime support
+[`@phala/dcap-qvl`](https://www.npmjs.com/package/@phala/dcap-qvl) verifies TDX
+quotes. It is imported dynamically, the first time the client meets a real
+quote, so a development page against mock quotes never loads it. In a browser
+build it needs Node polyfills for `buffer`, `crypto` and `stream`; see its README
+for Vite and webpack settings.
 
-The HTTP and SSE surfaces run on every modern runtime. The WebSocket client and
-the browser-only helpers have narrower support:
+## Runtimes
 
-| Feature | Browser | Node 18–21 | Node 22+ | Deno / Bun | Edge workers |
-| --- | :-: | :-: | :-: | :-: | :-: |
-| `sdk.admin` / `sdk.auth` / `sdk.rpc` (fetch) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `sdk.events` (SSE, fetch streaming) | ✅ | ✅ | ✅ | ✅ | ⚠️¹ |
-| `sdk.ws` (needs global `WebSocket`) | ✅ | ❌² | ✅ | ✅ | ⚠️¹ |
-| `LocalStorageTokenStore` | ✅ | ❌³ | ❌³ | ❌³ | ❌³ |
-| `CloudClient` (`window.open`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| | Browser | Node 18+ | Deno / Bun | React Native |
+| --- | :-: | :-: | :-: | :-: |
+| `CalimeroClient` with an API key or a session | ✅ | ✅ | ✅ | ⚠️¹ |
+| `browserPasskey()` | ✅ | ❌² | ❌² | ❌² |
+| `releaseSource: 'github'` | ❌³ | ✅ | ✅ | ✅ |
 
-1. Edge runtimes restrict long-lived `fetch` streams and outbound `WebSocket`;
-   check your platform's limits before relying on live event streams there.
-2. Node gained a global `WebSocket` in v22. On 18–21, `sdk.ws` throws unless you
-   install a `WebSocket` polyfill onto `globalThis`. Prefer `sdk.events` (SSE)
-   server-side.
-3. Falls back to a no-op / `null` off the browser (it guards `typeof
-   localStorage`). Use `MemoryTokenStore`, or a custom
-   [`TokenStore`](/reference/mero-js/#tokenstore), on the server.
+1. Needs WebCrypto with X25519: install `react-native-quick-crypto` as the global `crypto`.
+2. WebAuthn is a browser API. Elsewhere, sign in with an API key, or implement
+   `PasskeyProvider` yourself.
+3. GitHub's release downloads send no CORS headers; the default mirror does.
 
-<Aside type="note">
-  For Node before v18 (no native `fetch`), pass a `fetch` implementation such as
-  `undici` to the low-level client — see
-  [Node.js and custom fetch](/guides/http-transport/#nodejs-and-custom-fetch).
-</Aside>
+## Browsers
 
-## CORS (browser → node)
-
-A browser app calling a `merod` node on a different origin is a cross-origin
-request, so the **node** must return the appropriate CORS headers
-(`Access-Control-Allow-Origin`, and for preflight `Access-Control-Allow-Methods`
-/ `-Headers`). Because the SDK authenticates with an `Authorization: Bearer`
-header, requests are non-simple and the browser sends a preflight `OPTIONS` the
-node must answer. A CORS rejection surfaces as an
-[`HTTPError` with `status: 0`](/reference/error-model/#httperror) (the browser
-hides the details from JavaScript). Only set `requestCredentials: 'include'` if
-the node authenticates with **cookies** — with bearer tokens you don't need it.
-
-## SSR / server rendering
-
-A few APIs touch browser globals and must be guarded (or only called client-side)
-in Next.js / Remix / SvelteKit:
-
-- `LocalStorageTokenStore` — safe to construct anywhere (returns `null` on the
-  server), but it only persists in the browser.
-- `MeroJs.parseAuthCallback()` / `parseAuthCallback()` — read `window.location`
-  and call `history.replaceState`; browser-only.
-- `CloudClient.enableHA` / `disableHA` — call `window.open`; browser-only.
-
-Everything else (`sdk.admin`, `sdk.auth`, `sdk.rpc`, `sdk.events`) works on the
-server. For a server-only `MeroJs`, pass a `MemoryTokenStore` (or your own store)
-and drive `baseUrl`/credentials from environment variables.
+- **Origins.** The node runs passkey ceremonies, and answers CORS, only for
+  the origins it was started with (`--origins`, `http://localhost:3000` by
+  default), with passkeys bound to its `--rp-id` (`localhost` by default).
+  A page on another origin fails the ceremony.
+- **Secure context.** WebAuthn needs `https://` or `localhost`.
+- **Sessions.** Keep a `CalimeroSession` in `sessionStorage` and hand it to
+  `useSession` on the next page load, so a reload does not prompt for the
+  passkey again.
 
 <Aside type="note">
-  Not using React? React bindings live in the separate
+  React bindings live in the separate
   [`@calimero-network/mero-react`](https://github.com/calimero-network/mero-react)
-  package; this SDK is framework-agnostic and works from vanilla JS, Vue, Svelte,
-  or a plain Node service.
+  package.
 </Aside>

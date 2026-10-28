@@ -1,0 +1,138 @@
+---
+title: CalimeroClient
+description: Every CalimeroClient method, its arguments, and the node route it calls on a Calimero 1.0 cluster.
+sidebar:
+  order: 1
+---
+
+```ts
+new CalimeroClient({
+  baseUrl: string,         // one node of the cluster
+  policy: CloudPolicy,     // which nodes to trust; see Trust and the sealed channel
+  fetch?: typeof fetch,    // carries attestation and envelopes; default the global fetch
+  retry?: { retries?: number; baseDelayMs?: number; maxDelayMs?: number }, // default 6, 200 ms, 2 s
+})
+```
+
+Every route below is sent inside the sealed channel. `passkey` is a
+`PasskeyProvider` (`browserPasskey()` in a page); a method that takes one
+answers the node's `412 CONFIRM_REQUIRED` with it.
+
+## Credentials
+
+| Method | Route |
+| --- | --- |
+| `signUp(passkey, name)` → `CalimeroSession` | `POST auth/passkey/register/begin`, `…/finish` |
+| `signIn(passkey)` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
+| `refresh()` → `CalimeroSession` | `POST auth/refresh` |
+| `signOut()` | `POST auth/logout` |
+| `signOutEverywhere()` | `POST auth/logout-all` |
+| `useSession(session)`, `useApiKey(key)`, `session` | (local) |
+| `me()` | `GET auth/me` |
+| `usage()` | `GET auth/usage` |
+| `addPasskey(passkey)` → credential id | `POST auth/passkeys/add/begin`, `…/finish` |
+| `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
+| `removePasskey(credentialId)` | `DELETE auth/passkeys/{cred}` |
+| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs? })` → `{ keyId, key }` | `POST auth/apikeys` |
+| `listApiKeys()` | `GET auth/apikeys` |
+| `revokeApiKey(keyId)` | `DELETE auth/apikeys/{key}` |
+| `attestation()` → `AttestationDoc` (unverified, for display) | `GET attestation` (in the clear) |
+
+## Packages and bundles
+
+| Method | Route |
+| --- | --- |
+| `installPackage(package, version)` → `PackageInstalled` | `POST packages/install` |
+| `uploadPackage(mpk)` → `PackageInstalled` | `POST packages` |
+| `packages()` → `PackageInfo[]` | `GET packages` |
+| `package(name)` → `PackageInfo` | `GET packages/{package}` |
+| `uninstallPackage(name, version?)` | `DELETE packages/{package}[/{version}]` |
+| `uploadBundle(wasm)` → hash (development clusters) | `POST bundles` |
+
+## Apps
+
+| Method | Route |
+| --- | --- |
+| `createApp(name, bundle \| { package, version?, service? }, { org?, access?, confirmMethods?, initArgs? })` → app id | `POST apps` |
+| `listApps({ package?, bundle? })` → `AppInfo[]` | `GET apps` |
+| `getApp(app)` | `GET apps/{app}` |
+| `deleteApp(app)` | `DELETE apps/{app}` |
+| `setAccess(app, access)` | `POST apps/{app}/access` |
+| `setAppMetadata(app, metadata)` | `POST apps/{app}/metadata` |
+| `appStorage(app)` | `GET apps/{app}/storage` |
+| `appAbi(app)` | `GET apps/{app}/abi` |
+| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
+| `transferApp(app, to, passkey)` | `POST apps/{app}/transfer` |
+| `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
+| `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
+| `view(app, method, args?, { stale?, minIndex? })` → `ViewResult` | `POST apps/{app}/views` |
+| `events(app, from?, signal?)` → async iterable of `CloudEvent` | `GET apps/{app}/events` |
+| `uploadBlob(app, bytes)` → `{ blobId, id, size }` | `POST apps/{app}/blobs` |
+| `listBlobs(app)` → `BlobInfo[]` | `GET apps/{app}/blobs` |
+| `blobInfo(app, id)` → `BlobInfo` | `GET apps/{app}/blobs/{id}/info` |
+| `downloadBlob(app, id)` → bytes | `GET apps/{app}/blobs/{id}` |
+| `deleteBlob(app, id)` | `DELETE apps/{app}/blobs/{id}` |
+| `publishPresence(app, seq, state \| null)` | `POST apps/{app}/presence` |
+| `presence(app)` → `PresenceEntry[]` | `GET apps/{app}/presence` |
+| `presenceStream(app, signal?)` → async iterable of `CloudEvent` | `GET apps/{app}/presence/stream` |
+
+## Aliases
+
+| Method | Route |
+| --- | --- |
+| `setAlias(alias, app)` | `PUT auth/aliases/{alias}` |
+| `alias(alias)` → app id | `GET auth/aliases/{alias}` |
+| `aliases()` → `{ alias: appId }` | `GET auth/aliases` |
+| `deleteAlias(alias)` | `DELETE auth/aliases/{alias}` |
+
+## Organizations
+
+| Method | Route |
+| --- | --- |
+| `createOrg(name)` → org id | `POST orgs` |
+| `getOrg(org)` | `GET orgs/{org}` |
+| `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
+| `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
+| `setMember(org, account, role)` | `POST orgs/{org}/members` |
+| `removeMember(org, account)` | `DELETE orgs/{org}/members/{account}` |
+| `setMemberMetadata(org, account, metadata)` | `POST orgs/{org}/members/{account}/metadata` |
+| `setCapabilities(org, bits, { account?, team? })` | `POST orgs/{org}/capabilities` |
+| `createTeam(org, name, join, parent?)` → team id | `POST orgs/{org}/teams` |
+| `getTeam(org, team)` | `GET orgs/{org}/teams/{team}` |
+| `updateTeam(org, team, { name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
+| `deleteTeam(org, team)` | `DELETE orgs/{org}/teams/{team}` |
+| `setTeamMember(org, team, account, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
+| `removeTeamMember(org, team, account)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
+| `invite(org, role, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
+| `redeemInvite(token)` | `POST invites/{token}/redeem` |
+| `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
+| `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
+| `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |
+| `approveRelease(org \| null, version, passkey, approved?)` | `POST orgs/{org}/releases` or `auth/releases` |
+| `approveOutbound(org \| null, package, passkey, { prefixes?, replace? })` | `POST orgs/{org}/outbound` or `auth/outbound` |
+
+## Any route
+
+`get`, `post`, `put` and `delete(path, body?)` send any request through the
+sealed channel with the client's credential and map a refusal to a typed error.
+`postConfirmed(path, body, passkey)` and `deleteConfirmed(path, passkey, body?)`
+answer a `412 CONFIRM_REQUIRED`.
+
+## Not covered
+
+- `/ops/*`, the operator's API (ops token): use core's `meroctl`.
+- `/apps/{app}/attestation` and receipt verification (core's
+  `Client::verify_app_cluster`, which checks every replica's receipt key and the
+  cluster's governance): not yet in this client.
+- `/internal/*`: node to node only.
+
+## Other exports
+
+`fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
+`b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
+`DEFAULT_ORG_CAPABILITIES`; the sealed transport (`createSealedFetch`,
+`transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
+and release verification (`createQuoteVerifier`, `trustedMeasurementsFromReleases`,
+`createSignedReleaseVerifier`, `trustSignedRelease`, `verifySignedNodeRelease`,
+`fetchNodeRelease`, `fetchGithubNodeRelease`, `cloudNodeReleaseUrl`); and the
+private agent gate (`attestAgent`, `provisionAgent`, `releaseAgent`, …).

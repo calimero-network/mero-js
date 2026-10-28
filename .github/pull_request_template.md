@@ -2,25 +2,20 @@
 
 <!-- What changed and why. Link the issue if any. -->
 
-## Wire contract (core gate)
+## Core compatibility
 
-mero-js types mirror core's HTTP wire DTOs by hand. If this PR touches admin/auth
-types or RPC shapes:
+mero-js mirrors core 1.0's node API (`crates/node/src/api.rs`) and its sealed
+transport (`crates/sealed`) by hand. If this PR changes a route, a body or the
+wire format:
 
-- [ ] `npm run typecheck:contract` passes (run the wire contract test against a
-      core checkout: `CALIMERO_CORE_DIR=/path/to/core npm run test:contract`)
-- [ ] Linked the matching core PR if this mirrors a core wire change
-
-To run the contract test / e2e against a specific core branch, add a line to this
-body (defaults to `master`):
-
-```
-core-ref: <your-core-branch>
-```
+- [ ] `pnpm test:cloud-v2` passes against a merod built from the matching core branch
+- [ ] Linked the matching core PR. Core's `e2e.yml` (`clients`) runs this suite
+      against core's tree; name this branch like the core one, or put
+      `sdk-ref: <this branch>` in the core PR's body, to pair them.
 
 ## Test plan
 
-- [ ] `npm run test:unit`
-- [ ] `npm run typecheck`
-- [ ] `npm run lint`
-- [ ] `npm run build`
+- [ ] `pnpm test:unit`
+- [ ] `pnpm typecheck` and `pnpm typecheck:consumer`
+- [ ] `pnpm lint`
+- [ ] `pnpm build`

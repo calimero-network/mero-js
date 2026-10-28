@@ -1,146 +1,60 @@
 ---
-title: System Overview
-description: How Mero.js is structured — the MeroJs facade, the transport layer, the API and event clients, lazy initialisation, and the zero-dependency Web-Standards foundation.
+title: System overview
+description: How CalimeroClient reaches an app on a Calimero 1.0 cluster — attestation, the sealed channel, the node API, and the replicated log behind it.
 sidebar:
   order: 1
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+## The cluster
 
-Mero.js is a thin composition of focused clients over a single `fetch`-based
-transport. `MeroJs` is the entry point: it owns the HTTP transport, manages the
-JWT token lifecycle, and exposes the specialised clients behind property
-accessors. This page names the parts and says what each one does.
+A Calimero 1.0 cluster is a set of `merod` nodes, each a TDX confidential VM
+running a signed mero-tee image. Each app instance is replicated by its own
+Raft log on a few of them (three by default): the leader runs a call and
+appends its outcome, the followers apply it. A system log holds the accounts,
+passkeys, API keys, organizations, packages and the app directory.
 
-## The shape of a client
+Any node answers any request. One that does not hold the app forwards the call
+to the app's leader over a peer channel attested the same way.
 
-```typescript
-import { MeroJs } from '@calimero-network/mero-js';
+## The client
 
-const sdk = new MeroJs({ baseUrl: 'http://localhost:2428' });
-await sdk.authenticate({ username: 'admin', password: 'pass' });
+`CalimeroClient` is one object per node URL. What it does for each request:
 
-sdk.auth     // AuthApiClient   — login, tokens, key management
-sdk.admin    // AdminApiClient  — contexts, apps, namespaces, groups, blobs, TEE
-sdk.rpc      // RpcClient       — execute WASM methods (lazy)
-sdk.events   // SseClient       — real-time events over SSE (lazy)
-sdk.ws       // WsClient        — WebSocket alternative (lazy, experimental)
-```
+| Step | What | Where |
+| --- | --- | --- |
+| Attest (once per node key) | `GET /attestation?nonce=…`, then verify the quote against `policy` | `fetchAttestedKey` (`src/cloud-v2/attestation.ts`) |
+| Open a session | Noise NK to the attested transport key, `POST /sealed/v2/handshake` | `createSealedFetch` (`src/sealed/sealed.ts`) |
+| Send | the request, its `Authorization` header and body sealed in `POST /sealed/v2`; the answer comes back in sealed frames, event streams too | the same |
+| Map the answer | a refusal becomes a typed error | `errorFrom` (`src/cloud-v2/errors.ts`) |
+| Retry | a `503` or a dropped connection, for calls and views, with the same idempotency key | `CalimeroClient` |
 
-For the visual layer map, see [Architecture at a glance](/) on the home page.
+A node that restarts has a new transport key; the client attests it again,
+through the same policy, and resends once.
 
-## The layers
+## What the policy trusts
 
-### Layer 1 — Transport (`HttpClient`)
+- **The release.** The node names the mero-tee release it runs. The client
+  refuses one below `minReleaseVersion`, fetches the release's signed
+  `published-mrtds.json` and checks its Sigstore signature against the
+  mero-tee release workflow.
+- **The quote.** Intel's signature chain and the TCB status, through
+  `@phala/dcap-qvl` with Intel's collateral; no debug TD; the registers of the
+  release's `locked-read-only` image.
+- **The binding.** The quote's report data is the client's nonce and
+  `SHA-256("calimero.tee-attest.transport-key.v1" ‖ app_hash ‖ transport_key)`,
+  so the key the channel opens to is the one the TD made.
 
-A Web-Standards `fetch` wrapper (`WebHttpClient`). It attaches
-`Authorization: Bearer <token>` to every request, combines caller abort signals
-with an internal timeout, parses responses (JSON / text / blob / arrayBuffer),
-and — crucially — handles token refresh: on a `401` with
-`x-auth-error: token_expired` it refreshes once (single-flight) and retries the
-original request. `MeroJs` builds this via `createBrowserHttpClient`, detecting
-Tauri to default `credentials: 'omit'`.
+The server serving the release file, the network and the node's choice of
+release are not trusted. See [Trust and the sealed channel](/guides/sealed-transport/).
 
-You can also use the transport on its own — see the
-[HTTP transport guide](/guides/http-transport/).
+## The API
 
-### Layer 2 — API clients
+All of it is inside the sealed channel except `/attestation` and `/health`:
 
-Both wrap the shared `HttpClient` (constructor injection); neither manages
-tokens itself — the transport's hooks do.
+- `/auth/*`: passkeys, sessions, API keys, aliases, the account's approvals and usage.
+- `/packages/*` and `/bundles`: signed releases, and raw WASM on development clusters.
+- `/apps/*`: instances, calls (`intents`), views, events, blobs, presence, upgrades, access.
+- `/orgs/*` and `/invites/*`: organizations, teams, members, invites, upgrade runs, approvals.
 
-- **`AuthApiClient`** (`sdk.auth`) — direct HTTP to the node's `/auth` and
-  identity endpoints: login (`generateTokens`), `refreshToken`, and root/client
-  **key management**. See the [auth API reference](/reference/auth-api/).
-- **`AdminApiClient`** (`sdk.admin`) — the node's `/admin-api` surface: contexts,
-  applications, packages, namespaces, groups, blobs, aliases, capabilities,
-  metadata, upgrades/migration, and TEE. ~90 methods. See the
-  [admin API reference](/reference/admin-api/).
-- **`RpcClient`** (`sdk.rpc`) — JSON-RPC over HTTP to `/jsonrpc`; executes WASM
-  contract methods. See [executing methods](/guides/executing-methods/).
-
-### Layer 3 — Event streams
-
-- **`SseClient`** (`sdk.events`) — Server-Sent Events from the node's `/sse`
-  endpoint. Reconnects automatically and re-subscribes on reconnect. **Prefer
-  this in production.**
-- **`WsClient`** (`sdk.ws`) — a WebSocket alternative with the same shape.
-  Experimental; it logs a one-time console warning on first use.
-
-Both are covered in the [subscriptions guide](/guides/subscriptions/).
-
-### Layer 4 — Token store
-
-Where tokens are persisted between sessions. `MemoryTokenStore` (the default) is
-ephemeral; `LocalStorageTokenStore` persists to `localStorage`. Implement the
-`TokenStore` interface to back tokens with anything else.
-
-## Composition and token flow
-
-`MeroJs` creates **one** `WebHttpClient` and hands it to both `AuthApiClient` and
-`AdminApiClient`. The transport is wired with hooks back into `MeroJs`'s token
-state:
-
-- `getAuthToken` → the current access token, attached as a bearer header.
-- `refreshToken` → `MeroJs.performTokenRefresh()`, which is single-flight
-  (in-process promise + a `mero-js:token-refresh` Web Lock + a re-read of the
-  token store) because refresh tokens are single-use.
-- `onTokenRefresh` → persists the rotated token to the store.
-- `onAuthRevoked` → `MeroJs.clearToken()` when the node reports
-  `token_reuse` / `token_revoked`.
-
-The full sequence is drawn in [Authentication → token lifecycle](/get-started/authentication/#the-token-lifecycle--refresh-is-automatic).
-
-## Lazy initialisation
-
-`rpc`, `events`, and `ws` are constructed on first access — there's no cost if
-you never touch them:
-
-```typescript
-// Instantiated only when first accessed:
-sdk.rpc     // RpcClient (lazy)
-sdk.events  // SseClient (lazy)
-sdk.ws      // WsClient (lazy, experimental — warns once)
-
-// Always available:
-sdk.auth    // AuthApiClient
-sdk.admin   // AdminApiClient
-```
-
-Call `sdk.close()` to shut down any open SSE/WS connections when you're done.
-
-## Zero dependencies
-
-The SDK ships with no runtime dependencies. It's built entirely on Web Platform
-APIs. The HTTP and SSE surfaces run unchanged in the browser, Node 18+, Deno,
-Bun, and edge workers; `sdk.ws` additionally needs a global `WebSocket`, which
-is not present on Node before v22 (see the
-[runtime matrix](/guides/bundling-and-runtimes/#runtime-support)):
-
-| API | Used for |
-| --- | --- |
-| `fetch` (incl. streaming response bodies) | all HTTP requests, and the SSE client |
-| `WebSocket` | the (experimental) WS client — global required (Node 22+) |
-| `AbortController` | request cancellation & timeouts |
-| `atob` | decoding the JWT payload to read `exp` |
-| `localStorage` | optional token persistence (browser only) |
-
-<Aside type="note">
-  On Node < 18, provide a `fetch` implementation (e.g. `undici`) via the
-  transport factories — see the [HTTP transport guide](/guides/http-transport/#nodejs-and-custom-fetch).
-</Aside>
-
-## How it maps to the node
-
-Everything the SDK does is an HTTP call to a single `merod` node:
-
-| Client | Node surface |
-| --- | --- |
-| `sdk.auth` | `GET/POST /auth/*`, `/admin/keys*` |
-| `sdk.admin` | `/admin-api/*` (REST) |
-| `sdk.rpc` | `POST /jsonrpc` (JSON-RPC) |
-| `sdk.events` | `GET /sse` + `POST /sse/subscription` |
-| `sdk.ws` | `ws(s)://…/ws` |
-
-For what those endpoints mean at the protocol level, see the
-[Calimero Core docs](https://calimero-network.github.io/core/).
+`/ops/*` is the operator's API, authenticated by an ops token; this client does
+not cover it (core's `meroctl` does).

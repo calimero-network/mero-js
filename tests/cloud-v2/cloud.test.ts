@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 afterAll(() => cluster?.stop());
 
-describe('cloud v2', () => {
+describe('Calimero 1.0 cluster', () => {
   it('refuses a mock quote unless allowed', async () => {
     await expect(client(0, false).post('auth/passkey/login/begin')).rejects.toThrow(/mock quote refused/);
   });
