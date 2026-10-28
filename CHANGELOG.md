@@ -1,3 +1,13 @@
+## [27.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.11.0...mero-js-v27.0.0) (2026-10-28)
+
+### ⚠ BREAKING CHANGES
+
+* ship only the calimero 1.0 client (#314)
+
+### Features
+
+* ship only the calimero 1.0 client ([#314](https://github.com/calimero-network/mero-js/issues/314)) ([aad31bc](https://github.com/calimero-network/mero-js/commit/aad31bc69ed250b037fe9a8e9fea1f574cbe4924))
+
 ### Calimero 1.0 (27.0.0)
 
 The release that supports Calimero 1.0 (core `1.0.0-rc.1` and later). semantic-release writes the version heading and the commit list above this note when it publishes; this note is the migration summary.
