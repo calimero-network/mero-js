@@ -10,9 +10,26 @@
  * ```
  */
 
+import { hex } from '../crypto/internal.js';
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type CloudPolicy } from './attestation.js';
+import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
 import { fromB64url, type PasskeyProvider } from './passkey.js';
+
+export {
+  AppError,
+  ArgsTooLarge,
+  CalimeroError,
+  ConfirmCancelled,
+  ConfirmRequired,
+  IdempotencyMismatch,
+  LoginRequired,
+  NotFound,
+  TrapError,
+  UnavailableError,
+  errorFrom,
+} from './errors.js';
+export type { Committed } from './errors.js';
 
 export interface CalimeroSession {
   accountId: string;
@@ -82,18 +99,6 @@ function seg(value: string): string {
   return encodeURIComponent(value);
 }
 
-export class CalimeroError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly details: Record<string, unknown> = {},
-  ) {
-    super(`${status} ${code}: ${message}`);
-    this.name = 'CalimeroError';
-  }
-}
-
 /**
  * The node refuses an envelope past its 64 MiB sealed cap with `413` in the
  * clear, before opening it, so the refusal arrives as the transport's. To the
@@ -101,9 +106,40 @@ export class CalimeroError extends Error {
  */
 function sealedError(error: unknown): unknown {
   if (error instanceof SealedTransportError && error.status === 413) {
-    return new CalimeroError(413, 'TOO_LARGE', error.message.replace(/^Sealed request refused: /, ''));
+    return errorFrom(413, {
+      error: 'TOO_LARGE',
+      message: error.message.replace(/^Sealed request refused: /, ''),
+    });
   }
   return error;
+}
+
+/** Read a refused response's body and map it ({@link errorFrom}). */
+async function refusal(response: Response): Promise<CalimeroError> {
+  const text = await response.text().catch(() => '');
+  let body: unknown = {};
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { message: text };
+  }
+  return errorFrom(response.status, body, response.headers.get('retry-after'));
+}
+
+/**
+ * A key for a call the caller gave none, made once so every retry shares it.
+ * `getRandomValues`, not `randomUUID`, which a page outside a secure context lacks.
+ */
+function newIdempotencyKey(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+/** How a 503 is retried (D70): with the same key, exponential backoff, at most this many times. */
+export interface CloudRetryOptions {
+  /** Retries after the first attempt. Default 3. */
+  retries?: number;
+  /** The first backoff; each retry doubles it. Default 250 ms. */
+  baseDelayMs?: number;
 }
 
 export interface CalimeroClientOptions {
@@ -112,6 +148,8 @@ export interface CalimeroClientOptions {
   policy: CloudPolicy;
   /** Fetch that carries attestation and envelopes. Defaults to global `fetch`. */
   fetch?: typeof fetch;
+  /** How calls and views retry a 503. */
+  retry?: CloudRetryOptions;
 }
 
 export class CalimeroClient {
@@ -119,9 +157,13 @@ export class CalimeroClient {
   private readonly sealed: typeof fetch;
   private auth: string | undefined;
   private current: CalimeroSession | undefined;
+  private readonly retries: number;
+  private readonly baseDelayMs: number;
 
   constructor(options: CalimeroClientOptions) {
     this.base = options.baseUrl.replace(/\/+$/, '');
+    this.retries = options.retry?.retries ?? 3;
+    this.baseDelayMs = options.retry?.baseDelayMs ?? 250;
     const raw = options.fetch ?? ((input, init) => fetch(input, init));
     this.sealed = createSealedFetch({
       baseUrl: this.base,
@@ -177,12 +219,27 @@ export class CalimeroClient {
     contentType?: string,
   ): Promise<T> {
     const response = await this.request(method, path, body, raw, contentType);
+    if (!response.ok) throw await refusal(response);
     const text = await response.text();
-    const value = text ? JSON.parse(text) : {};
-    if (!response.ok) {
-      throw new CalimeroError(response.status, value.error ?? 'ERROR', value.message ?? '', value.details ?? {});
+    return (text ? JSON.parse(text) : {}) as T;
+  }
+
+  /**
+   * {@link json} for a call or a view: a 503 is sent again, the same request
+   * with the same idempotency key, after an exponential backoff (or the pause
+   * the node asked for, if longer), at most `retries` times (D70). Every other
+   * status is final. The last 503 surfaces as {@link UnavailableError}.
+   */
+  private async retried<T>(method: string, path: string, body: Record<string, unknown>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.json<T>(method, path, body);
+      } catch (error) {
+        if (!(error instanceof UnavailableError) || attempt >= this.retries) throw error;
+        const backoff = this.baseDelayMs * 2 ** attempt;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (error.retryAfter ?? 0) * 1000)));
+      }
     }
-    return value as T;
   }
 
   post<T = Record<string, unknown>>(path: string, body: unknown = {}): Promise<T> {
@@ -311,11 +368,7 @@ export class CalimeroClient {
   /** One of `app`'s blobs, by id (base58 or hex). */
   async downloadBlob(app: string, id: string): Promise<Uint8Array> {
     const response = await this.request('GET', `apps/${seg(app)}/blobs/${seg(id)}`);
-    if (!response.ok) {
-      const text = await response.text();
-      const value = text ? JSON.parse(text) : {};
-      throw new CalimeroError(response.status, value.error ?? 'ERROR', value.message ?? '', value.details ?? {});
-    }
+    if (!response.ok) throw await refusal(response);
     return new Uint8Array(await response.arrayBuffer());
   }
 
@@ -407,14 +460,24 @@ export class CalimeroClient {
     path: string,
     body: Record<string, unknown>,
     passkey: PasskeyProvider,
+    send: (body: Record<string, unknown>) => Promise<T> = (b) => this.json<T>(method, path, b),
   ): Promise<T> {
     try {
-      return await this.json<T>(method, path, body);
+      return await send(body);
     } catch (error) {
-      if (!(error instanceof CalimeroError) || error.code !== 'CONFIRM_REQUIRED') throw error;
+      if (!(error instanceof ConfirmRequired)) throw error;
       const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
-      const assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
-      return this.json<T>(method, path, { ...body, confirm: { challengeId: d.challengeId, assertion } });
+      let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
+      try {
+        assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
+      } catch (declined) {
+        // WebAuthn rejects a prompt the user dismissed with `NotAllowedError`
+        // (`AbortError` when it was aborted); anything else is a real failure.
+        const name = (declined as { name?: unknown } | null)?.name;
+        if (name === 'NotAllowedError' || name === 'AbortError') throw new ConfirmCancelled(declined);
+        throw declined;
+      }
+      return send({ ...body, confirm: { challengeId: d.challengeId, assertion } });
     }
   }
 
@@ -439,14 +502,19 @@ export class CalimeroClient {
     return appId;
   }
 
-  /** Call a method. A retry with the same `idempotencyKey` is answered once. */
+  /**
+   * Call a method. A retry with the same `idempotencyKey` is answered once.
+   * Without one, the client makes one, so its own retries of a 503 share it.
+   */
   call(app: string, method: string, args: unknown = {}, idempotencyKey?: string): Promise<CallResult> {
-    return this.post(`apps/${seg(app)}/intents`, { method, args, idempotencyKey });
+    const key = idempotencyKey ?? newIdempotencyKey();
+    return this.retried('POST', `apps/${seg(app)}/intents`, { method, args, idempotencyKey: key });
   }
 
   /**
    * Call a method that needs the account holder's approval: the node returns a
-   * challenge over this exact call, which `passkey` signs.
+   * challenge over this exact call, which `passkey` signs. A declined prompt
+   * rejects with {@link ConfirmCancelled}.
    */
   async callConfirmed(
     app: string,
@@ -455,12 +523,16 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     idempotencyKey?: string,
   ): Promise<CallResult> {
-    return this.postConfirmed(`apps/${seg(app)}/intents`, { method, args, idempotencyKey }, passkey);
+    const path = `apps/${seg(app)}/intents`;
+    const key = idempotencyKey ?? newIdempotencyKey();
+    return this.confirmed<CallResult>('POST', path, { method, args, idempotencyKey: key }, passkey, (body) =>
+      this.retried<CallResult>('POST', path, body),
+    );
   }
 
   /** Run a read-only method: strong by default, or stale from any replica. */
   view(app: string, method: string, args: unknown = {}, options: { stale?: boolean; minIndex?: number } = {}): Promise<ViewResult> {
-    return this.post(`apps/${seg(app)}/views`, {
+    return this.retried('POST', `apps/${seg(app)}/views`, {
       method,
       args,
       consistency: options.stale ? 'stale' : 'strong',
@@ -473,9 +545,8 @@ export class CalimeroClient {
     const headers: Record<string, string> = {};
     if (this.auth) headers.authorization = `Bearer ${this.auth}`;
     const response = await this.sealed(`${this.base}/apps/${seg(app)}/events?from=${from}`, { headers, signal });
-    if (!response.ok || !response.body) {
-      throw new CalimeroError(response.status, 'EVENTS', 'event stream refused');
-    }
+    if (!response.ok) throw await refusal(response);
+    if (!response.body) throw new CalimeroError(response.status, 'EVENTS', 'the event stream has no body');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
