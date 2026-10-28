@@ -41,6 +41,13 @@ export function fromB64url(s: string): Uint8Array {
 
 const buf = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 
+/** A dismissed prompt, named as WebAuthn names one (`NotAllowedError`), so a confirmation reads it as declined. */
+function cancelled(message: string): Error {
+  const error = new Error(message);
+  error.name = 'NotAllowedError';
+  return error;
+}
+
 /** The platform authenticator (Touch ID, Face ID, Windows Hello, a security key, a synced passkey). */
 export function browserPasskey(): PasskeyProvider {
   return {
@@ -66,7 +73,7 @@ export function browserPasskey(): PasskeyProvider {
           timeout: o.timeout,
         },
       })) as PublicKeyCredential | null;
-      if (!cred) throw new Error('passkey creation was cancelled');
+      if (!cred) throw cancelled('passkey creation was cancelled');
       const r = cred.response as AuthenticatorAttestationResponse;
       return {
         attestationObject: b64url(new Uint8Array(r.attestationObject)),
@@ -82,7 +89,7 @@ export function browserPasskey(): PasskeyProvider {
           allowCredentials: (allowCredentials ?? []).map((id) => ({ type: 'public-key', id: buf(fromB64url(id)) })),
         },
       })) as PublicKeyCredential | null;
-      if (!cred) throw new Error('passkey sign-in was cancelled');
+      if (!cred) throw cancelled('passkey sign-in was cancelled');
       const r = cred.response as AuthenticatorAssertionResponse;
       return {
         credentialId: b64url(new Uint8Array(cred.rawId)),

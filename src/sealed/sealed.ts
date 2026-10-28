@@ -313,6 +313,11 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
     request.headers.forEach((value, name) => headers.push([name, value]));
     const head = { method: request.method, path: url.pathname.slice(basePath.length) + url.search, headers };
     const body = new Uint8Array(await request.arrayBuffer());
+    // The caller's own signal, not `request.signal`: a Request's signal follows
+    // the one it was built from only through a weak reference (undici), so once
+    // the Request is garbage collected (it is, while a stream stays open) an
+    // abort no longer reaches the fetch, and an event stream never closes.
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
 
     const send = async (open: Session): Promise<Response> => {
       const { requestId, header, envelope } = await sealRequest(open, head, body);
@@ -320,7 +325,7 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
         method: 'POST',
         headers: { 'content-type': SEALED_CONTENT_TYPE },
         body: envelope,
-        signal: request.signal,
+        signal,
       });
       if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
         throw await envelopeRefusal(response);

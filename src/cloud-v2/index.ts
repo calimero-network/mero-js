@@ -1,4 +1,18 @@
-export { CalimeroClient, CalimeroError } from './client.js';
+export { CalimeroClient } from './client.js';
+export {
+  AppError,
+  ArgsTooLarge,
+  CalimeroError,
+  ConfirmCancelled,
+  ConfirmRequired,
+  IdempotencyMismatch,
+  LoginRequired,
+  NotFound,
+  TrapError,
+  UnavailableError,
+  errorFrom,
+} from './errors.js';
+export type { Committed } from './errors.js';
 export type {
   AppInfo,
   CallResult,
@@ -7,6 +21,7 @@ export type {
   CalimeroSession,
   PackageInfo,
   PackageInstalled,
+  CloudRetryOptions,
   ViewResult,
 } from './client.js';
 export { claimedRelease, fetchAttestedKey, MOCK_QUOTE_HEADER } from './attestation.js';
