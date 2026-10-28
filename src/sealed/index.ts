@@ -4,12 +4,10 @@ export {
   SEALED_PATH,
   SealedTransportError,
   StaleTransportKeyError,
-  createAttestedSealedFetch,
   createSealedFetch,
-  fetchAttestedTransportKey,
   transportKeyBinding,
 } from './sealed.js';
-export type { AttestedSealedFetchOptions, SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
+export type { SealedFetchOptions, VerifyTransportQuote } from './sealed.js';
 export { PRODUCTION_PROFILE, createQuoteVerifier, trustedMeasurementsFromReleases } from './verify.js';
 export type {
   DcapCollateral,
@@ -23,19 +21,17 @@ export type {
 } from './verify.js';
 export {
   DEFAULT_RELEASE_MIRROR,
+  GITHUB_RELEASES,
   NODE_RELEASE_SIGNER,
   cloudNodeReleaseUrl,
-  createSignedReleaseSealedFetch,
   createSignedReleaseVerifier,
+  fetchGithubNodeRelease,
   fetchNodeRelease,
-  fetchNodeReleaseVersion,
-  nodeReleaseVersionFromImage,
   trustSignedRelease,
   verifySignedNodeRelease,
 } from './release.js';
 export type {
   SignedNodeRelease,
-  SignedReleaseSealedFetchOptions,
   SignedReleaseVerifierOptions,
   TrustSignedReleaseOptions,
   VerifySignedNodeReleaseOptions,

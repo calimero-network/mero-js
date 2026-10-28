@@ -2,18 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { concat, fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
 import { SymmetricState, dh, initiate, x25519KeyPair, type X25519KeyPair } from './noise.js';
-import { RelayClient } from '../relay/relay-client.js';
-import { createMemoryNonceSource } from '../relay/nonce-source.js';
-import { parseWarrant } from '../warrant/warrant.js';
 import {
   HANDSHAKE_PATH,
   SEALED_CONTENT_TYPE,
   SEALED_PATH,
   SealedTransportError,
   StaleTransportKeyError,
-  createAttestedSealedFetch,
   createSealedFetch,
-  fetchAttestedTransportKey,
   openResponse,
   sealRequest,
   sessionFrom,
@@ -400,157 +395,5 @@ describe('createSealedFetch', () => {
     await expect(sealedFetch('https://elsewhere.example/node/jsonrpc')).rejects.toThrow(/Refusing/);
     await expect(sealedFetch('https://tee-node.example/other/jsonrpc')).rejects.toThrow(/Refusing/);
     expect(carrier).not.toHaveBeenCalled();
-  });
-});
-
-describe('fetchAttestedTransportKey', () => {
-  const attested = (transportPublicKey?: string) => ({
-    teeAttest: vi.fn().mockResolvedValue({ quoteB64: 'quote', quote: {}, transportPublicKey }),
-  });
-
-  it('asks the verifier to check the binding of the reported key', async () => {
-    const admin = attested(TRANSPORT_PUBLIC_VECTOR);
-    const verify = vi.fn().mockResolvedValue(true);
-
-    const key = await fetchAttestedTransportKey(admin, verify);
-
-    expect(hex(key)).toBe(TRANSPORT_PUBLIC_VECTOR);
-    const request = admin.teeAttest.mock.calls[0][0];
-    expect(request.bindTransportKey).toBe(true);
-    const expected = hex(await transportKeyBinding(new Uint8Array(32), key));
-    expect(verify).toHaveBeenCalledWith({
-      quoteB64: 'quote',
-      nonce: request.nonce,
-      reportDataSuffix: expected,
-    });
-  });
-
-  it('refuses a key whose quote did not verify', async () => {
-    await expect(
-      fetchAttestedTransportKey(attested(TRANSPORT_PUBLIC_VECTOR), vi.fn().mockResolvedValue(false)),
-    ).rejects.toThrow(/did not verify/);
-  });
-
-  it('refuses a node that reports no transport key', async () => {
-    await expect(
-      fetchAttestedTransportKey(attested(undefined), vi.fn().mockResolvedValue(true)),
-    ).rejects.toThrow(/predates sealed transport/);
-  });
-});
-
-describe('createAttestedSealedFetch', () => {
-  const baseUrl = StandInNode.baseUrl;
-  const CONTEXT = '01'.repeat(32);
-  const EXECUTOR = '4d'.repeat(32);
-  const EXECUTOR_KEY = 'ec'.repeat(32);
-
-  /**
-   * The stand-in node, plus the one unsealed route a client needs first:
-   * `POST /admin-api/tee/attest`, answered with the node's transport key and a
-   * "quote" that is only its report data, so a verifier can check the binding.
-   */
-  async function attestingNode(answer: (head: RequestHead, body: string) => Answer) {
-    const node = await StandInNode.start(answer);
-    const attests: string[] = [];
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === `${baseUrl}/admin-api/tee/attest`) {
-        const request = JSON.parse(String(init?.body)) as { nonce: string };
-        attests.push(request.nonce);
-        const suffix = hex(await transportKeyBinding(new Uint8Array(32), node.transportKey));
-        const quote = fromHex(request.nonce + suffix, 'report data', 64);
-        return new Response(
-          JSON.stringify({
-            data: { quoteB64: btoa(String.fromCharCode(...quote)), transportPublicKey: hex(node.transportKey) },
-          }),
-          { headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return node.fetch(url, init as RequestInit);
-    }) as unknown as typeof fetch;
-    return { node, fetch: fetchImpl, attests };
-  }
-
-  /** Accepts a "quote" that is exactly `nonce || reportDataSuffix`. */
-  const reportDataVerifier = vi.fn(async ({ quoteB64, nonce, reportDataSuffix }) => {
-    const quote = Uint8Array.from(atob(quoteB64), (c) => c.charCodeAt(0));
-    return hex(quote) === nonce + reportDataSuffix;
-  });
-
-  it('attests the node, then seals everything to the key its quote commits to', async () => {
-    const { node, fetch: fetchImpl, attests } = await attestingNode(() => ok('{"data":{"alive":true}}'));
-    const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: reportDataVerifier, fetch: fetchImpl });
-
-    const response = await sealedFetch(`${baseUrl}/admin-api/health`);
-    expect(await response.json()).toEqual({ data: { alive: true } });
-    await sealedFetch(`${baseUrl}/admin-api/health`);
-
-    expect(attests).toHaveLength(1);
-    expect(node.handshakes).toBe(1);
-    expect(node.requests.map((r) => r.head.path)).toEqual(['/admin-api/health', '/admin-api/health']);
-  });
-
-  it('sends nothing sealed to a node whose quote the verifier refuses', async () => {
-    const { node, fetch: fetchImpl } = await attestingNode(() => ok());
-    const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: async () => false, fetch: fetchImpl });
-
-    await expect(sealedFetch(`${baseUrl}/admin-api/health`)).rejects.toThrow(/did not verify/);
-    expect(node.handshakes).toBe(0);
-    expect(node.requests).toHaveLength(0);
-  });
-
-  /**
-   * Delegated execution to a TEE relay: the warrant and the method's arguments
-   * reach only the relay's TD. Whatever sits in front of it (the host's
-   * ingress, where TLS ends) carries opaque envelopes.
-   */
-  it('carries a RelayClient intent to the relay sealed, warrant and arguments included', async () => {
-    const { node, fetch: fetchImpl } = await attestingNode((head) =>
-      head.method === 'GET'
-        ? ok(
-            JSON.stringify({
-              data: {
-                executorAccount: EXECUTOR,
-                executorKey: EXECUTOR_KEY,
-                canAuthorOnBehalf: true,
-                groupId: 'ab'.repeat(32),
-                releaseBytecodeId: 'b1'.repeat(32),
-                releaseVersion: '1.2.0',
-              },
-            }),
-          )
-        : ok('{"data":{"rootHash":"root-1","returns":"ok"}}'),
-    );
-    const relay = new RelayClient({
-      relayUrl: baseUrl,
-      executorAccount: EXECUTOR,
-      authorAccount: '0e'.repeat(32),
-      authorProof: 'aa',
-      deviceSecret: '77'.repeat(32),
-      nonces: createMemoryNonceSource(1),
-      fetch: createAttestedSealedFetch({ baseUrl, verify: reportDataVerifier, fetch: fetchImpl }),
-    });
-
-    const result = await relay.execute(CONTEXT, 'transfer_secret_amount', { to: 'bob', amount: 4242 });
-
-    expect(result).toEqual({ rootHash: 'root-1', returns: 'ok' });
-    // Discovery first, sealed like the write: it names the key the warrant carries.
-    const [discovery, intent] = node.requests;
-    expect(discovery.head.method).toBe('GET');
-    expect(intent.head.method).toBe('POST');
-    expect(intent.head.path).toBe(`/admin-api/contexts/${CONTEXT}/intents`);
-    const sent = JSON.parse(intent.body) as { method: string; argsJson: unknown; warrant: string };
-    expect(sent.method).toBe('transfer_secret_amount');
-    expect(sent.argsJson).toEqual({ to: 'bob', amount: 4242 });
-    expect(parseWarrant(sent.warrant).executor).toBe(EXECUTOR);
-    expect(parseWarrant(sent.warrant).executorKey).toBe(EXECUTOR_KEY);
-    expect(parseWarrant(sent.warrant).releaseBytecodeId).toBe('b1'.repeat(32));
-
-    const wire = node.fetch.mock.calls
-      .map(([, init]) => new TextDecoder('latin1').decode(init.body as Uint8Array))
-      .join('');
-    expect(wire).not.toContain('transfer_secret_amount');
-    expect(wire).not.toContain('4242');
-    expect(wire).not.toContain(sent.warrant.slice(0, 32));
   });
 });

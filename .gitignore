@@ -42,5 +42,6 @@ data/
 # local agent scratch
 .superpowers/
 
-# e2e coverage recorder output (MERO_COVERAGE_OUT)
-covered-endpoints.json
+# scripts/download-released-merod.sh output
+/merod
+/kv_store.wasm

@@ -1,3 +1,15 @@
+### Calimero 1.0 (27.0.0)
+
+The release that supports Calimero 1.0 (core `1.0.0-rc.1` and later). semantic-release writes the version heading and the commit list above this note when it publishes; this note is the migration summary.
+
+* **The package is the Calimero 1.0 client only.** `CalimeroClient`, its errors and its types are the package's main exports. Code that talks to a v1 (merod 0.x) node stays on 26.x; npm does not move a `^26` range to 27.
+* **Removed (v1):** `MeroJs` and `createMeroJs`; `AdminApiClient` and `AuthApiClient` (mero-auth) with their types; the HTTP client (`createBrowserHttpClient`, `createNodeHttpClient`, `withRetry`, …); `RpcClient`, `SseClient`, `WsClient`, `EphemeralClient` and their event types; `CloudClient` (namespaces, relays, HA); account roots, device certificates and scopes, group invitations, namespace and owner ops, login statements and signers; token stores and auth-callback helpers; node discovery; v1's `CAPABILITIES` helpers and error classifier (`HTTPError`, `AuthRevokedError`, `classifyError`); and the v1 attestation helpers of the sealed transport (`fetchAttestedTransportKey`, `createAttestedSealedFetch`, `createSignedReleaseSealedFetch`, `fetchNodeReleaseVersion`, `nodeReleaseVersionFromImage`).
+* **Added to `CalimeroClient`:** `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveOutbound`, `approveRelease`, `transferApp`, `setAppMetadata`, `setOrgMetadata`, `setMemberMetadata`, `labelPasskey`, `usage`, `alias`, `appStorage`, `appAbi`, `attestation`, `listBlobs`, `blobInfo`, `deleteBlob`, `publishPresence`, `presence`, `presenceStream`; `ORG_CAPABILITIES` and `orgCapabilities` with core 1.0's names.
+* **Kept:** the sealed transport, quote and signed-release verification, and the private agent gate.
+* **CI** runs the cluster suite against the newest released merod 1.0.
+
+See [Migrating from v1](https://calimero-network.github.io/mero-js/reference/migrating-from-v1/).
+
 ## [26.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v26.10.0...mero-js-v26.11.0) (2026-10-27)
 
 ### Features

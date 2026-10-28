@@ -6,15 +6,15 @@ We actively support the following versions of `@calimero-network/mero-js`:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0.0 | :x:                |
+| 27.x (Calimero 1.0) | :white_check_mark: |
+| < 27.0.0 (v1 nodes) | :x:                |
 
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability, please **do not** open a public issue. Instead, please report it via one of the following methods:
 
 1. **Email**: security@calimero.network
-2. **GitHub Security Advisory**: Use the [Security tab](https://github.com/calimero-network/calimero/security/advisories/new) in the repository
+2. **GitHub Security Advisory**: Use the [Security tab](https://github.com/calimero-network/mero-js/security/advisories/new) in the repository
 
 ### What to Include
 
@@ -47,6 +47,7 @@ When using `@calimero-network/mero-js`:
 
 ## Known Security Considerations
 
-- This package has **zero runtime dependencies** to minimize attack surface
-- All HTTP requests use Web Standards (`fetch` API)
-- Token management is handled in-memory by default (consider persistent storage for production)
+- This package has one runtime dependency, `@phala/dcap-qvl`, which verifies TDX quotes
+- Nothing is sent to a node until its attestation passes the client's policy; every request after that is sealed end to end to the attested enclave
+- `policy.allowMock` accepts quotes that prove nothing: set it for development clusters only, never from the environment
+- Sessions are held in memory; where you persist one (`useSession`), its refresh token is a credential

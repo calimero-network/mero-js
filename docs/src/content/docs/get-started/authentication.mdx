@@ -1,220 +1,102 @@
 ---
 title: Authentication
-description: The three ways to authenticate — username/password, Desktop SSO callback, and the login-redirect flow — plus how the SDK manages the JWT token lifecycle for you.
+description: Passkeys for people, sessions and refresh tokens, API keys for agents and servers, passkey confirmations, and signing out.
 sidebar:
   order: 2
 ---
 
 import { Aside } from '@astrojs/starlight/components';
-import SeqDiagram from '../../../components/SeqDiagram.astro';
 
-Every request the SDK makes carries a JWT access token. This page covers the
-three ways to obtain that token, and how the SDK keeps it fresh without any work
-from you.
+Every credential travels inside the sealed envelope, so no proxy in the path
+sees it. A client holds one credential at a time: a session or an API key.
 
-## Password login
+## Passkeys
 
-The simplest path: exchange a username and password for a token pair. `MeroJs`
-posts to the node's `/auth/token` endpoint, stores the returned tokens in memory
-(and in your [`tokenStore`](#persistence), if provided), and attaches the access
-token to every subsequent request.
+```ts
+import { browserPasskey } from '@calimero-network/mero-js';
 
-```typescript
-import { MeroJs } from '@calimero-network/mero-js';
-
-const sdk = new MeroJs({ baseUrl: 'http://localhost:2428' });
-
-await sdk.authenticate({ username: 'admin', password: 'your-password' });
-// sdk.isAuthenticated() === true
+const passkey = browserPasskey(); // Touch ID, Windows Hello, a security key, a synced passkey
+await client.signUp(passkey, 'alice'); // new account and passkey
+await client.signIn(passkey);          // existing passkey
 ```
 
-<SeqDiagram
-  id="d-password-login"
-  title="Password login"
-  lanes={[
-    { label: 'Your app', color: '#3fb950' },
-    { label: 'MeroJs', color: '#a5ff11' },
-    { label: 'Node /auth', color: '#58a6ff' },
-  ]}
-  steps={[
-    { from: 0, to: 1, label: 'authenticate({ username, password })' },
-    { from: 1, to: 2, label: 'POST /auth/token (user_password)' },
-    { from: 2, to: 1, label: 'access_token + refresh_token', dashed: true },
-    { from: 1, to: 1, label: 'store tokens (memory + tokenStore)' },
-    { from: 1, to: 0, label: 'TokenData', dashed: true, color: '#a5ff11' },
-    { type: 'divider', label: 'every later request carries Authorization: Bearer' },
-  ]}
-/>
+`browserPasskey()` wraps `navigator.credentials`. Anything that implements
+`PasskeyProvider` (`create(options)` and `get(challenge, rpId, allowCredentials?)`,
+answering base64url fields) works in its place, for example a software
+authenticator in tests.
 
-You can also set credentials once in the constructor; they're used the first time
-a token is needed:
+Each passkey is a device of the account:
 
-```typescript
-const sdk = new MeroJs({
-  baseUrl: 'http://localhost:2428',
-  credentials: { username: 'admin', password: 'your-password' },
+```ts
+const credentialId = await client.addPasskey(browserPasskey()); // another device
+await client.labelPasskey(credentialId, 'work laptop');
+await client.removePasskey(credentialId); // never the last one
+```
+
+## Sessions
+
+`signUp` and `signIn` answer a `CalimeroSession`
+(`{ accountId, sessionToken, expiresAt, refreshToken }`) and use it for every
+request after. Keep it to resume without a passkey prompt:
+
+```ts
+const session = await client.signIn(passkey);
+sessionStorage.setItem('calimero', JSON.stringify(session));
+
+// another page load
+const resumed = new CalimeroClient({ baseUrl, policy });
+resumed.useSession(JSON.parse(sessionStorage.getItem('calimero')!));
+await resumed.refresh(); // swap the refresh token for a new session
+```
+
+A refresh token is used once: a reused one revokes the session. An expired or
+revoked session makes requests fail with [`LoginRequired`](/reference/error-model/).
+
+```ts
+await client.signOut();           // this session
+await client.signOutEverywhere(); // every session of the account, on every device
+```
+
+## API keys
+
+Agents and servers authenticate with an API key (`cal_...`), scoped and
+revocable. The key is returned once.
+
+```ts
+const { keyId, key } = await client.createApiKey({
+  label: 'ci',
+  apps: [appId],      // only these apps
+  methods: ['get'],   // only these methods
+  readOnly: true,
+  ttlSecs: 86_400,
 });
-await sdk.authenticate(); // uses config.credentials
+
+const agent = new CalimeroClient({ baseUrl, policy });
+agent.useApiKey(key);
+
+await client.listApiKeys(); // never the keys themselves
+await client.revokeApiKey(keyId);
 ```
 
-## The token lifecycle — refresh is automatic
+## Confirmations
 
-The SDK is **reactive**: it never proactively refreshes (the node rejects a
-refresh while the access token is still valid). Instead, when a request comes
-back `401` with `x-auth-error: token_expired`, the transport refreshes the token
-and retries the original request — transparently. Your code only ever sees the
-successful result.
+Some requests need the account holder's passkey over that exact request: a
+method the app declares `confirm`, deleting an organization, upgrades,
+transfers and approvals. The node answers `412 CONFIRM_REQUIRED` with a
+challenge; the `*Confirmed` methods, and every method that takes a `passkey`,
+sign it and send the request again.
 
-<SeqDiagram
-  id="d-refresh"
-  title="Transparent 401 → refresh → retry"
-  lanes={[
-    { label: 'Caller', color: '#3fb950' },
-    { label: 'HttpClient', color: '#a5ff11' },
-    { label: 'Node', color: '#58a6ff' },
-  ]}
-  steps={[
-    { from: 0, to: 1, label: 'admin.getContexts()' },
-    { from: 1, to: 2, label: 'GET /admin-api/contexts (Bearer access)' },
-    { from: 2, to: 1, label: '401 · x-auth-error: token_expired', dashed: true, color: '#f0883e' },
-    { from: 1, to: 1, label: 'single-flight refresh (Web Lock)' },
-    { from: 1, to: 2, label: 'POST /auth/refresh (refresh_token)' },
-    { from: 2, to: 1, label: 'new access + refresh', dashed: true },
-    { from: 1, to: 1, label: 'onTokenRefresh → persist to store' },
-    { from: 1, to: 2, label: 'retry GET /admin-api/contexts (new Bearer)', color: '#a5ff11' },
-    { from: 2, to: 1, label: '200 contexts', dashed: true },
-    { from: 1, to: 0, label: 'contexts', dashed: true, color: '#a5ff11' },
-    { type: 'divider', label: 'the 401 + retry never surface to the caller' },
-  ]}
-/>
+```ts
+await client.callConfirmed(app, 'clear', {}, passkey);
+await client.postConfirmed(`orgs/${org}/outbound`, { package: 'com.example.kv' }, passkey);
+```
 
-Refresh tokens are **single-use**, so concurrent 401s are deduplicated: the
-refresh runs once (guarded by an in-process promise and a Web Lock named
-`mero-js:token-refresh`), and every waiting request retries with the one rotated
-token.
+A prompt the user dismisses rejects with `ConfirmCancelled`, and nothing more is
+sent. An API key can answer a confirmation only if it was created with
+`allowConfirm`.
 
-<Aside type="caution">
-  If the refresh itself fails — the refresh token is expired, reused, or revoked
-  — the SDK clears its tokens and throws. On a reused/revoked token you get an
-  `AuthRevokedError` (an `HTTPError` subclass); on plain expiry a `401`
-  `HTTPError`. Catch it, call `sdk.clearToken()`, and prompt the user to sign in
-  again. See the [error model](/reference/error-model/).
+<Aside type="note">
+  A session opened from an app's own frontend (`{label}.{apps-domain}`) is bound
+  to that package: it reaches only that package's apps and cannot create API
+  keys, approve releases or upgrade.
 </Aside>
-
-## Desktop SSO — tokens from the URL hash
-
-When your app is opened from **Calimero Desktop**, the desktop process appends
-the tokens to the URL hash instead of asking the user to log in again. Read them
-with `parseAuthCallback()` and apply them with `setTokenData()`.
-
-The desktop hands over tokens no login in this browser asked for, so the app has
-to opt in with `allowUnsolicited`.
-Only do that where nothing but the host can open the page (inside the desktop
-shell): anywhere else it lets whoever sends a link choose the node and session.
-
-```typescript
-import { MeroJs, parseAuthCallback } from '@calimero-network/mero-js';
-
-const inDesktop = '__TAURI_INTERNALS__' in window;
-const auth = parseAuthCallback(window.location.href, { allowUnsolicited: inDesktop });
-if (auth) {
-  // auth.nodeUrl, auth.accessToken, auth.refreshToken,
-  // auth.applicationId, auth.contextId, auth.contextIdentity
-  const sdk = new MeroJs({ baseUrl: auth.nodeUrl });
-  sdk.setTokenData({
-    access_token: auth.accessToken,
-    refresh_token: auth.refreshToken,
-    expires_at: 0, // 0 → the SDK reads the exp claim from the JWT itself
-  });
-
-  // Strip the tokens from the URL bar (security best practice)
-  history.replaceState(null, '', location.pathname);
-}
-```
-
-<SeqDiagram
-  id="d-sso"
-  title="Desktop SSO hash callback"
-  lanes={[
-    { label: 'Desktop', color: '#a371f7' },
-    { label: 'Browser app', color: '#3fb950' },
-    { label: 'MeroJs', color: '#a5ff11' },
-  ]}
-  steps={[
-    { from: 0, to: 1, label: 'open app at #access_token=…&node_url=…' },
-    { from: 1, to: 2, label: 'parseAuthCallback(location.href, { allowUnsolicited })' },
-    { from: 2, to: 1, label: 'AuthCallbackResult', dashed: true },
-    { from: 1, to: 2, label: 'new MeroJs({ baseUrl: auth.nodeUrl })' },
-    { from: 1, to: 2, label: 'setTokenData({ …, expires_at: 0 })' },
-    { from: 2, to: 2, label: 'parse exp from JWT' },
-    { from: 1, to: 1, label: 'history.replaceState → strip hash', color: '#f0883e' },
-    { type: 'divider', label: 'ready — no login prompt' },
-  ]}
-/>
-
-The hash fragment format is:
-
-```text
-#access_token=…&refresh_token=…&node_url=…&application_id=…&context_id=…&context_identity=…
-```
-
-`parseAuthCallback` is also available as a static method,
-`MeroJs.parseAuthCallback(url)`.
-
-## The login-redirect flow
-
-To *start* an interactive login (rather than receive a callback), build the
-node's login URL and redirect the browser to it. After the user authenticates,
-the node redirects back to your `callbackUrl` with the token hash above.
-
-`buildAuthLoginUrl` adds a single-use `auth_state` to `callbackUrl` and
-remembers it in `localStorage` for 10 minutes.
-On return, `parseAuthCallback(window.location.href)` only adopts tokens that
-carry a state this browser began, so a crafted link cannot sign the person in
-to someone else's node or account.
-A login URL built any other way gets no tokens back.
-
-```typescript
-import { MeroJs, buildAuthLoginUrl } from '@calimero-network/mero-js';
-
-const url = buildAuthLoginUrl('http://localhost:2428', {
-  callbackUrl: window.location.origin + '/callback',
-  mode: 'login',
-  permissions: ['admin'],
-  packageName: 'my-app',
-});
-window.location.href = url;
-```
-
-## Persistence
-
-Pass a `tokenStore` and the SDK persists tokens on login/refresh and restores
-them on construction — so a reload stays signed in.
-Stored tokens are tied to the node's origin and path prefix: a store shared with another node's `MeroJs` is not restored.
-
-```typescript
-import { MeroJs, LocalStorageTokenStore, MemoryTokenStore } from '@calimero-network/mero-js';
-
-// Browser — survives reloads
-const sdk = new MeroJs({
-  baseUrl: 'http://localhost:2428',
-  tokenStore: new LocalStorageTokenStore('my-app-tokens'), // default key: 'mero-tokens'
-});
-
-// Server / ephemeral — no side effects (this is also the default)
-const server = new MeroJs({
-  baseUrl: 'http://localhost:2428',
-  tokenStore: new MemoryTokenStore(),
-});
-```
-
-Implement the `TokenStore` interface (`getTokens` / `setTokens` / `clear`) to
-back tokens with anything else — see the [reference](/reference/mero-js/#tokenstore).
-
-## Inspecting and clearing auth state
-
-```typescript
-sdk.isAuthenticated(); // boolean — are tokens present?
-sdk.getTokenData();    // TokenData | null (useful for debugging)
-sdk.clearToken();      // drop tokens from memory and the store (sign out)
-```

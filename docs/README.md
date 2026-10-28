@@ -19,11 +19,11 @@ npm run check    # astro build + internal link check (what CI runs)
 
 Pages live in `src/content/docs/`, grouped into four tracks:
 
-- **Get Started** — install, authenticate, and make your first call.
-- **Understand** — the layered architecture, the token lifecycle, and the glossary.
-- **Guides** — contexts & apps, executing methods, subscriptions, groups & governance,
-  blobs, HTTP transport, and high availability.
-- **Reference** — the `MeroJs` API, the full admin & auth API surface, and the error model.
+- **Get Started** — install, sign in with a passkey, and make your first call.
+- **Understand** — how a request reaches an app, and the glossary.
+- **Guides** — apps and packages, organizations and approvals, trust and the
+  sealed channel, bundling and runtimes.
+- **Reference** — `CalimeroClient`, the error model, and migrating from v1.
 
 ## Diagrams
 
