@@ -10,11 +10,10 @@
  * ```
  */
 
-import { hex } from '../crypto/internal.js';
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type CloudPolicy } from './attestation.js';
 import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
-import { fromB64url, type PasskeyProvider } from './passkey.js';
+import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
 
 export {
   AppError,
@@ -127,11 +126,15 @@ async function refusal(response: Response): Promise<CalimeroError> {
 }
 
 /**
- * A key for a call the caller gave none, made once so every retry shares it.
+ * A key for a call the caller gave none, made once so every retry shares it:
+ * `node:c-` and 16 random bytes in base64url without padding, as the Rust
+ * client mints it. It only has to outlive this client's own retries, so it
+ * takes the node's short-lived class: a key starting `node:` is kept 10
+ * minutes, a caller's own key 24 hours.
  * `getRandomValues`, not `randomUUID`, which a page outside a secure context lacks.
  */
 function newIdempotencyKey(): string {
-  return hex(crypto.getRandomValues(new Uint8Array(16)));
+  return `node:c-${b64url(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 
 /** How a 503 is retried (D70): with the same key, exponential backoff, at most this many times. */

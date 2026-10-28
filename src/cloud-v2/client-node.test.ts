@@ -166,8 +166,8 @@ describe('503s are retried with the same key, then UnavailableError (D70)', () =
     expect(answer.result).toBe('b1');
     const keys = intents().map((r) => r.body.idempotencyKey);
     expect(keys).toHaveLength(2);
-    expect(typeof keys[0]).toBe('string');
-    expect((keys[0] as string).length).toBeGreaterThan(0);
+    // `node:c-` and 16 random bytes in base64url without padding (22 characters), as the Rust client mints it.
+    expect(keys[0]).toMatch(/^node:c-[A-Za-z0-9_-]{22}$/);
     expect(keys[1]).toBe(keys[0]);
   });
 
