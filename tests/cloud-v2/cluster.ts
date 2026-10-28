@@ -4,10 +4,17 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 export const BINARY =
   process.env.MEROD_BINARY ?? process.env.MEROD_V2_BINARY ?? resolve(__dirname, '../../../core/target/debug/merod');
+/**
+ * `merod run FLAGS` (the default), or bare `merod-v2 FLAGS` for core
+ * `proto/app-runtime`'s binary, which takes the same flags with no subcommand.
+ * Chosen by the binary's name; `MEROD_RUN=1` or `MEROD_RUN=0` overrides it.
+ */
+export const RUN_SUBCOMMAND =
+  process.env.MEROD_RUN !== undefined ? process.env.MEROD_RUN !== '0' : basename(BINARY) !== 'merod-v2';
 export const KV_STORE_WASM =
   process.env.KV_STORE_WASM ?? resolve(__dirname, '../../../core/target/wasm32-unknown-unknown/app-release/kv_store.wasm');
 
@@ -37,7 +44,7 @@ export async function startCluster(n = 3): Promise<LocalCluster> {
       BINARY,
       // `merod run FLAGS`: a node from flags alone, no `init`.
       [
-        'run',
+        ...(RUN_SUBCOMMAND ? ['run'] : []),
         '--node-id', String(i + 1),
         '--listen', `127.0.0.1:${ports[i]}`,
         '--public-url', `${url}/`,
