@@ -698,29 +698,6 @@ describe('AdminApiClient', () => {
       expect(result.namespaceId).toBe('ns-1');
     });
 
-    it('performIntent posts the author-side halves and unwraps data', async () => {
-      mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/intents', {
-        data: { rootHash: 'root-1', returns: null },
-      });
-
-      const result = await client.performIntent('ctx-1', {
-        method: 'set',
-        argsJson: { key: 'k', value: 'v' },
-        warrant: 'aabb',
-        authorProof: 'ccdd',
-      });
-
-      expect(result).toEqual({ rootHash: 'root-1', returns: null });
-      // Only the author's half goes out. The node attaches its own credential,
-      // which must match the warrant's `executor` and `executor_key`.
-      expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/intents')).toEqual({
-        method: 'set',
-        argsJson: { key: 'k', value: 'v' },
-        warrant: 'aabb',
-        authorProof: 'ccdd',
-      });
-    });
-
     it('queryContext posts method and args and unwraps data', async () => {
       mock.setMockResponse('POST', '/admin-api/contexts/ctx-1/query', {
         data: { returns: 'v' },
@@ -731,64 +708,6 @@ describe('AdminApiClient', () => {
       expect(mock.getRequestBody('POST', '/admin-api/contexts/ctx-1/query')).toEqual({
         method: 'get',
         argsJson: { key: 'k' },
-      });
-    });
-
-    it('performIntent leaves nested args untouched', async () => {
-      // The warrant commits to H(method, args), and the node recomputes that
-      // hash from what arrives. Anything this client did to the shape on the way
-      // out — reordering, stringifying, dropping a null — would make a warrant
-      // that verifies nowhere, and it would surface at the node as a bad
-      // signature rather than here as a serialization difference.
-      const argsJson = { outer: { inner: [1, null, 'x'] }, flag: false };
-      mock.setMockResponse('POST', '/admin-api/contexts/ctx-2/intents', {
-        data: { rootHash: 'root-2', returns: 'ok' },
-      });
-
-      await client.performIntent('ctx-2', {
-        method: 'nested',
-        argsJson,
-        warrant: 'aa',
-        authorProof: 'bb',
-      });
-
-      expect(
-        (mock.getRequestBody('POST', '/admin-api/contexts/ctx-2/intents') as { argsJson: unknown })
-          .argsJson,
-      ).toEqual(argsJson);
-    });
-
-    it('getIntentRelay reads the executor, the grant and the release off the same path', async () => {
-      const data = {
-        executorAccount: '4d'.repeat(32),
-        executorKey: 'ec'.repeat(32),
-        canAuthorOnBehalf: true,
-        groupId: 'ab'.repeat(32),
-        releaseBytecodeId: 'b1'.repeat(32),
-        releaseVersion: '1.2.0',
-      };
-      mock.setMockResponse('GET', '/admin-api/contexts/ctx-3/intents', { data });
-
-      await expect(client.getIntentRelay('ctx-3')).resolves.toEqual(data);
-    });
-
-    it('getIntentRelay reports a missing grant as an answer, not a failure', async () => {
-      // `canAuthorOnBehalf: false` is the DEFAULT state of every context — the
-      // capability is implied by neither membership nor admin, and is not
-      // propagated by the subgroup cascade. If this threw, a caller could not
-      // distinguish "ask an admin of this group" from "the node is unreachable",
-      // which is the whole reason the read exists.
-      mock.setMockResponse('GET', '/admin-api/contexts/ctx-4/intents', {
-        data: {
-          executorAccount: '4d'.repeat(32),
-          canAuthorOnBehalf: false,
-          groupId: 'ab'.repeat(32),
-        },
-      });
-
-      await expect(client.getIntentRelay('ctx-4')).resolves.toMatchObject({
-        canAuthorOnBehalf: false,
-        groupId: 'ab'.repeat(32),
       });
     });
 
@@ -1655,109 +1574,6 @@ describe('AdminApiClient', () => {
       await client.setDefaultCapabilities('g-1', { defaultCapabilities: 3 });
       expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities')).toEqual({
         defaultCapabilities: 3,
-      });
-    });
-
-    /**
-     * Opening a namespace to a relay fleet: one op instead of one per node.
-     *
-     * The bit is implied by nothing, so every group is authorship-closed and a
-     * relay otherwise needs an admin to grant it individually — at the moment
-     * the relay is assigned and the admin is not watching. Core seeds a
-     * non-admin's row from the group default at admission, so putting it in the
-     * default is what makes an attested node land open.
-     */
-    describe('openToDelegatedExecution', () => {
-      function groupInfo(defaultCapabilities: number) {
-        return {
-          data: {
-            groupId: 'g-1',
-            appKey: 'key',
-            targetApplicationId: 'app-1',
-            upgradePolicy: 'manual',
-            memberCount: 1,
-            contextCount: 0,
-            defaultCapabilities,
-            subgroupVisibility: 'open',
-          },
-        };
-      }
-
-      it('adds the bit and keeps what the group already had', async () => {
-        // The mask a group is CREATED with. Blindly setting the authorship bit
-        // would drop it, and every later member would silently stop inheriting
-        // into Open subgroups — where the contexts actually are.
-        mock.setMockResponse('GET', '/admin-api/groups/g-1', groupInfo(CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS));
-        mock.setMockResponse('PUT', '/admin-api/groups/g-1/settings/default-capabilities', {});
-
-        const result = await client.openToDelegatedExecution('g-1');
-
-        expect(result).toEqual({
-          changed: true,
-          defaultCapabilities: CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
-        });
-        expect(
-          mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities'),
-        ).toEqual({
-          defaultCapabilities:
-            CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
-        });
-      });
-
-      it('publishes nothing when the bit is already set', async () => {
-        mock.setMockResponse(
-          'GET',
-          '/admin-api/groups/g-1',
-          groupInfo(CAPABILITIES.CAN_JOIN_OPEN_SUBGROUPS | CAPABILITIES.CAN_AUTHOR_ON_BEHALF),
-        );
-
-        const result = await client.openToDelegatedExecution('g-1');
-
-        // Safe to call on every startup: a governance op per boot would grow the
-        // DAG for no change, and `changed` is what lets a caller say so.
-        expect(result.changed).toBe(false);
-        expect(
-          mock.getRequestBody('PUT', '/admin-api/groups/g-1/settings/default-capabilities'),
-        ).toBeUndefined();
-      });
-    });
-
-    /**
-     * The gap the default cannot close.
-     *
-     * The mask is copied into a member's row AT ADMISSION, so a relay admitted
-     * before it was set keeps the row it got — and an admin's own node never
-     * receives the default at all, since core seeds it for non-admin roles only.
-     */
-    describe('grantAuthorship', () => {
-      it('adds the bit to the member without clearing the rest', async () => {
-        mock.setMockResponse('GET', '/admin-api/groups/g-1/members/acc-1/capabilities', {
-          data: { capabilities: CAPABILITIES.CAN_CREATE_CONTEXT | CAPABILITIES.CAN_INVITE_MEMBERS },
-        });
-        mock.setMockResponse('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities', {});
-
-        const result = await client.grantAuthorship('g-1', 'acc-1');
-
-        expect(result.changed).toBe(true);
-        expect(mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities')).toEqual({
-          capabilities:
-            CAPABILITIES.CAN_CREATE_CONTEXT |
-            CAPABILITIES.CAN_INVITE_MEMBERS |
-            CAPABILITIES.CAN_AUTHOR_ON_BEHALF,
-        });
-      });
-
-      it('publishes nothing when the member already holds it', async () => {
-        mock.setMockResponse('GET', '/admin-api/groups/g-1/members/acc-1/capabilities', {
-          data: { capabilities: CAPABILITIES.CAN_AUTHOR_ON_BEHALF },
-        });
-
-        const result = await client.grantAuthorship('g-1', 'acc-1');
-
-        expect(result.changed).toBe(false);
-        expect(
-          mock.getRequestBody('PUT', '/admin-api/groups/g-1/members/acc-1/capabilities'),
-        ).toBeUndefined();
       });
     });
 

@@ -17,7 +17,6 @@
 // which matters because either one can be missing.
 
 import { classifyError, messageOf } from '../errors/classify.js';
-import { RelayLoginError } from '../account/relay-login-error.js';
 
 /** The two calls a redeem needs, so any client (or any app's join) can drive it. */
 export interface InviteRedeemer {
@@ -195,11 +194,6 @@ function classifyJoinFailure(
   err: unknown,
   message: string,
 ): { reason: InviteFailureReason; retryable: boolean } {
-  // The join never left: the relay session it needed could not be minted. Says
-  // nothing about the invitation, which is kept for after a sign-in or a retry.
-  if (err instanceof RelayLoginError) {
-    return { reason: err.kind === 'signed-out' ? 'signed-out' : 'node-unreachable', retryable: true };
-  }
   const { kind, status } = classifyError(err);
   const fromText = reasonFromMessage(message);
 

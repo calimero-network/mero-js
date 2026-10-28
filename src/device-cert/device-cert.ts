@@ -1,11 +1,10 @@
 /**
  * Minting and certifying a device offline, with a key that never reaches a node.
  *
- * This is the second half of the keyholder story. `signWarrant` lets an account
- * with no node *write*; this lets one exist in the first place — an account root
- * certifies a device, and the resulting credential is what a joiner presents.
+ * An account root certifies a device, and the resulting credential is what a
+ * joiner presents.
  *
- * As with the warrant signer, the risk is that this reproduces core's encoding
+ * The risk is that this reproduces core's encoding
  * and has to keep doing so. The answer is the same: a golden vector here, and an
  * e2e that diffs this output against `merod account sign-cert` byte for byte.
  *

@@ -37,26 +37,6 @@ export { RpcClient, RpcError } from "./rpc/index.js";
 export type { MigrateMyEntriesSummary } from "./rpc/index.js";
 export type { ExecuteParams } from "./rpc/index.js";
 
-// Transport — one client, two write paths, chosen at construction (node by default)
-export {
-  MeroClient,
-  createMeroClient,
-  RelayTransport,
-  // A relay is a node: given its signing key, a relay-transport client
-  // subscribes over the same `/sse` and `/ws` a node client uses.
-  RelayObserver,
-  defaultAudience,
-} from './transport/index.js';
-export type {
-  MeroClientConfig,
-  NodeTransportConfig,
-  RelayTransportConfig,
-  RelayObserveConfig,
-  ExecuteTransport,
-  ExecuteResult,
-  TransportKind,
-} from './transport/index.js';
-
 // Events (SSE / WebSocket)
 export { SseClient, WsClient } from "./events/index.js";
 export type {
@@ -73,8 +53,6 @@ export type {
 
 // Ephemeral presence (cursors / typing / online)
 export { EphemeralClient, jsonCodec, subscribePresence } from "./ephemeral/index.js";
-export { RelayPresenceClient } from "./presence/relay-presence.js";
-export { presenceStatementBytes, stateHash, PRESENCE_DOMAIN } from "./presence/statement.js";
 export type { Codec, EphemeralEntry } from "./ephemeral/index.js";
 
 // Cloud client — namespaces, relays, HA, and the cloud sign-in path
@@ -83,45 +61,6 @@ export * from "./cloud/index.js";
 // Sealed transport — requests encrypted to a TEE node's attested key
 export * from "./sealed/index.js";
 
-// Relay client — write through delegated execution, holding only a signing key
-export * from "./relay/index.js";
-
-// Request proofs — a caller's identity on the request itself, no session needed
-export * from "./request-proof/index.js";
-
-// Warrant signing — mint the author's consent for a relay to run one intent
-export {
-  signWarrant,
-  intentHash,
-  signCreationWarrant,
-  parseCreationWarrant,
-  creationInitHash,
-  signGovernanceWarrant,
-  parseGovernanceWarrant,
-  governanceOpHash,
-  memberAddedOp,
-  memberRemovedOp,
-  memberLeftOp,
-  memberRoleSetOp,
-  groupCreatedOp,
-  createdSubgroupId,
-  subgroupCreation,
-  groupReparentedOp,
-  groupDeletedOp,
-  memberCapabilitySetOp,
-  contextDetachedOp,
-  subgroupVisibilitySetOp,
-  groupMetadataSetOp,
-  memberMetadataSetOp,
-  contextMetadataSetOp,
-  contextCapabilityGrantedOp,
-  contextCapabilityRevokedOp,
-  memberJoinedOpenOp,
-  namespaceCreatedOp,
-  defaultCapabilitiesSetOp,
-  targetApplicationSetOp,
-  foundedNamespaceId,
-} from "./warrant/index.js";
 // Who signs — a key's capability, separated from its material, so a
 // non-extractable key can be used wherever a hex secret could.
 export { signerFromSecret, signerFromCryptoKey } from "./signer/index.js";
@@ -151,94 +90,6 @@ export type {
   AccountLoginInput,
   RootSource,
   ResolvedRoot,
-} from "./account/index.js";
-// The delegated account layer — an account with no node of its own, writing
-// through a hosted relay it attested, or through a node, over one admin shape.
-// Framework-free; mero-react re-exports every one of these under the same name
-// (its `DelegatedSession` is `DelegatedAccountSession` here: the login module
-// already owns the bare name for the session `login()` mints).
-export {
-  readDelegatedSession,
-  saveDelegatedSession,
-  clearDelegatedSession,
-  readDelegatedCredential,
-  saveDelegatedCredential,
-  clearDelegatedCredential,
-  persistedNonces,
-  markContextNonceSpent,
-  pinRelayNodeKey,
-  readPinnedRelayNodeKey,
-  attemptRelayNodeKey,
-  resolveRelayNodeKey,
-  learnRelayNodeKey,
-  RELAY_NODE_KEY_RETRY_MS,
-  forgetMethodKinds,
-  forgetRelaySealing,
-  relayTransportFetch,
-  buildDelegatedClient,
-  readRelayMap,
-  rememberRelay,
-  relayForContext,
-  carryExecutorAccount,
-  knownRelays,
-  listDelegatedContexts,
-  listDelegatedNamespaces,
-  RelaysUnavailableError,
-  resolveRelayFromInvitation,
-  normaliseAccount,
-  joinWithNode,
-  bootstrapFromInvitation,
-  joinAsAccount,
-  createDelegatedContext,
-  createDelegatedPrivateContext,
-  foundDelegatedNamespace,
-  delegatedGovernance,
-  latestPublishedVersion,
-  HA_ACCOUNT_NOT_LINKED_MESSAGE,
-  HA_REFUSAL_MESSAGES,
-  governGroup,
-  governRoot,
-  namespaceOfGroup,
-  rememberGroupNamespace,
-  applicationIdForBundle,
-  fetchRegistryBundles,
-  resolveApplicationIdFromRegistry,
-  selectLatestBundle,
-  createAccountAdmin,
-  InvitationNotClaimableError,
-  NoRelayError,
-  NotForAccountError,
-  RelayLoginError,
-  createNodeAdmin,
-} from "./account/index.js";
-export type {
-  DelegatedCredential,
-  DelegatedAccountSession,
-  RelayMap,
-  RelayNodeKeyAttempt,
-  RelayLoginFailureKind,
-  RelayListingFailure,
-  RelayResolutionStep,
-  RelayResolutionFailure,
-  ResolvedInvitationRelay,
-  ResolveRelayResult,
-  ResolveRelayFromInvitationInput,
-  JoinWithNodeInput,
-  JoinWithNodeResult,
-  JoinWithNodeSuccess,
-  JoinWithNodeFailure,
-  JoinWithNodeStep,
-  BootstrapStep,
-  BootstrapResult,
-  BootstrapSuccess,
-  BootstrapFailure,
-  BootstrapFromInvitationInput,
-  CreateDelegatedContextRequest,
-  FoundedDelegatedNamespace,
-  RegistryBundle,
-  ResolvedApplication,
-  AccountAdminDeps,
-  NodeAdminDeps,
 } from "./account/index.js";
 export {
   signDeviceCert,
@@ -291,34 +142,8 @@ export type {
   TeeAdmissionPolicyOpInput,
   TeeReleaseAdmissionPolicyOpInput,
 } from "./owner-op/index.js";
-export type {
-  WarrantInput,
-  CreationWarrantInput,
-  CreationWarrantFields,
-  SignedCreationWarrant,
-  GovernanceWarrantInput,
-  GovernanceWarrantFields,
-  GovernanceOp,
-  GovernanceOpKind,
-  GovernanceMemberRole,
-  GroupCreatedInput,
-  SubgroupCreation,
-  NamespaceCreatedInput,
-} from "./warrant/index.js";
 
 // Login-statement signing — the device's half of a password-free session
-export {
-  requestBodyHash,
-  signRequest,
-  callerProof,
-  createProofSigner,
-} from "./request/index.js";
-export type {
-  CallerProofInput,
-  ProofRequest,
-  ProofSignerOptions,
-} from "./request/index.js";
-export type { RequestSigInput } from "./request/index.js";
 export { signLoginStatement } from "./login/index.js";
 export type { Audience, LoginStatementInput } from "./login/index.js";
 export { login, generateSessionKey } from "./login/index.js";
@@ -344,6 +169,5 @@ export type { DiscoverLocalNodesOptions } from "./nodeDiscovery.js";
 // Private agents: attest one, claim it with your key, give it its secrets sealed to its TD.
 export * from "./agent-gate/index.js";
 
-// A relay's node key, learned from its TEE attestation rather than pasted in.
-export { attestRelayNodeKey, attestKeyBinding, reportDataOf } from "./relay-attestation/index.js";
-export type { AttestedNodeKey, AttestRelayNodeKeyOptions } from "./relay-attestation/index.js";
+// Calimero cloud (release-v2): attested nodes, sealed channel, passkeys, one log per app
+export * from './cloud-v2/index.js';

@@ -55,8 +55,6 @@ const ROUTES: Array<[string, (c: AdminApiClient, id: string) => Promise<unknown>
   ['sync resync', (c, id) => c.resyncContext(id), (e) => `POST /admin-api/contexts/${e}/resync`],
   ['blobs delete', (c, id) => c.deleteBlob(id), (e) => `DELETE /admin-api/blobs/${e}`],
   ['blobs info', (c, id) => c.getBlobInfo(id), (e) => `HEAD /admin-api/blobs/${e}`],
-  ['intents perform', (c, id) => c.performIntent(id, body), (e) => `POST /admin-api/contexts/${e}/intents`],
-  ['intents relay', (c, id) => c.getIntentRelay(id), (e) => `GET /admin-api/contexts/${e}/intents`],
   ['query', (c, id) => c.queryContext(id, body), (e) => `POST /admin-api/contexts/${e}/query`],
   ['namespaces get', (c, id) => c.getNamespace(id), (e) => `GET /admin-api/namespaces/${e}`],
   ['namespaces delete', (c, id) => c.deleteNamespace(id), (e) => `DELETE /admin-api/namespaces/${e}`],

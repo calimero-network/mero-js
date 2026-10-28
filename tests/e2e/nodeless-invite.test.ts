@@ -16,7 +16,7 @@
  * proves the scope encoding (the link bound), the invitation encoding (the
  * signature verified) and the grant (the inviter's authority was accepted).
  *
- * Same rig as `delegated-governance.test.ts`: setup goes to the relay's
+ * Same rig v1's (since deleted) delegated suites used: setup goes to the relay's
  * unguarded admin API. Requires `NODE_TEE_RELAY_URL`; skipped without it.
  *
  *   NODE_TEE_RELAY_URL=http://localhost:2468 pnpm test:e2e -- nodeless-invite

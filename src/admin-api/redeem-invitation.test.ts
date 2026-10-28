@@ -6,7 +6,6 @@ import {
   type InviteRedeemer,
 } from './redeem-invitation.js';
 import { HTTPError } from '../http-client/index.js';
-import { RelayLoginError } from '../account/relay-login-error.js';
 
 /** What mero-js throws for a non-2xx answer. */
 function httpError(status: number, error: string): HTTPError {
@@ -117,20 +116,6 @@ describe('redeemInvitation', () => {
         PARSED,
         redeemer({ join: vi.fn().mockRejectedValue(httpError(status, 'no')) }),
       );
-      expect(out).toMatchObject({ status: 'failed', reason, retryable: true });
-      expect(shouldRetain(out)).toBe(true);
-    });
-
-    // The join never left: the relay session it needed could not be minted.
-    // A refused login (even a 403) is the credential, not the invitation.
-    it.each([
-      [401, 'signed-out'],
-      [403, 'signed-out'],
-      [0, 'node-unreachable'],
-      [502, 'node-unreachable'],
-    ] as const)('a relay login failing with %i keeps the invitation (%s)', async (status, reason) => {
-      const err = new RelayLoginError('https://relay', httpError(status, 'no'));
-      const out = await redeemInvitation(PARSED, redeemer({ join: vi.fn().mockRejectedValue(err) }));
       expect(out).toMatchObject({ status: 'failed', reason, retryable: true });
       expect(shouldRetain(out)).toBe(true);
     });

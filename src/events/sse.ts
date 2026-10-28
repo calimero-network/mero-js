@@ -1,8 +1,6 @@
 import type { GroupMembershipEventData, GroupMigrationEventData } from './group.js';
 import { isGroupMigrationEvent } from './group.js';
 import { AuthRevokedError, HTTPError } from '../http-client/index.js';
-import { carriesProof, refuseProofRedirect } from '../http-client/web-client.js';
-import { signedPath } from '../request-proof/authorizer.js';
 
 /**
  * `x-auth-error` reasons that mean the whole token family is gone, mirroring
@@ -70,23 +68,9 @@ interface SseListeners {
   error: SseErrorHandler[];
 }
 
-/**
- * How one request to the SSE endpoints is authenticated.
- *
- * A bearer token is one value reused across requests; a request proof commits to
- * the method, the path and the body, so it must be produced per request. Both
- * reduce to the same thing from this client's point of view — headers — so the
- * stream takes the general form and {@link SseClient} adapts `getAuthToken` to it.
- */
-export type SseAuthorizer = (request: {
-  method: string;
-  path: string;
-  body?: string;
-}) => Promise<Record<string, string>>;
-
 export class SseClient {
   private baseUrl: string;
-  private authorize: SseAuthorizer;
+  private getAuthToken: () => Promise<string>;
   private reconnectDelayMs: number;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
@@ -107,26 +91,16 @@ export class SseClient {
 
   constructor(opts: {
     baseUrl: string;
-    /** A bearer token provider. The historical form, and still the default. */
-    getAuthToken?: () => Promise<string>;
-    /**
-     * Per-request authorization, for a credential that commits to the request —
-     * a device cert signing a request proof. Takes precedence over
-     * `getAuthToken`; one of the two is required.
-     */
-    authorize?: SseAuthorizer;
+    /** The bearer token each request to `/sse` carries. */
+    getAuthToken: () => Promise<string>;
     reconnectDelayMs?: number;
     fetch?: typeof fetch;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
-    if (opts.authorize) {
-      this.authorize = opts.authorize;
-    } else if (opts.getAuthToken) {
-      const getAuthToken = opts.getAuthToken;
-      this.authorize = async () => ({ Authorization: `Bearer ${await getAuthToken()}` });
-    } else {
-      throw new Error('SseClient needs either `getAuthToken` or `authorize`');
+    if (!opts.getAuthToken) {
+      throw new Error('SseClient needs `getAuthToken`');
     }
+    this.getAuthToken = opts.getAuthToken;
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 3000;
     // globalThis.fetch must be called as a method on globalThis, not through a
     // variable, or browsers throw "Illegal invocation".
@@ -222,16 +196,13 @@ export class SseClient {
     try {
       const url = `${this.baseUrl}/sse`;
       const headers = {
-        ...(await this.authorize({ method: 'GET', path: signedPath(url) })),
+        Authorization: `Bearer ${await this.getAuthToken()}`,
         'Accept': 'text/event-stream',
       };
-      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
         headers,
         signal: controller.signal,
-        ...(proofAttached && { redirect: 'manual' as const }),
       });
-      if (proofAttached) refuseProofRedirect(response, url);
 
       if (!response.ok) {
         // Throw the same typed errors the request path throws. A bare
@@ -492,24 +463,17 @@ export class SseClient {
       if (ids.contextIds && ids.contextIds.length > 0) params.contextIds = ids.contextIds;
       if (ids.groupIds && ids.groupIds.length > 0) params.groupIds = ids.groupIds;
       const url = `${this.baseUrl}/sse/subscription`;
-      // Serialized once and both signed and sent, because a proof commits to the
-      // body: re-stringifying for the signature risks two byte sequences that
-      // differ in key order, which fails as a refused credential rather than as
-      // anything that names the real cause.
       const body = JSON.stringify({ id: this.sessionId, method, params });
       const headers = {
-        ...(await this.authorize({ method: 'POST', path: signedPath(url), body })),
+        Authorization: `Bearer ${await this.getAuthToken()}`,
         'Content-Type': 'application/json',
       };
-      const proofAttached = carriesProof(headers);
       const response = await this.fetchImpl(url, {
         method: 'POST',
         headers,
         body,
         signal: timeout.signal,
-        ...(proofAttached && { redirect: 'manual' as const }),
       });
-      if (proofAttached) refuseProofRedirect(response, url);
       if (!response.ok) {
         // The subscribe path used to report only the status. On the one failure
         // that matters it is the whole of what the caller got: a revoked family

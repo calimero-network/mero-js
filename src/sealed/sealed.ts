@@ -198,15 +198,12 @@ export interface AttestedSealedFetchOptions {
  * one call that needs no credential and is never sealed), and seals everything
  * else to it. A restarted node is attested again, through the same verifier.
  *
- * This is what to hand a {@link RelayClient} for a TEE relay, so the warrant
- * and the method's arguments reach only the attested TD:
+ * Hand it to any client that takes a `fetch`, so its requests reach only the
+ * attested TD:
  *
  * ```ts
- * const relay = new RelayClient({
- *   relayUrl,
- *   fetch: createAttestedSealedFetch({ baseUrl: relayUrl, verify: createQuoteVerifier(...) }),
- *   ...
- * });
+ * const sealedFetch = createAttestedSealedFetch({ baseUrl, verify: createQuoteVerifier(...) });
+ * const response = await sealedFetch(`${baseUrl}/admin-api/health`);
  * ```
  */
 export function createAttestedSealedFetch(options: AttestedSealedFetchOptions): typeof fetch {
@@ -316,6 +313,11 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
     request.headers.forEach((value, name) => headers.push([name, value]));
     const head = { method: request.method, path: url.pathname.slice(basePath.length) + url.search, headers };
     const body = new Uint8Array(await request.arrayBuffer());
+    // The caller's own signal, not `request.signal`: a Request's signal follows
+    // the one it was built from only through a weak reference (undici), so once
+    // the Request is garbage collected (it is, while a stream stays open) an
+    // abort no longer reaches the fetch, and an event stream never closes.
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
 
     const send = async (open: Session): Promise<Response> => {
       const { requestId, header, envelope } = await sealRequest(open, head, body);
@@ -323,7 +325,7 @@ export function createSealedFetch(options: SealedFetchOptions): typeof fetch {
         method: 'POST',
         headers: { 'content-type': SEALED_CONTENT_TYPE },
         body: envelope,
-        signal: request.signal,
+        signal,
       });
       if (response.headers.get('content-type') !== SEALED_CONTENT_TYPE) {
         throw await envelopeRefusal(response);

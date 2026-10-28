@@ -5,17 +5,15 @@
  *
  * That equivalence is what makes the interface safe to adopt. If it did not
  * hold, a browser that moved to an unexportable key would start producing
- * warrants and governance ops refused at a node — a 403 nowhere near
- * its cause, which is the failure this whole package pins fixtures to avoid.
+ * certificates refused at a node — a 403 nowhere near its cause, which is the
+ * failure this whole package pins fixtures to avoid.
  *
- * The seed is core's `key(7)` (32 bytes of 0x07), so the expected public key and
- * signature below are the same constants `warrant_wire_fixture.rs` asserts. This
- * file therefore checks conformance *through the signer path*, not merely
- * self-consistency between two of our own code paths.
+ * The seed is core's `key(7)` (32 bytes of 0x07), so the expected public key
+ * below is the constant core's fixtures assert.
  */
 import { describe, expect, it } from 'vitest';
 
-import { signWarrant } from '../warrant/warrant.js';
+import { signDeviceCert } from '../device-cert/device-cert.js';
 import { resolveSigner, signerFromCryptoKey, signerFromSecret } from './signer.js';
 
 const SECRET = '07'.repeat(32);
@@ -38,19 +36,11 @@ async function unexportable(): Promise<CryptoKey> {
   ]);
 }
 
-const WARRANT_TERMS = {
-  context: '11'.repeat(32),
-  authorAccount: '22'.repeat(32),
-  executor: '33'.repeat(32),
-  executorKey: '77'.repeat(32),
-  releaseBytecodeId: '44'.repeat(32),
-  releaseVersion: '1.0.0',
-  method: 'set',
-  argsJson: { key: 'k', value: 'v' },
-  accountHeads: ['55'.repeat(32)],
-  governanceFloor: ['66'.repeat(32)],
-  nonce: 42,
-  notAfter: 1_700_000_000,
+const CERT_TERMS = {
+  device: '11'.repeat(32),
+  signPublicKey: '22'.repeat(32),
+  kemPublicKey: '33'.repeat(32),
+  deviceEpoch: 0,
 };
 
 describe('signerFromSecret', () => {
@@ -102,22 +92,21 @@ describe('signerFromCryptoKey', () => {
 });
 
 describe('a CryptoKey signs exactly what the same secret signs', () => {
-  it('for a warrant — including the bytes core pinned', async () => {
-    const fromSecret = await signWarrant({
-      ...WARRANT_TERMS,
-      deviceSecret: SECRET,
-    });
-    const fromKey = await signWarrant({
-      ...WARRANT_TERMS,
+  it('for raw bytes', async () => {
+    const payload = new TextEncoder().encode('calimero signer equivalence');
+    const fromSecret = await (await signerFromSecret(SECRET)).sign(payload);
+    const fromKey = await (await signerFromCryptoKey(await unexportable(), PUBLIC_KEY)).sign(payload);
+    // Ed25519 is deterministic, so identical output means identical preimage.
+    expect(fromKey).toEqual(fromSecret);
+  });
+
+  it('for a device certificate', async () => {
+    const fromSecret = await signDeviceCert({ ...CERT_TERMS, rootSecret: SECRET });
+    const fromKey = await signDeviceCert({
+      ...CERT_TERMS,
       signer: await signerFromCryptoKey(await unexportable(), PUBLIC_KEY),
     });
-
     expect(fromKey).toBe(fromSecret);
-    // Ed25519 is deterministic, so identical output means identical preimage —
-    // and this is the signature `warrant_wire_fixture.rs` asserts.
-    expect(fromKey).toContain(
-      'e42f753e1a30657fe036b0c0a07030f3f6d92ea56749921c5a6ae07eb966cb50',
-    );
   });
 });
 
@@ -137,7 +126,7 @@ describe('resolveSigner', () => {
 
   it('is what the signing entry points enforce', async () => {
     await expect(
-      signWarrant({ ...WARRANT_TERMS } as never),
-    ).rejects.toThrow(/deviceSecret or signer is required/);
+      signDeviceCert({ ...CERT_TERMS } as never),
+    ).rejects.toThrow(/rootSecret or signer is required/);
   });
 });

@@ -41,6 +41,7 @@
   },
   "scripts": {
     "build": "tsc && esbuild src/index.ts --bundle --platform=neutral --external:@phala/dcap-qvl --target=es2020 --format=esm --outfile=dist/index.mjs --sourcemap && esbuild src/index.ts --bundle --platform=neutral --external:@phala/dcap-qvl --target=es2020 --format=cjs --outfile=dist/index.cjs --sourcemap && esbuild src/index.ts --bundle --platform=browser --external:@phala/dcap-qvl --target=es2020 --format=esm --outfile=dist/index.browser.mjs --sourcemap --minify",
+    "prepare": "npm run build",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
@@ -58,7 +59,8 @@
     "test:contract": "vitest run --config vitest.config.ts src/__contract__",
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract"
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:contract",
+    "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts"
   },
   "files": [
     "dist"

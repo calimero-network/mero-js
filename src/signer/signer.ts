@@ -20,7 +20,7 @@
  * ```ts
  * const signer = await signerFromSecret(deviceSecret);           // as before
  * const signer = await signerFromCryptoKey(privateKey, pubKey);  // unexportable
- * await signWarrant({ ...terms, signer });
+ * await signDeviceCert({ ...terms, signer });
  * ```
  *
  * `deviceSecret` and `rootSecret` keep working everywhere they did. They are
