@@ -84,7 +84,6 @@
   "_excluded": {
     "kv-store": "Its frontend lives in apps/kv-store and is bumped there. The standalone repo is still public and unarchived, but stale since 2026-06-17.",
     "mero-chat": "Abandoned 2026-08-19, repo archived 2026-09-02. Not migrated: it is on mero-js 7 / mero-react 4 and nothing brings it forward.",
-    "auth-frontend": "Pre-migration, mero-ui 0.3.x.",
-    "admin-dashboard": "Declares none of these packages."
+    "auth-frontend": "Pre-migration, mero-ui 0.3.x."
   }
 }
