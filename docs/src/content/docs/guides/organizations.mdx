@@ -108,6 +108,9 @@ await client.approveOutbound(org, 'com.example.kv', passkey, { prefixes: ['https
 await client.approveOutbound(null, 'com.example.kv', passkey); // the account's own apps
 ```
 
+For apps your users own themselves, the prompt belongs in your app: see
+[Let your users approve node images and app upgrades](/guides/user-approvals/).
+
 <Aside type="note">
   A cluster started with `--release-approvals operator`, `--app-upgrades
   operator` or `--outbound-approvals operator` gives that decision to its

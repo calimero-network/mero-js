@@ -74,7 +74,8 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`.
 - **Blobs and presence**: `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob`; `publishPresence`, `presence`, `presenceStream`.
 - **Organizations**: `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), teams, `invite`, `redeemInvite`.
-- **Owner decisions** (passkey approval): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`.
+- **Owner decisions** (passkey approval): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `withdrawRelease`, `approveOutbound`.
+- **In-app approvals** for apps your users own: `pendingApprovals`, then `approveRelease(version, passkey)` and `upgradeApp(app, version, passkey)`. See [Let your users approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 - **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
 
 Refusals are typed (`LoginRequired`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`,

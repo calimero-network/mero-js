@@ -14,6 +14,13 @@ import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
 import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
+import {
+  accountReleasesFrom,
+  packageVersionsFrom,
+  packagesToLookUp,
+  pendingApprovalsFrom,
+  type PendingApprovals,
+} from './approvals.js';
 
 export {
   AppError,
@@ -619,15 +626,23 @@ export class CalimeroClient {
    * package, or a bundle hash, running its migration. Answers the upgrade's
    * entry; a failed migration rejects with code `UPGRADE_FAILED` (422).
    * Where the owner holds app upgrades, the node asks for the owner's approval
-   * (`412 CONFIRM_REQUIRED`), which `passkey` gives.
+   * (`412 CONFIRM_REQUIRED`), which `passkey` gives. `upgradeApp(app, '1.1.0',
+   * passkey)` moves it to that release of its own package.
    */
+  upgradeApp(app: string, version: string, passkey: PasskeyProvider): Promise<{ index: number; status: string; error: unknown }>;
   upgradeApp(
     app: string,
     target: { version?: string; package?: string; service?: string; bundle?: string; migrate?: string },
     passkey?: PasskeyProvider,
+  ): Promise<{ index: number; status: string; error: unknown }>;
+  upgradeApp(
+    app: string,
+    target: string | { version?: string; package?: string; service?: string; bundle?: string; migrate?: string },
+    passkey?: PasskeyProvider,
   ): Promise<{ index: number; status: string; error: unknown }> {
     const path = `apps/${seg(app)}/upgrade`;
-    return passkey ? this.postConfirmed(path, target, passkey) : this.post(path, target);
+    const body = typeof target === 'string' ? { version: target } : target;
+    return passkey ? this.postConfirmed(path, body, passkey) : this.post(path, body);
   }
 
   /**
@@ -845,18 +860,75 @@ export class CalimeroClient {
 
   /**
    * Approve a mero-tee release to hold the apps of `org`, or of this account
-   * outside any organization (`org` `null`); `approved: false` withdraws it.
+   * outside any organization (`org` `null`, or `approveRelease(version,
+   * passkey)`); `approved: false` withdraws it ({@link withdrawRelease} checks
+   * it is not the last one first).
    * Until then, nodes on that release get none of those apps' data. The owner
    * approves with `passkey`.
    */
-  async approveRelease(
+  approveRelease(version: string, passkey: PasskeyProvider): Promise<Record<string, unknown>>;
+  approveRelease(
     org: string | null,
     version: string,
     passkey: PasskeyProvider,
-    approved = true,
+    approved?: boolean,
+  ): Promise<Record<string, unknown>>;
+  async approveRelease(
+    ...args: [string, PasskeyProvider] | [string | null, string, PasskeyProvider, boolean?]
   ): Promise<Record<string, unknown>> {
+    // `(version, passkey)`: this account's own apps.
+    const [org, version, passkey, approved = true] =
+      args.length === 2 ? [null, args[0], args[1]] : (args as [string | null, string, PasskeyProvider, boolean?]);
     const path = org === null ? 'auth/releases' : `orgs/${seg(org)}/releases`;
     return this.postConfirmed(path, { version, approved }, passkey);
+  }
+
+  /**
+   * Withdraw this account's approval of a mero-tee release for its own apps:
+   * from then on, nodes on it are sent none of their data. Refused here, before
+   * the passkey prompt, when it is the account's last approved release (the
+   * node refuses that too: an empty set would leave the apps unrestricted).
+   */
+  async withdrawRelease(version: string, passkey: PasskeyProvider): Promise<Record<string, unknown>> {
+    const { approved } = accountReleasesFrom(await this.me());
+    if (approved.length === 1 && approved[0] === version) {
+      throw new CalimeroError(
+        409,
+        'LAST_APPROVED_RELEASE',
+        `${version} is the only release approved for this account's apps; approve another before withdrawing it`,
+        { version },
+      );
+    }
+    return this.approveRelease(null, version, passkey, false);
+  }
+
+  /**
+   * What the signed-in account has to decide for the apps it owns outside any
+   * organization: mero-tee releases its cluster runs that it has not approved,
+   * and newer releases of its apps' packages. Where the cluster gives a
+   * decision to its operator, its items say `managedBy: 'operator'` and are
+   * not `actionable`. Read over the sealed channel; act on an item with
+   * {@link approveRelease} or {@link upgradeApp} and the user's passkey.
+   *
+   * Provisional: until core reports the cluster's releases, apps' available
+   * versions and governance (`/auth/me`, `/apps`), `releases` is empty,
+   * `governance` `null`, and versions are looked up per package.
+   */
+  async pendingApprovals(): Promise<PendingApprovals> {
+    const [me, listed] = await Promise.all([this.me(), this.get<{ apps?: unknown[] }>('apps')]);
+    const apps = Array.isArray(listed.apps) ? listed.apps : [];
+    const versions: Record<string, string[]> = {};
+    await Promise.all(
+      packagesToLookUp(me, apps).map(async (pkg) => {
+        try {
+          versions[pkg] = packageVersionsFrom(await this.get(`packages/${seg(pkg)}`));
+        } catch (error) {
+          // A package this caller cannot read offers no upgrade; anything else is real.
+          if (!(error instanceof CalimeroError) || (error.status !== 404 && error.status !== 403)) throw error;
+        }
+      }),
+    );
+    return pendingApprovalsFrom(me, apps, versions);
   }
 
   /**

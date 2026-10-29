@@ -32,5 +32,18 @@ export { claimedRelease, fetchAttestedKey, MOCK_QUOTE_HEADER } from './attestati
 export type { AttestationDoc, CloudPolicy, CloudReleasePolicy } from './attestation.js';
 export { browserPasskey, b64url, fromB64url } from './passkey.js';
 export type { AssertionJSON, PasskeyProvider, RegistrationJSON } from './passkey.js';
+export {
+  RELEASE_VERIFIER,
+  pendingApprovalsFrom,
+  releaseNotesUrl,
+  verifyReleaseUrl,
+} from './approvals.js';
+export type {
+  ApprovalAuthority,
+  ApprovalGovernance,
+  PendingApprovals,
+  PendingRelease,
+  PendingUpgrade,
+} from './approvals.js';
 export { DEFAULT_ORG_CAPABILITIES, ORG_CAPABILITIES, orgCapabilities } from './capabilities.js';
 export type { OrgCapability } from './capabilities.js';

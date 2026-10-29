@@ -63,6 +63,7 @@ export default defineConfig({
           items: [
             'guides/apps',
             'guides/organizations',
+            'guides/user-approvals',
             'guides/sealed-transport',
             'guides/bundling-and-runtimes',
           ],

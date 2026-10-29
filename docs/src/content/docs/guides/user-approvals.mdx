@@ -1,0 +1,140 @@
+---
+title: Let your users approve node images and app upgrades
+description: For apps your users own, only they can let a new mero-tee node image receive their data or move their app to a new version. Show them the prompt; mero-js sends their passkey approval straight to the node.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Why your app has to ask
+
+On Calimero an app instance can belong to an organization or to one person's
+account. When it is a person's, two decisions about it are theirs alone,
+wherever the cluster leaves them to owners (the default):
+
+- **A new node image.** A mero-tee release is the image a node boots: kernel,
+  firmware and `merod`. When the cluster starts nodes on a new release, those
+  nodes get none of the user's data until the user approves that release.
+- **A new app version.** An upgrade switches the app to other code, which then
+  reads the user's data, so it runs only with the owner's approval.
+
+Each approval is a passkey step-up over that exact change, which the node
+checks and logs as the user's consent. The operator (Calimero) has no
+credential that could approve for the user, and neither does your backend. So
+the prompt has to come from your app, in front of the user, and
+the request has to go from their browser to the node.
+
+mero-js sends it over the same channel as every other request: the client
+verifies the node's TDX attestation, seals the request to the key that quote
+binds, and the node verifies the passkey assertion inside the enclave. No
+relay or server sits in between that could approve on the user's behalf.
+
+## When to show the prompt
+
+Ask the node once the user is signed in (with a passkey: an API key cannot
+approve), and again when they come back to the app:
+
+```ts
+const pending = await client.pendingApprovals();
+if (pending.actionable) showApprovalsBanner(pending);
+```
+
+`pendingApprovals()` lists, for the apps the account owns outside any
+organization:
+
+- `releases`: mero-tee releases the cluster's nodes run that the account has not approved,
+  each with `releaseNotesUrl` and `verifyUrl` (the public verifier's page for
+  its signed measurements);
+- `upgrades`: apps with a newer release of their package (`from`, `to`, and every newer
+  version in `available`);
+- `approvedReleases` and `governance`: who holds each decision on this cluster.
+
+Where the cluster gives a decision to its operator (`--release-approvals
+operator` or `--app-upgrades operator`), its items carry `managedBy:
+'operator'` and `actionable: false`. Show them as information, or not at all:
+there is nothing for the user to do, and the node would refuse them with
+`403`.
+
+A banner that the user can put off works well: list each item with
+**Approve** and **Later**, and link the release notes and the verifier so they
+can check what they approve.
+
+## The code
+
+```ts
+import { CalimeroClient, browserPasskey, ConfirmCancelled } from '@calimero-network/mero-js';
+
+const client = new CalimeroClient({ baseUrl, policy: { release: { minReleaseVersion: '2.3.109' } } });
+await client.signIn(browserPasskey());
+
+const pending = await client.pendingApprovals();
+
+for (const release of pending.releases.filter((r) => r.actionable)) {
+  // Show release.version, release.releaseNotesUrl and release.verifyUrl, then on "Approve":
+  try {
+    await client.approveRelease(release.version, browserPasskey());
+  } catch (e) {
+    if (!(e instanceof ConfirmCancelled)) throw e; // the user dismissed the passkey prompt: "Later"
+  }
+}
+
+for (const upgrade of pending.upgrades.filter((u) => u.actionable)) {
+  // "Upgrade notes from 1.0.0 to 1.1.0?" then on "Approve":
+  await client.upgradeApp(upgrade.appId, upgrade.to, browserPasskey());
+}
+```
+
+Each call is sent once without an approval; the node answers `412
+CONFIRM_REQUIRED` with a challenge over that exact change, the passkey signs
+it, and the call is sent again with the assertion. A dismissed prompt rejects
+with `ConfirmCancelled` and changes nothing.
+
+To take an approval back:
+
+```ts
+await client.withdrawRelease('2.3.110', browserPasskey());
+```
+
+`withdrawRelease` refuses the account's last approved release
+(`LAST_APPROVED_RELEASE`) before it prompts; the node refuses it too, since an
+empty set would leave the apps unrestricted.
+
+A failed migration rejects `upgradeApp` with `UPGRADE_FAILED` (422) and the
+app stays on its version. See [upgrades](/guides/apps/#upgrades).
+
+## What happens before the user approves
+
+Nothing breaks. The nodes that already hold the user's data keep it and keep
+serving the app. A node on a release the user has not approved can join the
+cluster, but it is sent none of their apps' data: no log entries, no snapshots,
+and no new replica is placed on it. Once they approve, those nodes can hold
+replicas of their apps. Until they upgrade, their apps keep running the
+version they have.
+
+## Where it works
+
+- **The user's own apps only.** Apps of an organization are approved by the
+  organization's owner (or, for upgrades, whoever holds `MANAGE_APPLICATION`)
+  in the Calimero console, or with `approveRelease(org, version, passkey)` and
+  `upgradeApp`; `pendingApprovals()` does not list them.
+- **A session on your own origin.** A session opened on the app frontend the
+  cluster serves under its apps domain is bound to that package, and the node
+  refuses approvals and upgrades from it (`403`). Make these calls from a page
+  on an origin the cluster accepts for passkeys, with a session from
+  `signIn`.
+
+<Aside type="caution">
+  The cluster's node releases, apps' available versions and governance holders
+  are reported by a newer core than 1.0's first releases. Against a node that
+  does not report them, `releases` is empty, `governance` is `null`, and
+  available versions are read from each package (`GET packages/{package}`).
+  The node enforces every decision either way.
+</Aside>
+
+## Further reading
+
+- [Governance](https://calimero-network.github.io/core/protocol/governance/)
+  in core's protocol docs: who holds each decision and how the replicas enforce it.
+- [Organizations](/guides/organizations/#approvals): the same approvals for an
+  organization's apps.

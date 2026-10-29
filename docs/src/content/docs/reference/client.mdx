@@ -61,7 +61,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `setAppMetadata(app, metadata)` | `POST apps/{app}/metadata` |
 | `appStorage(app)` | `GET apps/{app}/storage` |
 | `appAbi(app)` | `GET apps/{app}/abi` |
-| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
+| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)`, or `upgradeApp(app, version, passkey)` | `POST apps/{app}/upgrade` |
 | `transferApp(app, to, passkey)` | `POST apps/{app}/transfer` |
 | `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
@@ -108,7 +108,9 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
 | `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
 | `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |
-| `approveRelease(org \| null, version, passkey, approved?)` | `POST orgs/{org}/releases` or `auth/releases` |
+| `approveRelease(org \| null, version, passkey, approved?)`, or `approveRelease(version, passkey)` for the account's own apps | `POST orgs/{org}/releases` or `auth/releases` |
+| `withdrawRelease(version, passkey)`: refuses the last approved release first (`LAST_APPROVED_RELEASE`) | `GET auth/me`, then `POST auth/releases` |
+| `pendingApprovals()` → `PendingApprovals` (provisional; [guide](/guides/user-approvals/)) | `GET auth/me`, `GET apps`, `GET packages/{package}` |
 | `approveOutbound(org \| null, package, passkey, { prefixes?, replace? })` | `POST orgs/{org}/outbound` or `auth/outbound` |
 
 ## Any route

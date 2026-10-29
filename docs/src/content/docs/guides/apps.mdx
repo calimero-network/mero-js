@@ -120,7 +120,9 @@ await client.upgradeApp(app, { version: '1.1.0' }, passkey); // the owner approv
 The node plans the migration from the two ABIs and runs the target's migrate
 edge; a failed migration is `UPGRADE_FAILED` (422) and the app keeps its
 release. To upgrade every app of an organization at once, see
-[upgrade runs](/guides/organizations/#upgrade-runs).
+[upgrade runs](/guides/organizations/#upgrade-runs); to let your users approve
+upgrades of the apps they own, see
+[user approvals](/guides/user-approvals/).
 
 <Aside type="note">
   Where the cluster gives app upgrades to the operator (`--app-upgrades
