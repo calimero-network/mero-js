@@ -91,7 +91,10 @@ made with the owner's passkey and logged as consent.
 
 **Releases.** Nodes on a mero-tee release get an organization's data only once
 it is approved for that organization (the release the org began on is
-approved at creation):
+approved at creation). The organization's owner approves, or a member holding
+the organization's release-approval capability. A release can carry a deadline:
+past it, an organization that has not approved it cannot create apps, install
+packages or upgrade apps, while its running apps keep working:
 
 ```ts
 await client.approveRelease(org, '2.3.120', passkey);

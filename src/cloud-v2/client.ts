@@ -863,7 +863,10 @@ export class CalimeroClient {
    * outside any organization (`org` `null`, or `approveRelease(version,
    * passkey)`); `approved: false` withdraws it ({@link withdrawRelease} checks
    * it is not the last one first).
-   * Until then, nodes on that release get none of those apps' data. The owner
+   * Until then, nodes on that release get none of those apps' data, and past
+   * a deadline the release carries, an owner who has not approved it cannot
+   * create apps, install packages or upgrade apps. The account itself, or for
+   * an organization a member holding its release-approval capability,
    * approves with `passkey`.
    */
   approveRelease(version: string, passkey: PasskeyProvider): Promise<Record<string, unknown>>;

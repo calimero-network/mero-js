@@ -45,10 +45,12 @@ organization:
 
 - `releases`: mero-tee releases the cluster's nodes run that the account has not approved,
   each with `releaseNotesUrl` and `verifyUrl` (the public verifier's page for
-  its signed measurements);
+  its signed measurements), and `deadline` (ISO 8601, or `null`) with
+  `overdue` when the release carries a deadline;
 - `upgrades`: apps with a newer release of their package (`from`, `to`, and every newer
   version in `available`);
-- `approvedReleases` and `governance`: who holds each decision on this cluster.
+- `approvedReleases` and `governance`: who holds each decision on this cluster;
+- `restricted`: a release the account has not approved is past its deadline.
 
 Where the cluster gives a decision to its operator (`--release-approvals
 operator` or `--app-upgrades operator`), its items carry `managedBy:
@@ -58,12 +60,20 @@ there is nothing for the user to do, and the node would refuse them with
 
 A banner that the user can put off works well: list each item with
 **Approve** and **Later**, and link the release notes and the verifier so they
-can check what they approve.
+can check what they approve. When a release has a `deadline`, say so:
+"Approve by 12 March 2027". When `restricted` is true, say what is blocked
+until they approve (see [deadlines](#deadlines)) and don't let them dismiss it
+for long.
+
+```ts
+const approveBy = (r: PendingRelease) =>
+  r.deadline ? `Approve by ${new Date(r.deadline).toLocaleDateString()}` : 'Approve when you are ready';
+```
 
 ## The code
 
 ```ts
-import { CalimeroClient, browserPasskey, ConfirmCancelled } from '@calimero-network/mero-js';
+import { CalimeroClient, browserPasskey, ConfirmCancelled, type PendingRelease } from '@calimero-network/mero-js';
 
 const client = new CalimeroClient({ baseUrl, policy: { release: { minReleaseVersion: '2.3.109' } } });
 await client.signIn(browserPasskey());
@@ -112,12 +122,24 @@ and no new replica is placed on it. Once they approve, those nodes can hold
 replicas of their apps. Until they upgrade, their apps keep running the
 version they have.
 
+### Deadlines
+
+A release can carry a deadline, as a mobile OS update can. Until then,
+approving is up to the user. Once a release's deadline has passed, an owner
+who has not approved it can no longer create apps, install packages or
+upgrade apps; the apps they already run keep working, and approving the
+release lifts the restriction. `pendingApprovals()` reports the
+deadline on each release (`deadline`, `overdue`) and `restricted` once one
+has passed, so your prompt can say "Approve by 12 March" ahead of time and
+explain why a create or an upgrade was refused after it.
+
 ## Where it works
 
-- **The user's own apps only.** Apps of an organization are approved by the
-  organization's owner (or, for upgrades, whoever holds `MANAGE_APPLICATION`)
-  in the Calimero console, or with `approveRelease(org, version, passkey)` and
-  `upgradeApp`; `pendingApprovals()` does not list them.
+- **The user's own apps only.** Apps an organization owns are approved in the
+  Calimero console by the organization's members holding the capability for
+  it (release approvals; `MANAGE_APPLICATION` for upgrades), not only its
+  owner; the same calls are `approveRelease(org, version, passkey)` and
+  `upgradeApp`. `pendingApprovals()` does not list them.
 - **A session on your own origin.** A session opened on the app frontend the
   cluster serves under its apps domain is bound to that package, and the node
   refuses approvals and upgrades from it (`403`). Make these calls from a page
@@ -125,9 +147,9 @@ version they have.
   `signIn`.
 
 <Aside type="caution">
-  The cluster's node releases, apps' available versions and governance holders
-  are reported by a newer core than 1.0's first releases. Against a node that
-  does not report them, `releases` is empty, `governance` is `null`, and
+  The cluster's node releases, release deadlines, apps' available versions and
+  governance holders are reported by a newer core than 1.0's first releases. Against a node that
+  does not report them, `releases` is empty, `deadline` and `governance` are `null`, and
   available versions are read from each package (`GET packages/{package}`).
   The node enforces every decision either way.
 </Aside>

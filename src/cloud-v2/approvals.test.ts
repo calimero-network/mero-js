@@ -64,6 +64,8 @@ describe('pendingApprovalsFrom', () => {
         actionable: true,
         releaseNotesUrl: 'https://github.com/calimero-network/mero-tee/releases/tag/mero-tee-v2.3.120',
         verifyUrl: 'https://mero-tee.vercel.app/mero-tee?release_tag=mero-tee-v2.3.120',
+        deadline: null,
+        overdue: false,
       },
     ]);
     expect(pending.upgrades).toEqual([
@@ -76,9 +78,12 @@ describe('pendingApprovalsFrom', () => {
         available: ['1.1.0', '1.0.1'],
         managedBy: 'owner',
         actionable: true,
+        deadline: null,
+        overdue: false,
       },
     ]);
     expect(pending.actionable).toBe(true);
+    expect(pending.restricted).toBe(false);
   });
 
   it('reports what the operator holds as operator-managed, with nothing to act on', () => {
@@ -105,7 +110,41 @@ describe('pendingApprovalsFrom', () => {
       upgrades: [],
       governance: null,
       actionable: false,
+      restricted: false,
     });
+  });
+
+  it('reads release deadlines and marks those past as restricting the account', () => {
+    const now = Date.parse('2027-03-01T00:00:00Z');
+    const me = {
+      accountId: 'acc-1',
+      approvedReleases: ['2.3.109'],
+      nodeReleases: [
+        { version: '2.3.120', nodes: 1, deadline: '2027-03-12T00:00:00Z' },
+        { version: '2.3.130', nodes: 1 },
+      ],
+      // A map too, in seconds since the epoch.
+      releaseDeadlines: { '2.3.130': Date.parse('2027-02-01T00:00:00Z') / 1000 },
+    };
+    const pending = pendingApprovalsFrom(me, [], {}, now);
+    expect(pending.releases).toMatchObject([
+      { version: '2.3.130', deadline: '2027-02-01T00:00:00.000Z', overdue: true },
+      { version: '2.3.120', deadline: '2027-03-12T00:00:00.000Z', overdue: false },
+    ]);
+    expect(pending.restricted).toBe(true);
+
+    const before = pendingApprovalsFrom(me, [], {}, Date.parse('2027-01-01T00:00:00Z'));
+    expect(before.releases.every((r) => !r.overdue)).toBe(true);
+    expect(before.restricted).toBe(false);
+
+    // No deadline reported: none shown.
+    const plain = pendingApprovalsFrom({ ...me, nodeReleases: ['2.3.120'], releaseDeadlines: undefined }, [], {}, now);
+    expect(plain.releases).toMatchObject([{ version: '2.3.120', deadline: null, overdue: false }]);
+    expect(plain.restricted).toBe(false);
+
+    // Where the operator holds release approvals, an overdue release restricts nothing the user can act on.
+    const operator = pendingApprovalsFrom({ ...me, governance: { releases: 'operator' } }, [], {}, now);
+    expect(operator.restricted).toBe(false);
   });
 
   it('builds the release notes and verifier links', () => {

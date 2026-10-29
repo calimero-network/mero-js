@@ -11,7 +11,11 @@
  * app's package and version; the cluster's node releases, each app's available
  * versions and the governance holders are read here under every name that
  * branch is expected to use, and are absent (`null`, empty) until a node
- * reports them. The node enforces every decision either way.
+ * reports them. So are release deadlines (branch
+ * `claude/release-approval-capability-and-deadlines`): past a release's
+ * deadline an owner who has not approved it cannot create apps, install
+ * packages or upgrade apps, while running apps keep working. The node enforces
+ * every decision and deadline either way.
  */
 
 import { compareReleaseVersions } from '../sealed/release.js';
@@ -39,6 +43,14 @@ export interface PendingRelease {
   releaseNotesUrl: string;
   /** The public verifier for the release's signed measurements. */
   verifyUrl: string;
+  /**
+   * Approve by then (ISO 8601), when the release carries a deadline: past it,
+   * an owner who has not approved it cannot create apps, install packages or
+   * upgrade apps (running apps keep working). Provisional.
+   */
+  deadline: string | null;
+  /** The deadline has passed. */
+  overdue: boolean;
 }
 
 /** An app this account owns that has a newer release of its package. */
@@ -54,6 +66,9 @@ export interface PendingUpgrade {
   available: string[];
   managedBy: 'owner' | 'operator';
   actionable: boolean;
+  /** Upgrade by then (ISO 8601), when the node names a deadline. Provisional. */
+  deadline: string | null;
+  overdue: boolean;
 }
 
 /** What {@link CalimeroClient.pendingApprovals} answers. */
@@ -68,6 +83,12 @@ export interface PendingApprovals {
   governance: ApprovalGovernance | null;
   /** Whether anything here needs the user's passkey: show the prompt when true. */
   actionable: boolean;
+  /**
+   * A release the account has not approved is past its deadline: until it
+   * approves, the node refuses to create its apps, install packages or upgrade
+   * apps. Running apps keep working.
+   */
+  restricted: boolean;
 }
 
 /** The public verifier for mero-tee releases (`attestation-verifier`). */
@@ -142,6 +163,46 @@ export function governanceFrom(raw: unknown): ApprovalGovernance | null {
   return g.releases || g.appUpgrades || g.outbound ? g : null;
 }
 
+/** An instant as ISO 8601: an ISO string, or a number of seconds, milliseconds or nanoseconds since the epoch. */
+export function instantFrom(v: unknown): string | null {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) {
+    let n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (n > 1e17) n /= 1e6;
+    else if (n < 1e11) n *= 1e3;
+    return new Date(n).toISOString();
+  }
+  if (typeof v !== 'string') return null;
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+const DEADLINE = ['deadline', 'approveBy', 'approve_by', 'deadlineAt', 'deadline_at', 'upgradeDeadline', 'upgrade_deadline'];
+
+/**
+ * `version → deadline` from release entries carrying one (`{ version, deadline }`)
+ * and from a `{ version: deadline | { deadline } }` map.
+ */
+function deadlinesFrom(lists: unknown[], map: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const x of list) {
+      const version = versionOf(x);
+      const at = isRecord(x) ? instantFrom(pick(x, ...DEADLINE)) : null;
+      if (version !== null && at !== null) out.set(version, at);
+    }
+  }
+  if (isRecord(map)) {
+    for (const [version, v] of Object.entries(map)) {
+      const at = instantFrom(isRecord(v) ? pick(v, ...DEADLINE) : v);
+      if (at !== null) out.set(bare(version), at);
+    }
+  }
+  return out;
+}
+
 /** `version → nodes` from a list of versions, of `{ version, nodes }`, or a `{ version: count | nodes[] }` map. */
 function nodeReleasesFrom(raw: unknown): Map<string, number | null> {
   const out = new Map<string, number | null>();
@@ -168,26 +229,30 @@ export interface AccountReleases {
   onNodes: Map<string, number | null>;
   /** Releases the node itself names as awaiting approval. */
   unapproved: string[];
+  /** Release deadlines, ISO 8601 (provisional). */
+  deadlines: Map<string, string>;
   governance: ApprovalGovernance | null;
 }
 
 export function accountReleasesFrom(me: unknown): AccountReleases {
+  const onNodes = pick(me, 'nodeReleases', 'node_releases', 'clusterReleases', 'cluster_releases', 'releases.nodes', 'cluster.releases');
+  const unapproved = pick(
+    me,
+    'unapprovedReleases',
+    'unapproved_releases',
+    'pendingReleases',
+    'pending_releases',
+    'releases.unapproved',
+    'releases.pending',
+  );
   return {
     accountId: str(pick(me, 'accountId', 'account_id', 'id')),
     approved: newestFirst(versionsOf(pick(me, 'approvedReleases', 'approved_releases', 'releases.approved'))),
-    onNodes: nodeReleasesFrom(
-      pick(me, 'nodeReleases', 'node_releases', 'clusterReleases', 'cluster_releases', 'releases.nodes', 'cluster.releases'),
-    ),
-    unapproved: versionsOf(
-      pick(
-        me,
-        'unapprovedReleases',
-        'unapproved_releases',
-        'pendingReleases',
-        'pending_releases',
-        'releases.unapproved',
-        'releases.pending',
-      ),
+    onNodes: nodeReleasesFrom(onNodes),
+    unapproved: versionsOf(unapproved),
+    deadlines: deadlinesFrom(
+      [onNodes, unapproved],
+      pick(me, 'releaseDeadlines', 'release_deadlines', 'deadlines', 'releases.deadlines'),
     ),
     governance: governanceFrom(pick(me, 'governance', 'cluster.governance', 'governanceHolders', 'governance_holders')),
   };
@@ -203,6 +268,7 @@ interface AppRow {
   version: string | null;
   /** `null`: the node did not say (look the package up). */
   available: string[] | null;
+  deadline: string | null;
 }
 
 function appRowFrom(raw: unknown): AppRow | null {
@@ -219,6 +285,7 @@ function appRowFrom(raw: unknown): AppRow | null {
     package: str(pick(raw, 'package', 'pkg')),
     version: versionOf(pick(raw, 'version', 'currentVersion', 'current_version', 'packageVersion')),
     available,
+    deadline: instantFrom(pick(raw, ...DEADLINE)),
   };
 }
 
@@ -257,8 +324,10 @@ export function pendingApprovalsFrom(
   me: unknown,
   apps: unknown[],
   packageVersions: Record<string, string[]> = {},
+  now: number = Date.now(),
 ): PendingApprovals {
   const account = accountReleasesFrom(me);
+  const overdue = (at: string | null) => at !== null && Date.parse(at) <= now;
   const releasesBy: 'owner' | 'operator' = account.governance?.releases === 'operator' ? 'operator' : 'owner';
   const upgradesBy: 'owner' | 'operator' = account.governance?.appUpgrades === 'operator' ? 'operator' : 'owner';
 
@@ -271,6 +340,8 @@ export function pendingApprovalsFrom(
     actionable: releasesBy === 'owner',
     releaseNotesUrl: releaseNotesUrl(version),
     verifyUrl: verifyReleaseUrl(version),
+    deadline: account.deadlines.get(version) ?? null,
+    overdue: overdue(account.deadlines.get(version) ?? null),
   }));
 
   const upgrades: PendingUpgrade[] = [];
@@ -289,6 +360,8 @@ export function pendingApprovalsFrom(
       available: newer,
       managedBy: upgradesBy,
       actionable: upgradesBy === 'owner',
+      deadline: app.deadline,
+      overdue: overdue(app.deadline),
     });
   }
 
@@ -299,5 +372,6 @@ export function pendingApprovalsFrom(
     upgrades,
     governance: account.governance,
     actionable: releases.some((r) => r.actionable) || upgrades.some((u) => u.actionable),
+    restricted: releases.some((r) => r.actionable && r.overdue),
   };
 }
