@@ -1,0 +1,160 @@
+---
+title: Ask your users to approve node images and app upgrades
+description: Some decisions about your users' apps are theirs alone. Your app shows what waits, then sends them to the node's own consent page to approve it with their passkey; it never runs the approval itself.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Why the approval is not in your app
+
+Some decisions belong to the account holder, wherever the cluster leaves them
+to the owner side (the default):
+
+- **A new node image.** A mero-tee release is the image a node boots: kernel,
+  firmware and `merod`. Nodes on a new release get none of an app's data until
+  its approver approves that release.
+- **A new app version.** An upgrade switches the app to other code, which then
+  reads its data.
+- **Outbound hosts.** A new destination the app may send data to.
+
+Each is a passkey step-up over that exact change, logged as consent. A passkey
+prompt is blind, though: the authenticator shows a site name, never what it
+signs. If your frontend ran the ceremony, it could show "update to 1.2.1" and
+have the passkey sign something else. So the node refuses every approval
+route to a session opened on an app's frontend (`403`), and serves a
+**consent page** of its own, on its own origin, that shows the person what
+they approve from the node's state and the signed manifests: for an upgrade,
+the versions, the publisher and a capability sheet of what changes.
+
+Your app does three things: read what waits, ask the node for a consent
+request, and send the user to its page.
+
+## Read what waits
+
+```ts
+const pending = await client.pendingApprovals();      // the account's own apps
+const forOrg = await client.pendingApprovals(orgId);   // an organization's (any member)
+if (pending.actionable) showApprovalsBanner(pending);
+```
+
+It reads `GET /auth/apps` (or `/orgs/{org}/apps`, every page) and the public
+`GET /releases`, and answers:
+
+- `releases`: mero-tee releases the cluster's nodes run that the scope has not
+  approved, newest first, each with `nodes`, `releaseNotesUrl`, `verifyUrl`
+  (the public verifier's page for its signed measurements) and `deadline`;
+- `upgrades`: apps with newer releases of their package (`from`, `to`, and
+  every one it may move to in `available`);
+- `approvedReleases` and `governance`;
+- `stalledBy`: when set, a release's deadline has passed and the scope has
+  not approved it or a newer one, so the node refuses new apps, installs and
+  upgrades (`ReleaseDeadlineError`); running apps keep running.
+
+Where the cluster gives a decision to its operator, its items are not
+`actionable`: show them as information or not at all. For the raw report
+(per app: its release, publisher, replicas and last upgrade) use
+`appsReport(org | null, { after, limit })`.
+
+## Send them to the consent page
+
+```ts
+import { releaseConsent, upgradeConsent, consentReturn } from '@calimero-network/mero-js';
+
+const returnTo = `${location.origin}/settings`;
+
+// "Approve" on a release:
+await client.openConsentPage(releaseConsent(pending.scope, release.version, returnTo));
+
+// "Upgrade" on an app:
+await client.openConsentPage(upgradeConsent(upgrade.app, upgrade.to, returnTo));
+```
+
+`openConsentPage` posts `POST /consent/requests` (any passkey session of the
+account, your frontend's included) and navigates to the page's `url`. The
+person approves there with their passkey, or declines, and the page sends
+them back to `returnTo?request_id=…&result=approved|declined`. Treat that as
+a hint and confirm it:
+
+```ts
+const back = consentReturn(location.href);
+if (back) {
+  const { status } = await client.consentResult(back.requestId);
+  if (status === 'approved') refresh();
+}
+```
+
+To keep your page open, pass a navigator that opens a window and poll:
+
+```ts
+const started = await client.openConsentPage(request, (url) => window.open(url, '_blank'));
+const { status } = await client.waitForConsent(started.requestId, { expiresAt: started.expiresAt });
+```
+
+To take a release approval back, send them to the page the same way:
+
+```ts
+import { withdrawConsent } from '@calimero-network/mero-js';
+
+await client.openConsentPage(withdrawConsent(pending.scope, '2.3.110', returnTo));
+// the same as releaseConsent(scope, version, returnTo, { withdraw: true })
+```
+
+The page says what withdrawing does: the nodes that hold the data send nodes
+on that release nothing more, and no app is placed on them; nothing already
+there is deleted or moved. It fetches no measurements, so a withdrawal never
+waits on the network. The scope's last approved release cannot be withdrawn:
+the page warns first, the node refuses it (`400 REJECTED`, "the last approved
+release cannot be withdrawn") and the request stays pending, so approve
+another release before withdrawing it.
+
+`returnTo` must be your package's frontend origin, or one your package's
+signed manifest names (`links.frontend`, `frontendAliases`); anything else is
+`400 RETURN_TO_NOT_ALLOWED`. A request lives 10 minutes and is decided once.
+If what the page showed changes before the person approves (a new bundle, a
+re-published release), the node answers `ConsentStale` (`409 CONSENT_STALE`):
+ask again so they see the new facts. A node that cannot fetch a release's
+signed measurements answers `503`.
+
+## Who approves
+
+- **Releases** are the app's publisher's: the organization its package's
+  signing key is bound to, by its members holding `APPROVE_RELEASES`. For an
+  unbound package, the app's own organization or, for an app outside one, its
+  owner account.
+- **Upgrades** are whoever the package's signed manifest names (`upgrades`):
+  `owner` (the default) means each instance's owner, or its organization's
+  `MANAGE_APPLICATION` holders; `publisher` means the publisher's
+  `MANAGE_APPLICATION` holders, for every instance
+  ([publishers](/guides/organizations/#approvals)).
+
+The node checks the caller could make the approval when the request is made,
+and again when it is approved.
+
+## What happens before they approve
+
+Nothing breaks. The nodes that already hold the app's data keep it and keep
+serving it. A node on a release the approver has not approved can join the
+cluster, but it is sent none of the app's data and no new replica is placed on
+it. Until an upgrade is approved, the app keeps running the version it has.
+
+### Deadlines
+
+The operator can give a release a deadline (`releaseRules()` lists them, and
+each pending release carries its own). Before it, approving is up to the user;
+say "Approve by 12 March". After it, a scope that has not approved the release
+(or a newer one) creates no apps, installs nothing and upgrades nothing, while
+its running apps keep working; approving lifts it at once.
+
+<Aside type="note">
+  `approveRelease`, `upgradeApp` and `approveOutbound` with a passkey remain
+  for pages on the cluster's own origin, such as a console. From your app's
+  frontend, they are refused.
+</Aside>
+
+## Further reading
+
+- [The consent page](https://calimero-network.github.io/core/protocol/consent-page/)
+  and [Governance](https://calimero-network.github.io/core/protocol/governance/)
+  in core's protocol docs.

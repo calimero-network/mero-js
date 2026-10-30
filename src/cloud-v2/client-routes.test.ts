@@ -260,6 +260,7 @@ describe('ORG_CAPABILITIES', () => {
       DELETE_TEAM: 64,
       MANAGE_VISIBILITY: 128,
       MANAGE_METADATA: 256,
+      APPROVE_RELEASES: 1024,
     });
     expect(orgCapabilities('CREATE_APP', 'MANAGE_APPLICATION')).toBe(17);
   });

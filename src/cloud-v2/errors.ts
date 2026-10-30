@@ -111,6 +111,40 @@ export class IdempotencyMismatch extends CalimeroError {
 }
 
 /**
+ * `409 RELEASE_DEADLINE`: a mero-tee release's deadline has passed and the
+ * set that governs this work (the app's publisher's, or its owner's) has not
+ * approved it or a newer one, so new work (creating an app, installing a
+ * release, upgrading an app) is refused. Apps already running keep running.
+ * Approving `release` lifts it at once.
+ */
+export class ReleaseDeadlineError extends CalimeroError {
+  /** The release to approve. */
+  readonly release: string;
+  /** Its deadline, RFC 3339 (`''` when the node did not say). */
+  readonly after: string;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'RELEASE_DEADLINE', message, details);
+    this.name = 'ReleaseDeadlineError';
+    this.release = typeof details.release === 'string' ? details.release : '';
+    this.after = typeof details.after === 'string' ? details.after : '';
+  }
+}
+
+/**
+ * `409 CONSENT_STALE`: what a consent page showed (the app's bundle, the
+ * target release, the release's measurements) changed before the person
+ * approved. Nothing was approved; ask for a new consent request so they see
+ * the new facts.
+ */
+export class ConsentStale extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'CONSENT_STALE', message, details);
+    this.name = 'ConsentStale';
+  }
+}
+
+/**
  * `422 APP_ERROR`: the app refused the call. `appCode` is the app's declared
  * error (`Taken`, `Forbidden`, ...) and `fields` its named fields. The call was
  * logged, so its idempotency key is spent.
@@ -214,6 +248,10 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new NotFound(message, details);
     case '409 IDEMPOTENCY_MISMATCH':
       return new IdempotencyMismatch(message, details);
+    case '409 RELEASE_DEADLINE':
+      return new ReleaseDeadlineError(message, details);
+    case '409 CONSENT_STALE':
+      return new ConsentStale(message, details);
     case '412 CONFIRM_REQUIRED':
       return new ConfirmRequired(message, details);
     case '413 ARGS_TOO_LARGE':

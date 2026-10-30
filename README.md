@@ -74,11 +74,14 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`.
 - **Blobs and presence**: `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob`; `publishPresence`, `presence`, `presenceStream`.
 - **Organizations**: `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), teams, `invite`, `redeemInvite`.
-- **Owner decisions** (passkey approval): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`.
+- **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.
+- **Approvals from an app**: `appsReport`, `releaseRules`, `pendingApprovals`, then `requestConsent` / `openConsentPage` to send the user to the node's consent page, and `consentResult`. See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
+- **Operator** (ops token): `opsApps`, `opsOrgs`, `setReleaseDeadline`, `liftReleaseDeadline`.
 - **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
 
 Refusals are typed (`LoginRequired`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`,
-`ArgsTooLarge`, `IdempotencyMismatch`, `AppError`, `TrapError`, `UnavailableError`),
+`ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `ConsentStale`, `AppError`, `TrapError`,
+`UnavailableError`),
 all extending `CalimeroError` with the node's `status` and `code`. A `401` once
 the node that issued the session is replaced or out of reach is answered by one
 refresh and a repeat; a `421 WRONG_NODE` by moving to the next of the `nodes` the client was
