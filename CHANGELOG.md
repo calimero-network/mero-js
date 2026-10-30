@@ -1,3 +1,9 @@
+## [27.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.2.0...mero-js-v27.3.0) (2026-10-30)
+
+### Features
+
+* **approvals:** expose the consent page's confirmation code ([#319](https://github.com/calimero-network/mero-js/issues/319)) ([0735ec5](https://github.com/calimero-network/mero-js/commit/0735ec509d56cd1481d2191365c1edfe3841b5ba))
+
 ## [27.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.1.0...mero-js-v27.2.0) (2026-10-30)
 
 ### Features
