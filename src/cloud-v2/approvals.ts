@@ -1,95 +1,322 @@
 /**
- * What the signed-in account has to decide for the apps it owns outside any
- * organization: mero-tee releases (node images) waiting for its approval, and
- * app upgrades it may run. Both are the data owner's decisions, made with
- * their own passkey (consent the node logs); the operator cannot make them
- * for an owner-governed cluster, so an app shows them to its own users.
+ * Release and upgrade approvals as core's node reports them, and the consent
+ * page an app sends its user to when one is theirs to make.
  *
- * PROVISIONAL: core's read endpoints for this (branch
- * `claude/report-app-versions-and-approvals`) were not published when this was
- * written. Today `GET /auth/me` carries `approvedReleases` and `GET /apps` each
- * app's package and version; the cluster's node releases, each app's available
- * versions and the governance holders are read here under every name that
- * branch is expected to use, and are absent (`null`, empty) until a node
- * reports them. So are release deadlines (branch
- * `claude/release-approval-capability-and-deadlines`): past a release's
- * deadline an owner who has not approved it cannot create apps, install
- * packages or upgrade apps, while running apps keep working. The node enforces
- * every decision and deadline either way.
+ * An app never approves in its own page. A passkey assertion is blind (the
+ * authenticator shows a site name, never what the challenge commits to), so
+ * the page that runs the ceremony decides what the person believes they
+ * approve. The node therefore refuses every approval route to a session
+ * opened on an app's frontend, and serves its own **consent page** instead:
+ * the app asks for a request (`POST /consent/requests`), sends the person to
+ * the page's `url` on the node's own origin, and reads the decision when the
+ * page sends them back (`returnTo?request_id=…&result=…`) or from
+ * `GET /consent/{id}/result`. See core's
+ * [consent page](https://calimero-network.github.io/core/protocol/consent-page/)
+ * and [governance](https://calimero-network.github.io/core/protocol/governance/).
  */
 
 import { compareReleaseVersions } from '../sealed/release.js';
 
-/** Who holds a decision on this cluster (core's `Authority`); `null` when the node did not say. */
-export type ApprovalAuthority = 'owner' | 'operator' | null;
+// ---------------------------------------------------------------- governance
 
-/** Core's `Governance`: which party makes each decision on this cluster. */
-export interface ApprovalGovernance {
-  releases: ApprovalAuthority;
-  appUpgrades: ApprovalAuthority;
-  outbound: ApprovalAuthority;
+/**
+ * Who holds one decision on a cluster (core's `Authority`), fixed at genesis
+ * and attested by every replica. `owner`: the parties around each app, with a
+ * passkey (for release approvals the app's publisher, for upgrades whoever
+ * its package's manifest names); `operator`: the operator, for every app.
+ */
+export type Authority = 'owner' | 'operator';
+
+/** Core's `Governance`: which side holds each decision on this cluster. */
+export interface Governance {
+  releases: Authority;
+  appUpgrades: Authority;
+  outbound: Authority;
 }
 
-/** A mero-tee release the cluster's nodes run that this account has not approved. */
-export interface PendingRelease {
-  version: string;
-  /** How many of the cluster's nodes run it, when the node said. */
-  nodes: number | null;
-  /** `operator` where the cluster gives release approvals to its operator: nothing for the user to do. */
-  managedBy: 'owner' | 'operator';
-  /** Whether this account can approve it (`approveRelease(version, passkey)`). */
-  actionable: boolean;
-  /** The release's notes on GitHub. */
-  releaseNotesUrl: string;
-  /** The public verifier for the release's signed measurements. */
-  verifyUrl: string;
-  /**
-   * Approve by then (ISO 8601), when the release carries a deadline: past it,
-   * an owner who has not approved it cannot create apps, install packages or
-   * upgrade apps (running apps keep working). Provisional.
-   */
-  deadline: string | null;
-  /** The deadline has passed. */
-  overdue: boolean;
-}
+/**
+ * Who upgrades a package's instances, as its signed manifest declares
+ * (`upgrades`; absent means `owner`), where the cluster leaves app upgrades to
+ * owners. `owner`: each instance's owner (an organization's
+ * `MANAGE_APPLICATION` holders); `publisher`: the `MANAGE_APPLICATION`
+ * holders of the organization the package's signing key is bound to, for
+ * every instance ({@link CalimeroClient.upgradePublished}). A package may move
+ * from `publisher` to `owner` in a later release, never back.
+ */
+export type UpgradeAuthority = 'owner' | 'publisher';
 
-/** An app this account owns that has a newer release of its package. */
-export interface PendingUpgrade {
-  appId: string;
-  name: string | null;
+// ---------------------------------------------------------------- reports
+
+/** Whose approvals a report covers: an organization's, or the account's own apps. */
+export type ReportScope = { kind: 'account' } | { kind: 'org'; org: string };
+
+/** A package release as a report names it. */
+export interface ReportedRelease {
   package: string;
-  /** The version the app runs now. */
-  from: string | null;
-  /** The newest version available (`upgradeApp(appId, to, passkey)`). */
-  to: string;
-  /** Every newer version, newest first. */
-  available: string[];
-  managedBy: 'owner' | 'operator';
-  actionable: boolean;
-  /** Upgrade by then (ISO 8601), when the node names a deadline. Provisional. */
-  deadline: string | null;
-  overdue: boolean;
+  version: string;
+  /** The service, for a multi-service bundle (account reports only). */
+  service?: string | null;
 }
 
-/** What {@link CalimeroClient.pendingApprovals} answers. */
-export interface PendingApprovals {
-  accountId: string | null;
-  /** Releases approved for this account's own apps, newest first. */
-  approvedReleases: string[];
-  /** Releases waiting for this account's decision (or the operator's, see `managedBy`). */
-  releases: PendingRelease[];
-  upgrades: PendingUpgrade[];
-  /** `null` when the node does not report governance yet (provisional). */
-  governance: ApprovalGovernance | null;
-  /** Whether anything here needs the user's passkey: show the prompt when true. */
-  actionable: boolean;
-  /**
-   * A release the account has not approved is past its deadline: until it
-   * approves, the node refuses to create its apps, install packages or upgrade
-   * apps. Running apps keep working.
-   */
-  restricted: boolean;
+/** A bundle as a report names it: its digest, and its release where the reader may see it. */
+export interface ReportedBundle {
+  bundle: string;
+  package?: string;
+  version?: string;
 }
+
+/** Who made an upgrade, by kind. */
+export type ActorKind = 'owner' | 'member' | 'operator';
+
+/** An app's last upgrade. `actor`, `error` and `run` are left out of the operator's report. */
+export interface LastUpgrade {
+  from: ReportedBundle;
+  to: ReportedBundle;
+  /** Unix seconds. */
+  at: number;
+  ok: boolean;
+  actorKind: ActorKind;
+  actor?: string;
+  error?: unknown;
+  run?: string;
+}
+
+/** One replica of an app: its node, the node's attested release, and whether the app's set approves it. */
+export interface ReportedReplica {
+  node: number;
+  /** `null` while the node's release is not known yet (it then holds nothing). */
+  release: string | null;
+  approved: boolean;
+}
+
+/** One app in a report. `name`, `team` and `availableVersions` are in members' and accounts' reports only. */
+export interface ReportedApp {
+  app: string;
+  group: number;
+  scope: ReportScope;
+  /** `hex(SHA-256)` of the WASM it runs. */
+  bundle: string;
+  package: ReportedRelease | null;
+  /** The package's pinned signer (`did:key`). */
+  publisher: { signer: string } | null;
+  upgradesHeldBy: Authority;
+  lastUpgrade: LastUpgrade | null;
+  /** The releases approved to hold this app (its publisher's set, or its scope's); `null`: unrestricted. */
+  approvedReleases: string[] | null;
+  replicas: ReportedReplica[];
+  name?: string;
+  team?: string;
+  /** Newer releases of its package it may be upgraded to, oldest first (at most 16, the newest). */
+  availableVersions?: string[];
+}
+
+/** A mero-tee release the cluster's nodes run, with how many and whether the scope approved it. */
+export interface ClusterRelease {
+  release: string;
+  nodes: number;
+  approved: boolean;
+}
+
+/** `GET /auth/apps` or `GET /orgs/{org}/apps`: one page. */
+export interface AppsReport {
+  scope: ReportScope;
+  governance: Governance;
+  /** The scope's own approved set, newest last; `null`: none ever recorded (unrestricted). */
+  approvedReleases: string[] | null;
+  clusterReleases: ClusterRelease[];
+  apps: ReportedApp[];
+  /** Pass as `after` for the next page; `null` on the last. */
+  next: string | null;
+}
+
+/** `GET /ops/apps`: one page, for the operator. */
+export interface OpsAppsReport {
+  /** This node had caught up with the system leader. */
+  fresh: boolean;
+  governance: Governance;
+  apps: ReportedApp[];
+  next: string | null;
+}
+
+/** `GET /ops/orgs`: one page, for the operator. */
+export interface OpsOrgsReport {
+  fresh: boolean;
+  governance: Governance;
+  orgs: Array<{ org: string; approvedReleases: string[] | null }>;
+  next: string | null;
+}
+
+/** A page of a report: entries after the id `after`, at most `limit` (1 to {@link MAX_REPORT_PAGE}). */
+export interface PageOptions {
+  after?: string;
+  limit?: number;
+}
+
+/** The most entries one page of a report answers (core's `MAX_REPORT_PAGE`). */
+export const MAX_REPORT_PAGE = 100;
+
+/** `?after=&limit=` for a report route; `limit` outside 1 to 100 is refused before sending. */
+export function pageQuery(page: PageOptions = {}): string {
+  const q = new URLSearchParams();
+  if (page.after !== undefined) q.set('after', page.after);
+  if (page.limit !== undefined) {
+    if (!Number.isInteger(page.limit) || page.limit < 1 || page.limit > MAX_REPORT_PAGE) {
+      throw new RangeError(`limit is 1 to ${MAX_REPORT_PAGE}`);
+    }
+    q.set('limit', String(page.limit));
+  }
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+// ---------------------------------------------------------------- deadlines
+
+/** A release's end-of-new-work deadline. */
+export interface ReleaseDeadline {
+  version: string;
+  /** RFC 3339. */
+  after: string;
+  /** Unix seconds. */
+  afterSecs: number;
+}
+
+/** `GET /releases`: the cluster's release rules, public inside the sealed channel. */
+export interface ReleaseRules {
+  governance: Governance;
+  /** Oldest release first. */
+  deadlines: ReleaseDeadline[];
+}
+
+/** Semver order (core's `compare_versions`); text order for versions that are not semver. */
+export function compareVersions(a: string, b: string): number {
+  try {
+    return compareReleaseVersions(a, b);
+  } catch {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+}
+
+/**
+ * Whether a scope whose approved set is `approved` has lost new work at `now`
+ * (Unix seconds), as core's `SystemState::stalled` judges it: a release's
+ * deadline has passed and the newest approved release is older. Names the
+ * newest such release, since approving it lifts every one. `null` approved
+ * (unrestricted) is never stalled.
+ */
+export function stalledBy(
+  approved: string[] | null,
+  deadlines: ReleaseDeadline[],
+  now: number = Date.now() / 1000,
+): ReleaseDeadline | null {
+  if (approved === null || approved.length === 0) return null;
+  const newest = approved.reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
+  let stall: ReleaseDeadline | null = null;
+  for (const d of deadlines) {
+    if (d.afterSecs <= now && compareVersions(newest, d.version) < 0) {
+      if (stall === null || compareVersions(d.version, stall.version) > 0) stall = d;
+    }
+  }
+  return stall;
+}
+
+// ---------------------------------------------------------------- publishers
+
+/** `GET /publishers/{signerId}`: what a key signs to bind it here next. */
+export interface PublisherBindingInfo {
+  signerId: string;
+  /** The cluster's name, as the binding message names it. */
+  cluster: string;
+  /** How many bindings the key has had here: a signature binds once. */
+  generation: number;
+  bound: boolean;
+}
+
+/**
+ * The text a package signing key signs to bind it to `org` as its publisher
+ * (core's `system::publisher_binding_message`). Take `cluster` and
+ * `generation` from {@link CalimeroClient.publisherBinding}; sign the UTF-8
+ * bytes with the key's Ed25519 secret and send
+ * {@link CalimeroClient.bindPublisher}.
+ */
+export function publisherBindingMessage(cluster: string, org: string, signerId: string, generation: number): string {
+  return `calimero-publisher-binding/v1\n${cluster}\n${org}\n${signerId}\n${generation}`;
+}
+
+/** {@link publisherBindingMessage} as the bytes to sign. */
+export function publisherBindingBytes(cluster: string, org: string, signerId: string, generation: number): Uint8Array {
+  return new TextEncoder().encode(publisherBindingMessage(cluster, org, signerId, generation));
+}
+
+/** `POST /orgs/{org}/publishers`: the key's proof, base64url without padding. */
+export interface PublisherProof {
+  signerId: string;
+  /** The Ed25519 public key the `did:key` names. */
+  publicKey: string;
+  /** Its signature over {@link publisherBindingMessage}. */
+  signature: string;
+}
+
+// ---------------------------------------------------------------- consent page
+
+/** Whose approval a release or outbound request is for. */
+export type ConsentScope = 'account' | { org: string };
+
+/** What the app asks its user to approve (`POST /consent/requests`). Unknown fields are refused. */
+export type ConsentRequest =
+  | {
+      kind: 'release';
+      scope: ConsentScope;
+      subject: { version: string };
+      /** Where the page sends the person back: the package's frontend origin, or one its manifest names. */
+      returnTo: string;
+    }
+  | {
+      kind: 'upgrade';
+      subject: { app: string; toVersion: string };
+      returnTo: string;
+    }
+  | {
+      kind: 'outbound';
+      scope: ConsentScope;
+      /** `package`: a package-bound session's own when left out; `prefixes`: every one the latest release declares. */
+      subject: { package?: string; prefixes?: string[] };
+      returnTo: string;
+    };
+
+/** The node's answer to a consent request: send the person to `url`. */
+export interface ConsentStarted {
+  requestId: string;
+  /** The consent page, on the node's own origin. */
+  url: string;
+  /** Unix seconds; a request lives 10 minutes. */
+  expiresAt: number;
+}
+
+export type ConsentStatus = 'pending' | 'approved' | 'declined';
+
+/** `GET /consent/{id}/result`. */
+export interface ConsentResult {
+  requestId: string;
+  kind: ConsentRequest['kind'];
+  status: ConsentStatus;
+  /** Unix seconds, once decided. */
+  decidedAt: number | null;
+}
+
+/**
+ * What the consent page put on `returnTo` when it sent the person back, or
+ * `null` when `href` carries none. A hint only (anyone can type a URL): confirm
+ * with {@link CalimeroClient.consentResult} before acting on it.
+ */
+export function consentReturn(href: string | URL): { requestId: string; result: 'approved' | 'declined' } | null {
+  const url = typeof href === 'string' ? new URL(href) : href;
+  const requestId = url.searchParams.get('request_id');
+  const result = url.searchParams.get('result');
+  if (!requestId || (result !== 'approved' && result !== 'declined')) return null;
+  return { requestId, result };
+}
+
+// ---------------------------------------------------------------- pending
 
 /** The public verifier for mero-tee releases (`attestation-verifier`). */
 export const RELEASE_VERIFIER = 'https://mero-tee.vercel.app';
@@ -104,274 +331,96 @@ export function verifyReleaseUrl(version: string): string {
   return `${RELEASE_VERIFIER}/mero-tee?release_tag=${encodeURIComponent(`mero-tee-v${version}`)}`;
 }
 
-type Json = Record<string, unknown>;
-
-const isRecord = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/** The first of `names` (dotted paths) that `o` holds. */
-function pick(o: unknown, ...names: string[]): unknown {
-  for (const name of names) {
-    let v: unknown = o;
-    for (const k of name.split('.')) v = isRecord(v) ? v[k] : undefined;
-    if (v !== undefined && v !== null) return v;
-  }
-  return undefined;
+/** A mero-tee release the cluster's nodes run that the scope has not approved. */
+export interface PendingRelease {
+  version: string;
+  /** How many of the cluster's nodes run it. */
+  nodes: number;
+  /** Whether the scope's side holds release approvals (else the operator does). */
+  actionable: boolean;
+  releaseNotesUrl: string;
+  verifyUrl: string;
+  /** Its deadline, when it carries one. */
+  deadline: ReleaseDeadline | null;
 }
 
-const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
-
-/** `2.3.10` → `2.3.10`, `mero-tee-v2.3.10` and `v2.3.10` too. */
-const bare = (v: string): string => v.trim().replace(/^mero-tee-v/, '').replace(/^v/, '');
-
-/** Semver order; versions that are not semver after those that are, then by text. */
-export function compareVersions(a: string, b: string): number {
-  try {
-    return compareReleaseVersions(bare(a), bare(b));
-  } catch {
-    return a < b ? -1 : a > b ? 1 : 0;
-  }
-}
-
-const newestFirst = (list: string[]): string[] => [...new Set(list)].sort((a, b) => compareVersions(b, a));
-
-/** A version from a string or `{ version | release }`. */
-function versionOf(v: unknown): string | null {
-  const s = str(v) ?? str(pick(v, 'version', 'release', 'releaseVersion', 'release_version'));
-  return s === null ? null : bare(s);
-}
-
-function versionsOf(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map(versionOf).filter((x): x is string => x !== null);
-  if (isRecord(v)) return Object.keys(v).map(bare);
-  const one = versionOf(v);
-  return one === null ? [] : [one];
-}
-
-function authority(v: unknown): ApprovalAuthority {
-  const s = String((isRecord(v) ? pick(v, 'kind', 'holder', 'authority') : v) ?? '').toLowerCase();
-  return s === 'owner' || s === 'operator' ? s : null;
-}
-
-/** Core's governance, from `{ releases, appUpgrades, outbound }` under any of the names it may use. */
-export function governanceFrom(raw: unknown): ApprovalGovernance | null {
-  if (!isRecord(raw)) return null;
-  const g: ApprovalGovernance = {
-    releases: authority(pick(raw, 'releases', 'releaseApprovals', 'release_approvals')),
-    appUpgrades: authority(pick(raw, 'appUpgrades', 'app_upgrades', 'upgrades')),
-    outbound: authority(pick(raw, 'outbound', 'outboundApprovals', 'outbound_approvals')),
-  };
-  return g.releases || g.appUpgrades || g.outbound ? g : null;
-}
-
-/** An instant as ISO 8601: an ISO string, or a number of seconds, milliseconds or nanoseconds since the epoch. */
-export function instantFrom(v: unknown): string | null {
-  if (v === undefined || v === null || v === '') return null;
-  if (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) {
-    let n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    if (n > 1e17) n /= 1e6;
-    else if (n < 1e11) n *= 1e3;
-    return new Date(n).toISOString();
-  }
-  if (typeof v !== 'string') return null;
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : new Date(t).toISOString();
-}
-
-const DEADLINE = ['deadline', 'approveBy', 'approve_by', 'deadlineAt', 'deadline_at', 'upgradeDeadline', 'upgrade_deadline'];
-
-/**
- * `version → deadline` from release entries carrying one (`{ version, deadline }`)
- * and from a `{ version: deadline | { deadline } }` map.
- */
-function deadlinesFrom(lists: unknown[], map: unknown): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const x of list) {
-      const version = versionOf(x);
-      const at = isRecord(x) ? instantFrom(pick(x, ...DEADLINE)) : null;
-      if (version !== null && at !== null) out.set(version, at);
-    }
-  }
-  if (isRecord(map)) {
-    for (const [version, v] of Object.entries(map)) {
-      const at = instantFrom(isRecord(v) ? pick(v, ...DEADLINE) : v);
-      if (at !== null) out.set(bare(version), at);
-    }
-  }
-  return out;
-}
-
-/** `version → nodes` from a list of versions, of `{ version, nodes }`, or a `{ version: count | nodes[] }` map. */
-function nodeReleasesFrom(raw: unknown): Map<string, number | null> {
-  const out = new Map<string, number | null>();
-  const add = (version: string | null, nodes: number | null) => {
-    if (version === null) return;
-    const prev = out.get(version);
-    out.set(version, nodes === null ? prev ?? null : (prev ?? 0) + nodes);
-  };
-  const count = (n: unknown): number | null =>
-    Array.isArray(n) ? n.length : typeof n === 'number' && Number.isFinite(n) ? n : null;
-  if (Array.isArray(raw)) {
-    for (const x of raw) add(versionOf(x), isRecord(x) ? count(pick(x, 'nodes', 'count')) : null);
-  } else if (isRecord(raw)) {
-    for (const [version, n] of Object.entries(raw)) add(bare(version), count(n));
-  }
-  return out;
-}
-
-/** What `GET /auth/me` says about releases and governance (today's fields, and the provisional ones). */
-export interface AccountReleases {
-  accountId: string | null;
-  approved: string[];
-  /** Releases the cluster's nodes run (approved or not), with node counts. */
-  onNodes: Map<string, number | null>;
-  /** Releases the node itself names as awaiting approval. */
-  unapproved: string[];
-  /** Release deadlines, ISO 8601 (provisional). */
-  deadlines: Map<string, string>;
-  governance: ApprovalGovernance | null;
-}
-
-export function accountReleasesFrom(me: unknown): AccountReleases {
-  const onNodes = pick(me, 'nodeReleases', 'node_releases', 'clusterReleases', 'cluster_releases', 'releases.nodes', 'cluster.releases');
-  const unapproved = pick(
-    me,
-    'unapprovedReleases',
-    'unapproved_releases',
-    'pendingReleases',
-    'pending_releases',
-    'releases.unapproved',
-    'releases.pending',
-  );
-  return {
-    accountId: str(pick(me, 'accountId', 'account_id', 'id')),
-    approved: newestFirst(versionsOf(pick(me, 'approvedReleases', 'approved_releases', 'releases.approved'))),
-    onNodes: nodeReleasesFrom(onNodes),
-    unapproved: versionsOf(unapproved),
-    deadlines: deadlinesFrom(
-      [onNodes, unapproved],
-      pick(me, 'releaseDeadlines', 'release_deadlines', 'deadlines', 'releases.deadlines'),
-    ),
-    governance: governanceFrom(pick(me, 'governance', 'cluster.governance', 'governanceHolders', 'governance_holders')),
-  };
-}
-
-/** An app as `GET /apps` answers it, with the newer versions the node may report on it. */
-interface AppRow {
-  appId: string;
+/** An app with newer releases of its package. */
+export interface PendingUpgrade {
+  app: string;
   name: string | null;
-  owner: string | null;
-  org: string | null;
-  package: string | null;
-  version: string | null;
-  /** `null`: the node did not say (look the package up). */
-  available: string[] | null;
-  deadline: string | null;
+  package: string;
+  from: string;
+  /** The newest it may move to. */
+  to: string;
+  /** Every newer release it may move to, oldest first. */
+  available: string[];
+  /** Whether owners hold app upgrades on this cluster; the node checks the package's own `upgrades` when asked. */
+  actionable: boolean;
 }
 
-function appRowFrom(raw: unknown): AppRow | null {
-  const appId = str(pick(raw, 'appId', 'app_id', 'id'));
-  if (appId === null) return null;
-  const listed = pick(raw, 'availableVersions', 'available_versions', 'available', 'versions');
-  const latest = versionOf(pick(raw, 'latestVersion', 'latest_version', 'latest'));
-  const available = listed !== undefined ? versionsOf(listed) : latest !== null ? [latest] : null;
-  return {
-    appId,
-    name: str(pick(raw, 'name')),
-    owner: str(pick(raw, 'owner')),
-    org: str(pick(raw, 'org', 'orgId', 'org_id')),
-    package: str(pick(raw, 'package', 'pkg')),
-    version: versionOf(pick(raw, 'version', 'currentVersion', 'current_version', 'packageVersion')),
-    available,
-    deadline: instantFrom(pick(raw, ...DEADLINE)),
-  };
-}
-
-/** The apps of `apps` that are this account's own (owned by it, outside any organization). */
-function ownApps(apps: unknown[], accountId: string | null): AppRow[] {
-  return apps
-    .map(appRowFrom)
-    .filter((a): a is AppRow => a !== null && a.org === null && accountId !== null && a.owner === accountId);
+/** What {@link CalimeroClient.pendingApprovals} answers. */
+export interface PendingApprovals {
+  scope: ReportScope;
+  governance: Governance;
+  approvedReleases: string[] | null;
+  releases: PendingRelease[];
+  upgrades: PendingUpgrade[];
+  /** A passed deadline has stopped new work for the scope: approve `stalledBy.version` (or newer) to lift it. */
+  stalledBy: ReleaseDeadline | null;
+  /** Whether anything here is the user's to approve. */
+  actionable: boolean;
 }
 
 /**
- * The packages whose versions {@link pendingApprovalsFrom} needs looked up:
- * those of the account's own apps the node listed without available versions.
+ * The pending list from a scope's report pages (every page's apps
+ * concatenated into `report.apps`) and the cluster's release rules.
  */
-export function packagesToLookUp(me: unknown, apps: unknown[]): string[] {
-  const own = ownApps(apps, accountReleasesFrom(me).accountId);
-  return [...new Set(own.filter((a) => a.available === null && a.version !== null).map((a) => a.package))].filter(
-    (p): p is string => p !== null,
-  );
-}
-
-/** A package's versions from `GET /packages/{p}` (`latest`, `versions[].version`). */
-export function packageVersionsFrom(raw: unknown): string[] {
-  return newestFirst([
-    ...versionsOf(pick(raw, 'versions')),
-    ...versionsOf(pick(raw, 'latest')),
-  ]);
-}
-
-/**
- * Put the pending list together from what the node answered: `me` is
- * `GET /auth/me`, `apps` `GET /apps`, `packageVersions` each package's versions
- * (for apps the node gave no available versions for).
- */
-export function pendingApprovalsFrom(
-  me: unknown,
-  apps: unknown[],
-  packageVersions: Record<string, string[]> = {},
-  now: number = Date.now(),
-): PendingApprovals {
-  const account = accountReleasesFrom(me);
-  const overdue = (at: string | null) => at !== null && Date.parse(at) <= now;
-  const releasesBy: 'owner' | 'operator' = account.governance?.releases === 'operator' ? 'operator' : 'owner';
-  const upgradesBy: 'owner' | 'operator' = account.governance?.appUpgrades === 'operator' ? 'operator' : 'owner';
-
-  const waiting = new Set([...account.unapproved, ...account.onNodes.keys()]);
-  for (const v of account.approved) waiting.delete(v);
-  const releases: PendingRelease[] = newestFirst([...waiting]).map((version) => ({
-    version,
-    nodes: account.onNodes.get(version) ?? null,
-    managedBy: releasesBy,
-    actionable: releasesBy === 'owner',
-    releaseNotesUrl: releaseNotesUrl(version),
-    verifyUrl: verifyReleaseUrl(version),
-    deadline: account.deadlines.get(version) ?? null,
-    overdue: overdue(account.deadlines.get(version) ?? null),
-  }));
-
+export function pendingApprovalsFrom(report: AppsReport, rules: ReleaseRules, now: number = Date.now() / 1000): PendingApprovals {
+  const deadlineOf = (v: string) => rules.deadlines.find((d) => d.version === v) ?? null;
+  const releasesActionable = report.governance.releases === 'owner';
+  const upgradesActionable = report.governance.appUpgrades === 'owner';
+  const releases: PendingRelease[] = report.clusterReleases
+    .filter((r) => !r.approved)
+    .sort((a, b) => compareVersions(b.release, a.release))
+    .map((r) => ({
+      version: r.release,
+      nodes: r.nodes,
+      actionable: releasesActionable,
+      releaseNotesUrl: releaseNotesUrl(r.release),
+      verifyUrl: verifyReleaseUrl(r.release),
+      deadline: deadlineOf(r.release),
+    }));
   const upgrades: PendingUpgrade[] = [];
-  for (const app of ownApps(apps, account.accountId)) {
-    if (app.package === null || app.version === null) continue;
-    const current = app.version;
-    const known = app.available ?? packageVersions[app.package] ?? [];
-    const newer = newestFirst(known.filter((v) => compareVersions(v, current) > 0));
-    if (newer.length === 0) continue;
+  for (const a of report.apps) {
+    const available = a.availableVersions ?? [];
+    if (a.package === null || available.length === 0) continue;
     upgrades.push({
-      appId: app.appId,
-      name: app.name,
-      package: app.package,
-      from: app.version,
-      to: newer[0],
-      available: newer,
-      managedBy: upgradesBy,
-      actionable: upgradesBy === 'owner',
-      deadline: app.deadline,
-      overdue: overdue(app.deadline),
+      app: a.app,
+      name: a.name ?? null,
+      package: a.package.package,
+      from: a.package.version,
+      to: available[available.length - 1],
+      available,
+      actionable: upgradesActionable,
     });
   }
-
   return {
-    accountId: account.accountId,
-    approvedReleases: account.approved,
+    scope: report.scope,
+    governance: report.governance,
+    approvedReleases: report.approvedReleases,
     releases,
     upgrades,
-    governance: account.governance,
+    stalledBy: stalledBy(report.approvedReleases, rules.deadlines, now),
     actionable: releases.some((r) => r.actionable) || upgrades.some((u) => u.actionable),
-    restricted: releases.some((r) => r.actionable && r.overdue),
   };
+}
+
+/** The consent request that approves `release` for `scope`. */
+export function releaseConsent(scope: ReportScope, version: string, returnTo: string): ConsentRequest {
+  return { kind: 'release', scope: scope.kind === 'org' ? { org: scope.org } : 'account', subject: { version }, returnTo };
+}
+
+/** The consent request that upgrades `app` to `toVersion`. */
+export function upgradeConsent(app: string, toVersion: string, returnTo: string): ConsentRequest {
+  return { kind: 'upgrade', subject: { app, toVersion }, returnTo };
 }

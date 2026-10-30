@@ -18,6 +18,8 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `ConfirmRequired` | `412 CONFIRM_REQUIRED` | The request needs a passkey over the challenge in `details`; only reaches you from a method given no passkey. |
 | `ConfirmCancelled` | (not from the node) | The user dismissed the passkey prompt. Nothing was sent. |
 | `IdempotencyMismatch` | `409 IDEMPOTENCY_MISMATCH` | The key was used before with other arguments. |
+| `ReleaseDeadlineError` | `409 RELEASE_DEADLINE` | A release's deadline passed unapproved: no new apps, installs or upgrades until `release` (or newer) is approved. Running apps keep running. |
+| `ConsentStale` | `409 CONSENT_STALE` | What a consent page showed changed before the approval; ask for a new request. |
 | `ArgsTooLarge` | `413 ARGS_TOO_LARGE` | The call's arguments are over the node's limit (512 KiB); it did not run. |
 | `AppError` | `422 APP_ERROR` | The app refused the call: `appCode` (its declared error) and `fields`. The call was logged; its key is spent. |
 | `TrapError` | `422 TRAP` | The run trapped: `kind` (`OutOfFuel`, `OutOfMemory`, …). Logged. |

@@ -12,7 +12,7 @@ export const ORG_CAPABILITIES = {
   JOIN_OPEN_TEAMS: 1 << 2,
   /** Add and remove a team's members. */
   MANAGE_MEMBERS: 1 << 3,
-  /** Upgrade the organization's apps, start org upgrade runs, approve outbound hosts (org-wide). */
+  /** Upgrade the organization's apps (and, as a publisher, every instance of its `publisher` packages), start org upgrade runs, approve outbound hosts (org-wide). */
   MANAGE_APPLICATION: 1 << 4,
   /** Create a top-level team without being an admin. */
   CREATE_TEAM: 1 << 5,
@@ -22,6 +22,13 @@ export const ORG_CAPABILITIES = {
   MANAGE_VISIBILITY: 1 << 7,
   /** Set the organization's and its teams' metadata. */
   MANAGE_METADATA: 1 << 8,
+  /**
+   * Approve (or withdraw) the mero-tee releases that hold the apps the
+   * organization governs (those of the packages it publishes, and its own of
+   * unbound packages), and bind a package signing key to it
+   * (`bindPublisher`). Organization-wide only. Bit 9 is left unused.
+   */
+  APPROVE_RELEASES: 1 << 10,
 } as const;
 
 export type OrgCapability = keyof typeof ORG_CAPABILITIES;

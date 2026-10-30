@@ -61,7 +61,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `setAppMetadata(app, metadata)` | `POST apps/{app}/metadata` |
 | `appStorage(app)` | `GET apps/{app}/storage` |
 | `appAbi(app)` | `GET apps/{app}/abi` |
-| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)`, or `upgradeApp(app, version, passkey)` | `POST apps/{app}/upgrade` |
+| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
 | `transferApp(app, to, passkey)` | `POST apps/{app}/transfer` |
 | `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
@@ -90,7 +90,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | Method | Route |
 | --- | --- |
 | `createOrg(name)` → org id | `POST orgs` |
-| `getOrg(org)` | `GET orgs/{org}` |
+| `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`) | `GET orgs/{org}` |
 | `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
 | `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
 | `setMember(org, account, role)` | `POST orgs/{org}/members` |
@@ -108,10 +108,39 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
 | `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
 | `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |
-| `approveRelease(org \| null, version, passkey, approved?)`, or `approveRelease(version, passkey)` for the account's own apps | `POST orgs/{org}/releases` or `auth/releases` |
-| `withdrawRelease(version, passkey)`: refuses the last approved release first (`LAST_APPROVED_RELEASE`) | `GET auth/me`, then `POST auth/releases` |
-| `pendingApprovals()` → `PendingApprovals` (provisional; [guide](/guides/user-approvals/)) | `GET auth/me`, `GET apps`, `GET packages/{package}` |
+| `approveRelease(org \| null, version, passkey, approved?)` | `POST orgs/{org}/releases` or `auth/releases` |
+| `publisherBinding(signerId)` → `{ signerId, cluster, generation, bound }` | `GET publishers/{signerId}` |
+| `bindPublisher(org, { signerId, publicKey, signature }, passkey)` | `POST orgs/{org}/publishers` |
+| `upgradePublished(org, package, { version, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/packages/{package}/upgrade` |
 | `approveOutbound(org \| null, package, passkey, { prefixes?, replace? })` | `POST orgs/{org}/outbound` or `auth/outbound` |
+
+## Approvals and the consent page
+
+The approval routes above refuse a session opened on an app's frontend
+(`403`). An app sends its user to the node's consent page instead
+([guide](/guides/user-approvals/)).
+
+| Method | Route |
+| --- | --- |
+| `appsReport(org \| null, { after?, limit? })` → `AppsReport` | `GET orgs/{org}/apps` or `auth/apps` |
+| `appsReportAll(org \| null)` → `AppsReport` (every page) | the same, following `next` |
+| `releaseRules()` → `{ governance, deadlines }` | `GET releases` |
+| `pendingApprovals(org?)` → `PendingApprovals` | `GET auth/apps` (or `orgs/{org}/apps`), `GET releases` |
+| `requestConsent(request)` → `{ requestId, url, expiresAt }` | `POST consent/requests` |
+| `openConsentPage(request, navigate?)` | `POST consent/requests`, then navigates to `url` |
+| `consentResult(requestId)` → `{ requestId, kind, status, decidedAt }` | `GET consent/{id}/result` |
+| `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | polls `GET consent/{id}/result` |
+
+## Operator
+
+With the operator token (`useApiKey(token)`):
+
+| Method | Route |
+| --- | --- |
+| `opsApps({ after?, limit? })` → `OpsAppsReport` | `GET ops/apps` |
+| `opsOrgs({ after?, limit? })` → `OpsOrgsReport` | `GET ops/orgs` |
+| `setReleaseDeadline(version, after)` | `POST ops/releases/{version}/deadline` |
+| `liftReleaseDeadline(version)` | `DELETE ops/releases/{version}/deadline` |
 
 ## Any route
 
@@ -122,7 +151,7 @@ answer a `412 CONFIRM_REQUIRED`.
 
 ## Not covered
 
-- `/ops/*`, the operator's API (ops token): use core's `meroctl`.
+- The rest of `/ops/*`, the operator's API: use core's `meroctl`.
 - `/apps/{app}/attestation` and receipt verification (core's
   `Client::verify_app_cluster`, which checks every replica's receipt key and the
   cluster's governance): not yet in this client.
@@ -132,7 +161,9 @@ answer a `412 CONFIRM_REQUIRED`.
 
 `fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
-`DEFAULT_ORG_CAPABILITIES`; the sealed transport (`createSealedFetch`,
+`DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `upgradeConsent`,
+`consentReturn`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
+`publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
 and release verification (`createQuoteVerifier`, `trustedMeasurementsFromReleases`,
 `createSignedReleaseVerifier`, `trustSignedRelease`, `verifySignedNodeRelease`,

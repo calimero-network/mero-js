@@ -86,15 +86,23 @@ The org's owner, or a member holding `MANAGE_APPLICATION` org-wide, starts one.
 
 ## Approvals
 
-Where the cluster leaves these decisions to the owner (the default), they are
-made with the owner's passkey and logged as consent.
+Where the cluster leaves these decisions to the owner side (the default), they
+are made with a passkey and logged as consent. These calls belong to a page on
+the cluster's own origin (a console); a session opened on an app's frontend is
+refused them, and an app sends its user to the
+[consent page](/guides/user-approvals/) instead.
 
 **Releases.** Nodes on a mero-tee release get an organization's data only once
 it is approved for that organization (the release the org began on is
-approved at creation). The organization's owner approves, or a member holding
-the organization's release-approval capability. A release can carry a deadline:
-past it, an organization that has not approved it cannot create apps, install
-packages or upgrade apps, while its running apps keep working:
+approved at creation). A member holding `APPROVE_RELEASES` approves (the owner
+and admins hold it; `getOrg(org).releaseApprovers` lists who does). An app's
+releases are its **publisher's** to approve: the organization its package's
+signing key is bound to, for every instance of the key's packages; for an
+unbound package, the app's own organization or account. The operator can give a
+release a deadline (`releaseRules()` lists them): past it, a scope that has not
+approved it (or newer) creates no apps, installs nothing and upgrades nothing
+(`ReleaseDeadlineError`, `getOrg(org).newWorkStopped`), while its running apps
+keep working:
 
 ```ts
 await client.approveRelease(org, '2.3.120', passkey);
@@ -111,8 +119,31 @@ await client.approveOutbound(org, 'com.example.kv', passkey, { prefixes: ['https
 await client.approveOutbound(null, 'com.example.kv', passkey); // the account's own apps
 ```
 
-For apps your users own themselves, the prompt belongs in your app: see
-[Let your users approve node images and app upgrades](/guides/user-approvals/).
+**Publishers.** An organization becomes the publisher of a signing key's
+packages only with the key's own signature:
+
+```ts
+import { publisherBindingBytes } from '@calimero-network/mero-js';
+
+const { cluster, generation } = await client.publisherBinding(signerId);
+const signature = sign(publisherBindingBytes(cluster, org, signerId, generation)); // the key's Ed25519, base64url
+await client.bindPublisher(org, { signerId, publicKey, signature }, passkey);   // a member holding APPROVE_RELEASES
+```
+
+A package whose manifest declares `upgrades: "publisher"` is then upgraded by
+the publisher's `MANAGE_APPLICATION` holders, every instance at once:
+
+```ts
+const run = await client.upgradePublished(org, 'com.example.kv', { version: '1.2.0' }, passkey);
+```
+
+Without `upgrades` (or with `"owner"`), each instance's owner upgrades it. A
+package may move from `publisher` to `owner` in a later release, never back.
+
+**Reading what waits.** `appsReport(org)` (any member) answers the approved
+releases, the releases the cluster's nodes run and whether each is approved,
+and per app its release, the newer ones it may move to and its last upgrade;
+`pendingApprovals(org)` sums it up.
 
 <Aside type="note">
   A cluster started with `--release-approvals operator`, `--app-upgrades

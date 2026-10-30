@@ -1,162 +1,143 @@
 ---
-title: Let your users approve node images and app upgrades
-description: For apps your users own, only they can let a new mero-tee node image receive their data or move their app to a new version. Show them the prompt; mero-js sends their passkey approval straight to the node.
+title: Ask your users to approve node images and app upgrades
+description: Some decisions about your users' apps are theirs alone. Your app shows what waits, then sends them to the node's own consent page to approve it with their passkey; it never runs the approval itself.
 sidebar:
   order: 3
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-## Why your app has to ask
+## Why the approval is not in your app
 
-On Calimero an app instance can belong to an organization or to one person's
-account. When it is a person's, two decisions about it are theirs alone,
-wherever the cluster leaves them to owners (the default):
+Some decisions belong to the account holder, wherever the cluster leaves them
+to the owner side (the default):
 
 - **A new node image.** A mero-tee release is the image a node boots: kernel,
-  firmware and `merod`. When the cluster starts nodes on a new release, those
-  nodes get none of the user's data until the user approves that release.
+  firmware and `merod`. Nodes on a new release get none of an app's data until
+  its approver approves that release.
 - **A new app version.** An upgrade switches the app to other code, which then
-  reads the user's data, so it runs only with the owner's approval.
+  reads its data.
+- **Outbound hosts.** A new destination the app may send data to.
 
-Each approval is a passkey step-up over that exact change, which the node
-checks and logs as the user's consent. The operator (Calimero) has no
-credential that could approve for the user, and neither does your backend. So
-the prompt has to come from your app, in front of the user, and
-the request has to go from their browser to the node.
+Each is a passkey step-up over that exact change, logged as consent. A passkey
+prompt is blind, though: the authenticator shows a site name, never what it
+signs. If your frontend ran the ceremony, it could show "update to 1.2.1" and
+have the passkey sign something else. So the node refuses every approval
+route to a session opened on an app's frontend (`403`), and serves a
+**consent page** of its own, on its own origin, that shows the person what
+they approve from the node's state and the signed manifests: for an upgrade,
+the versions, the publisher and a capability sheet of what changes.
 
-mero-js sends it over the same channel as every other request: the client
-verifies the node's TDX attestation, seals the request to the key that quote
-binds, and the node verifies the passkey assertion inside the enclave. No
-relay or server sits in between that could approve on the user's behalf.
+Your app does three things: read what waits, ask the node for a consent
+request, and send the user to its page.
 
-## When to show the prompt
-
-Ask the node once the user is signed in (with a passkey: an API key cannot
-approve), and again when they come back to the app:
+## Read what waits
 
 ```ts
-const pending = await client.pendingApprovals();
+const pending = await client.pendingApprovals();      // the account's own apps
+const forOrg = await client.pendingApprovals(orgId);   // an organization's (any member)
 if (pending.actionable) showApprovalsBanner(pending);
 ```
 
-`pendingApprovals()` lists, for the apps the account owns outside any
-organization:
+It reads `GET /auth/apps` (or `/orgs/{org}/apps`, every page) and the public
+`GET /releases`, and answers:
 
-- `releases`: mero-tee releases the cluster's nodes run that the account has not approved,
-  each with `releaseNotesUrl` and `verifyUrl` (the public verifier's page for
-  its signed measurements), and `deadline` (ISO 8601, or `null`) with
-  `overdue` when the release carries a deadline;
-- `upgrades`: apps with a newer release of their package (`from`, `to`, and every newer
-  version in `available`);
-- `approvedReleases` and `governance`: who holds each decision on this cluster;
-- `restricted`: a release the account has not approved is past its deadline.
+- `releases`: mero-tee releases the cluster's nodes run that the scope has not
+  approved, newest first, each with `nodes`, `releaseNotesUrl`, `verifyUrl`
+  (the public verifier's page for its signed measurements) and `deadline`;
+- `upgrades`: apps with newer releases of their package (`from`, `to`, and
+  every one it may move to in `available`);
+- `approvedReleases` and `governance`;
+- `stalledBy`: when set, a release's deadline has passed and the scope has
+  not approved it or a newer one, so the node refuses new apps, installs and
+  upgrades (`ReleaseDeadlineError`); running apps keep running.
 
-Where the cluster gives a decision to its operator (`--release-approvals
-operator` or `--app-upgrades operator`), its items carry `managedBy:
-'operator'` and `actionable: false`. Show them as information, or not at all:
-there is nothing for the user to do, and the node would refuse them with
-`403`.
+Where the cluster gives a decision to its operator, its items are not
+`actionable`: show them as information or not at all. For the raw report
+(per app: its release, publisher, replicas and last upgrade) use
+`appsReport(org | null, { after, limit })`.
 
-A banner that the user can put off works well: list each item with
-**Approve** and **Later**, and link the release notes and the verifier so they
-can check what they approve. When a release has a `deadline`, say so:
-"Approve by 12 March 2027". When `restricted` is true, say what is blocked
-until they approve (see [deadlines](#deadlines)) and don't let them dismiss it
-for long.
+## Send them to the consent page
 
 ```ts
-const approveBy = (r: PendingRelease) =>
-  r.deadline ? `Approve by ${new Date(r.deadline).toLocaleDateString()}` : 'Approve when you are ready';
+import { releaseConsent, upgradeConsent, consentReturn } from '@calimero-network/mero-js';
+
+const returnTo = `${location.origin}/settings`;
+
+// "Approve" on a release:
+await client.openConsentPage(releaseConsent(pending.scope, release.version, returnTo));
+
+// "Upgrade" on an app:
+await client.openConsentPage(upgradeConsent(upgrade.app, upgrade.to, returnTo));
 ```
 
-## The code
+`openConsentPage` posts `POST /consent/requests` (any passkey session of the
+account, your frontend's included) and navigates to the page's `url`. The
+person approves there with their passkey, or declines, and the page sends
+them back to `returnTo?request_id=…&result=approved|declined`. Treat that as
+a hint and confirm it:
 
 ```ts
-import { CalimeroClient, browserPasskey, ConfirmCancelled, type PendingRelease } from '@calimero-network/mero-js';
-
-const client = new CalimeroClient({ baseUrl, policy: { release: { minReleaseVersion: '2.3.109' } } });
-await client.signIn(browserPasskey());
-
-const pending = await client.pendingApprovals();
-
-for (const release of pending.releases.filter((r) => r.actionable)) {
-  // Show release.version, release.releaseNotesUrl and release.verifyUrl, then on "Approve":
-  try {
-    await client.approveRelease(release.version, browserPasskey());
-  } catch (e) {
-    if (!(e instanceof ConfirmCancelled)) throw e; // the user dismissed the passkey prompt: "Later"
-  }
-}
-
-for (const upgrade of pending.upgrades.filter((u) => u.actionable)) {
-  // "Upgrade notes from 1.0.0 to 1.1.0?" then on "Approve":
-  await client.upgradeApp(upgrade.appId, upgrade.to, browserPasskey());
+const back = consentReturn(location.href);
+if (back) {
+  const { status } = await client.consentResult(back.requestId);
+  if (status === 'approved') refresh();
 }
 ```
 
-Each call is sent once without an approval; the node answers `412
-CONFIRM_REQUIRED` with a challenge over that exact change, the passkey signs
-it, and the call is sent again with the assertion. A dismissed prompt rejects
-with `ConfirmCancelled` and changes nothing.
-
-To take an approval back:
+To keep your page open, pass a navigator that opens a window and poll:
 
 ```ts
-await client.withdrawRelease('2.3.110', browserPasskey());
+const started = await client.openConsentPage(request, (url) => window.open(url, '_blank'));
+const { status } = await client.waitForConsent(started.requestId, { expiresAt: started.expiresAt });
 ```
 
-`withdrawRelease` refuses the account's last approved release
-(`LAST_APPROVED_RELEASE`) before it prompts; the node refuses it too, since an
-empty set would leave the apps unrestricted.
+`returnTo` must be your package's frontend origin, or one your package's
+signed manifest names (`links.frontend`, `frontendAliases`); anything else is
+`400 RETURN_TO_NOT_ALLOWED`. A request lives 10 minutes and is decided once.
+If what the page showed changes before the person approves (a new bundle, a
+re-published release), the node answers `ConsentStale` (`409 CONSENT_STALE`):
+ask again so they see the new facts. A node that cannot fetch a release's
+signed measurements answers `503`.
 
-A failed migration rejects `upgradeApp` with `UPGRADE_FAILED` (422) and the
-app stays on its version. See [upgrades](/guides/apps/#upgrades).
+## Who approves
 
-## What happens before the user approves
+- **Releases** are the app's publisher's: the organization its package's
+  signing key is bound to, by its members holding `APPROVE_RELEASES`. For an
+  unbound package, the app's own organization or, for an app outside one, its
+  owner account.
+- **Upgrades** are whoever the package's signed manifest names (`upgrades`):
+  `owner` (the default) means each instance's owner, or its organization's
+  `MANAGE_APPLICATION` holders; `publisher` means the publisher's
+  `MANAGE_APPLICATION` holders, for every instance
+  ([publishers](/guides/organizations/#approvals)).
 
-Nothing breaks. The nodes that already hold the user's data keep it and keep
-serving the app. A node on a release the user has not approved can join the
-cluster, but it is sent none of their apps' data: no log entries, no snapshots,
-and no new replica is placed on it. Once they approve, those nodes can hold
-replicas of their apps. Until they upgrade, their apps keep running the
-version they have.
+The node checks the caller could make the approval when the request is made,
+and again when it is approved.
+
+## What happens before they approve
+
+Nothing breaks. The nodes that already hold the app's data keep it and keep
+serving it. A node on a release the approver has not approved can join the
+cluster, but it is sent none of the app's data and no new replica is placed on
+it. Until an upgrade is approved, the app keeps running the version it has.
 
 ### Deadlines
 
-A release can carry a deadline, as a mobile OS update can. Until then,
-approving is up to the user. Once a release's deadline has passed, an owner
-who has not approved it can no longer create apps, install packages or
-upgrade apps; the apps they already run keep working, and approving the
-release lifts the restriction. `pendingApprovals()` reports the
-deadline on each release (`deadline`, `overdue`) and `restricted` once one
-has passed, so your prompt can say "Approve by 12 March" ahead of time and
-explain why a create or an upgrade was refused after it.
+The operator can give a release a deadline (`releaseRules()` lists them, and
+each pending release carries its own). Before it, approving is up to the user;
+say "Approve by 12 March". After it, a scope that has not approved the release
+(or a newer one) creates no apps, installs nothing and upgrades nothing, while
+its running apps keep working; approving lifts it at once.
 
-## Where it works
-
-- **The user's own apps only.** Apps an organization owns are approved in the
-  Calimero console by the organization's members holding the capability for
-  it (release approvals; `MANAGE_APPLICATION` for upgrades), not only its
-  owner; the same calls are `approveRelease(org, version, passkey)` and
-  `upgradeApp`. `pendingApprovals()` does not list them.
-- **A session on your own origin.** A session opened on the app frontend the
-  cluster serves under its apps domain is bound to that package, and the node
-  refuses approvals and upgrades from it (`403`). Make these calls from a page
-  on an origin the cluster accepts for passkeys, with a session from
-  `signIn`.
-
-<Aside type="caution">
-  The cluster's node releases, release deadlines, apps' available versions and
-  governance holders are reported by a newer core than 1.0's first releases. Against a node that
-  does not report them, `releases` is empty, `deadline` and `governance` are `null`, and
-  available versions are read from each package (`GET packages/{package}`).
-  The node enforces every decision either way.
+<Aside type="note">
+  `approveRelease`, `upgradeApp` and `approveOutbound` with a passkey remain
+  for pages on the cluster's own origin, such as a console. From your app's
+  frontend, they are refused.
 </Aside>
 
 ## Further reading
 
-- [Governance](https://calimero-network.github.io/core/protocol/governance/)
-  in core's protocol docs: who holds each decision and how the replicas enforce it.
-- [Organizations](/guides/organizations/#approvals): the same approvals for an
-  organization's apps.
+- [The consent page](https://calimero-network.github.io/core/protocol/consent-page/)
+  and [Governance](https://calimero-network.github.io/core/protocol/governance/)
+  in core's protocol docs.
