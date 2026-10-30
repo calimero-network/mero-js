@@ -392,13 +392,13 @@ export class CalimeroClient {
   }
 
   /**
-   * {@link request}, answering what a node restart or a node on the wrong
-   * release does to a session: a successful response, or the refusal as a
+   * {@link request}, answering what a lost issuing node or a node on the
+   * wrong release does to a session: a successful response, or the refusal as a
    * typed error ({@link errorFrom}).
    *
    * - `401 UNAUTHENTICATED` to a request that carried a session: the node that
-   *   issued the session may have restarted or gone (its signing key is new),
-   *   which any node of the cluster answers with a refresh. The client
+   *   signed the session may be gone, replaced, or out of reach of the node
+   *   asked, which any node of the cluster answers with a refresh. The client
    *   refreshes once, shared by every request that needs it at the same time
    *   ({@link refresh}), and repeats the request once. A refresh that is
    *   refused surfaces as {@link LoginRequired}.
@@ -440,7 +440,7 @@ export class CalimeroClient {
 
   /** Whether a `401` to a request sent with `token` is one a refresh may answer. */
   private mayRefresh(token: string | undefined, path: string): boolean {
-    return token !== undefined && this.current !== undefined && !spendsOnce(path) && !path.startsWith('auth/logout');
+    return token !== undefined && this.current !== undefined && !spendsOnce(path);
   }
 
   /**

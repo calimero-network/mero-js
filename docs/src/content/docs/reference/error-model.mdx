@@ -40,10 +40,11 @@ try {
 
 ## Restarts and other nodes
 
-A session token is signed by the node that issued it, with a key that node
-makes when it starts. When that node restarts or is replaced (every rolling
-deploy), other nodes answer its tokens `401` — not because the user signed
-out. The client answers that itself:
+A session token is signed by the node that issued it. Other nodes take it only
+while they can vouch for that node's signing key, so when the issuer is
+replaced, removed or out of reach (a rolling deploy, an image rollout), they
+answer `401` — not because the user signed out. The client answers that
+itself:
 
 - **`401 UNAUTHENTICATED`** to a request sent with a session: the client
   refreshes once (`POST auth/refresh`, which any node of the cluster takes) and

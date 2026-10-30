@@ -79,9 +79,9 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 Refusals are typed (`LoginRequired`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`,
 `ArgsTooLarge`, `IdempotencyMismatch`, `AppError`, `TrapError`, `UnavailableError`),
-all extending `CalimeroError` with the node's `status` and `code`. A `401` after
-the node that issued the session restarted is answered by one refresh and a
-repeat; a `421 WRONG_NODE` by moving to the next of the `nodes` the client was
+all extending `CalimeroError` with the node's `status` and `code`. A `401` once
+the node that issued the session is replaced or out of reach is answered by one
+refresh and a repeat; a `421 WRONG_NODE` by moving to the next of the `nodes` the client was
 given. See the
 [error model](https://calimero-network.github.io/mero-js/reference/error-model/).
 

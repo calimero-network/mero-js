@@ -30,11 +30,13 @@ export class CalimeroError extends Error {
  * `401 UNAUTHENTICATED` that refreshing could not answer: sign in (again) and
  * repeat the request.
  *
- * A session token is signed by the node that issued it, with a key that node
- * makes when it starts, so a `401` often means only that the issuer restarted
- * or is gone. The client answers that itself when it holds a refresh token: it
- * refreshes once and repeats the request. This error reaches a caller when
- * there is no refresh token (an API key, say), or the refresh was refused.
+ * A session token is signed by the node that issued it, and other nodes take
+ * it only while they can vouch for that node's signing key: a `401` often
+ * means only that the issuer was replaced or cannot be reached, not that the
+ * user signed out. The client answers that itself when it holds a refresh
+ * token: it refreshes once (any node takes the refresh) and repeats the
+ * request. This error reaches a caller when there is no refresh token (an API
+ * key, say), or the refresh was refused.
  */
 export class LoginRequired extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {

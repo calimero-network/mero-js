@@ -50,8 +50,9 @@ await resumed.refresh(); // swap the refresh token for a new session
 ```
 
 A refresh token is used once: a reused one revokes the session. A session is
-signed by the node that issued it, so it stops verifying when that node
-restarts; the client then refreshes by itself, once, and repeats the request
+signed by the node that issued it, so it can stop verifying when that node is
+replaced or cannot be reached; the client then refreshes by itself, once, on
+any node, and repeats the request
 (see [Restarts and other nodes](/reference/error-model/#restarts-and-other-nodes)).
 A session that refreshing cannot renew — expired, revoked, or a refresh token
 already used — makes requests fail with [`LoginRequired`](/reference/error-model/).

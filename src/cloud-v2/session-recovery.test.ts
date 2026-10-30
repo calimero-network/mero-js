@@ -1,10 +1,11 @@
 /**
- * What a node restart or a node on the wrong release does to a session, against
- * stand-in cloud nodes through the real sealed channel. Synthetic data only.
+ * What a lost issuing node or a node on the wrong release does to a session,
+ * against stand-in cloud nodes through the real sealed channel. Synthetic data
+ * only.
  *
- * Session tokens are signed by the node that issued them, with a key it makes
- * at start (core #4774): after that node restarts or goes, a `401` means
- * "refresh on any node", not "signed out". A node whose release may not serve
+ * Session tokens are signed by the node that issued them (core #4774): once
+ * that node is replaced or out of reach, a `401` means "refresh on any node",
+ * not "signed out". A node whose release may not serve
  * the account answers `421 WRONG_NODE`: the client moves to another node.
  */
 
@@ -44,7 +45,7 @@ const signedIn = (nodes?: string[]) => {
   return client;
 };
 
-/** A node that restarted since it issued `OLD`: it takes only `NEW`, and exchanges `rt_old` once. */
+/** A node that can no longer vouch for `OLD`'s issuer: it takes only `NEW`, and exchanges `rt_old` once. */
 const restartedNode = (head: RequestHead, body: Record<string, unknown>): Reply => {
   if (head.path === '/auth/refresh') {
     return body.refreshToken === 'rt_old' ? ok(NEW) : refused(401, 'UNAUTHENTICATED', { reason: 'unknown refresh token' });
@@ -54,7 +55,7 @@ const restartedNode = (head: RequestHead, body: Record<string, unknown>): Reply 
     : refused(401, 'UNAUTHENTICATED', { reason: 'signature does not verify' });
 };
 
-describe('a 401 after the issuing node restarted', () => {
+describe('a 401 once the issuing node is gone', () => {
   it('refreshes once and repeats the call with the same idempotency key', async () => {
     a.answer = restartedNode;
     const client = signedIn();
@@ -93,6 +94,14 @@ describe('a 401 after the issuing node restarted', () => {
     expect(error).toBeInstanceOf(LoginRequired);
     expect(at(a, '/auth/refresh')).toHaveLength(1);
     expect(at(a, '/auth/me')).toHaveLength(2);
+  });
+
+  it('signs out the refreshed session rather than leaving it live', async () => {
+    a.answer = restartedNode;
+    const client = signedIn();
+    await client.signOut();
+    expect(at(a, '/auth/logout').map((r) => bearer(r.head))).toEqual([`Bearer ${OLD.sessionToken}`, `Bearer ${NEW.sessionToken}`]);
+    expect(client.session).toBeUndefined();
   });
 
   it('does not refresh for an API key', async () => {
