@@ -77,9 +77,12 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Owner decisions** (passkey approval): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`.
 - **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
 
-Refusals are typed (`LoginRequired`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`,
+Refusals are typed (`LoginRequired`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`,
 `ArgsTooLarge`, `IdempotencyMismatch`, `AppError`, `TrapError`, `UnavailableError`),
-all extending `CalimeroError` with the node's `status` and `code`. See the
+all extending `CalimeroError` with the node's `status` and `code`. A `401` after
+the node that issued the session restarted is answered by one refresh and a
+repeat; a `421 WRONG_NODE` by moving to the next of the `nodes` the client was
+given. See the
 [error model](https://calimero-network.github.io/mero-js/reference/error-model/).
 
 The pieces it is built from are exported too: the sealed transport

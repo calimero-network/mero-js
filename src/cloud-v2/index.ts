@@ -10,6 +10,7 @@ export {
   NotFound,
   TrapError,
   UnavailableError,
+  WrongNode,
   errorFrom,
 } from './errors.js';
 export type { Committed } from './errors.js';
