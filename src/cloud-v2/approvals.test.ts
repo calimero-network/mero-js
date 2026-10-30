@@ -10,9 +10,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { StandInCloudNode } from '../../tests/cloud-v2/stand-in-node.js';
 import {
   CalimeroClient,
+  CalimeroError,
   ConsentStale,
   ORG_CAPABILITIES,
   ReleaseDeadlineError,
+  confirmationCode,
   consentReturn,
   pageQuery,
   pendingApprovalsFrom,
@@ -134,6 +136,11 @@ describe('helpers', () => {
     expect(consentReturn('https://kv.apps.example/settings')).toBeNull();
   });
 
+  it("computes the consent page's confirmation code as core does", async () => {
+    expect(await confirmationCode('1.AAAAAAAAAAAAAAAAAAAAAA')).toBe('R02-9P2');
+    expect(await confirmationCode('2.q7Xb3kR0fLzM8nW1yVt5cA')).toBe('54E-429');
+  });
+
   it('pages reports and refuses a limit core would', () => {
     expect(pageQuery()).toBe('');
     expect(pageQuery({ after: 'a-1', limit: 50 })).toBe('?after=a-1&limit=50');
@@ -228,6 +235,60 @@ describe('over the sealed channel', () => {
     const result = await c.waitForConsent('1.xyz', { intervalMs: 1 });
     expect(result).toEqual({ requestId: '1.xyz', kind: 'upgrade', status: 'approved', decidedAt: 5 });
     expect(last().head.path).toBe('/consent/1.xyz/result');
+  });
+
+  it("shows the page's code before navigating, and refuses a code that is not the request's", async () => {
+    const c = client();
+    const request = upgradeConsent('a-1', '1.1.0', 'https://kv.apps.example/settings');
+    const started = {
+      requestId: '1.AAAAAAAAAAAAAAAAAAAAAA',
+      url: 'https://node-1.example/consent/1.AAAAAAAAAAAAAAAAAAAAAA',
+      expiresAt: 9e9,
+      code: 'R02-9P2',
+    };
+    node.answer = () => ({ status: 200, json: started });
+
+    // `confirm` sees the answer, code included, before the page opens.
+    const opened: string[] = [];
+    const shown: string[] = [];
+    const confirm = async (s: { code?: string; url: string }) => {
+      shown.push(s.code ?? '');
+      expect(opened).toEqual([]);
+      return true;
+    };
+    expect(await c.openConsentPage(request, { navigate: (url) => opened.push(url), confirm })).toEqual(started);
+    expect(shown).toEqual(['R02-9P2']);
+    expect(opened).toEqual([started.url]);
+
+    // Declined: answered, not opened.
+    opened.length = 0;
+    expect(await c.openConsentPage(request, { navigate: (url) => opened.push(url), confirm: () => false })).toEqual(started);
+    expect(opened).toEqual([]);
+
+    // A code that is not the request's: refused, not opened, `confirm` not asked.
+    node.answer = () => ({ status: 200, json: { ...started, code: '54E-429' } });
+    let asked = false;
+    const refused = await c
+      .openConsentPage(request, {
+        navigate: (url) => opened.push(url),
+        confirm: () => (asked = true),
+      })
+      .catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(CalimeroError);
+    expect(refused).toMatchObject({
+      code: 'CONSENT_CODE_MISMATCH',
+      details: { requestId: started.requestId, code: '54E-429', expected: 'R02-9P2' },
+    });
+    expect(asked).toBe(false);
+    expect(opened).toEqual([]);
+
+    // An older node sends no code: `confirm` still runs, and the page opens.
+    const { code: _code, ...older } = started;
+    node.answer = () => ({ status: 200, json: older });
+    shown.length = 0;
+    expect(await c.openConsentPage(request, { navigate: (url) => opened.push(url), confirm })).toEqual(older);
+    expect(shown).toEqual(['']);
+    expect(opened).toEqual([started.url]);
   });
 
   it('types the deadline and stale-consent refusals', async () => {

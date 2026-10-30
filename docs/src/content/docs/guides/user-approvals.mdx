@@ -85,10 +85,50 @@ if (back) {
 }
 ```
 
+### Show the confirmation code first
+
+The node's answer carries `code`, a short confirmation code such as
+`R02-9P2` that the consent page also shows. Show it to the person before you
+send them to `url`, and tell them to check the page shows the same code: that
+is how they know the page is the one your request opened. The code is not a
+secret. `openConsentPage` takes an options object whose `confirm` runs before
+it navigates; answer `false` and it does not open the page:
+
+```ts
+await client.openConsentPage(request, {
+  confirm: async ({ code }) =>
+    code === undefined || window.confirm(`You will be asked to approve on a page showing ${code}. Continue?`),
+});
+```
+
+`openConsentPage` checks the node's `code` against `confirmationCode(requestId)`
+(the first 30 bits of SHA-256 of the request id, as `XXX-XXX` in Crockford
+base32) and throws `CalimeroError` with code `CONSENT_CODE_MISMATCH`, without
+navigating, when they differ. With `requestConsent` you send the person
+yourself; check the code the same way:
+
+```ts
+import { confirmationCode } from '@calimero-network/mero-js';
+
+const started = await client.requestConsent(request);
+if (started.code !== undefined && started.code !== (await confirmationCode(started.requestId))) {
+  throw new Error('the node answered a code that is not its request');
+}
+showCode(started.code); // then send them to started.url
+```
+
+Nodes older than the code leave `code` out.
+
 To keep your page open, pass a navigator that opens a window and poll:
 
 ```ts
-const started = await client.openConsentPage(request, (url) => window.open(url, '_blank'));
+const started = await client.openConsentPage(request, {
+  navigate: (url) => window.open(url, '_blank'),
+  confirm: (started) => {
+    showCode(started.code); // keep it on screen while they approve
+    return true;
+  },
+});
 const { status } = await client.waitForConsent(started.requestId, { expiresAt: started.expiresAt });
 ```
 

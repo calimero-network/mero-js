@@ -23,12 +23,14 @@ import {
 } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
 import {
+  confirmationCode,
   pageQuery,
   pendingApprovalsFrom,
   type AppsReport,
   type ConsentRequest,
   type ConsentResult,
   type ConsentStarted,
+  type OpenConsentOptions,
   type OpsAppsReport,
   type OpsOrgsReport,
   type PageOptions,
@@ -1132,19 +1134,39 @@ export class CalimeroClient {
 
   /**
    * {@link requestConsent}, then send the browser to the consent page
-   * (`navigate`, by default `window.location.assign`). Answers the request
-   * once `navigate` returns: with a popup (`url => window.open(url)`), poll it
-   * with {@link waitForConsent}.
+   * (`navigate`, by default `window.location.assign`). Pass `navigate` itself
+   * or {@link OpenConsentOptions}, whose `confirm` runs first with the node's
+   * answer so the app can show the person its `code`; when it answers `false`
+   * the page is not opened. When the node sends a `code` that is not
+   * {@link confirmationCode} of `requestId`, it throws `CalimeroError`
+   * (`CONSENT_CODE_MISMATCH`) and does not navigate. Answers the request
+   * once `navigate` returns (or `confirm` declines): with a popup
+   * (`url => window.open(url)`), poll it with {@link waitForConsent}.
    */
   async openConsentPage(
     request: ConsentRequest,
-    navigate: (url: string) => void = (url) => {
-      const w = (globalThis as { window?: { location: { assign(url: string): void } } }).window;
-      if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
-      w.location.assign(url);
-    },
+    navigateOrOptions: ((url: string) => void) | OpenConsentOptions = {},
   ): Promise<ConsentStarted> {
+    const options = typeof navigateOrOptions === 'function' ? { navigate: navigateOrOptions } : navigateOrOptions;
+    const navigate =
+      options.navigate ??
+      ((url: string) => {
+        const w = (globalThis as { window?: { location: { assign(url: string): void } } }).window;
+        if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
+        w.location.assign(url);
+      });
     const started = await this.requestConsent(request);
+    if (started.code !== undefined) {
+      const expected = await confirmationCode(started.requestId);
+      if (started.code !== expected) {
+        throw new CalimeroError(200, 'CONSENT_CODE_MISMATCH', 'the consent page code does not match the request', {
+          requestId: started.requestId,
+          code: started.code,
+          expected,
+        });
+      }
+    }
+    if (options.confirm && !(await options.confirm(started))) return started;
     navigate(started.url);
     return started;
   }
