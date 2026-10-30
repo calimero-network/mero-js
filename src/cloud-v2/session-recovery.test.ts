@@ -175,13 +175,33 @@ describe('421 WRONG_NODE', () => {
     expect(client.nodeUrl).toBe(b.url);
   });
 
-  it('a refresh refused 421 is not sent again elsewhere: the token is spent, so LoginRequired', async () => {
+  it('a refresh refused 421 goes to the next node with the same token, unspent', async () => {
     a.answer = (head) => (head.path === '/auth/refresh' ? wrongNode() : refused(401, 'UNAUTHENTICATED'));
+    b.answer = restartedNode;
     const client = signedIn([b.url]);
-    const error = await failure(client.view('app-1', 'get', {}));
-    expect(error).toBeInstanceOf(LoginRequired);
-    expect(error).toMatchObject({ details: { refusedWith: 'WRONG_NODE' } });
-    expect(at(b, '/auth/refresh')).toHaveLength(0);
+    const answer = await client.view('app-1', 'get', {});
+    expect(answer.result).toBe('v1');
+    expect(at(a, '/auth/refresh').map((r) => r.body)).toEqual([{ refreshToken: 'rt_old' }]);
+    expect(at(b, '/auth/refresh').map((r) => r.body)).toEqual([{ refreshToken: 'rt_old' }]);
+    expect(at(b, '/apps/app-1/views').map((r) => bearer(r.head))).toEqual([`Bearer ${NEW.sessionToken}`]);
     expect(client.nodeUrl).toBe(b.url);
+    expect(client.session).toEqual(NEW);
+  });
+
+  it('a refresh every node refuses 421 is WrongNode, tried once per node', async () => {
+    a.answer = wrongNode;
+    b.answer = wrongNode;
+    const client = signedIn([b.url]);
+    expect(await failure(client.refresh())).toBeInstanceOf(WrongNode);
+    expect(at(a, '/auth/refresh')).toHaveLength(1);
+    expect(at(b, '/auth/refresh')).toHaveLength(1);
+    expect(client.session).toEqual(OLD);
+  });
+
+  it('a refresh refused 421 with no other node is WrongNode', async () => {
+    a.answer = wrongNode;
+    const client = signedIn();
+    expect(await failure(client.refresh())).toBeInstanceOf(WrongNode);
+    expect(at(a, '/auth/refresh')).toHaveLength(1);
   });
 });

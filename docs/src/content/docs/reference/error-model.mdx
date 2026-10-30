@@ -65,15 +65,15 @@ itself:
 
 Repeating is safe for any request, a call too: the node answers `401` and `421`
 while judging the credential, before it runs anything, and a call keeps its
-idempotency key. Two requests are never repeated, because the node refuses them
-only after spending something single-use:
+idempotency key. A node answers `421` to the ceremonies that mint a session
+before it spends their challenge or refresh token, and:
 
-- a sign-in or sign-up that answers `421` used its passkey challenge. The client
-  moves to the next node and throws `WrongNode`; call `signIn` again.
-- a refresh that answers `421` used its refresh token, so it is not sent to
-  another node (which would revoke the session). It surfaces as `LoginRequired`
-  with `details.refusedWith: 'WRONG_NODE'`, and the next sign-in goes to the
-  next node.
+- a sign-in or sign-up that answers `421` is not repeated, since it needs the
+  passkey again: the client moves to the next node and throws `WrongNode`; call
+  `signIn` again.
+- a refresh that answers `421` is sent, with the same refresh token, to each
+  next node in turn, at most once per node. Only when every node refuses does
+  `WrongNode` reach you.
 
 ## Did it commit?
 

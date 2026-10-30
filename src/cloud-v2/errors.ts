@@ -51,9 +51,10 @@ export class LoginRequired extends CalimeroError {
  * another node of the cluster; refreshing here would not help.
  *
  * The client moves to the next node it was given (`nodes`) and repeats the
- * request once by itself. This error reaches a caller when it knows no other
- * node, when the next one refused too, or after a sign-in (which needs the
- * passkey again: repeat it, and it goes to the next node).
+ * request once by itself (a refresh: once per node). This error reaches a
+ * caller when it knows no other node, when the next one refused too (for a
+ * refresh, every node), or after a sign-in (which needs the passkey again:
+ * repeat it, and it goes to the next node).
  */
 export class WrongNode extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {

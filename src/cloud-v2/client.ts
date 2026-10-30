@@ -302,11 +302,13 @@ export interface CalimeroClientOptions {
 }
 
 /**
- * Paths whose `421 WRONG_NODE` comes after they spent something single-use (a
- * passkey challenge, a refresh token): the node refuses to mint the session
- * only once the ceremony is over. They are never repeated by themselves.
+ * The ceremonies that mint a session, which {@link CalimeroClient.send} never
+ * repeats by itself: a sign-in or sign-up is started again by its caller (with
+ * the passkey), and a refresh moves through the nodes in
+ * {@link CalimeroClient.exchangeRefresh}. A node answers them `421 WRONG_NODE`
+ * before it spends the challenge or the refresh token (core #4774).
  */
-function spendsOnce(path: string): boolean {
+function ceremony(path: string): boolean {
   return path === 'auth/refresh' || path.startsWith('auth/passkey/');
 }
 
@@ -442,7 +444,7 @@ export class CalimeroClient {
    * Repeating is safe even for a request that is not idempotent: the node
    * answers `401` and `421` when it judges the credential, before it reads what
    * the request asks, so the first attempt ran nothing. The exceptions are the
-   * ceremonies that mint a session ({@link spendsOnce}), never repeated here.
+   * ceremonies that mint a session ({@link ceremony}), never repeated here.
    */
   private async send(
     method: string,
@@ -461,7 +463,7 @@ export class CalimeroClient {
       const error = await refusal(response);
       if (error instanceof WrongNode && !moved) {
         moved = true;
-        if (this.moveOn(at) && !spendsOnce(path)) continue;
+        if (this.moveOn(at) && !ceremony(path)) continue;
       } else if (error instanceof LoginRequired && !refreshed && this.mayRefresh(token, path)) {
         refreshed = true;
         await this.renew(token as string);
@@ -473,7 +475,7 @@ export class CalimeroClient {
 
   /** Whether a `401` to a request sent with `token` is one a refresh may answer. */
   private mayRefresh(token: string | undefined, path: string): boolean {
-    return token !== undefined && this.current !== undefined && !spendsOnce(path);
+    return token !== undefined && this.current !== undefined && !ceremony(path);
   }
 
   /**
@@ -596,19 +598,16 @@ export class CalimeroClient {
   private async exchangeRefresh(): Promise<CalimeroSession> {
     const current = this.current;
     if (!current) throw new Error('no session to refresh');
-    let session: CalimeroSession;
-    try {
-      session = await this.post<CalimeroSession>('auth/refresh', { refreshToken: current.refreshToken });
-    } catch (error) {
-      if (!(error instanceof WrongNode)) throw error;
-      // A node on a release that may not serve the account takes the refresh
-      // token before it finds it cannot sign the new session, so the token is
-      // spent: sent to another node it would read as a copy and revoke the
-      // session. Sign in again (on the next node, where `send` moved).
-      throw new LoginRequired('the refresh reached a node that may not serve this account; sign in again', {
-        ...error.details,
-        refusedWith: 'WRONG_NODE',
-      });
+    let session: CalimeroSession | undefined;
+    // A node that may not serve the account answers `421 WRONG_NODE` before it
+    // spends the refresh token (core #4774), so the same token goes to the next
+    // node (`send` moved there already): once per node, at most.
+    for (let tried = 1; session === undefined; tried++) {
+      try {
+        session = await this.post<CalimeroSession>('auth/refresh', { refreshToken: current.refreshToken });
+      } catch (error) {
+        if (!(error instanceof WrongNode) || tried >= this.nodeUrls.length) throw error;
+      }
     }
     // A sign-in or another session taken while this one was refreshing wins.
     if (this.current === current) this.useSession(session);
