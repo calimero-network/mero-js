@@ -291,6 +291,46 @@ export interface ConsentStarted {
   url: string;
   /** Unix seconds; a request lives 10 minutes. */
   expiresAt: number;
+  /**
+   * The confirmation code the consent page shows, `XXX-XXX`
+   * ({@link confirmationCode} of `requestId`). Show it to the person before
+   * sending them to `url`: the page they land on should show the same code,
+   * which tells them it is the page their request opened. Not a secret.
+   * Nodes older than the code leave it out.
+   */
+  code?: string;
+}
+
+/** How {@link CalimeroClient.openConsentPage} sends the person to the page. */
+export interface OpenConsentOptions {
+  /** Sends the browser to the page's `url`; by default `window.location.assign`. */
+  navigate?: (url: string) => void;
+  /**
+   * Runs after the node answers and before navigating, with the answer: show
+   * the person `started.code` here so they can check the page shows the same.
+   * Answer `false` and the page is not opened (the request stays on the node
+   * until it expires).
+   */
+  confirm?: (started: ConsentStarted) => boolean | Promise<boolean>;
+}
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * The confirmation code the node's consent page shows for `requestId`: the
+ * first 30 bits of SHA-256 of its UTF-8 bytes, big-endian, as six Crockford
+ * base32 characters written `XXX-XXX` (core's consent page). Compare it with
+ * {@link ConsentStarted.code} to check the node's answer.
+ */
+export async function confirmationCode(requestId: string): Promise<string> {
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(requestId)));
+  const word = ((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0;
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    if (i === 3) code += '-';
+    code += CROCKFORD[(word >>> (27 - 5 * i)) & 31];
+  }
+  return code;
 }
 
 export type ConsentStatus = 'pending' | 'approved' | 'declined';

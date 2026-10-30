@@ -127,8 +127,8 @@ The approval routes above refuse a session opened on an app's frontend
 | `appsReportAll(org \| null)` → `AppsReport` (every page) | the same, following `next` |
 | `releaseRules()` → `{ governance, deadlines }` | `GET releases` |
 | `pendingApprovals(org?)` → `PendingApprovals` | `GET auth/apps` (or `orgs/{org}/apps`), `GET releases` |
-| `requestConsent(request)` → `{ requestId, url, expiresAt }` | `POST consent/requests` |
-| `openConsentPage(request, navigate?)` | `POST consent/requests`, then navigates to `url` |
+| `requestConsent(request)` → `{ requestId, url, expiresAt, code? }`; show `code` to the user before sending them to `url`, and they should see the same code on the page | `POST consent/requests` |
+| `openConsentPage(request, navigate? \| { navigate?, confirm? })`: checks `code` against `confirmationCode(requestId)` (else `CalimeroError` `CONSENT_CODE_MISMATCH`), runs `confirm(started)` so the app can show `code`, and navigates unless it answers `false` | `POST consent/requests`, then navigates to `url` |
 | `consentResult(requestId)` → `{ requestId, kind, status, decidedAt }` | `GET consent/{id}/result` |
 | `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | polls `GET consent/{id}/result` |
 
@@ -163,7 +163,7 @@ answer a `412 CONFIRM_REQUIRED`.
 `fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
 `DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `withdrawConsent`, `upgradeConsent`,
-`consentReturn`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
+`consentReturn`, `confirmationCode`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
 `publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
 and release verification (`createQuoteVerifier`, `trustedMeasurementsFromReleases`,
