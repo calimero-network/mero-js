@@ -31,10 +31,10 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
 | `me()` | `GET auth/me` |
 | `usage()` | `GET auth/usage` |
-| `addPasskey(passkey)` → credential id | `POST auth/passkeys/add/begin`, `…/finish` |
+| `addPasskey(passkey, approver)` → credential id (`approver`: a passkey the account already has) | `POST auth/passkeys/add/begin`, `…/finish` |
 | `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
-| `removePasskey(credentialId)` | `DELETE auth/passkeys/{cred}` |
-| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs? })` → `{ keyId, key }` | `POST auth/apikeys` |
+| `removePasskey(credentialId, passkey)` | `DELETE auth/passkeys/{cred}` |
+| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs? }, passkey)` → `{ keyId, key }` (a passkey session) | `POST auth/apikeys` |
 | `listApiKeys()` | `GET auth/apikeys` |
 | `revokeApiKey(keyId)` | `DELETE auth/apikeys/{key}` |
 | `attestation()` → `AttestationDoc` (unverified, for display) | `GET attestation` (in the clear) |
@@ -94,18 +94,18 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`) | `GET orgs/{org}` |
 | `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
 | `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
-| `setMember(org, account, role)` | `POST orgs/{org}/members` |
-| `removeMember(org, account)` | `DELETE orgs/{org}/members/{account}` |
+| `setMember(org, account, role, passkey)` | `POST orgs/{org}/members` |
+| `removeMember(org, account, passkey)` (also to leave: your own account) | `DELETE orgs/{org}/members/{account}` |
 | `setMemberMetadata(org, account, metadata)` | `POST orgs/{org}/members/{account}/metadata` |
-| `setCapabilities(org, bits, { account?, team? })` | `POST orgs/{org}/capabilities` |
+| `setCapabilities(org, bits, passkey, { account?, team? })` | `POST orgs/{org}/capabilities` |
 | `createTeam(org, name, join, parent?)` → team id | `POST orgs/{org}/teams` |
 | `getTeam(org, team)` | `GET orgs/{org}/teams/{team}` |
 | `updateTeam(org, team, { name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
 | `deleteTeam(org, team)` | `DELETE orgs/{org}/teams/{team}` |
-| `setTeamMember(org, team, account, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
-| `removeTeamMember(org, team, account)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
-| `invite(org, role, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
-| `redeemInvite(token)` | `POST invites/{token}/redeem` |
+| `setTeamMember(org, team, account, passkey, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
+| `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
+| `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
+| `redeemInvite(token)` (no approval) | `POST invites/{token}/redeem` |
 | `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
 | `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
 | `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |

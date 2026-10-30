@@ -41,7 +41,7 @@ context → **app** (instance), application → signed **package**.
 | `CloudClient` (namespaces, relays, HA) | none: every app is replicated on the cluster |
 | account roots (`generateAccountRoot`, `accountRootFromPhrase`, `signAccountLink`, …), `resolveRoot` | the account is its passkeys |
 | device certificates and scopes (`signDeviceCert`, `signDeviceScope`, …) | each passkey is a device (`addPasskey`, `labelPasskey`) |
-| `signGroupInvitation`, `signMemberJoinOp`, owner ops (`transferOwnershipOp`, `teeAdmissionPolicyOp`, …) | `invite`; `setMember(org, account, 'owner')`; `approveRelease` |
+| `signGroupInvitation`, `signMemberJoinOp`, owner ops (`transferOwnershipOp`, `teeAdmissionPolicyOp`, …) | `invite`; `setMember(org, account, 'owner', passkey)`; `approveRelease` |
 | `signerFromSecret`, `signerFromCryptoKey` | none needed |
 | `CAPABILITIES`, `CAPABILITY_PRESETS`, `capMask`, `hasCap`, … | `ORG_CAPABILITIES`, `orgCapabilities` (same bit values, 1.0 names) |
 | `HTTPError`, `AuthRevokedError`, `classifyError` | `CalimeroError` and its subclasses |

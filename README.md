@@ -68,12 +68,12 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 ## The API
 
-- **Credentials**: `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`.
+- **Credentials**: `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
 - **Packages**: `installPackage`, `uploadPackage`, `packages`, `package`, `uninstallPackage`; `uploadBundle` (raw WASM, development clusters only).
 - **Apps**: `createApp`, `listApps`, `getApp`, `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `upgradeApp`, `transferApp`.
 - **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`.
 - **Blobs and presence**: `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob`; `publishPresence`, `presence`, `presenceStream`.
-- **Organizations**: `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), teams, `invite`, `redeemInvite`.
+- **Organizations**: `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), teams, `invite`, `redeemInvite`. Setting or removing a member or team member, capabilities and invites are approved with the caller's passkey; redeeming an invite is not.
 - **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.
 - **Approvals from an app**: `appsReport`, `releaseRules`, `pendingApprovals`, then `requestConsent` / `openConsentPage` to send the user to the node's consent page, and `consentResult`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 - **Operator** (ops token): `opsApps`, `opsOrgs`, `setReleaseDeadline`, `liftReleaseDeadline`.

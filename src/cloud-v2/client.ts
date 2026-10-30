@@ -633,20 +633,26 @@ export class CalimeroClient {
     return this.get('auth/me');
   }
 
-  /** Add another passkey (another device) to the signed-in account; answers its credential id. */
-  async addPasskey(passkey: PasskeyProvider): Promise<string> {
+  /**
+   * Add another passkey (another device, `passkey`) to the signed-in account;
+   * answers its credential id. The node asks for the approval of a passkey
+   * the account already has (`412 CONFIRM_REQUIRED`, never the new one),
+   * which `approver` gives.
+   */
+  async addPasskey(passkey: PasskeyProvider, approver: PasskeyProvider): Promise<string> {
     const begin = await this.post<{ challengeId: string; options: Record<string, unknown> }>('auth/passkeys/add/begin');
     const registration = await passkey.create(begin.options);
-    const { credentialId } = await this.post<{ credentialId: string }>('auth/passkeys/add/finish', {
-      challengeId: begin.challengeId,
-      registration,
-    });
+    const { credentialId } = await this.postConfirmed<{ credentialId: string }>(
+      'auth/passkeys/add/finish',
+      { challengeId: begin.challengeId, registration },
+      approver,
+    );
     return credentialId;
   }
 
-  /** Remove one of the account's passkeys (not the last). */
-  async removePasskey(credentialId: string): Promise<void> {
-    await this.delete(`auth/passkeys/${seg(credentialId)}`);
+  /** Remove one of the account's passkeys (not the last), approved with `passkey` (one it has). */
+  async removePasskey(credentialId: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`auth/passkeys/${seg(credentialId)}`, passkey);
   }
 
   /** Name one of the account's passkeys (a device label); `''` clears the name. */
@@ -680,16 +686,23 @@ export class CalimeroClient {
     await this.delete(`auth/apikeys/${seg(keyId)}`);
   }
 
-  /** Create an API key for an agent or server. The key is returned once. */
-  createApiKey(options: {
-    label?: string;
-    apps?: string[];
-    methods?: string[];
-    readOnly?: boolean;
-    allowConfirm?: boolean;
-    ttlSecs?: number;
-  }): Promise<{ keyId: string; key: string }> {
-    return this.post('auth/apikeys', options);
+  /**
+   * Create an API key for an agent or server, approved with the account's
+   * `passkey` (`412 CONFIRM_REQUIRED`); needs a passkey session (an API key
+   * is refused `403`). The key is returned once.
+   */
+  createApiKey(
+    options: {
+      label?: string;
+      apps?: string[];
+      methods?: string[];
+      readOnly?: boolean;
+      allowConfirm?: boolean;
+      ttlSecs?: number;
+    },
+    passkey: PasskeyProvider,
+  ): Promise<{ keyId: string; key: string }> {
+    return this.postConfirmed('auth/apikeys', { ...options }, passkey);
   }
 
   // ---------------------------------------------------------------- apps
@@ -825,13 +838,20 @@ export class CalimeroClient {
 
   /**
    * POST `body` to `path`, answering a `412 CONFIRM_REQUIRED` with `passkey`'s
-   * assertion over the node's challenge (deleting an org, approving a release, ...).
+   * assertion over the node's challenge (deleting an org, approving a release,
+   * adding a member, ...): the same body again, with `confirm`. Without a
+   * passkey (a caller in plain JavaScript passing none) the `412` reaches the
+   * caller as {@link ConfirmRequired}, carrying the challenge.
    */
   postConfirmed<T>(path: string, body: Record<string, unknown>, passkey: PasskeyProvider): Promise<T> {
     return this.confirmed<T>('POST', path, body, passkey);
   }
 
-  /** {@link postConfirmed} for a DELETE (deleting an organization). */
+  /**
+   * {@link postConfirmed} for a DELETE (deleting an organization, removing a
+   * member or a passkey): `body` (`{}` by default) goes as JSON, and the
+   * confirmed retry carries `confirm` beside it.
+   */
   deleteConfirmed<T>(path: string, passkey: PasskeyProvider, body: Record<string, unknown> = {}): Promise<T> {
     return this.confirmed<T>('DELETE', path, body, passkey);
   }
@@ -840,13 +860,13 @@ export class CalimeroClient {
     method: 'POST' | 'DELETE',
     path: string,
     body: Record<string, unknown>,
-    passkey: PasskeyProvider,
+    passkey: PasskeyProvider | undefined,
     send: (body: Record<string, unknown>) => Promise<T> = (b) => this.json<T>(method, path, b),
   ): Promise<T> {
     try {
       return await send(body);
     } catch (error) {
-      if (!(error instanceof ConfirmRequired)) throw error;
+      if (!(error instanceof ConfirmRequired) || !passkey) throw error;
       const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
       let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
       try {
@@ -1253,22 +1273,36 @@ export class CalimeroClient {
     await this.delete(`ops/releases/${seg(version)}/deadline`);
   }
 
-  /** Add a member, or change their role. */
-  async setMember(org: string, account: string, role: 'guest' | 'member' | 'admin' | 'owner'): Promise<void> {
-    await this.post(`orgs/${seg(org)}/members`, { account, role });
+  /** Add a member, or change their role, approved with the caller's `passkey`. */
+  async setMember(
+    org: string,
+    account: string,
+    role: 'guest' | 'member' | 'admin' | 'owner',
+    passkey: PasskeyProvider,
+  ): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/members`, { account, role }, passkey);
   }
 
-  removeMember(org: string, account: string): Promise<Record<string, unknown>> {
-    return this.delete(`orgs/${seg(org)}/members/${seg(account)}`);
+  /**
+   * Remove a member, or leave (`account` the caller's own), approved with the
+   * caller's `passkey`.
+   */
+  removeMember(org: string, account: string, passkey: PasskeyProvider): Promise<Record<string, unknown>> {
+    return this.deleteConfirmed(`orgs/${seg(org)}/members/${seg(account)}`, passkey);
   }
 
   /**
    * Set capability bits ({@link ORG_CAPABILITIES}): for a member (`account`),
    * for a member of one team (`account` and `team`), or the organization's
-   * default (neither).
+   * default (neither). Approved with the caller's `passkey`.
    */
-  async setCapabilities(org: string, capabilities: number, at: { account?: string; team?: string } = {}): Promise<void> {
-    await this.post(`orgs/${seg(org)}/capabilities`, { capabilities, ...at });
+  async setCapabilities(
+    org: string,
+    capabilities: number,
+    passkey: PasskeyProvider,
+    at: { account?: string; team?: string } = {},
+  ): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/capabilities`, { capabilities, ...at }, passkey);
   }
 
   async createTeam(org: string, name: string, join: 'everyone' | 'invite', parent?: string): Promise<string> {
@@ -1297,27 +1331,42 @@ export class CalimeroClient {
     await this.delete(`orgs/${seg(org)}/teams/${seg(team)}`);
   }
 
-  /** Add a member to a team, or change their row: role, lead, capability bits. */
+  /**
+   * Add a member to a team, or change their row: role, lead, capability bits.
+   * Approved with the caller's `passkey`.
+   */
   async setTeamMember(
     org: string,
     team: string,
     account: string,
+    passkey: PasskeyProvider,
     row: { role?: 'lead' | 'member' | 'readOnly'; lead?: boolean; capabilities?: number } = {},
   ): Promise<void> {
-    await this.post(`orgs/${seg(org)}/teams/${seg(team)}/members`, { account, ...row });
+    await this.postConfirmed(`orgs/${seg(org)}/teams/${seg(team)}/members`, { account, ...row }, passkey);
   }
 
-  async removeTeamMember(org: string, team: string, account: string): Promise<void> {
-    await this.delete(`orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}`);
+  /** Remove a member from a team, approved with the caller's `passkey`. */
+  async removeTeamMember(org: string, team: string, account: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}`, passkey);
   }
 
+  /**
+   * Make an invite into `org` (and `teams`), approved with the caller's
+   * `passkey`; answers its token, which {@link redeemInvite} takes (no
+   * approval there).
+   */
   async invite(
     org: string,
     role: 'guest' | 'member' | 'admin',
+    passkey: PasskeyProvider,
     teams: string[] = [],
     options: { ttlSecs?: number; uses?: number } = {},
   ): Promise<string> {
-    const { token } = await this.post<{ token: string }>(`orgs/${seg(org)}/invites`, { role, teams, ...options });
+    const { token } = await this.postConfirmed<{ token: string }>(
+      `orgs/${seg(org)}/invites`,
+      { role, teams, ...options },
+      passkey,
+    );
     return token;
   }
 

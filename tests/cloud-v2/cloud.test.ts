@@ -67,7 +67,7 @@ describe('Calimero 1.0 cluster', () => {
     await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // A read-only API key reads, never writes.
-    const { key } = await alice.createApiKey({ readOnly: true, apps: [app] });
+    const { key } = await alice.createApiKey({ readOnly: true, apps: [app] }, pk);
     const agent = client(2);
     agent.useApiKey(key);
     await agent.view(app, 'len', {});
@@ -81,19 +81,21 @@ describe('Calimero 1.0 cluster', () => {
   });
 
   it('organizations gate apps and removal cuts access off', async () => {
-    const [alice] = await person(0, 'alice-org');
+    const [alice, alicePk] = await person(0, 'alice-org');
     const [bob] = await person(1, 'bob-org');
     const bobId = (await bob.me()).accountId as string;
     const org = await alice.createOrg('Acme');
     const team = await alice.createTeam(org, 'eng', 'invite');
-    const token = await alice.invite(org, 'member', [team]);
+    const token = await alice.invite(org, 'member', alicePk, [team]);
     await bob.redeemInvite(token);
 
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
     const app = await alice.createApp('team-kv', bundle, { org });
     await bob.call(app, 'set', { key: 'from', value: 'bob' });
 
-    await alice.removeMember(org, bobId);
+    // Removing a member is approved with a passkey; without one the node asks for it.
+    await expect(alice.delete(`orgs/${org}/members/${bobId}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.removeMember(org, bobId, alicePk);
     await new Promise((r) => setTimeout(r, 300));
     await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
@@ -155,17 +157,20 @@ describe('Calimero 1.0 cluster', () => {
     const [bob] = await person(1, 'bob-api');
     const bobId = (await bob.me()).accountId as string;
 
-    // A second passkey is another device; it can be removed again.
+    // A second passkey is another device, approved by the one the account has; it can be removed again.
     const second = new SoftPasskey('localhost', ORIGIN);
-    const cred = await alice.addPasskey(second);
+    // The new passkey cannot approve its own addition.
+    await expect(alice.addPasskey(second, second)).rejects.toBeInstanceOf(CalimeroError);
+    const cred = await alice.addPasskey(second, pk);
     const viaSecond = client(2);
     await viaSecond.signIn(second);
     expect((await viaSecond.me()).accountId).toBe((await alice.me()).accountId);
-    await alice.removePasskey(cred);
+    await expect(alice.delete(`auth/passkeys/${cred}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.removePasskey(cred, pk);
     await expect(client(2).signIn(second)).rejects.toBeInstanceOf(CalimeroError);
-    void pk;
 
-    const { keyId } = await alice.createApiKey({ label: 'ci' });
+    await expect(alice.post('auth/apikeys', { label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    const { keyId } = await alice.createApiKey({ label: 'ci' }, pk);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).toContain(keyId);
     await alice.revokeApiKey(keyId);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
@@ -178,17 +183,17 @@ describe('Calimero 1.0 cluster', () => {
     await bob.call(app, 'set', { key: 'x', value: 'y' });
 
     const org = await alice.createOrg('Initech');
-    await alice.setMember(org, bobId, 'member');
+    await alice.setMember(org, bobId, 'member', pk);
     const team = await alice.createTeam(org, 'ops', 'invite');
-    await alice.setTeamMember(org, team, bobId, { role: 'readOnly' });
+    await alice.setTeamMember(org, team, bobId, pk, { role: 'readOnly' });
     expect(await alice.getTeam(org, team)).toMatchObject({ teamId: team });
     await alice.updateTeam(org, team, { name: 'platform', metadata: { colour: 'blue' } });
     expect(await alice.getTeam(org, team)).toMatchObject({ name: 'platform' });
-    await alice.setCapabilities(org, 0, { account: bobId });
-    await alice.removeTeamMember(org, team, bobId);
+    await alice.setCapabilities(org, 0, pk, { account: bobId });
+    await alice.removeTeamMember(org, team, bobId, pk);
     await alice.deleteTeam(org, team);
     await expect(alice.getTeam(org, team)).rejects.toMatchObject({ status: 404 });
-    const token = await alice.invite(org, 'guest', [], { ttlSecs: 60, uses: 1 });
+    const token = await alice.invite(org, 'guest', pk, [], { ttlSecs: 60, uses: 1 });
     expect(token).toBeTruthy();
     expect(await alice.getOrg(org)).toMatchObject({ orgId: org });
   });
@@ -260,11 +265,11 @@ describe('Calimero 1.0 cluster', () => {
     await tab.approveRelease(null, '2.3.200', pk);
     await tab.approveRelease(null, '2.3.200', pk, false);
 
-    const { key: apiKey, keyId } = await tab.createApiKey({ label: 'console', apps: [app], readOnly: true });
+    const { key: apiKey, keyId } = await tab.createApiKey({ label: 'console', apps: [app], readOnly: true }, pk);
     expect(apiKey).toBeTruthy();
     await tab.revokeApiKey(keyId);
     expect((await tab.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
-    const token = await tab.invite(org, 'member');
+    const token = await tab.invite(org, 'member', pk);
     await bob.redeemInvite(token);
     expect(bobId).toBeTruthy();
   });
@@ -281,7 +286,7 @@ describe('Calimero 1.0 cluster', () => {
     expect(doc.mock).toBe(true);
 
     const org = await alice.createOrg('Rest Co');
-    await alice.setMember(org, bobId, 'member');
+    await alice.setMember(org, bobId, 'member', pk);
     await alice.setOrgMetadata(org, { colour: 'teal' });
     await bob.setMemberMetadata(org, bobId, { title: 'engineer' });
     await alice.setMemberMetadata(org, bobId, null);
