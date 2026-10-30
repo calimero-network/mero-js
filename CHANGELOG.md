@@ -1,3 +1,9 @@
+## [27.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.1.0...mero-js-v27.2.0) (2026-10-30)
+
+### Features
+
+* **cloud-v2:** refresh after losing the issuing node and move on 421 WRONG_NODE ([#318](https://github.com/calimero-network/mero-js/issues/318)) ([03993b9](https://github.com/calimero-network/mero-js/commit/03993b923774a7f23e3e7c740e8c9c4d4a1b50bf))
+
 ## [27.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.0.2...mero-js-v27.1.0) (2026-10-30)
 
 ### Features
