@@ -14,6 +14,22 @@ import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
 import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
+import {
+  pageQuery,
+  pendingApprovalsFrom,
+  type AppsReport,
+  type ConsentRequest,
+  type ConsentResult,
+  type ConsentStarted,
+  type OpsAppsReport,
+  type OpsOrgsReport,
+  type PageOptions,
+  type PendingApprovals,
+  type PublisherBindingInfo,
+  type PublisherProof,
+  type ReleaseRules,
+  type ReportedApp,
+} from './approvals.js';
 
 export {
   AppError,
@@ -23,7 +39,9 @@ export {
   ConfirmRequired,
   IdempotencyMismatch,
   LoginRequired,
+  ConsentStale,
   NotFound,
+  ReleaseDeadlineError,
   TrapError,
   UnavailableError,
   errorFrom,
@@ -135,6 +153,21 @@ export interface OrgUpgradeTarget {
   team?: string;
   cascade?: boolean;
   migrate?: string;
+}
+
+/**
+ * `GET /orgs/{org}`: the organization as the caller sees it. Besides its
+ * members, teams and metadata, who may approve its releases, the package
+ * signing keys it publishes, and whether a passed release deadline has
+ * stopped new work on its own set.
+ */
+export interface OrgInfo extends Record<string, unknown> {
+  /** Accounts holding `APPROVE_RELEASES` there (owner and admins included). */
+  releaseApprovers: string[];
+  /** The signer ids (`did:key`) bound to it as publisher. */
+  publishes: string[];
+  /** `null` unless a deadline stopped new work: approve `release` (or newer) to lift it. */
+  newWorkStopped: { release: string; after: string } | null;
 }
 
 /** One URL path segment, so an id cannot reach another route. */
@@ -618,8 +651,11 @@ export class CalimeroClient {
    * Move an app to another release of its package (`{ version }`), another
    * package, or a bundle hash, running its migration. Answers the upgrade's
    * entry; a failed migration rejects with code `UPGRADE_FAILED` (422).
-   * Where the owner holds app upgrades, the node asks for the owner's approval
-   * (`412 CONFIRM_REQUIRED`), which `passkey` gives.
+   * Where owners hold app upgrades, the node asks for the approval of
+   * whoever the package's manifest names (`412 CONFIRM_REQUIRED`), which
+   * `passkey` gives. Refused (`403`) to a session opened on an app's
+   * frontend: an app asks its user with {@link requestConsent} instead. Past
+   * a release deadline its approver has not met: {@link ReleaseDeadlineError}.
    */
   upgradeApp(
     app: string,
@@ -801,7 +837,7 @@ export class CalimeroClient {
   }
 
   /** The organization, with the teams this caller reaches or manages. */
-  getOrg(org: string): Promise<Record<string, unknown>> {
+  getOrg(org: string): Promise<OrgInfo> {
     return this.get(`orgs/${seg(org)}`);
   }
 
@@ -846,8 +882,11 @@ export class CalimeroClient {
   /**
    * Approve a mero-tee release to hold the apps of `org`, or of this account
    * outside any organization (`org` `null`); `approved: false` withdraws it.
-   * Until then, nodes on that release get none of those apps' data. The owner
-   * approves with `passkey`.
+   * Until then, nodes on that release get none of those apps' data. For an
+   * organization, a member holding `APPROVE_RELEASES` approves with `passkey`;
+   * the node binds the release's measurements itself. Refused (`403`) to a
+   * session opened on an app's frontend: an app asks its user with
+   * {@link requestConsent} instead.
    */
   async approveRelease(
     org: string | null,
@@ -864,7 +903,8 @@ export class CalimeroClient {
    * `org`'s apps or this account's own (`org` `null`). `prefixes` `'manifest'`
    * (the default) approves every prefix the package's latest release declares;
    * `replace` sets exactly `prefixes`, which is how one is revoked. Approved
-   * with `passkey`.
+   * with `passkey`. Refused (`403`) to a session opened on an app's frontend:
+   * an app asks with {@link requestConsent} (`kind: 'outbound'`) instead.
    */
   async approveOutbound(
     org: string | null,
@@ -878,6 +918,165 @@ export class CalimeroClient {
       { package: pkg, prefixes: options.prefixes ?? 'manifest', replace: options.replace ?? false },
       passkey,
     );
+  }
+
+  // ---------------------------------------------------------------- approvals
+
+  /**
+   * One page of the report of a scope's apps: an organization's (any member;
+   * `404` to anyone else) or, with `org` `null`, the account's own outside any
+   * organization (a session bound to an app's frontend: that package's apps).
+   * The governance, the scope's approved releases, the releases the cluster's
+   * nodes run and whether each is approved, and per app its release, newer
+   * releases it may move to, last upgrade and replicas.
+   */
+  appsReport(org: string | null, page: PageOptions = {}): Promise<AppsReport> {
+    const path = org === null ? 'auth/apps' : `orgs/${seg(org)}/apps`;
+    return this.get(`${path}${pageQuery(page)}`);
+  }
+
+  /** {@link appsReport}, every page, with the apps of all of them in `apps`. */
+  async appsReportAll(org: string | null): Promise<AppsReport> {
+    const first = await this.appsReport(org);
+    const apps: ReportedApp[] = [...first.apps];
+    let next = first.next;
+    while (next !== null) {
+      const page = await this.appsReport(org, { after: next });
+      apps.push(...page.apps);
+      next = page.next;
+    }
+    return { ...first, apps, next: null };
+  }
+
+  /** `GET /releases`: the cluster's governance and every release deadline. Public. */
+  releaseRules(): Promise<ReleaseRules> {
+    return this.get('releases');
+  }
+
+  /**
+   * What waits for a decision in a scope (`org`, or the account's own apps
+   * with `null`): mero-tee releases the cluster's nodes run that the scope has
+   * not approved, apps with newer releases of their package, and whether a
+   * passed deadline stops new work. Read over the sealed channel; act on an
+   * item by sending the user to the consent page ({@link requestConsent},
+   * `releaseConsent`, `upgradeConsent`).
+   */
+  async pendingApprovals(org: string | null = null): Promise<PendingApprovals> {
+    const [report, rules] = await Promise.all([this.appsReportAll(org), this.releaseRules()]);
+    return pendingApprovalsFrom(report, rules);
+  }
+
+  /**
+   * Ask the node to ask the user: a release, upgrade or outbound approval
+   * that only the account holder may make, decided on the node's own consent
+   * page, never in the app. Needs a passkey session (a session bound to the
+   * app's frontend is fine). Send the person to the answer's `url`; the page
+   * sends them back to `returnTo?request_id=…&result=approved|declined`
+   * (`consentReturn`), and {@link consentResult} confirms the decision.
+   */
+  requestConsent(request: ConsentRequest): Promise<ConsentStarted> {
+    return this.post('consent/requests', request);
+  }
+
+  /**
+   * {@link requestConsent}, then send the browser to the consent page
+   * (`navigate`, by default `window.location.assign`). Answers the request
+   * once `navigate` returns: with a popup (`url => window.open(url)`), poll it
+   * with {@link waitForConsent}.
+   */
+  async openConsentPage(
+    request: ConsentRequest,
+    navigate: (url: string) => void = (url) => {
+      const w = (globalThis as { window?: { location: { assign(url: string): void } } }).window;
+      if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
+      w.location.assign(url);
+    },
+  ): Promise<ConsentStarted> {
+    const started = await this.requestConsent(request);
+    navigate(started.url);
+    return started;
+  }
+
+  /** The decision on a consent request (any node answers, for the account that asked). */
+  consentResult(requestId: string): Promise<ConsentResult> {
+    return this.get(`consent/${seg(requestId)}/result`);
+  }
+
+  /**
+   * Poll {@link consentResult} until the request is decided, every
+   * `intervalMs` (2 s), until `signal` aborts or `expiresAt` (Unix seconds)
+   * passes, when it answers the last `pending` result.
+   */
+  async waitForConsent(
+    requestId: string,
+    options: { intervalMs?: number; signal?: AbortSignal; expiresAt?: number } = {},
+  ): Promise<ConsentResult> {
+    const interval = options.intervalMs ?? 2000;
+    for (;;) {
+      const result = await this.consentResult(requestId);
+      if (result.status !== 'pending') return result;
+      if (options.signal?.aborted) return result;
+      if (options.expiresAt !== undefined && Date.now() / 1000 >= options.expiresAt) return result;
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+  }
+
+  /** `GET /publishers/{signerId}`: the cluster name and binding generation a key signs to bind it next. */
+  publisherBinding(signerId: string): Promise<PublisherBindingInfo> {
+    return this.get(`publishers/${seg(signerId)}`);
+  }
+
+  /**
+   * Bind a package signing key to `org`, which then approves the node images
+   * every instance of the key's packages runs on, and upgrades those whose
+   * package declares `upgrades: publisher`. `proof` is the key's signature
+   * over `publisherBindingMessage(cluster, org, signerId, generation)`; a
+   * member holding `APPROVE_RELEASES` sends it with `passkey`.
+   */
+  bindPublisher(org: string, proof: PublisherProof, passkey: PasskeyProvider): Promise<Record<string, unknown>> {
+    return this.postConfirmed(`orgs/${seg(org)}/publishers`, { ...proof }, passkey);
+  }
+
+  /**
+   * Upgrade every instance of `pkg` whose release declares `upgrades:
+   * publisher`, whoever owns it, as its publisher `org` (a
+   * `MANAGE_APPLICATION` holder there), with one passkey approval. Answers
+   * the run, kept on the publisher.
+   */
+  upgradePublished(
+    org: string,
+    pkg: string,
+    target: { version: string; migrate?: string },
+    passkey: PasskeyProvider,
+  ): Promise<UpgradeRun> {
+    return this.postConfirmed(`orgs/${seg(org)}/packages/${seg(pkg)}/upgrade`, { ...target }, passkey);
+  }
+
+  // ---------------------------------------------------------------- operator
+
+  /** `GET /ops/apps`: what every app runs, without names or accounts. Operator token (`useApiKey`). */
+  opsApps(page: PageOptions = {}): Promise<OpsAppsReport> {
+    return this.get(`ops/apps${pageQuery(page)}`);
+  }
+
+  /** `GET /ops/orgs`: each organization's approved releases. Operator token. */
+  opsOrgs(page: PageOptions = {}): Promise<OpsOrgsReport> {
+    return this.get(`ops/orgs${pageQuery(page)}`);
+  }
+
+  /**
+   * Announce when work on images older than `version` ends: from `after` on,
+   * a scope that has not approved it (or newer) starts no new work. Operator
+   * token.
+   */
+  async setReleaseDeadline(version: string, after: Date | string): Promise<void> {
+    const at = typeof after === 'string' ? after : after.toISOString();
+    await this.post(`ops/releases/${seg(version)}/deadline`, { after: at });
+  }
+
+  /** Lift a release's deadline. Operator token. */
+  async liftReleaseDeadline(version: string): Promise<void> {
+    await this.delete(`ops/releases/${seg(version)}/deadline`);
   }
 
   /** Add a member, or change their role. */
