@@ -1,3 +1,9 @@
+## [27.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.0.2...mero-js-v27.1.0) (2026-10-30)
+
+### Features
+
+* **approvals:** approval reports, publishers, deadlines and the node's consent page ([#317](https://github.com/calimero-network/mero-js/issues/317)) ([eebdd2a](https://github.com/calimero-network/mero-js/commit/eebdd2af585c66cca7e135b69c570013c3f05483))
+
 ## [27.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v27.0.1...mero-js-v27.0.2) (2026-10-29)
 
 ## [27.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v27.0.0...mero-js-v27.0.1) (2026-10-29)
