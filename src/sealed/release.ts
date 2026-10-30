@@ -55,6 +55,13 @@ const MEASUREMENTS = ['mrtd', 'rtmr0', 'rtmr1', 'rtmr2', 'rtmr3'] as const;
 export const DEFAULT_RELEASE_MIRROR = 'https://cloud.calimero.network';
 
 /**
+ * Where browsers get Intel's collateral for a quote: the cloud's mirror of the
+ * PCCS paths `@phala/dcap-qvl` reads, open to any origin. Intel's PCS sends no
+ * CORS header. The mirror only carries Intel-signed items.
+ */
+export const DEFAULT_COLLATERAL_MIRROR = `${DEFAULT_RELEASE_MIRROR}/api/tee/pcs`;
+
+/**
  * A node release as the servers hand it out, wrapped as `{"data": ...}`: the
  * release's `published-mrtds.json`, byte for byte, and its cosign bundle.
  * Unverified until {@link verifySignedNodeRelease} says otherwise.
