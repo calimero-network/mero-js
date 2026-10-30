@@ -49,8 +49,16 @@ resumed.useSession(JSON.parse(sessionStorage.getItem('calimero')!));
 await resumed.refresh(); // swap the refresh token for a new session
 ```
 
-A refresh token is used once: a reused one revokes the session. An expired or
-revoked session makes requests fail with [`LoginRequired`](/reference/error-model/).
+A refresh token is used once: a reused one revokes the session. A session is
+signed by the node that issued it, so it can stop verifying when that node is
+replaced or cannot be reached; the client then refreshes by itself, once, on
+any node, and repeats the request
+(see [Restarts and other nodes](/reference/error-model/#restarts-and-other-nodes)).
+A session that refreshing cannot renew — expired, revoked, or a refresh token
+already used — makes requests fail with [`LoginRequired`](/reference/error-model/).
+
+Keep `client.session` after requests, not only after `signIn`: an automatic
+refresh replaces it, and the refresh token you stored before is then spent.
 
 ```ts
 await client.signOut();           // this session

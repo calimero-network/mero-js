@@ -26,11 +26,40 @@ export class CalimeroError extends Error {
   }
 }
 
-/** `401 UNAUTHENTICATED`: sign in (again) and repeat the request. */
+/**
+ * `401 UNAUTHENTICATED` that refreshing could not answer: sign in (again) and
+ * repeat the request.
+ *
+ * A session token is signed by the node that issued it, and other nodes take
+ * it only while they can vouch for that node's signing key: a `401` often
+ * means only that the issuer was replaced or cannot be reached, not that the
+ * user signed out. The client answers that itself when it holds a refresh
+ * token: it refreshes once (any node takes the refresh) and repeats the
+ * request. This error reaches a caller when there is no refresh token (an API
+ * key, say), or the refresh was refused.
+ */
 export class LoginRequired extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
     super(401, 'UNAUTHENTICATED', message, details);
     this.name = 'LoginRequired';
+  }
+}
+
+/**
+ * `421 WRONG_NODE`: this node runs a mero-tee release the account's owners have
+ * not approved, so it neither issues nor takes the account's sessions. Use
+ * another node of the cluster; refreshing here would not help.
+ *
+ * The client moves to the next node it was given (`nodes`) and repeats the
+ * request once by itself (a refresh: once per node). This error reaches a
+ * caller when it knows no other node, when the next one refused too (for a
+ * refresh, every node), or after a sign-in (which needs the passkey again:
+ * repeat it, and it goes to the next node).
+ */
+export class WrongNode extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(421, 'WRONG_NODE', message, details);
+    this.name = 'WrongNode';
   }
 }
 
@@ -214,6 +243,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
   switch (`${status} ${code}`) {
     case '401 UNAUTHENTICATED':
       return new LoginRequired(message, details);
+    case '421 WRONG_NODE':
+      return new WrongNode(message, details);
     case '404 NOT_FOUND':
       return new NotFound(message, details);
     case '409 IDEMPOTENCY_MISMATCH':

@@ -8,6 +8,7 @@ sidebar:
 ```ts
 new CalimeroClient({
   baseUrl: string,         // one node of the cluster
+  nodes?: string[],        // other nodes of the cluster, moved to on 421 WRONG_NODE
   policy: CloudPolicy,     // which nodes to trust; see Trust and the sealed channel
   fetch?: typeof fetch,    // carries attestation and envelopes; default the global fetch
   retry?: { retries?: number; baseDelayMs?: number; maxDelayMs?: number }, // default 6, 200 ms, 2 s
@@ -24,10 +25,10 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | --- | --- |
 | `signUp(passkey, name)` → `CalimeroSession` | `POST auth/passkey/register/begin`, `…/finish` |
 | `signIn(passkey)` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
-| `refresh()` → `CalimeroSession` | `POST auth/refresh` |
+| `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
 | `signOut()` | `POST auth/logout` |
 | `signOutEverywhere()` | `POST auth/logout-all` |
-| `useSession(session)`, `useApiKey(key)`, `session` | (local) |
+| `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
 | `me()` | `GET auth/me` |
 | `usage()` | `GET auth/usage` |
 | `addPasskey(passkey)` → credential id | `POST auth/passkeys/add/begin`, `…/finish` |

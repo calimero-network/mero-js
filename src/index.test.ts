@@ -31,6 +31,7 @@ describe('the package root', () => {
       'AppError',
       'TrapError',
       'UnavailableError',
+      'WrongNode',
       'ORG_CAPABILITIES',
       'orgCapabilities',
       'createSealedFetch',

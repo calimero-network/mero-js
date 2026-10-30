@@ -12,7 +12,15 @@
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
-import { CalimeroError, ConfirmCancelled, ConfirmRequired, UnavailableError, errorFrom } from './errors.js';
+import {
+  CalimeroError,
+  ConfirmCancelled,
+  ConfirmRequired,
+  LoginRequired,
+  UnavailableError,
+  WrongNode,
+  errorFrom,
+} from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
 import {
   pageQuery,
@@ -44,6 +52,7 @@ export {
   ReleaseDeadlineError,
   TrapError,
   UnavailableError,
+  WrongNode,
   errorFrom,
 } from './errors.js';
 export type { Committed } from './errors.js';
@@ -276,8 +285,15 @@ export function retryDelayMs(retry: number, options: { baseDelayMs: number; maxD
 }
 
 export interface CalimeroClientOptions {
-  /** One node of the cluster. */
+  /** One node of the cluster: the one the client talks to first. */
   baseUrl: string;
+  /**
+   * Other nodes of the same cluster, in the order to move to them when a node
+   * answers `421 WRONG_NODE` (its release may not serve this account). Each is
+   * attested under the same `policy` before anything is sent to it. Without
+   * them a `421` reaches the caller as {@link WrongNode}.
+   */
+  nodes?: string[];
   policy: CloudPolicy;
   /** Fetch that carries attestation and envelopes. Defaults to global `fetch`. */
   fetch?: typeof fetch;
@@ -285,19 +301,39 @@ export interface CalimeroClientOptions {
   retry?: CloudRetryOptions;
 }
 
+/**
+ * The ceremonies that mint a session, which {@link CalimeroClient.send} never
+ * repeats by itself: a sign-in or sign-up is started again by its caller (with
+ * the passkey), and a refresh moves through the nodes in
+ * {@link CalimeroClient.exchangeRefresh}. A node answers them `421 WRONG_NODE`
+ * before it spends the challenge or the refresh token (core #4774).
+ */
+function ceremony(path: string): boolean {
+  return path === 'auth/refresh' || path.startsWith('auth/passkey/');
+}
+
 export class CalimeroClient {
-  private readonly base: string;
-  private readonly sealed: typeof fetch;
+  /** Every node this client may use, `baseUrl` first. */
+  private readonly nodeUrls: string[];
+  /** The one in use: an index into {@link nodeUrls}. */
+  private at = 0;
+  /** A sealed fetch per node, each attesting its own node on first use. */
+  private readonly channels = new Map<string, typeof fetch>();
+  private readonly policy: CloudPolicy;
   /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
   private readonly raw: typeof fetch;
   private auth: string | undefined;
   private current: CalimeroSession | undefined;
+  /** The refresh under way, which every request that needs one shares. */
+  private refreshing: Promise<CalimeroSession> | undefined;
   private readonly retry: Required<CloudRetryOptions>;
   /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
   private readonly networkFailures = new WeakSet<object>();
 
   constructor(options: CalimeroClientOptions) {
-    this.base = options.baseUrl.replace(/\/+$/, '');
+    const trim = (url: string) => url.replace(/\/+$/, '');
+    this.nodeUrls = [...new Set([options.baseUrl, ...(options.nodes ?? [])].map(trim))];
+    this.policy = options.policy;
     this.retry = { ...DEFAULT_RETRY, ...options.retry };
     const given = options.fetch ?? ((input, init) => fetch(input, init));
     // `fetch` rejects with a `TypeError` when it gets no answer: the connection
@@ -313,11 +349,36 @@ export class CalimeroClient {
       }
     };
     this.raw = raw;
-    this.sealed = createSealedFetch({
-      baseUrl: this.base,
-      transportPublicKey: () => fetchAttestedKey(this.base, options.policy, raw),
-      fetch: raw,
-    });
+  }
+
+  /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` moved the client on. */
+  get nodeUrl(): string {
+    return this.nodeUrls[this.at];
+  }
+
+  /** The sealed channel to `url`, attested under the client's policy before its first request. */
+  private channel(url: string): typeof fetch {
+    let sealed = this.channels.get(url);
+    if (!sealed) {
+      sealed = createSealedFetch({
+        baseUrl: url,
+        transportPublicKey: () => fetchAttestedKey(url, this.policy, this.raw),
+        fetch: this.raw,
+      });
+      this.channels.set(url, sealed);
+    }
+    return sealed;
+  }
+
+  /**
+   * Move on from node `from` (the one that answered `421 WRONG_NODE`) to the
+   * next one. False when there is no other. A request that saw the same node
+   * refuse after another request moved on already does not move again.
+   */
+  private moveOn(from: number): boolean {
+    if (this.nodeUrls.length < 2) return false;
+    if (this.at === from) this.at = (from + 1) % this.nodeUrls.length;
+    return true;
   }
 
   /** Authenticate every request with an API key. */
@@ -335,12 +396,17 @@ export class CalimeroClient {
     return this.current;
   }
 
+  /**
+   * Send one request to the node in use, with the credential held now, and
+   * answer the response, whatever its status. {@link send} judges it.
+   */
   private async request(
     method: string,
     path: string,
     body?: unknown,
     raw?: Uint8Array,
     contentType = 'application/wasm',
+    signal?: AbortSignal,
   ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (this.auth) headers.authorization = `Bearer ${this.auth}`;
@@ -352,11 +418,73 @@ export class CalimeroClient {
       headers['content-type'] = 'application/json';
       payload = JSON.stringify(body);
     }
+    const url = this.nodeUrl;
     try {
-      return await this.sealed(`${this.base}/${path}`, { method, headers, body: payload });
+      return await this.channel(url)(`${url}/${path}`, { method, headers, body: payload, signal });
     } catch (error) {
       throw sealedError(error);
     }
+  }
+
+  /**
+   * {@link request}, answering what a lost issuing node or a node on the
+   * wrong release does to a session: a successful response, or the refusal as a
+   * typed error ({@link errorFrom}).
+   *
+   * - `401 UNAUTHENTICATED` to a request that carried a session: the node that
+   *   signed the session may be gone, replaced, or out of reach of the node
+   *   asked, which any node of the cluster answers with a refresh. The client
+   *   refreshes once, shared by every request that needs it at the same time
+   *   ({@link refresh}), and repeats the request once. A refresh that is
+   *   refused surfaces as {@link LoginRequired}.
+   * - `421 WRONG_NODE`: this node's release may not serve the account. The
+   *   client moves to the next node it knows and repeats the request once; with
+   *   none, the {@link WrongNode} reaches the caller.
+   *
+   * Repeating is safe even for a request that is not idempotent: the node
+   * answers `401` and `421` when it judges the credential, before it reads what
+   * the request asks, so the first attempt ran nothing. The exceptions are the
+   * ceremonies that mint a session ({@link ceremony}), never repeated here.
+   */
+  private async send(
+    method: string,
+    path: string,
+    body?: unknown,
+    raw?: Uint8Array,
+    contentType?: string,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    let refreshed = false;
+    let moved = false;
+    for (;;) {
+      const [token, at] = [this.auth, this.at];
+      const response = await this.request(method, path, body, raw, contentType, signal);
+      if (response.ok) return response;
+      const error = await refusal(response);
+      if (error instanceof WrongNode && !moved) {
+        moved = true;
+        if (this.moveOn(at) && !ceremony(path)) continue;
+      } else if (error instanceof LoginRequired && !refreshed && this.mayRefresh(token, path)) {
+        refreshed = true;
+        await this.renew(token as string);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  /** Whether a `401` to a request sent with `token` is one a refresh may answer. */
+  private mayRefresh(token: string | undefined, path: string): boolean {
+    return token !== undefined && this.current !== undefined && !ceremony(path);
+  }
+
+  /**
+   * A fresh session in place of the one `token` belonged to: by the refresh
+   * another request already made, or by one this request starts.
+   */
+  private async renew(token: string): Promise<void> {
+    if (this.auth !== token) return;
+    await this.refresh();
   }
 
   private async json<T>(
@@ -366,8 +494,7 @@ export class CalimeroClient {
     raw?: Uint8Array,
     contentType?: string,
   ): Promise<T> {
-    const response = await this.request(method, path, body, raw, contentType);
-    if (!response.ok) throw await refusal(response);
+    const response = await this.send(method, path, body, raw, contentType);
     const text = await response.text();
     return (text ? JSON.parse(text) : {}) as T;
   }
@@ -450,11 +577,40 @@ export class CalimeroClient {
     return session;
   }
 
-  /** Swap the refresh token for a new session. */
-  async refresh(): Promise<CalimeroSession> {
-    if (!this.current) throw new Error('no session to refresh');
-    const session = await this.post<CalimeroSession>('auth/refresh', { refreshToken: this.current.refreshToken });
-    this.useSession(session);
+  /**
+   * Swap the refresh token for a new session, on whichever node the client
+   * uses: any node of the cluster takes it. A refresh token is used once, so
+   * calls made while one refresh is under way share it rather than sending the
+   * same token again (which would revoke the session).
+   */
+  refresh(): Promise<CalimeroSession> {
+    if (!this.refreshing) {
+      const pending = this.exchangeRefresh();
+      this.refreshing = pending;
+      const clear = () => {
+        if (this.refreshing === pending) this.refreshing = undefined;
+      };
+      pending.then(clear, clear);
+    }
+    return this.refreshing;
+  }
+
+  private async exchangeRefresh(): Promise<CalimeroSession> {
+    const current = this.current;
+    if (!current) throw new Error('no session to refresh');
+    let session: CalimeroSession | undefined;
+    // A node that may not serve the account answers `421 WRONG_NODE` before it
+    // spends the refresh token (core #4774), so the same token goes to the next
+    // node (`send` moved there already): once per node, at most.
+    for (let tried = 1; session === undefined; tried++) {
+      try {
+        session = await this.post<CalimeroSession>('auth/refresh', { refreshToken: current.refreshToken });
+      } catch (error) {
+        if (!(error instanceof WrongNode) || tried >= this.nodeUrls.length) throw error;
+      }
+    }
+    // A sign-in or another session taken while this one was refreshing wins.
+    if (this.current === current) this.useSession(session);
     return session;
   }
 
@@ -507,7 +663,7 @@ export class CalimeroClient {
    */
   async attestation(): Promise<AttestationDoc> {
     const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
-    const response = await this.raw(`${this.base}/attestation?nonce=${nonce}`);
+    const response = await this.raw(`${this.nodeUrl}/attestation?nonce=${nonce}`);
     if (!response.ok) throw await refusal(response);
     return (await response.json()) as AttestationDoc;
   }
@@ -549,8 +705,7 @@ export class CalimeroClient {
 
   /** One of `app`'s blobs, by id (base58 or hex). */
   async downloadBlob(app: string, id: string): Promise<Uint8Array> {
-    const response = await this.request('GET', `apps/${seg(app)}/blobs/${seg(id)}`);
-    if (!response.ok) throw await refusal(response);
+    const response = await this.send('GET', `apps/${seg(app)}/blobs/${seg(id)}`);
     return new Uint8Array(await response.arrayBuffer());
   }
 
@@ -773,10 +928,7 @@ export class CalimeroClient {
 
   /** A server-sent event stream on `path`, sealed like every other answer. */
   private async *stream(path: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    const headers: Record<string, string> = {};
-    if (this.auth) headers.authorization = `Bearer ${this.auth}`;
-    const response = await this.sealed(`${this.base}/${path}`, { headers, signal });
-    if (!response.ok) throw await refusal(response);
+    const response = await this.send('GET', path, undefined, undefined, undefined, signal);
     if (!response.body) throw new CalimeroError(response.status, 'EVENTS', 'the event stream has no body');
     yield* sseFrames(response.body);
   }

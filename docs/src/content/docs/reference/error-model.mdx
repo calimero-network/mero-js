@@ -13,7 +13,8 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 
 | Error | Status and code | Meaning |
 | --- | --- | --- |
-| `LoginRequired` | `401 UNAUTHENTICATED` | Sign in (again) or refresh, then repeat. |
+| `LoginRequired` | `401 UNAUTHENTICATED` | The client's own refresh did not help (or there is no refresh token): sign in again, then repeat. See [Restarts and other nodes](#restarts-and-other-nodes). |
+| `WrongNode` | `421 WRONG_NODE` | This node's release may not serve the account, and the client knows no other node that took the request: use another node of the cluster. |
 | `NotFound` | `404 NOT_FOUND` | Does not exist for this caller: a missing app and one you may not reach answer alike. |
 | `ConfirmRequired` | `412 CONFIRM_REQUIRED` | The request needs a passkey over the challenge in `details`; only reaches you from a method given no passkey. |
 | `ConfirmCancelled` | (not from the node) | The user dismissed the passkey prompt. Nothing was sent. |
@@ -38,6 +39,41 @@ try {
   else throw e;
 }
 ```
+
+## Restarts and other nodes
+
+A session token is signed by the node that issued it. Other nodes take it only
+while they can vouch for that node's signing key, so when the issuer is
+replaced, removed or out of reach (a rolling deploy, an image rollout), they
+answer `401` — not because the user signed out. The client answers that
+itself:
+
+- **`401 UNAUTHENTICATED`** to a request sent with a session: the client
+  refreshes once (`POST auth/refresh`, which any node of the cluster takes) and
+  repeats the request once. Requests refused at the same time share that one
+  refresh: a refresh token is used once, and a second use would revoke the
+  session. Only when the refresh is refused, or the repeated request is refused
+  again, does `LoginRequired` reach you. A request made with an API key is not
+  refreshed.
+- **`421 WRONG_NODE`**: the node runs a mero-tee release the account's owners
+  have not approved, so it neither issues nor takes the account's sessions. The
+  client moves to the next node given in `nodes` (`new CalimeroClient({ baseUrl,
+  nodes, policy })`, each attested under the same policy) and repeats the
+  request there once; `client.nodeUrl` names the node in use. With no other
+  node, or when the next one refuses too, `WrongNode` (with the node's
+  `details`) reaches you: connect to another node of the cluster.
+
+Repeating is safe for any request, a call too: the node answers `401` and `421`
+while judging the credential, before it runs anything, and a call keeps its
+idempotency key. A node answers `421` to the ceremonies that mint a session
+before it spends their challenge or refresh token, and:
+
+- a sign-in or sign-up that answers `421` is not repeated, since it needs the
+  passkey again: the client moves to the next node and throws `WrongNode`; call
+  `signIn` again.
+- a refresh that answers `421` is sent, with the same refresh token, to each
+  next node in turn, at most once per node. Only when every node refuses does
+  `WrongNode` reach you.
 
 ## Did it commit?
 
