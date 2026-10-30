@@ -22,11 +22,21 @@ const client = new CalimeroClient({
       minReleaseVersion: '2.3.109', // required: the oldest mero-tee release trusted
       // profile: 'locked-read-only', // the default image profile
       // releaseSource: 'github',     // or a mirror's URL, or a function; default the cloud's mirror
-      // fetchCollateral: (quote) => getCollateral(PCCS_URL, quote), // default Intel's PCS
+      // collateralSource: 'intel',    // or a PCCS URL; default the cloud's mirror (DEFAULT_COLLATERAL_MIRROR)
+      // maxCollateralAgeDays: 7,     // refuse TCB info Intel issued longer ago; default only its nextUpdate
     },
   },
 });
 ```
+
+Intel's collateral (TCB info, QE identity, CRLs) comes from the cloud's
+mirror by default, `https://cloud.calimero.network/api/tee/pcs`: Intel's PCS
+sends no CORS header, so a browser cannot read it. The mirror cannot forge
+anything, since every item is Intel-signed and `@phala/dcap-qvl` checks it up
+to Intel's root CA, which it carries. What a mirror could do is replay an older
+copy that is still valid; Intel's `nextUpdate` (about 30 days) bounds that, and
+`maxCollateralAgeDays` bounds it tighter. Outside a browser, `collateralSource:
+'intel'` asks Intel directly; `fetchCollateral` replaces the fetch altogether.
 
 `fetchAttestedKey(baseUrl, policy)` is the check on its own. For a real quote,
 as core's Rust client judges it (`attest::verify`, `Measurements::Release`):

@@ -21,6 +21,7 @@
 
 import { fromHex, hex } from '../crypto/internal.js';
 import {
+  DEFAULT_COLLATERAL_MIRROR,
   DEFAULT_RELEASE_MIRROR,
   cloudNodeReleaseUrl,
   compareReleaseVersions,
@@ -58,11 +59,26 @@ export interface CloudReleasePolicy {
   /** DCAP verification; defaults to `verify` from `@phala/dcap-qvl`, loaded on first use. */
   dcapVerify?: DcapVerify;
   /**
-   * Intel's collateral for a quote; defaults to `@phala/dcap-qvl`'s
-   * `getCollateralFromPcs` (Intel's PCS). Point it at a PCCS a browser can reach
-   * if Intel's does not answer the page.
+   * Intel's collateral for a quote. Defaults to `@phala/dcap-qvl`'s
+   * `getCollateral` from `collateralSource`.
    */
   fetchCollateral?: (quote: Uint8Array) => Promise<DcapCollateral>;
+  /**
+   * Where the default `fetchCollateral` gets Intel's collateral: a PCCS base
+   * URL (default {@link DEFAULT_COLLATERAL_MIRROR}, the cloud's mirror, which a
+   * browser on any origin can read), or `'intel'` for Intel's PCS itself (no
+   * CORS: not in browsers). Untrusted either way: every item is signed by
+   * Intel and verified up to Intel's root CA, which `@phala/dcap-qvl` carries.
+   */
+  collateralSource?: 'intel' | string;
+  /**
+   * Refuse collateral whose TCB info Intel issued more than this many days
+   * ago. Unset: only Intel's own `nextUpdate` (about 30 days out) bounds how
+   * old it may be. A mirror cannot forge collateral, but it can replay an
+   * older, still valid copy; this shortens that window. Too small a value
+   * refuses every node if Intel is slow to re-sign.
+   */
+  maxCollateralAgeDays?: number;
   /** Override the release signer (defaults to the mero-tee node release workflow). */
   identity?: string;
   issuer?: string;
@@ -111,13 +127,14 @@ function equal(a: Uint8Array, b: Uint8Array): boolean {
 
 type DcapModule = {
   verify?: unknown;
+  getCollateral?: unknown;
   getCollateralFromPcs?: unknown;
-  default?: { verify?: unknown; getCollateralFromPcs?: unknown };
+  default?: { verify?: unknown; getCollateral?: unknown; getCollateralFromPcs?: unknown };
 };
 let dcapModule: Promise<DcapModule> | undefined;
 
 /** A function out of `@phala/dcap-qvl`, whatever shape the bundler gave the (CommonJS) module. */
-async function dcap<T>(name: 'verify' | 'getCollateralFromPcs'): Promise<T> {
+async function dcap<T>(name: 'verify' | 'getCollateral' | 'getCollateralFromPcs'): Promise<T> {
   dcapModule ??= import('@phala/dcap-qvl') as Promise<DcapModule>;
   const ns = await dcapModule;
   const f = typeof ns[name] === 'function' ? ns[name] : ns.default?.[name];
@@ -146,6 +163,42 @@ async function releaseFor(version: string, policy: CloudReleasePolicy, fetchImpl
   return fetchNodeRelease(cloudNodeReleaseUrl(source ?? DEFAULT_RELEASE_MIRROR, version), { fetch: fetchImpl });
 }
 
+/** The collateral fetch a policy gets unless it brings its own: `@phala/dcap-qvl` against `collateralSource`. */
+function defaultCollateral(policy: CloudReleasePolicy): (quote: Uint8Array) => Promise<DcapCollateral> {
+  const source = policy.collateralSource ?? DEFAULT_COLLATERAL_MIRROR;
+  if (source === 'intel') {
+    return async (quote) => (await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs'))(quote);
+  }
+  return async (quote) =>
+    (await dcap<(url: string, q: Uint8Array) => Promise<DcapCollateral>>('getCollateral'))(source, quote);
+}
+
+/** `fetch`, refusing collateral older than `policy.maxCollateralAgeDays` (by its TCB info's `issueDate`). */
+export function freshCollateral(
+  fetch: (quote: Uint8Array) => Promise<DcapCollateral>,
+  policy: Pick<CloudReleasePolicy, 'maxCollateralAgeDays' | 'now'>,
+): (quote: Uint8Array) => Promise<DcapCollateral> {
+  const maxDays = policy.maxCollateralAgeDays;
+  if (maxDays === undefined) return fetch;
+  return async (quote) => {
+    const collateral = await fetch(quote);
+    let issued: number;
+    try {
+      issued = Date.parse((JSON.parse(collateral.tcb_info) as { issueDate?: string }).issueDate ?? '');
+    } catch {
+      issued = Number.NaN;
+    }
+    if (!Number.isFinite(issued)) throw new Error("The quote's collateral names no TCB info issue date");
+    const ageDays = ((policy.now ?? Date.now)() - issued) / 86_400_000;
+    if (ageDays > maxDays) {
+      throw new Error(
+        `The quote's collateral was issued ${Math.floor(ageDays)} days ago, more than the ${maxDays} this client accepts`,
+      );
+    }
+    return collateral;
+  };
+}
+
 /** Judge a real quote as core's `Measurements::Release` does. */
 async function verifyRelease(
   doc: AttestationDoc,
@@ -163,10 +216,7 @@ async function verifyRelease(
     identity: policy.identity,
     issuer: policy.issuer,
   });
-  const fetchCollateral =
-    policy.fetchCollateral ??
-    (async (quote: Uint8Array) =>
-      (await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs'))(quote));
+  const fetchCollateral = freshCollateral(policy.fetchCollateral ?? defaultCollateral(policy), policy);
   const verifier = createQuoteVerifier({
     dcapVerify: policy.dcapVerify ?? (await dcap<DcapVerify>('verify')),
     fetchCollateral,
