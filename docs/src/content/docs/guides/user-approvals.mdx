@@ -92,6 +92,23 @@ const started = await client.openConsentPage(request, (url) => window.open(url, 
 const { status } = await client.waitForConsent(started.requestId, { expiresAt: started.expiresAt });
 ```
 
+To take a release approval back, send them to the page the same way:
+
+```ts
+import { withdrawConsent } from '@calimero-network/mero-js';
+
+await client.openConsentPage(withdrawConsent(pending.scope, '2.3.110', returnTo));
+// the same as releaseConsent(scope, version, returnTo, { withdraw: true })
+```
+
+The page says what withdrawing does: the nodes that hold the data send nodes
+on that release nothing more, and no app is placed on them; nothing already
+there is deleted or moved. It fetches no measurements, so a withdrawal never
+waits on the network. The scope's last approved release cannot be withdrawn:
+the page warns first, the node refuses it (`400 REJECTED`, "the last approved
+release cannot be withdrawn") and the request stays pending, so approve
+another release before withdrawing it.
+
 `returnTo` must be your package's frontend origin, or one your package's
 signed manifest names (`links.frontend`, `frontendAliases`); anything else is
 `400 RETURN_TO_NOT_ALLOWED`. A request lives 10 minutes and is decided once.

@@ -49,12 +49,14 @@ export {
   stalledBy,
   upgradeConsent,
   verifyReleaseUrl,
+  withdrawConsent,
 } from './approvals.js';
 export type {
   ActorKind,
   AppsReport,
   Authority,
   ClusterRelease,
+  ConsentReleaseModel,
   ConsentRequest,
   ConsentResult,
   ConsentScope,

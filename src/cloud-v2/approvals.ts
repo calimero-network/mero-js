@@ -266,7 +266,8 @@ export type ConsentRequest =
   | {
       kind: 'release';
       scope: ConsentScope;
-      subject: { version: string };
+      /** `withdraw: true` asks to withdraw the release's approval instead of approving it. */
+      subject: { version: string; withdraw?: boolean };
       /** Where the page sends the person back: the package's frontend origin, or one its manifest names. */
       returnTo: string;
     }
@@ -415,10 +416,61 @@ export function pendingApprovalsFrom(report: AppsReport, rules: ReleaseRules, no
   };
 }
 
-/** The consent request that approves `release` for `scope`. */
-export function releaseConsent(scope: ReportScope, version: string, returnTo: string): ConsentRequest {
-  return { kind: 'release', scope: scope.kind === 'org' ? { org: scope.org } : 'account', subject: { version }, returnTo };
+/**
+ * The consent request that approves `version` for `scope`, or with
+ * `{ withdraw: true }` withdraws its approval ({@link withdrawConsent}).
+ */
+export function releaseConsent(
+  scope: ReportScope,
+  version: string,
+  returnTo: string,
+  options: { withdraw?: boolean } = {},
+): ConsentRequest {
+  return {
+    kind: 'release',
+    scope: scope.kind === 'org' ? { org: scope.org } : 'account',
+    subject: options.withdraw ? { version, withdraw: true } : { version },
+    returnTo,
+  };
 }
+
+/**
+ * The consent request that withdraws `version`'s approval for `scope`: nodes
+ * on it are then sent none of the scope's apps' data (nothing already there
+ * moves). The page fetches no measurements for it. Withdrawing the scope's
+ * last approved release is refused on the page (`400 REJECTED`, the request
+ * stays pending), and the page warns before.
+ */
+export function withdrawConsent(scope: ReportScope, version: string, returnTo: string): ConsentRequest {
+  return releaseConsent(scope, version, returnTo, { withdraw: true });
+}
+
+/**
+ * The `release` part of a release request's model, as the consent page reads
+ * it (`GET /consent/{id}/model`, on the node's origin; the app never needs
+ * it). An approval carries the release's signed measurements; a withdrawal
+ * carries none, and says whether the release is approved now and whether it
+ * is the scope's last approved release (which cannot be withdrawn).
+ */
+export type ConsentReleaseModel =
+  | {
+      version: string;
+      change: 'approve';
+      alreadyApproved: boolean;
+      approved: unknown;
+      nodes: unknown;
+      profile: string | null;
+      measurements: Record<string, unknown>;
+    }
+  | {
+      version: string;
+      change: 'withdraw';
+      currentlyApproved: boolean;
+      lastApproved: boolean;
+      approved: unknown;
+      nodes: unknown;
+      profile: string | null;
+    };
 
 /** The consent request that upgrades `app` to `toVersion`. */
 export function upgradeConsent(app: string, toVersion: string, returnTo: string): ConsentRequest {

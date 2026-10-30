@@ -21,6 +21,7 @@ import {
   releaseConsent,
   stalledBy,
   upgradeConsent,
+  withdrawConsent,
   type AppsReport,
   type ReleaseRules,
 } from './index.js';
@@ -200,6 +201,21 @@ describe('over the sealed channel', () => {
     });
     await c.requestConsent(releaseConsent({ kind: 'account' }, '2.3.130', 'https://kv.apps.example/'));
     expect(last().body).toMatchObject({ scope: 'account' });
+
+    // Withdrawing goes through the page too; an approval sends no `withdraw` at all.
+    expect(node.requests[node.requests.length - 2].body).toEqual(
+      expect.objectContaining({ subject: { version: '2.3.130' } }),
+    );
+    await c.requestConsent(withdrawConsent({ kind: 'org', org: 'org-1' }, '2.3.109', 'https://kv.apps.example/'));
+    expect(last().body).toEqual({
+      kind: 'release',
+      scope: { org: 'org-1' },
+      subject: { version: '2.3.109', withdraw: true },
+      returnTo: 'https://kv.apps.example/',
+    });
+    expect(releaseConsent({ kind: 'account' }, '2.3.109', 'https://x/', { withdraw: true })).toEqual(
+      withdrawConsent({ kind: 'account' }, '2.3.109', 'https://x/'),
+    );
 
     let polls = 0;
     node.answer = () => {
