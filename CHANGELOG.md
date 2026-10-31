@@ -1,3 +1,13 @@
+## [28.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.5.0...mero-js-v28.0.0) (2026-10-31)
+
+### ⚠ BREAKING CHANGES
+
+* **cloud-v2:** answer passkey step-ups on credentials, memberships and invites (#320)
+
+### Features
+
+* **cloud-v2:** answer passkey step-ups on credentials, memberships and invites ([#320](https://github.com/calimero-network/mero-js/issues/320)) ([1953b55](https://github.com/calimero-network/mero-js/commit/1953b5573b1d97be89bac0c99ae3ab65fe4961ac))
+
 ## [27.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.4.0...mero-js-v27.5.0) (2026-10-31)
 
 ### Features
