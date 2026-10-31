@@ -19,18 +19,25 @@ is loaded only when the client first meets a real one.
 
 ## Connect
 
-A client talks to one node of a cluster. Its `policy` says which nodes it
+A client talks to one node of a cluster at a time, and fails over to the
+next when that node stays unavailable. Its `policy` says which nodes it
 trusts; nothing is sent to a node until its attestation passes.
 
 ```ts
 import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
 
-const client = new CalimeroClient({
-  baseUrl: 'https://eu1.cloud.calimero.network',
+// A Calimero Cloud cluster by name; its nodes come from the node directory.
+const client = await CalimeroClient.connect({
+  cluster: 'eu-shared-1',
   // Trust a node that runs a signed mero-tee release, this one or newer.
   policy: { release: { minReleaseVersion: '2.3.109' } },
 });
 ```
+
+The directory only chooses which nodes to try: each one is still attested
+under your `policy`, so a wrong list can only make connecting fail. For a fixed
+list of nodes, or a cluster you run yourself, give them directly:
+`new CalimeroClient({ baseUrl, nodes, policy })`.
 
 For a local development cluster (`merod local`, or `merod run --dev`), whose
 nodes send mock quotes, allow them explicitly:
