@@ -85,7 +85,7 @@ run('rooms on the v2 runtime, through mero-js', () => {
     const [alice, , aliceId] = await person(1, 'alice');
     const [bob, , bobId] = await person(2, 'bob');
     const org = await owner.createOrg('Acme');
-    for (const p of [alice, bob]) await p.redeemInvite(await owner.invite(org, 'member'));
+    for (const p of [alice, bob]) await p.redeemInvite(await owner.invite(org, 'member', ownerPk));
 
     const bundle = await owner.uploadBundle(new Uint8Array(readFileSync(ROOMS_WASM)));
     const app = await owner.createApp('rooms', bundle, { org });
@@ -178,7 +178,7 @@ run('rooms on the v2 runtime, through mero-js', () => {
     expect(bobEvents.seen.some((e) => e.kind === 'BookingReleased')).toBe(false);
 
     // Removal from the org cuts Bob's stream and calls off.
-    await owner.removeMember(org, bobId);
+    await owner.removeMember(org, bobId, ownerPk);
     await new Promise((r) => setTimeout(r, 300));
     const before = bobEvents.seen.length;
     await alice.call(app, 'book', { roomId: 'r1', start: String(start + 8 * SLOT_MS), slotCount: 1, title: 'after' });

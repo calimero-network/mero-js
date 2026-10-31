@@ -9,23 +9,27 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## Organizations and members
 
+Every change to who holds access (members, team members, capabilities and
+invites) is approved with the caller's passkey: the node answers
+`412 CONFIRM_REQUIRED` and the client signs the challenge with `passkey`.
+
 ```ts
 const org = await client.createOrg('Acme');
 await client.getOrg(org); // with the teams you reach or manage
-await client.setMember(org, bobId, 'member'); // guest | member | admin | owner
-await client.removeMember(org, bobId);
+await client.setMember(org, bobId, 'member', passkey); // guest | member | admin | owner
+await client.removeMember(org, bobId, passkey); // your own account id to leave
 await client.setOrgMetadata(org, { logo: '…' });
 await client.setMemberMetadata(org, bobId, { title: 'engineer' }); // null clears it
 await client.deleteOrg(org, passkey); // the owner's passkey; takes its teams, invites and apps
 ```
 
-Ownership moves with `setMember(org, account, 'owner')`.
+Ownership moves with `setMember(org, account, 'owner', passkey)`.
 
 ## Invites
 
 ```ts
-const token = await client.invite(org, 'member', [teamId], { ttlSecs: 3600, uses: 5 });
-// the invitee, signed in:
+const token = await client.invite(org, 'member', passkey, [teamId], { ttlSecs: 3600, uses: 5 });
+// the invitee, signed in (no approval needed):
 await invitee.redeemInvite(token);
 ```
 
@@ -33,9 +37,9 @@ await invitee.redeemInvite(token);
 
 ```ts
 const team = await client.createTeam(org, 'eng', 'invite'); // or 'everyone'; optional parent
-await client.setTeamMember(org, team, bobId, { role: 'readOnly' }); // lead | member | readOnly
+await client.setTeamMember(org, team, bobId, passkey, { role: 'readOnly' }); // lead | member | readOnly
 await client.updateTeam(org, team, { name: 'platform', parent: null, metadata: { colour: 'blue' } });
-await client.removeTeamMember(org, team, bobId);
+await client.removeTeamMember(org, team, bobId, passkey);
 await client.deleteTeam(org, team); // and the teams below it, and their apps
 ```
 
@@ -49,9 +53,9 @@ Below admin, what a member may do is their role plus capability bits:
 ```ts
 import { ORG_CAPABILITIES, orgCapabilities } from '@calimero-network/mero-js';
 
-await client.setCapabilities(org, orgCapabilities('CREATE_APP', 'INVITE_MEMBERS'), { account: bobId });
-await client.setCapabilities(org, ORG_CAPABILITIES.CREATE_APP, { account: bobId, team }); // on one team
-await client.setCapabilities(org, ORG_CAPABILITIES.JOIN_OPEN_TEAMS); // the organization's default
+await client.setCapabilities(org, orgCapabilities('CREATE_APP', 'INVITE_MEMBERS'), passkey, { account: bobId });
+await client.setCapabilities(org, ORG_CAPABILITIES.CREATE_APP, passkey, { account: bobId, team }); // on one team
+await client.setCapabilities(org, ORG_CAPABILITIES.JOIN_OPEN_TEAMS, passkey); // the organization's default
 ```
 
 | Bit | Value | Lets a member |

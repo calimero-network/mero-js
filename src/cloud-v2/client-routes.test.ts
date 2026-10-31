@@ -8,7 +8,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { StandInCloudNode } from '../../tests/cloud-v2/stand-in-node.js';
-import { CalimeroClient, ORG_CAPABILITIES, orgCapabilities, type UpgradeRun } from './index.js';
+import {
+  CalimeroClient,
+  ConfirmCancelled,
+  ConfirmRequired,
+  ORG_CAPABILITIES,
+  orgCapabilities,
+  type UpgradeRun,
+} from './index.js';
 import type { PasskeyProvider } from './passkey.js';
 
 const node = new StandInCloudNode();
@@ -136,22 +143,161 @@ describe("the console's passkey actions", () => {
     expect(last().body).toMatchObject({ version: '2.3.110', approved: false });
   });
 
-  it('creates and revokes an API key and mints an invite', async () => {
+  it('creates and revokes an API key and mints an invite, each create approved with the passkey', async () => {
     const c = client();
-    node.answer = (head) =>
-      head.path === '/auth/apikeys'
+    node.answer = (head, body) => {
+      if (!body.confirm && head.method === 'POST') {
+        return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
+      }
+      return head.path === '/auth/apikeys'
         ? { status: 200, json: { keyId: 'k-1', key: 'cal_secret' } }
         : { status: 200, json: { token: 'inv-1' } };
-    expect(await c.createApiKey({ label: 'ci', apps: ['a-1'], readOnly: true })).toEqual({ keyId: 'k-1', key: 'cal_secret' });
+    };
+    expect(await c.createApiKey({ label: 'ci', apps: ['a-1'], readOnly: true }, passkey)).toEqual({
+      keyId: 'k-1',
+      key: 'cal_secret',
+    });
     expect(node.requests[0].body).toEqual({ label: 'ci', apps: ['a-1'], readOnly: true });
+    expect(node.requests[1].body).toEqual({
+      label: 'ci',
+      apps: ['a-1'],
+      readOnly: true,
+      confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
+    });
     await c.revokeApiKey('k-1');
-    expect(await c.invite('org-1', 'member', ['t-1'], { ttlSecs: 60, uses: 2 })).toBe('inv-1');
+    expect(await c.invite('org-1', 'member', passkey, ['t-1'], { ttlSecs: 60, uses: 2 })).toBe('inv-1');
     expect(sent()).toEqual([
+      ['POST', '/auth/apikeys'],
       ['POST', '/auth/apikeys'],
       ['DELETE', '/auth/apikeys/k-1'],
       ['POST', '/orgs/org-1/invites'],
+      ['POST', '/orgs/org-1/invites'],
     ]);
-    expect(last().body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2 });
+    expect(node.requests[3].body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2 });
+    expect(last().body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2, confirm: { challengeId: 'c-1', assertion: expect.anything() } });
+  });
+});
+
+describe('credentials, memberships and invites are approved with a passkey (412 CONFIRM_REQUIRED)', () => {
+  /** A passkey that records the credentials it was allowed to sign with. */
+  const recording = (signature: string) => {
+    const allowed: Array<string[] | undefined> = [];
+    const created: Array<Record<string, unknown>> = [];
+    const pk: PasskeyProvider = {
+      create: async (options) => {
+        created.push(options);
+        return { attestationObject: `ao-${signature}`, clientDataJson: 'cd' };
+      },
+      get: async (_challenge, _rpId, allow) => {
+        allowed.push(allow);
+        return { credentialId: `cred-${signature}`, authenticatorData: 'ad', clientDataJson: 'cd', signature };
+      },
+    };
+    return { pk, allowed, created };
+  };
+
+  it("adds a passkey: the new one registers, one the account already has approves", async () => {
+    const c = client();
+    const fresh = recording('new');
+    const existing = recording('old');
+    node.answer = (head, body) => {
+      if (head.path === '/auth/passkeys/add/begin') return { status: 200, json: { challengeId: 'a-1', options: { challenge: 'AAEC' } } };
+      if (!body.confirm) {
+        return {
+          status: 412,
+          json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: { ...CHALLENGE, allowCredentials: ['cred-old'] } },
+        };
+      }
+      return { status: 200, json: { credentialId: 'cred-new' } };
+    };
+    expect(await c.addPasskey(fresh.pk, existing.pk)).toBe('cred-new');
+    expect(sent()).toEqual([
+      ['POST', '/auth/passkeys/add/begin'],
+      ['POST', '/auth/passkeys/add/finish'],
+      ['POST', '/auth/passkeys/add/finish'],
+    ]);
+    const registration = { attestationObject: 'ao-new', clientDataJson: 'cd' };
+    expect(node.requests[1].body).toEqual({ challengeId: 'a-1', registration });
+    // The same registration again, approved by the existing passkey, limited to the account's credentials.
+    expect(last().body).toEqual({
+      challengeId: 'a-1',
+      registration,
+      confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ credentialId: 'cred-old', signature: 'old' }) },
+    });
+    expect(fresh.created).toEqual([{ challenge: 'AAEC' }]);
+    expect(fresh.allowed).toEqual([]);
+    expect(existing.allowed).toEqual([['cred-old']]);
+  });
+
+  type Case = [string, (c: CalimeroClient) => Promise<unknown>, 'POST' | 'DELETE', string, Record<string, unknown>];
+  const cases: Case[] = [
+    ['removePasskey', (c) => c.removePasskey('cred/1', passkey), 'DELETE', '/auth/passkeys/cred%2F1', {}],
+    ['setMember', (c) => c.setMember('org-1', 'acc-2', 'admin', passkey), 'POST', '/orgs/org-1/members', { account: 'acc-2', role: 'admin' }],
+    ['removeMember', (c) => c.removeMember('org-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/members/acc-2', {}],
+    [
+      'setCapabilities',
+      (c) => c.setCapabilities('org-1', 17, passkey, { account: 'acc-2', team: 't-1' }),
+      'POST',
+      '/orgs/org-1/capabilities',
+      { capabilities: 17, account: 'acc-2', team: 't-1' },
+    ],
+    ['setCapabilities (default)', (c) => c.setCapabilities('org-1', 4, passkey), 'POST', '/orgs/org-1/capabilities', { capabilities: 4 }],
+    [
+      'setTeamMember',
+      (c) => c.setTeamMember('org-1', 't-1', 'acc-2', passkey, { role: 'readOnly' }),
+      'POST',
+      '/orgs/org-1/teams/t-1/members',
+      { account: 'acc-2', role: 'readOnly' },
+    ],
+    ['removeTeamMember', (c) => c.removeTeamMember('org-1', 't-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/teams/t-1/members/acc-2', {}],
+    ['invite', (c) => c.invite('org-1', 'guest', passkey), 'POST', '/orgs/org-1/invites', { role: 'guest', teams: [] }],
+  ];
+
+  it.each(cases)('%s answers the 412 and sends the same body again with confirm', async (_, act, method, path, body) => {
+    confirming({ token: 'inv-1' });
+    await act(client());
+    expect(sent()).toEqual([
+      [method, path],
+      [method, path],
+    ]);
+    expect(node.requests[0].body).toEqual(body);
+    expect(last().body).toEqual({
+      ...body,
+      confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
+    });
+  });
+
+  it('without a passkey the 412 is ConfirmRequired, carrying the challenge, and nothing more is sent', async () => {
+    confirming({});
+    const none = undefined as unknown as PasskeyProvider;
+    const error = await client()
+      .removeMember('org-1', 'acc-2', none)
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ConfirmRequired);
+    expect(error).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: CHALLENGE });
+    expect(sent()).toEqual([['DELETE', '/orgs/org-1/members/acc-2']]);
+  });
+
+  it('a declined prompt is ConfirmCancelled, and the confirmed request is never sent', async () => {
+    confirming({});
+    const declining: PasskeyProvider = {
+      ...passkey,
+      get: async () => {
+        throw Object.assign(new Error('not allowed'), { name: 'NotAllowedError' });
+      },
+    };
+    const error = await client()
+      .setMember('org-1', 'acc-2', 'member', declining)
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ConfirmCancelled);
+    expect(sent()).toEqual([['POST', '/orgs/org-1/members']]);
+  });
+
+  it('redeeming an invite asks for nothing', async () => {
+    node.answer = () => ({ status: 200, json: { orgId: 'org-1' } });
+    expect(await client().redeemInvite('inv-1')).toEqual({ orgId: 'org-1' });
+    expect(sent()).toEqual([['POST', '/invites/inv-1/redeem']]);
+    expect(last().body).toEqual({});
   });
 });
 

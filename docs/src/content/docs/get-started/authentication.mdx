@@ -25,12 +25,13 @@ await client.signIn(passkey);          // existing passkey
 answering base64url fields) works in its place, for example a software
 authenticator in tests.
 
-Each passkey is a device of the account:
+Each passkey is a device of the account. Adding or removing one is approved
+with a passkey the account already has (the new one cannot approve itself):
 
 ```ts
-const credentialId = await client.addPasskey(browserPasskey()); // another device
+const credentialId = await client.addPasskey(newDevicePasskey, passkey); // another device, approved by `passkey`
 await client.labelPasskey(credentialId, 'work laptop');
-await client.removePasskey(credentialId); // never the last one
+await client.removePasskey(credentialId, passkey); // never the last one
 ```
 
 ## Sessions
@@ -68,16 +69,20 @@ await client.signOutEverywhere(); // every session of the account, on every devi
 ## API keys
 
 Agents and servers authenticate with an API key (`cal_...`), scoped and
-revocable. The key is returned once.
+revocable. Creating one is approved with the account's passkey, from a passkey
+session (an API key cannot mint another). The key is returned once.
 
 ```ts
-const { keyId, key } = await client.createApiKey({
-  label: 'ci',
-  apps: [appId],      // only these apps
-  methods: ['get'],   // only these methods
-  readOnly: true,
-  ttlSecs: 86_400,
-});
+const { keyId, key } = await client.createApiKey(
+  {
+    label: 'ci',
+    apps: [appId],      // only these apps
+    methods: ['get'],   // only these methods
+    readOnly: true,
+    ttlSecs: 86_400,
+  },
+  passkey,
+);
 
 const agent = new CalimeroClient({ baseUrl, policy });
 agent.useApiKey(key);
@@ -90,7 +95,9 @@ await client.revokeApiKey(keyId);
 
 Some requests need the account holder's passkey over that exact request: a
 method the app declares `confirm`, deleting an organization, upgrades,
-transfers and approvals. The node answers `412 CONFIRM_REQUIRED` with a
+transfers and approvals, and every grant of access: adding or removing a
+passkey, creating an API key, setting or removing an organization or team
+member, capabilities and invites. The node answers `412 CONFIRM_REQUIRED` with a
 challenge; the `*Confirmed` methods, and every method that takes a `passkey`,
 sign it and send the request again.
 
