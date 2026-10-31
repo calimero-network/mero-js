@@ -1,3 +1,9 @@
+## [27.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.4.0...mero-js-v27.5.0) (2026-10-31)
+
+### Features
+
+* **cloud-v2:** connect to a cluster by name and fail over between its nodes ([#322](https://github.com/calimero-network/mero-js/issues/322)) ([400e893](https://github.com/calimero-network/mero-js/commit/400e893cb818c9570f3c5330e8ce313cef7860f8))
+
 ## [27.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.3.0...mero-js-v27.4.0) (2026-10-30)
 
 ### Features
