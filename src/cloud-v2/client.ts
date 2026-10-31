@@ -12,6 +12,7 @@
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
+import { DEFAULT_DIRECTORY, orderNodes, readDirectory } from './directory.js';
 import {
   CalimeroError,
   ConfirmCancelled,
@@ -291,9 +292,10 @@ export interface CalimeroClientOptions {
   baseUrl: string;
   /**
    * Other nodes of the same cluster, in the order to move to them when a node
-   * answers `421 WRONG_NODE` (its release may not serve this account). Each is
-   * attested under the same `policy` before anything is sent to it. Without
-   * them a `421` reaches the caller as {@link WrongNode}.
+   * answers `421 WRONG_NODE` (its release may not serve this account), or stays
+   * unavailable to a call or a view through all its retries. Each is attested
+   * under the same `policy` before anything is sent to it. Without them a `421`
+   * reaches the caller as {@link WrongNode}.
    */
   nodes?: string[];
   policy: CloudPolicy;
@@ -301,6 +303,36 @@ export interface CalimeroClientOptions {
   fetch?: typeof fetch;
   /** How calls and views retry a 503 or a failed connection. */
   retry?: CloudRetryOptions;
+}
+
+/** How {@link CalimeroClient.connect} reaches a Calimero Cloud cluster by name. */
+export interface CalimeroConnectOptions {
+  /** The cluster's name, e.g. `eu-shared-1`. */
+  cluster: string;
+  /** What every node must attest to before anything is sent to it. */
+  policy: CloudPolicy;
+  /** The node directory to ask. Default {@link DEFAULT_DIRECTORY}. */
+  directory?: string;
+  /** Try the nodes in this zone (e.g. `europe-west4-a`) first. */
+  zone?: string;
+  /** Fetch for the directory, attestation and envelopes. Defaults to global `fetch`. */
+  fetch?: typeof fetch;
+  /** How calls and views retry a 503 or a failed connection. */
+  retry?: CloudRetryOptions;
+  /** Randomness for the weighted node order, in [0, 1). Defaults to `Math.random`. */
+  random?: () => number;
+}
+
+/** Where a client made by {@link CalimeroClient.connect} re-reads its node list. */
+interface DirectorySource {
+  directory: string;
+  cluster: string;
+  zone: string | undefined;
+  random: () => number;
+  /** When the listing is due to be read again (ms since the epoch). */
+  due: number;
+  /** The re-read under way, if any. */
+  reading?: Promise<void>;
 }
 
 /**
@@ -315,8 +347,8 @@ function ceremony(path: string): boolean {
 }
 
 export class CalimeroClient {
-  /** Every node this client may use, `baseUrl` first. */
-  private readonly nodeUrls: string[];
+  /** Every node this client may use, `baseUrl` first (or as the directory last ordered them). */
+  private nodeUrls: string[];
   /** The one in use: an index into {@link nodeUrls}. */
   private at = 0;
   /** A sealed fetch per node, each attesting its own node on first use. */
@@ -331,6 +363,35 @@ export class CalimeroClient {
   private readonly retry: Required<CloudRetryOptions>;
   /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
   private readonly networkFailures = new WeakSet<object>();
+  /** The directory the node list came from, for a client made by {@link connect}. */
+  private source: DirectorySource | undefined;
+
+  /**
+   * A client for the Calimero Cloud cluster named `cluster`: its node list read
+   * from the public node directory, those in `zone` first, each group in
+   * weighted-random order. The directory only picks which nodes to try: each is
+   * attested under `policy` before anything is sent to it. Throws
+   * {@link DirectoryError} when the directory names no usable node.
+   *
+   * The list is read again in the background after a failover, and at the
+   * first request once the directory's `refreshAfterSeconds` has passed.
+   */
+  static async connect(options: CalimeroConnectOptions): Promise<CalimeroClient> {
+    const directory = options.directory ?? DEFAULT_DIRECTORY;
+    const random = options.random ?? Math.random;
+    const fetcher = options.fetch ?? ((input, init) => fetch(input, init));
+    const listing = await readDirectory(directory, options.cluster, fetcher);
+    const [baseUrl, ...nodes] = orderNodes(listing.nodes, options.zone, random);
+    const client = new CalimeroClient({ baseUrl, nodes, policy: options.policy, fetch: options.fetch, retry: options.retry });
+    client.source = {
+      directory,
+      cluster: options.cluster,
+      zone: options.zone,
+      random,
+      due: Date.now() + listing.refreshAfterSeconds * 1000,
+    };
+    return client;
+  }
 
   constructor(options: CalimeroClientOptions) {
     const trim = (url: string) => url.replace(/\/+$/, '');
@@ -353,9 +414,14 @@ export class CalimeroClient {
     this.raw = raw;
   }
 
-  /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` moved the client on. */
+  /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` or a failover moved the client on. */
   get nodeUrl(): string {
     return this.nodeUrls[this.at];
+  }
+
+  /** Every node this client may use, in the order it moves through them. */
+  get nodes(): string[] {
+    return [...this.nodeUrls];
   }
 
   /** The sealed channel to `url`, attested under the client's policy before its first request. */
@@ -377,10 +443,52 @@ export class CalimeroClient {
    * next one. False when there is no other. A request that saw the same node
    * refuse after another request moved on already does not move again.
    */
-  private moveOn(from: number): boolean {
+  private moveOn(from: string): boolean {
     if (this.nodeUrls.length < 2) return false;
-    if (this.at === from) this.at = (from + 1) % this.nodeUrls.length;
+    if (this.nodeUrl === from) this.at = (this.at + 1) % this.nodeUrls.length;
     return true;
+  }
+
+  /**
+   * Fail over from node `from`, where a request's retries ran out, to the next
+   * node it has not `tried`. False when it has tried them all. A request whose
+   * node another request moved away from already goes to that node, if untried.
+   */
+  private failOver(from: string, tried: Set<string>): boolean {
+    if (this.nodeUrl !== from && !tried.has(this.nodeUrl)) return true;
+    const count = this.nodeUrls.length;
+    for (let step = 1; step < count; step++) {
+      const next = (this.at + step) % count;
+      if (!tried.has(this.nodeUrls[next])) {
+        this.at = next;
+        this.reread();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Read the node list again from the directory, in the background, for a
+   * client made by {@link connect}: the node in use stays first, then the
+   * directory's order; a node no longer listed is dropped. A failed read is
+   * ignored. One read at a time.
+   */
+  private reread(): void {
+    const source = this.source;
+    if (!source || source.reading) return;
+    source.reading = readDirectory(source.directory, source.cluster, this.raw)
+      .then((listing) => {
+        const current = this.nodeUrl;
+        const listed = orderNodes(listing.nodes, source.zone, source.random);
+        this.nodeUrls = [current, ...listed.filter((url) => url !== current)];
+        this.at = 0;
+        source.due = Date.now() + listing.refreshAfterSeconds * 1000;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        source.reading = undefined;
+      });
   }
 
   /** Authenticate every request with an API key. */
@@ -420,6 +528,7 @@ export class CalimeroClient {
       headers['content-type'] = 'application/json';
       payload = JSON.stringify(body);
     }
+    if (this.source && Date.now() >= this.source.due) this.reread();
     const url = this.nodeUrl;
     try {
       return await this.channel(url)(`${url}/${path}`, { method, headers, body: payload, signal });
@@ -459,7 +568,7 @@ export class CalimeroClient {
     let refreshed = false;
     let moved = false;
     for (;;) {
-      const [token, at] = [this.auth, this.at];
+      const [token, at] = [this.auth, this.nodeUrl];
       const response = await this.request(method, path, body, raw, contentType, signal);
       if (response.ok) return response;
       const error = await refusal(response);
@@ -505,30 +614,40 @@ export class CalimeroClient {
    * {@link json} for a call or a view (D70): while the node answers 503 or
    * cannot be reached, the same request, with the same idempotency key, is sent
    * again after {@link retryDelayMs} (or the pause the node asked for, if
-   * longer), at most `retries` times. Every other answer is final. The last
+   * longer), at most `retries` times. Every other answer is final.
+   *
+   * When a node's retries run out, the request fails over to the next node the
+   * client knows and its retries start again there, with the same key: the
+   * key is kept in the app's replicated log, so the cluster answers it once
+   * whichever node it reaches. Each node is tried once per request. The last
    * failure surfaces as {@link UnavailableError}: the node's 503, or reason
    * `network` for a connection that failed, whose `committed` is `'unknown'`.
-   * `retries` 0 sends the request exactly once.
+   *
+   * `once` sends the request exactly once, to the node in use (the confirmed
+   * attempt of {@link callConfirmed}, whose challenge is single-use).
    */
-  private async retried<T>(
-    method: string,
-    path: string,
-    body: Record<string, unknown>,
-    retries = this.retry.retries,
-  ): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      let unavailable: UnavailableError;
-      try {
-        return await this.json<T>(method, path, body);
-      } catch (error) {
-        if (error instanceof UnavailableError) unavailable = error;
-        else if (error instanceof TypeError && this.networkFailures.has(error)) {
-          unavailable = new UnavailableError('NETWORK', `the node could not be reached: ${error.message}`, {}, undefined, error);
-        } else throw error;
+  private async retried<T>(method: string, path: string, body: Record<string, unknown>, once = false): Promise<T> {
+    const retries = once ? 0 : this.retry.retries;
+    const tried = new Set<string>();
+    for (;;) {
+      let unavailable: UnavailableError | undefined;
+      let node = this.nodeUrl;
+      for (let attempt = 0; ; attempt++) {
+        node = this.nodeUrl;
+        tried.add(node);
+        try {
+          return await this.json<T>(method, path, body);
+        } catch (error) {
+          if (error instanceof UnavailableError) unavailable = error;
+          else if (error instanceof TypeError && this.networkFailures.has(error)) {
+            unavailable = new UnavailableError('NETWORK', `the node could not be reached: ${error.message}`, {}, undefined, error);
+          } else throw error;
+        }
+        if (attempt >= retries) break;
+        const backoff = retryDelayMs(attempt, this.retry);
+        await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (unavailable.retryAfter ?? 0) * 1000)));
       }
-      if (attempt >= retries) throw unavailable;
-      const backoff = retryDelayMs(attempt, this.retry);
-      await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (unavailable.retryAfter ?? 0) * 1000)));
+      if (once || !this.failOver(node, tried)) throw unavailable;
     }
   }
 
@@ -929,7 +1048,7 @@ export class CalimeroClient {
     // The confirmed attempt goes out exactly once: its challenge is single-use,
     // so a resend would be refused on the challenge, not answered from the key.
     return this.confirmed<CallResult>('POST', path, { method, args, idempotencyKey: key }, passkey, (body) =>
-      this.retried<CallResult>('POST', path, body, body.confirm === undefined ? this.retry.retries : 0),
+      this.retried<CallResult>('POST', path, body, body.confirm !== undefined),
     );
   }
 

@@ -31,8 +31,9 @@ quotes and is loaded on first use.
 ```ts
 import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
 
-const client = new CalimeroClient({
-  baseUrl: 'https://eu1.cloud.calimero.network',
+// Reach a Calimero Cloud cluster by name.
+const client = await CalimeroClient.connect({
+  cluster: 'eu-shared-1',
   // Trust the signed mero-tee release the node names, from this one up.
   policy: { release: { minReleaseVersion: '2.3.109' } },
 });
@@ -52,6 +53,34 @@ A development cluster (`merod local`, `merod run --dev`) sends mock quotes,
 which pass only with `policy: { allowMock: true }`. Nothing is read from the
 environment.
 
+## Connecting to a cluster
+
+`CalimeroClient.connect({ cluster, policy })` is the recommended way to reach a
+Calimero Cloud cluster. It reads the cluster's nodes from the public node
+directory (`DEFAULT_DIRECTORY`, `https://manager.cloud.calimero.network/api/v2/directory`;
+`directory` names another), puts those in `zone` first when you give one, and
+orders each group at random, weighted by the directory's weight. A cluster the
+directory does not know, or one with no usable node, throws `DirectoryError`.
+
+The directory only picks which nodes to try, and in what order. It is not
+trusted: every node is attested under **your** `policy` before anything is
+sent to it, so a wrong or tampered list can only make connecting fail.
+
+Any node of a cluster serves any request. While the node in use answers `503`
+or cannot be reached, a call or a view is retried there (`retry`); when those
+retries run out it fails over to the next node and starts them again there,
+with the **same** idempotency key, which the app's replicated log answers once
+cluster-wide. Each node is tried once per request; when all have failed, the
+last `UnavailableError` reaches you. After a failover, and once the directory's
+`refreshAfterSeconds` has passed (checked at the next request), the client
+reads the directory again in the background: the node in use stays first,
+nodes no longer listed are dropped. `client.nodeUrl` is the node in use,
+`client.nodes` the list.
+
+For a fixed list of nodes or a cluster you run yourself, construct the client
+directly: `new CalimeroClient({ baseUrl, nodes, policy })`. It fails over
+between `baseUrl` and `nodes` the same way, and never reads a directory.
+
 ## What the client checks
 
 Before it sends anything to a node, as core's Rust client does (`Measurements::Release`):
@@ -59,7 +88,7 @@ Before it sends anything to a node, as core's Rust client does (`Measurements::R
 1. The node names the mero-tee release it runs. A release below `minReleaseVersion` is refused before anything is fetched.
 2. The release's `published-mrtds.json` is fetched and its Sigstore signature is checked against the mero-tee node release workflow.
    By default it comes from the `cloud.calimero.network` mirror; `releaseSource: 'github'` reads the GitHub release instead (Node only: GitHub sends no CORS headers).
-3. The quote is checked against Intel's collateral with `@phala/dcap-qvl` (Intel's PCS unless you give `fetchCollateral`): the signature chain and the TCB status.
+3. The quote is checked against Intel's collateral with `@phala/dcap-qvl`: the signature chain and the TCB status. The collateral comes from the cloud's mirror (`DEFAULT_COLLATERAL_MIRROR`), which browsers can read; it only carries Intel-signed items. `collateralSource: 'intel'` asks Intel's PCS (no CORS: not in browsers), `fetchCollateral` replaces the fetch, and `maxCollateralAgeDays` refuses collateral Intel issued longer ago.
 4. A debug TD is refused.
 5. The registers must be the release's `locked-read-only` image; a debug profile is trusted only with `allowDebugProfile`.
 6. The quote's report data binds the client's nonce and the transport key the sealed channel opens to.
@@ -71,7 +100,7 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Credentials**: `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
 - **Packages**: `installPackage`, `uploadPackage`, `packages`, `package`, `uninstallPackage`; `uploadBundle` (raw WASM, development clusters only).
 - **Apps**: `createApp`, `listApps`, `getApp`, `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `upgradeApp`, `transferApp`.
-- **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`.
+- **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`, then to the next node.
 - **Blobs and presence**: `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob`; `publishPresence`, `presence`, `presenceStream`.
 - **Organizations**: `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), teams, `invite`, `redeemInvite`. Setting or removing a member or team member, capabilities and invites are approved with the caller's passkey; redeeming an invite is not.
 - **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.

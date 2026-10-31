@@ -24,7 +24,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `ArgsTooLarge` | `413 ARGS_TOO_LARGE` | The call's arguments are over the node's limit (512 KiB); it did not run. |
 | `AppError` | `422 APP_ERROR` | The app refused the call: `appCode` (its declared error) and `fields`. The call was logged; its key is spent. |
 | `TrapError` | `422 TRAP` | The run trapped: `kind` (`OutOfFuel`, `OutOfMemory`, …). Logged. |
-| `UnavailableError` | any `503`, or no answer | After the client's retries: `reason` (`timeout`, `migrating`, `unavailable`, `network`, …), `committed`, `retryAfter`. |
+| `UnavailableError` | any `503`, or no answer | After the client's retries, on every node it knows: `reason` (`timeout`, `migrating`, `unavailable`, `network`, …), `committed`, `retryAfter`. |
 | `CalimeroError` | anything else | `status` and the node's `code`: `FORBIDDEN`, `CONFLICT`, `NOT_INSTALLED`, `NO_REGISTRY`, `BAD_PACKAGE`, `UPGRADE_FAILED`, `INIT_FAILED`, `TOO_LARGE`, `QUOTA_EXCEEDED`, … |
 
 ```ts
@@ -75,6 +75,15 @@ before it spends their challenge or refresh token, and:
   next node in turn, at most once per node. Only when every node refuses does
   `WrongNode` reach you.
 
+A call or a view whose node stays unavailable (`503`, or no answer) through
+all its retries fails over to the next node, where its retries start again
+with the same idempotency key: the key is kept in the app's replicated log, so
+the cluster answers it once whichever node it reaches. Each node is tried once
+per request, and `UnavailableError` reaches you only when every node has
+failed. A client made by `CalimeroClient.connect` reads the node directory
+again after a failover. The confirmed attempt of `callConfirmed` is sent once,
+to one node: its challenge is single-use.
+
 ## Did it commit?
 
 `UnavailableError.committed` is never a plain boolean:
@@ -84,6 +93,15 @@ before it spends their challenge or refresh token, and:
 - `'unknown'`: it may have run (a leader change, or a connection that dropped
   before the answer, reason `network`). Send it again with the **same**
   idempotency key: a call that committed is answered from its record.
+
+## The node directory
+
+`CalimeroClient.connect` throws `DirectoryError` (not a `CalimeroError`: no
+node answered yet) when the directory names no node to try. Its `reason` is
+`unreachable` (no answer, or an error status), `not-found` (an unknown
+cluster, `404`), `bad-response` (not a listing) or `empty` (no usable node);
+`cluster` names the cluster asked for. A later read of the directory, after a
+failover, never throws: it keeps the list the client has.
 
 ## Transport errors
 

@@ -1,3 +1,15 @@
+## [27.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.4.0...mero-js-v27.5.0) (2026-10-31)
+
+### Features
+
+* **cloud-v2:** connect to a cluster by name and fail over between its nodes ([#322](https://github.com/calimero-network/mero-js/issues/322)) ([400e893](https://github.com/calimero-network/mero-js/commit/400e893cb818c9570f3c5330e8ce313cef7860f8))
+
+## [27.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.3.0...mero-js-v27.4.0) (2026-10-30)
+
+### Features
+
+* **cloud-v2:** take Intel's collateral from the cloud's mirror, which browsers can read ([#321](https://github.com/calimero-network/mero-js/issues/321)) ([431a4e8](https://github.com/calimero-network/mero-js/commit/431a4e86926deb36471dc2761274d07e1dfea7fe))
+
 ## [27.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.2.0...mero-js-v27.3.0) (2026-10-30)
 
 ### Features

@@ -20,6 +20,7 @@ export type {
   TrustedProfileOptions,
 } from './verify.js';
 export {
+  DEFAULT_COLLATERAL_MIRROR,
   DEFAULT_RELEASE_MIRROR,
   GITHUB_RELEASES,
   NODE_RELEASE_SIGNER,

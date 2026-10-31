@@ -7,7 +7,23 @@ import { fromHex, hex } from '../crypto/internal.js';
 import type { SignedNodeRelease } from '../sealed/release.js';
 import { transportKeyBinding } from '../sealed/sealed.js';
 import type { DcapCollateral, DcapVerifiedReport } from '../sealed/verify.js';
-import { MOCK_QUOTE_HEADER, claimedRelease, fetchAttestedKey, type CloudPolicy } from './attestation.js';
+import { MOCK_QUOTE_HEADER, claimedRelease, fetchAttestedKey, freshCollateral, type CloudPolicy } from './attestation.js';
+
+// The quote's collateral source, seen from the library: no test reaches Intel or the mirror.
+const dcapCalls = vi.hoisted(() => ({ getCollateral: [] as unknown[][], getCollateralFromPcs: 0 }));
+vi.mock('@phala/dcap-qvl', () => ({
+  verify: () => {
+    throw new Error('each test passes its own dcapVerify');
+  },
+  getCollateral: async (...args: unknown[]) => {
+    dcapCalls.getCollateral.push(args);
+    return {} as DcapCollateral;
+  },
+  getCollateralFromPcs: async () => {
+    dcapCalls.getCollateralFromPcs += 1;
+    return {} as DcapCollateral;
+  },
+}));
 
 // Real mero-tee releases (Sigstore-signed by the node release workflow), so the
 // release half of every case below is the real check, not a stub.
@@ -204,5 +220,45 @@ describe('claimedRelease', () => {
     expect(claimedRelease({ release: { version: 'mero-tee-v2.3.109', profile: '' } }, '2.3.100')).toBe('2.3.109');
     expect(() => claimedRelease({ release: { version: '2.3.99', profile: '' } }, '2.3.100')).toThrow(/older/);
     expect(() => claimedRelease({ release: { version: '2.3.109', profile: '' } }, 'latest')).toThrow(/minReleaseVersion/);
+  });
+});
+
+describe("the quote's collateral", () => {
+  it("comes from the cloud's mirror by default, which browsers can read; Intel's PCS only on request", async () => {
+    dcapCalls.getCollateral.length = 0;
+    dcapCalls.getCollateralFromPcs = 0;
+    await expect((await attest({}, { fetchCollateral: undefined })).result).resolves.toEqual(TRANSPORT_KEY);
+    expect(dcapCalls.getCollateral.map((a) => a[0])).toEqual(['https://cloud.calimero.network/api/tee/pcs']);
+    expect(dcapCalls.getCollateralFromPcs).toBe(0);
+
+    await expect(
+      (await attest({}, { fetchCollateral: undefined, collateralSource: 'https://pccs.example' })).result,
+    ).resolves.toEqual(TRANSPORT_KEY);
+    expect(dcapCalls.getCollateral.at(-1)?.[0]).toBe('https://pccs.example');
+
+    await expect((await attest({}, { fetchCollateral: undefined, collateralSource: 'intel' })).result).resolves.toEqual(
+      TRANSPORT_KEY,
+    );
+    expect(dcapCalls.getCollateralFromPcs).toBe(1);
+  });
+
+  it('is refused when older than maxCollateralAgeDays, and only then', async () => {
+    const now = Date.parse('2026-10-30T12:00:00Z');
+    const issued = (iso: string) => async () => ({ tcb_info: JSON.stringify({ issueDate: iso }) }) as DcapCollateral;
+    const fresh = freshCollateral(issued('2026-10-28T00:00:00Z'), { maxCollateralAgeDays: 7, now: () => now });
+    await expect(fresh(new Uint8Array())).resolves.toBeTruthy();
+    const stale = freshCollateral(issued('2026-10-01T00:00:00Z'), { maxCollateralAgeDays: 7, now: () => now });
+    await expect(stale(new Uint8Array())).rejects.toThrow(/issued 29 days ago, more than the 7 this client accepts/);
+    const undated = freshCollateral(async () => ({ tcb_info: '{}' }) as DcapCollateral, { maxCollateralAgeDays: 7 });
+    await expect(undated(new Uint8Array())).rejects.toThrow(/no TCB info issue date/);
+    // Unset: the fetch itself, untouched (Intel's nextUpdate is checked by dcap-qvl).
+    const fetch = issued('2020-01-01T00:00:00Z');
+    expect(freshCollateral(fetch, {})).toBe(fetch);
+  });
+
+  it('is checked for age on the path a node is attested through', async () => {
+    const stale = async () => ({ tcb_info: JSON.stringify({ issueDate: '2020-01-01T00:00:00Z' }) }) as DcapCollateral;
+    const { result } = await attest({}, { fetchCollateral: stale, maxCollateralAgeDays: 30 });
+    await expect(result).rejects.toThrow(/more than the 30 this client accepts/);
   });
 });
