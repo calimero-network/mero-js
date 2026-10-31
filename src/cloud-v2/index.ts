@@ -1,4 +1,6 @@
 export { CalimeroClient } from './client.js';
+export { DEFAULT_DIRECTORY, DirectoryError } from './directory.js';
+export type { DirectoryFailure } from './directory.js';
 export {
   AppError,
   ArgsTooLarge,
@@ -21,6 +23,7 @@ export type {
   BlobInfo,
   CallResult,
   CalimeroClientOptions,
+  CalimeroConnectOptions,
   CloudEvent,
   CalimeroSession,
   PackageInfo,

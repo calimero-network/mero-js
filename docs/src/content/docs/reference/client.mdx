@@ -6,16 +6,30 @@ sidebar:
 ---
 
 ```ts
+// A Calimero Cloud cluster by name: its nodes come from the node directory,
+// each attested under `policy` before anything is sent to it.
+await CalimeroClient.connect({
+  cluster: string,         // e.g. 'eu-shared-1'
+  policy: CloudPolicy,
+  directory?: string,      // default DEFAULT_DIRECTORY (Calimero Cloud's)
+  zone?: string,           // try this zone's nodes first
+  fetch?: typeof fetch,
+  retry?: { retries?: number; baseDelayMs?: number; maxDelayMs?: number },
+  random?: () => number,   // for the weighted order; default Math.random
+}) // throws DirectoryError (reason 'unreachable' | 'not-found' | 'bad-response' | 'empty')
+
+// A fixed list of nodes, or a cluster you run yourself.
 new CalimeroClient({
   baseUrl: string,         // one node of the cluster
-  nodes?: string[],        // other nodes of the cluster, moved to on 421 WRONG_NODE
+  nodes?: string[],        // other nodes, moved to on 421 WRONG_NODE or when one stays unavailable
   policy: CloudPolicy,     // which nodes to trust; see Trust and the sealed channel
   fetch?: typeof fetch,    // carries attestation and envelopes; default the global fetch
   retry?: { retries?: number; baseDelayMs?: number; maxDelayMs?: number }, // default 6, 200 ms, 2 s
 })
 ```
 
-Every route below is sent inside the sealed channel. `passkey` is a
+`client.nodeUrl` is the node in use and `client.nodes` every node the client
+may move to. Every route below is sent inside the sealed channel. `passkey` is a
 `PasskeyProvider` (`browserPasskey()` in a page); a method that takes one
 answers the node's `412 CONFIRM_REQUIRED` with it.
 
