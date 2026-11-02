@@ -121,6 +121,8 @@ export interface AppInfo {
   bundle: string;
   package: string | null;
   version: string | null;
+  /** The deployment it was created from, if any. */
+  deployment?: string | null;
 }
 
 /**
@@ -180,6 +182,157 @@ export interface OrgInfo extends Record<string, unknown> {
   publishes: string[];
   /** `null` unless a deadline stopped new work: approve `release` (or newer) to lift it. */
   newWorkStopped: { release: string; after: string } | null;
+}
+
+/** A blob's bytes with the content type the node serves them as. */
+export interface BlobContent {
+  data: Uint8Array;
+  /** What the uploader gave (component apps); `application/octet-stream` otherwise. */
+  contentType: string;
+}
+
+/** One xcall that was never delivered (core's `DeadLetter`). */
+export interface DeadLetter {
+  seq: number;
+  /** The target app. */
+  app: string;
+  method: string;
+  reason: string;
+  /** The log entry's timestamp it was dead-lettered at (ms since the epoch). */
+  atMs: number;
+}
+
+/** `GET /apps/{app}/xcalls`: a component app's outbox and its dead letters, newest last. */
+export interface AppXcalls {
+  /** Messages waiting in the outbox. */
+  pending: number;
+  deadLetters: DeadLetter[];
+}
+
+/**
+ * An account or an organization, as a deployer, a deployment's owner or the
+ * cluster's owner: `{ account: id }` or `{ org: id }`.
+ */
+export type Deployer = { account: string } | { org: string };
+
+/** A deployer's key, as `GET /deployers` lists it and `DELETE /deployers/{key}` takes it. */
+export function deployerKey(deployer: Deployer): string {
+  return 'account' in deployer ? `account:${deployer.account}` : `org:${deployer.org}`;
+}
+
+/** One deployer grant, as `GET /deployers` lists it. */
+export interface DeployerGrant {
+  /** `account:{id}` or `org:{id}`. */
+  key: string;
+  deployer: Deployer | null;
+  /** RFC 3339; `null`: it does not end. */
+  until: string | null;
+  untilSecs: number | null;
+  grantedAt: string;
+  grantedBy: string;
+}
+
+/** `GET /deployers`: who may install apps on the cluster, and who grants it. */
+export interface DeployersInfo {
+  /** `open` (any account) or `granted` (deployers only); absent on a default cluster. */
+  deployments?: 'open' | 'granted';
+  /** Who grants deployers: `operator` (its key) or `owner` (the cluster's owner, with a passkey). */
+  deployers?: 'operator' | 'owner';
+  owner: Deployer | null;
+  grants: DeployerGrant[];
+}
+
+/** One app a deployment offers, as its managers read it. */
+export interface DeploymentOffer {
+  /** The app's name in the deployment. */
+  app: string;
+  package: string;
+  version: string;
+  addedBy: string;
+  /** RFC 3339. */
+  addedAt: string;
+}
+
+/** A deployment as its managers read it (`GET /deployments`). */
+export interface DeploymentInfo {
+  id: string;
+  name: string;
+  owner: Deployer;
+  apps: DeploymentOffer[];
+  createdBy: string;
+  /** RFC 3339. */
+  createdAt: string;
+}
+
+/**
+ * `GET /deployments/{id}`, public: what a frontend and the customer's consent
+ * show. Never its managers, members or customers.
+ */
+export interface PublicDeployment {
+  id: string;
+  name: string;
+  /** The owner's kind and name (`null` if it is gone). */
+  owner: { kind: 'account' | 'org'; name: string | null };
+  apps: Array<{ app: string; package: string; version: string }>;
+}
+
+/** `GET /deployments/{id}/orgs`: the organizations with instances created from a deployment. */
+export interface DeploymentOrgs {
+  deployment: string;
+  orgs: Array<{
+    orgId: string;
+    name: string | null;
+    instances: number;
+    /** Which of the deployment's apps they run, at which release. */
+    apps: Array<{ app: string; version: string }>;
+    /** RFC 3339: when its first instance from the deployment was created. */
+    firstCreatedAt: string;
+  }>;
+  /** Instances outside any organization, counted only. */
+  outsideOrgs: number;
+}
+
+/**
+ * A package frontend's `/.well-known/calimero.json`: the package, its
+ * releases, the deployments offering it and the cluster's API URLs.
+ */
+export interface FrontendManifest {
+  package: string;
+  versions: string[];
+  deployments: Array<{ id: string; name: string; app: string; version: string }>;
+  api: string[];
+}
+
+/**
+ * Read the `/.well-known/calimero.json` of the frontend at `origin` (by
+ * default the page's own). Served in the clear by the frontend host, like the
+ * page itself: for choosing a deployment and the API URL to connect to, never
+ * for trust (the client attests the node it then talks to).
+ */
+export async function frontendManifest(origin?: string, fetcher: typeof fetch = fetch): Promise<FrontendManifest> {
+  const base = origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
+  if (!base) throw new Error('no page origin to read the frontend manifest from; pass `origin`');
+  const response = await fetcher(new URL('/.well-known/calimero.json', base).toString());
+  if (!response.ok) throw await refusal(response);
+  const manifest = (await response.json()) as FrontendManifest;
+  return { ...manifest, deployments: manifest.deployments ?? [] };
+}
+
+/**
+ * The deployment a frontend page was opened for: the node serves
+ * `/d/{deployment}/` by redirecting to `/{version}/…?deployment={id}`, so the
+ * page creates its instances from that deployment
+ * (`createApp(name, { deployment, package })`). `null` when the page was
+ * not opened through a deployment. `href` defaults to `window.location.href`.
+ */
+export function pageDeployment(href?: string): string | null {
+  const at = href ?? (globalThis as { location?: { href?: string } }).location?.href;
+  if (!at) return null;
+  try {
+    return new URL(at).searchParams.get('deployment') || null;
+  } catch {
+    return null;
+  }
 }
 
 /** One URL path segment, so an id cannot reach another route. */
@@ -832,15 +985,48 @@ export class CalimeroClient {
     return hash;
   }
 
-  /** Upload a blob for `app`: `blobId` is base58 (what apps print), `id` hex. */
-  uploadBlob(app: string, data: Uint8Array): Promise<{ blobId: string; id: string; size: number }> {
-    return this.json('POST', `apps/${seg(app)}/blobs`, undefined, data);
+  /**
+   * Upload a blob for `app`: `blobId` is base58 (what apps print), `id` hex.
+   * `contentType` (default `application/octet-stream`; printable ASCII, the
+   * node refuses another with `400`) is sent as the upload's `Content-Type`:
+   * a component app records it and serves downloads with it. A component
+   * app holding as many blobs as it may answers `429 QUOTA_EXCEEDED`.
+   */
+  uploadBlob(
+    app: string,
+    data: Uint8Array,
+    contentType: string | { contentType?: string } = {},
+  ): Promise<{ blobId: string; id: string; size: number }> {
+    const mime = (typeof contentType === 'string' ? contentType : contentType.contentType) ?? 'application/octet-stream';
+    return this.json('POST', `apps/${seg(app)}/blobs`, undefined, data, mime);
   }
 
   /** One of `app`'s blobs, by id (base58 or hex). */
   async downloadBlob(app: string, id: string): Promise<Uint8Array> {
-    const response = await this.send('GET', `apps/${seg(app)}/blobs/${seg(id)}`);
-    return new Uint8Array(await response.arrayBuffer());
+    return (await this.blobContent(app, id)).data;
+  }
+
+  /**
+   * Download a component app's blob with a grant one of its runs handed out
+   * (`BlobRef::grant`, up to 24 h). No session needed: the grant is the
+   * permission. A bad or expired grant answers `NotFound`, as a missing blob.
+   */
+  async downloadBlobGranted(app: string, id: string, grant: string): Promise<Uint8Array> {
+    return (await this.blobContent(app, id, { grant })).data;
+  }
+
+  /**
+   * {@link downloadBlob} (or, with `grant`, {@link downloadBlobGranted}) with
+   * the content type the node serves it as: the uploader's, for a component
+   * app; `application/octet-stream` otherwise.
+   */
+  async blobContent(app: string, id: string, options: { grant?: string } = {}): Promise<BlobContent> {
+    const query = options.grant === undefined ? '' : `?grant=${encodeURIComponent(options.grant)}`;
+    const response = await this.send('GET', `apps/${seg(app)}/blobs/${seg(id)}${query}`);
+    return {
+      data: new Uint8Array(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+    };
   }
 
   /** `app`'s blobs. */
@@ -916,6 +1102,16 @@ export class CalimeroClient {
   /** Set the app instance's metadata (its owner, or an admin of its organization); at most 16 KiB. */
   async setAppMetadata(app: string, metadata: unknown): Promise<void> {
     await this.post(`apps/${seg(app)}/metadata`, { metadata });
+  }
+
+  /**
+   * A component app's xcalls: how many messages wait in its outbox, and the
+   * dead letters (never delivered), newest last. Its owner's or an org
+   * admin's (`403` to anyone else); `409 NOT_SUPPORTED` for an app on the
+   * wasmer runtime, whose xcalls are follow-ups.
+   */
+  appXcalls(app: string): Promise<AppXcalls> {
+    return this.get(`apps/${seg(app)}/xcalls`);
   }
 
   /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
@@ -1004,11 +1200,17 @@ export class CalimeroClient {
   /**
    * Create an app instance from a bundle hash, or from a package release
    * (`{ package, version?, service? }`, installed from the registry first if
-   * the cluster lacks it).
+   * the cluster lacks it). With `deployment`, the instance runs the release
+   * that deployment offers for `package` (`version`, if given, must be it)
+   * and records the deployment; no install, no deployer grant. A package or
+   * version it does not offer answers `400 NOT_OFFERED`, several offered
+   * releases with no `version` `400 VERSION_REQUIRED`, and an unknown
+   * `service` `400 NO_SUCH_SERVICE`. A page opened through `/d/{deployment}/`
+   * finds its deployment with {@link pageDeployment}.
    */
   async createApp(
     name: string,
-    bundle: string | { package: string; version?: string; service?: string },
+    bundle: string | { package: string; version?: string; service?: string; deployment?: string },
     options: {
       org?: string;
       access?: Record<string, unknown>;
@@ -1491,5 +1693,102 @@ export class CalimeroClient {
 
   redeemInvite(token: string): Promise<Record<string, unknown>> {
     return this.post(`invites/${seg(token)}/redeem`);
+  }
+
+  // ---------------------------------------------------------------- deployers
+
+  /**
+   * Let an account or organization install apps where the cluster's
+   * deployments are `granted`, until `until` (RFC 3339 or a `Date`; absent,
+   * the grant does not end). The cluster's owner grants it, approved with
+   * `passkey`, where governance says `deployers: owner`; elsewhere the
+   * operator grants with its key, and this is refused `403`.
+   */
+  grantDeployer(
+    deployer: Deployer,
+    passkey: PasskeyProvider,
+    options: { until?: Date | string } = {},
+  ): Promise<{ key: string; deployer: Deployer; grant: Record<string, unknown> }> {
+    const until = options.until instanceof Date ? options.until.toISOString() : options.until;
+    return this.postConfirmed('deployers', { deployer, ...(until === undefined ? {} : { until }) }, passkey);
+  }
+
+  /**
+   * Who may install apps on the cluster: its deployments rule, who grants
+   * deployers, its owner and every grant. For the cluster's owner, or the
+   * operator (its token, `useApiKey`).
+   */
+  deployers(): Promise<DeployersInfo> {
+    return this.get('deployers');
+  }
+
+  /**
+   * End a deployer's grant (`deployer`, or its key `account:{id}` /
+   * `org:{id}`), as the cluster's owner, approved with `passkey`. Apps it
+   * installed, and the apps running them, stay.
+   */
+  async revokeDeployer(deployer: Deployer | string, passkey: PasskeyProvider): Promise<void> {
+    const key = typeof deployer === 'string' ? deployer : deployerKey(deployer);
+    await this.deleteConfirmed(`deployers/${seg(key)}`, passkey);
+  }
+
+  // ---------------------------------------------------------------- deployments
+
+  /**
+   * Create a deployment: `owner`'s (the caller's own account, or an
+   * organization where it holds `MANAGE_APPLICATION` org-wide) list of the
+   * apps it offers, named `name` (1 to 64 characters, one line) for
+   * customers. Approved with `passkey`; where deployments are `granted` the
+   * caller needs a deployer grant. Answers the deployment's id.
+   */
+  async createDeployment(name: string, owner: Deployer, passkey: PasskeyProvider): Promise<string> {
+    const { id } = await this.postConfirmed<{ id: string }>('deployments', { name, owner }, passkey);
+    return id;
+  }
+
+  /** The deployments the caller manages: its account's, and its organizations' where it holds `MANAGE_APPLICATION`. */
+  async deployments(): Promise<DeploymentInfo[]> {
+    const { deployments } = await this.get<{ deployments: DeploymentInfo[] }>('deployments');
+    return deployments;
+  }
+
+  /** A deployment as anyone may read it: its name, its owner's kind and name, and the apps it offers. Public. */
+  deployment(id: string): Promise<PublicDeployment> {
+    return this.get(`deployments/${seg(id)}`);
+  }
+
+  /** Delete a deployment that offers nothing and has no instances, approved with `passkey`. */
+  async deleteDeployment(id: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`deployments/${seg(id)}`, passkey);
+  }
+
+  /**
+   * Offer `package@version` (installed, and seen by the caller) as `app`
+   * (1 to 64 letters, digits, `.`, `_`, `-`) in deployment `id`, or move an
+   * offered app to another release of its package. Approved with `passkey`.
+   */
+  offerApp(
+    id: string,
+    offer: { app: string; package: string; version: string },
+    passkey: PasskeyProvider,
+  ): Promise<{ deployment: string; app: string; offer: Record<string, unknown> }> {
+    return this.postConfirmed(`deployments/${seg(id)}/apps`, { ...offer }, passkey);
+  }
+
+  /**
+   * Withdraw `app` from deployment `id`, approved with `passkey`; refused
+   * while an instance created from the deployment still runs it.
+   */
+  async withdrawApp(id: string, app: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`deployments/${seg(id)}/apps/${seg(app)}`, passkey);
+  }
+
+  /**
+   * The organizations with instances created from deployment `id`, for its
+   * managers: each one's id, name, instance count, apps and releases, and
+   * first instance. Never members, teams or app data.
+   */
+  deploymentOrgs(id: string): Promise<DeploymentOrgs> {
+    return this.get(`deployments/${seg(id)}/orgs`);
   }
 }

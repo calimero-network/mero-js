@@ -12,8 +12,12 @@ import {
   CalimeroClient,
   ConfirmCancelled,
   ConfirmRequired,
+  NotFound,
   ORG_CAPABILITIES,
+  deployerKey,
+  frontendManifest,
   orgCapabilities,
+  pageDeployment,
   type UpgradeRun,
 } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
@@ -391,6 +395,135 @@ describe('the rest of the node API', () => {
   it("reads the node's attestation unverified, for display", async () => {
     const doc = await client().attestation();
     expect(doc).toMatchObject({ mock: true, transportKey: expect.stringMatching(/^[0-9a-f]{64}$/) });
+  });
+});
+
+describe('core 1.0.0-rc.7+ routes', () => {
+  const header = (i: number, name: string) =>
+    node.requests[i].head.headers.find(([k]) => k.toLowerCase() === name)?.[1];
+
+  it('uploads a blob with its content type, octet-stream by default', async () => {
+    const c = client();
+    node.answer = () => ({ status: 200, json: { blobId: 'b', id: 'ab', size: 3 } });
+    await c.uploadBlob('a-1', new TextEncoder().encode('abc'), 'image/png');
+    await c.uploadBlob('a-1', new TextEncoder().encode('abc'), { contentType: 'text/plain; charset=utf-8' });
+    await c.uploadBlob('a-1', new TextEncoder().encode('abc'));
+    expect(sent()).toEqual([
+      ['POST', '/apps/a-1/blobs'],
+      ['POST', '/apps/a-1/blobs'],
+      ['POST', '/apps/a-1/blobs'],
+    ]);
+    expect([0, 1, 2].map((i) => header(i, 'content-type'))).toEqual([
+      'image/png',
+      'text/plain; charset=utf-8',
+      'application/octet-stream',
+    ]);
+    expect(node.requests[0].body).toEqual({ raw: 'abc' });
+  });
+
+  it('downloads with the served content type, and with a grant and no session', async () => {
+    const c = client();
+    node.answer = () => ({ status: 200, bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' });
+    expect(await c.blobContent('a-1', '3yZe7d')).toEqual({ data: new Uint8Array([1, 2, 3]), contentType: 'image/png' });
+    expect(await c.downloadBlob('a-1', '3yZe7d')).toEqual(new Uint8Array([1, 2, 3]));
+    expect(await c.downloadBlobGranted('a-1', '3yZe7d', 'g+1/x')).toEqual(new Uint8Array([1, 2, 3]));
+    expect(sent()).toEqual([
+      ['GET', '/apps/a-1/blobs/3yZe7d'],
+      ['GET', '/apps/a-1/blobs/3yZe7d'],
+      ['GET', '/apps/a-1/blobs/3yZe7d?grant=g%2B1%2Fx'],
+    ]);
+    expect(header(2, 'authorization')).toBeUndefined();
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no such blob in this app' } });
+    await expect(c.downloadBlobGranted('a-1', '3yZe7d', 'expired')).rejects.toBeInstanceOf(NotFound);
+  });
+
+  it("reads a component app's xcalls", async () => {
+    const xcalls = { pending: 2, deadLetters: [{ seq: 7, app: 'a-2', method: 'ping', reason: 'no such app', atMs: 1 }] };
+    node.answer = () => ({ status: 200, json: xcalls });
+    expect(await client().appXcalls('a-1')).toEqual(xcalls);
+    expect(sent()).toEqual([['GET', '/apps/a-1/xcalls']]);
+  });
+
+  it('grants, lists and revokes deployers, each change approved with the passkey', async () => {
+    const c = client();
+    confirming({ key: 'org:org-1', deployer: { org: 'org-1' }, grant: {} });
+    await c.grantDeployer({ org: 'org-1' }, passkey, { until: new Date('2027-01-01T00:00:00Z') });
+    expect(node.requests[0].body).toEqual({ deployer: { org: 'org-1' }, until: '2027-01-01T00:00:00.000Z' });
+    expect(last().body).toMatchObject({ deployer: { org: 'org-1' }, confirm: { challengeId: 'c-1' } });
+    await c.grantDeployer({ account: 'acc-2' }, passkey);
+    expect(last().body).not.toHaveProperty('until');
+    await c.revokeDeployer({ account: 'acc-2' }, passkey);
+    expect(last().body).toMatchObject({ confirm: { challengeId: 'c-1' } });
+    await c.revokeDeployer('org:org-1', passkey);
+    node.answer = () => ({ status: 200, json: { deployments: 'granted', deployers: 'owner', owner: { org: 'org-1' }, grants: [] } });
+    expect((await c.deployers()).deployers).toBe('owner');
+    expect(sent()).toEqual([
+      ['POST', '/deployers'],
+      ['POST', '/deployers'],
+      ['POST', '/deployers'],
+      ['POST', '/deployers'],
+      ['DELETE', '/deployers/account%3Aacc-2'],
+      ['DELETE', '/deployers/account%3Aacc-2'],
+      ['DELETE', '/deployers/org%3Aorg-1'],
+      ['DELETE', '/deployers/org%3Aorg-1'],
+      ['GET', '/deployers'],
+    ]);
+    expect(deployerKey({ org: 'o' })).toBe('org:o');
+  });
+
+  it('creates a deployment, offers and withdraws an app, lists and deletes it', async () => {
+    const c = client();
+    confirming({ id: 'd-1', deployment: {} });
+    expect(await c.createDeployment('Acme Labs', { org: 'org-1' }, passkey)).toBe('d-1');
+    expect(last().body).toMatchObject({ name: 'Acme Labs', owner: { org: 'org-1' }, confirm: { challengeId: 'c-1' } });
+    confirming({ deployment: 'd-1', app: 'notes', offer: {} });
+    await c.offerApp('d-1', { app: 'notes', package: 'com.example.notes', version: '1.0.0' }, passkey);
+    expect(last().body).toMatchObject({ app: 'notes', package: 'com.example.notes', version: '1.0.0', confirm: {} });
+    confirming({});
+    await c.withdrawApp('d-1', 'notes', passkey);
+    await c.deleteDeployment('d-1', passkey);
+    node.answer = (head) => {
+      if (head.path === '/deployments') return { status: 200, json: { deployments: [{ id: 'd-1' }] } };
+      if (head.path.endsWith('/orgs')) return { status: 200, json: { deployment: 'd-1', orgs: [], outsideOrgs: 1 } };
+      return { status: 200, json: { id: 'd-1', name: 'Acme Labs', owner: { kind: 'org', name: 'Acme' }, apps: [] } };
+    };
+    expect(await c.deployments()).toEqual([{ id: 'd-1' }]);
+    expect((await c.deployment('d-1')).owner).toEqual({ kind: 'org', name: 'Acme' });
+    expect((await c.deploymentOrgs('d-1')).outsideOrgs).toBe(1);
+    expect(sent()).toEqual([
+      ['POST', '/deployments'],
+      ['POST', '/deployments'],
+      ['POST', '/deployments/d-1/apps'],
+      ['POST', '/deployments/d-1/apps'],
+      ['DELETE', '/deployments/d-1/apps/notes'],
+      ['DELETE', '/deployments/d-1/apps/notes'],
+      ['DELETE', '/deployments/d-1'],
+      ['DELETE', '/deployments/d-1'],
+      ['GET', '/deployments'],
+      ['GET', '/deployments/d-1'],
+      ['GET', '/deployments/d-1/orgs'],
+    ]);
+  });
+
+  it("creates an instance from the deployment a frontend page was opened for", async () => {
+    const c = client();
+    node.answer = () => ({ status: 200, json: { appId: 'a-9' } });
+    const deployment = pageDeployment('https://notes.example/1.0.0/?deployment=d-1');
+    expect(deployment).toBe('d-1');
+    expect(pageDeployment('https://notes.example/1.0.0/')).toBeNull();
+    expect(await c.createApp('mine', { package: 'com.example.notes', deployment: deployment! }, { org: 'org-2' })).toBe('a-9');
+    expect(last().body).toEqual({ name: 'mine', package: 'com.example.notes', deployment: 'd-1', org: 'org-2' });
+  });
+
+  it("reads a frontend's /.well-known/calimero.json", async () => {
+    const urls: string[] = [];
+    const fetcher = (async (url: string) => {
+      urls.push(url);
+      return new Response(JSON.stringify({ package: 'p', versions: ['1.0.0'], api: ['https://api.example'] }));
+    }) as unknown as typeof fetch;
+    const manifest = await frontendManifest('https://notes.example', fetcher);
+    expect(urls).toEqual(['https://notes.example/.well-known/calimero.json']);
+    expect(manifest.deployments).toEqual([]);
   });
 });
 
