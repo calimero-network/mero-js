@@ -1,3 +1,9 @@
+## [28.1.2](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.1...mero-js-v28.1.2) (2026-11-02)
+
+### Bug Fixes
+
+* **deps:** patch critical and high security alerts ([#325](https://github.com/calimero-network/mero-js/issues/325)) ([9391960](https://github.com/calimero-network/mero-js/commit/93919601cc9d89766aad911f88620f61f2397c66))
+
 ## [28.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.0...mero-js-v28.1.1) (2026-11-02)
 
 ## [28.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v28.0.0...mero-js-v28.1.0) (2026-11-02)
