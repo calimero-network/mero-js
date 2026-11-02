@@ -1,3 +1,5 @@
+## [28.1.1](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.0...mero-js-v28.1.1) (2026-11-02)
+
 ## [28.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v28.0.0...mero-js-v28.1.0) (2026-11-02)
 
 ### Features
