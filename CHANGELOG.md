@@ -1,3 +1,9 @@
+## [28.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v28.0.0...mero-js-v28.1.0) (2026-11-02)
+
+### Features
+
+* **cloud-v2:** blob content types and grants, xcalls, deployments and deployers (core rc.7+) ([#323](https://github.com/calimero-network/mero-js/issues/323)) ([c35fbe3](https://github.com/calimero-network/mero-js/commit/c35fbe31489e13cd61bc6562821b92c827eded8c)), closes [#4815](https://github.com/calimero-network/mero-js/issues/4815) [4817/#4820](https://github.com/4817/mero-js/issues/4820) [#4810](https://github.com/calimero-network/mero-js/issues/4810) [#4807](https://github.com/calimero-network/mero-js/issues/4807)
+
 ## [28.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v27.5.0...mero-js-v28.0.0) (2026-10-31)
 
 ### ⚠ BREAKING CHANGES
