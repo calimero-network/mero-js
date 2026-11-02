@@ -32,6 +32,10 @@ export interface Governance {
   releases: Authority;
   appUpgrades: Authority;
   outbound: Authority;
+  /** Who may install apps: any account (`open`, left out) or granted deployers only. */
+  deployments?: 'open' | 'granted';
+  /** Who grants deployers: the operator (left out) or the cluster's owner. */
+  deployers?: 'operator' | 'owner';
 }
 
 /**

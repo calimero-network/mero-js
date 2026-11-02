@@ -1,4 +1,4 @@
-export { CalimeroClient } from './client.js';
+export { CalimeroClient, deployerKey, frontendManifest, pageDeployment } from './client.js';
 export { DEFAULT_DIRECTORY, DirectoryError } from './directory.js';
 export type { DirectoryFailure } from './directory.js';
 export {
@@ -20,7 +20,18 @@ export {
 export type { Committed } from './errors.js';
 export type {
   AppInfo,
+  AppXcalls,
+  BlobContent,
   BlobInfo,
+  DeadLetter,
+  Deployer,
+  DeployerGrant,
+  DeployersInfo,
+  DeploymentInfo,
+  DeploymentOffer,
+  DeploymentOrgs,
+  FrontendManifest,
+  PublicDeployment,
   CallResult,
   CalimeroClientOptions,
   CalimeroConnectOptions,

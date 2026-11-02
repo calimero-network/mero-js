@@ -23,6 +23,9 @@ export interface Reply {
   events?: string[];
   /** Drop the connection after reading the request, answering nothing (`status` is ignored). */
   drop?: boolean;
+  /** Raw bytes in place of `json`, served as `contentType`. */
+  bytes?: Uint8Array;
+  contentType?: string;
 }
 
 export class StandInCloudNode {
@@ -115,7 +118,12 @@ export class StandInCloudNode {
     const len = new DataView(inner.buffer).getUint32(0, false);
     const head = JSON.parse(new TextDecoder().decode(inner.slice(4, 4 + len))) as RequestHead;
     const text = new TextDecoder().decode(inner.slice(4 + len));
-    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    let body: Record<string, unknown> = {};
+    try {
+      body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      body = { raw: text }; // a byte upload (a blob, a bundle)
+    }
     this.requests.push({ head, body });
     const reply = this.answer(head, body);
     if (reply.drop) {
@@ -137,7 +145,7 @@ export class StandInCloudNode {
       return concat(length, sealed);
     };
     res.setHeader('content-type', SEALED_CONTENT_TYPE);
-    const contentType = reply.events ? 'text/event-stream' : 'application/json';
+    const contentType = reply.events ? 'text/event-stream' : (reply.contentType ?? 'application/json');
     res.write(await frame(0, utf8.encode(JSON.stringify({ status: reply.status, headers: [['content-type', contentType]] }))));
     if (reply.events) {
       this.openStreams += 1;
@@ -147,7 +155,7 @@ export class StandInCloudNode {
       for (const event of reply.events) res.write(await frame(1, utf8.encode(event)));
       return; // open until the client goes
     }
-    res.write(await frame(1, utf8.encode(JSON.stringify(reply.json ?? {}))));
+    res.write(await frame(1, reply.bytes ?? utf8.encode(JSON.stringify(reply.json ?? {}))));
     res.end(await frame(2, new Uint8Array()));
     void req;
   }
