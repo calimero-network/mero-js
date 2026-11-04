@@ -1,3 +1,13 @@
+## [29.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.2...mero-js-v29.0.0) (2026-11-04)
+
+### ⚠ BREAKING CHANGES
+
+* **cloud-v2:** answer the sign-up's and the key revocation's passkey proofs (#327)
+
+### Features
+
+* **cloud-v2:** answer the sign-up's and the key revocation's passkey proofs ([#327](https://github.com/calimero-network/mero-js/issues/327)) ([1381479](https://github.com/calimero-network/mero-js/commit/1381479c6e3dd2daffe719110da9d1ff3da7542e))
+
 ## [28.1.2](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.1...mero-js-v28.1.2) (2026-11-02)
 
 ### Bug Fixes
