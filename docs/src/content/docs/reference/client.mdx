@@ -37,13 +37,13 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 
 | Method | Route |
 | --- | --- |
-| `signUp(passkey, name)` → `CalimeroSession` | `POST auth/passkey/register/begin`, `…/finish` |
-| `signIn(passkey)` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
+| `signUp(passkey, name, { origin? })` → `CalimeroSession` | `POST auth/passkey/register/begin`, `…/finish` |
+| `signIn(passkey, { origin? })` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
 | `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
 | `signOut()` | `POST auth/logout` |
 | `signOutEverywhere()` | `POST auth/logout-all` |
 | `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
-| `me()` | `GET auth/me` |
+| `me()` → `MeInfo` (`accountId`, `via`, and the package `app` and `origin` a session is bound to) | `GET auth/me` |
 | `usage()` | `GET auth/usage` |
 | `addPasskey(passkey, approver)` → credential id (`approver`: a passkey the account already has) | `POST auth/passkeys/add/begin`, `…/finish` |
 | `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
@@ -63,6 +63,23 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `package(name)` → `PackageInfo` | `GET packages/{package}` |
 | `uninstallPackage(name, version?)` | `DELETE packages/{package}[/{version}]` |
 | `uploadBundle(wasm)` → hash (development clusters) | `POST bundles` |
+
+## Package origins
+
+A package's managers register the web origins of a frontend they host
+themselves, so it can sign people in with passkeys. A session opened there is
+bound to the package. See
+[Sign in from your own site](/get-started/authentication/#sign-in-from-your-own-site).
+
+| Method | Route |
+| --- | --- |
+| `packageOrigins.list(package)` → `PackageOrigin[]` (`{ origin, rpId, addedBy, addedAt }`) | `GET package-origins/{package}` |
+| `packageOrigins.add(package, origin, passkey?, { rpId? })` → `{ package, origin, rpId, addedBy, addedAt }` | `POST package-origins/{package}` (`412` over `__add_origin`) |
+| `packageOrigins.remove(package, origin, passkey?)` → `{ package, origin, removed: true }` | `DELETE package-origins/{package}` (`412` over `__remove_origin`) |
+
+`add` refuses with `BadOrigin` (`BAD_ORIGIN`, `BAD_RP_ID`), `OriginTaken` and
+`QuotaExceeded`; `list` and `remove` with `NotFound`. Without a passkey the
+`412` reaches the caller as `ConfirmRequired`.
 
 ## Apps
 

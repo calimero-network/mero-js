@@ -146,6 +146,59 @@ export class ConsentStale extends CalimeroError {
 }
 
 /**
+ * `403 ORIGIN_NOT_REGISTERED`: a sign-up or sign-in started on a web origin
+ * the cluster does not know: neither the cluster's own nor one a package's
+ * manager registered (`packageOrigins.add`). `origin` is the page's origin
+ * and `package` the package it was expected to be registered for, when known.
+ */
+export class OriginNotRegistered extends CalimeroError {
+  readonly origin: string;
+  readonly package: string;
+  /** What the node said, if anything. */
+  readonly nodeMessage: string;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    const origin = typeof details.origin === 'string' ? details.origin : '';
+    const pkg = typeof details.package === 'string' ? details.package : '';
+    const site = origin ? `this site (${origin})` : 'this site';
+    super(403, 'ORIGIN_NOT_REGISTERED', `${site} is not registered for ${pkg || 'any package'}${message ? ` (${message})` : ''}`, details);
+    this.name = 'OriginNotRegistered';
+    this.origin = origin;
+    this.package = pkg;
+    this.nodeMessage = message;
+  }
+}
+
+/**
+ * `400 BAD_ORIGIN` or `400 BAD_RP_ID`: the node does not accept the origin a
+ * package's manager tried to register (it must be a bare web origin,
+ * `scheme://host[:port]`), or the relying-party id given for it (which must
+ * fit the origin's host). `code` says which.
+ */
+export class BadOrigin extends CalimeroError {
+  constructor(code: 'BAD_ORIGIN' | 'BAD_RP_ID', message: string, details: Record<string, unknown> = {}) {
+    super(400, code, message, details);
+    this.name = 'BadOrigin';
+  }
+}
+
+/** `409 ORIGIN_TAKEN`: the origin is registered already (for this package or another). */
+export class OriginTaken extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'ORIGIN_TAKEN', message, details);
+    this.name = 'OriginTaken';
+  }
+}
+
+/** `429 QUOTA_EXCEEDED`: the caller holds as many of something (origins, blobs, ...) as it may. */
+export class QuotaExceeded extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(429, 'QUOTA_EXCEEDED', message, details);
+    this.name = 'QuotaExceeded';
+  }
+}
+
+/**
  * `422 APP_ERROR`: the app refused the call. `appCode` is the app's declared
  * error (`Taken`, `Forbidden`, ...) and `fields` its named fields. The call was
  * logged, so its idempotency key is spent.
@@ -253,6 +306,15 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new ReleaseDeadlineError(message, details);
     case '409 CONSENT_STALE':
       return new ConsentStale(message, details);
+    case '403 ORIGIN_NOT_REGISTERED':
+      return new OriginNotRegistered(message, details);
+    case '400 BAD_ORIGIN':
+    case '400 BAD_RP_ID':
+      return new BadOrigin(code as 'BAD_ORIGIN' | 'BAD_RP_ID', message, details);
+    case '409 ORIGIN_TAKEN':
+      return new OriginTaken(message, details);
+    case '429 QUOTA_EXCEEDED':
+      return new QuotaExceeded(message, details);
     case '412 CONFIRM_REQUIRED':
       return new ConfirmRequired(message, details);
     case '413 ARGS_TOO_LARGE':
