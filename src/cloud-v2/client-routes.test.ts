@@ -89,6 +89,35 @@ describe("the console's passkey actions", () => {
     expect(last().head.headers).toContainEqual(['authorization', 'Bearer tok']);
   });
 
+  it('signs up: the new passkey registers, then signs the account it creates', async () => {
+    const c = client();
+    node.answer = (head, body) => {
+      if (head.path === '/auth/passkey/register/begin') return { status: 200, json: { challengeId: 'r-1', options: { challenge: 'AAEC' } } };
+      if (!body.confirm) {
+        return {
+          status: 412,
+          json: { error: 'CONFIRM_REQUIRED', message: 'sign', details: { ...CHALLENGE, allowCredentials: ['cred'] } },
+        };
+      }
+      return { status: 200, json: { accountId: 'acc-1', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' } };
+    };
+    const session = await c.signUp(passkey, 'alice');
+    expect(session.accountId).toBe('acc-1');
+    expect(c.session).toEqual(session);
+    expect(sent()).toEqual([
+      ['POST', '/auth/passkey/register/begin'],
+      ['POST', '/auth/passkey/register/finish'],
+      ['POST', '/auth/passkey/register/finish'],
+    ]);
+    const registration = { attestationObject: 'ao', clientDataJson: 'cd' };
+    expect(node.requests[1].body).toEqual({ challengeId: 'r-1', registration });
+    expect(last().body).toEqual({
+      challengeId: 'r-1',
+      registration,
+      confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
+    });
+  });
+
   it('upgrades an org with one passkey approval, follows the run and retries it', async () => {
     const c = client();
     confirming(RUN);
@@ -153,7 +182,7 @@ describe("the console's passkey actions", () => {
   it('creates and revokes an API key and mints an invite, each create approved with the passkey', async () => {
     const c = client();
     node.answer = (head, body) => {
-      if (!body.confirm && head.method === 'POST') {
+      if (!body.confirm) {
         return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
       }
       return head.path === '/auth/apikeys'
@@ -171,16 +200,18 @@ describe("the console's passkey actions", () => {
       readOnly: true,
       confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
     });
-    await c.revokeApiKey('k-1');
+    await c.revokeApiKey('k-1', passkey);
     expect(await c.invite('org-1', 'member', passkey, ['t-1'], { ttlSecs: 60, uses: 2 })).toBe('inv-1');
     expect(sent()).toEqual([
       ['POST', '/auth/apikeys'],
       ['POST', '/auth/apikeys'],
       ['DELETE', '/auth/apikeys/k-1'],
+      ['DELETE', '/auth/apikeys/k-1'],
       ['POST', '/orgs/org-1/invites'],
       ['POST', '/orgs/org-1/invites'],
     ]);
-    expect(node.requests[3].body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2 });
+    expect(node.requests[3].body).toEqual({ confirm: { challengeId: 'c-1', assertion: expect.anything() } });
+    expect(node.requests[4].body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2 });
     expect(last().body).toEqual({ role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2, confirm: { challengeId: 'c-1', assertion: expect.anything() } });
   });
 });
