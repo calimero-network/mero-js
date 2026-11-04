@@ -18,6 +18,7 @@ import {
   ConfirmCancelled,
   ConfirmRequired,
   LoginRequired,
+  OriginNotRegistered,
   UnavailableError,
   WrongNode,
   errorFrom,
@@ -45,6 +46,7 @@ import {
 export {
   AppError,
   ArgsTooLarge,
+  BadOrigin,
   CalimeroError,
   ConfirmCancelled,
   ConfirmRequired,
@@ -52,6 +54,9 @@ export {
   LoginRequired,
   ConsentStale,
   NotFound,
+  OriginNotRegistered,
+  OriginTaken,
+  QuotaExceeded,
   ReleaseDeadlineError,
   TrapError,
   UnavailableError,
@@ -333,6 +338,77 @@ export function pageDeployment(href?: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** `GET /auth/me`: who the credential is. */
+export interface MeInfo extends Record<string, unknown> {
+  accountId?: string;
+  /** `session` or `apikey`. */
+  via?: string;
+  /**
+   * The package the session is bound to: opened on an app's frontend or on
+   * an origin its manager registered ({@link CalimeroClient.packageOrigins}).
+   * `null` (or absent, on an older node) for an unbound session.
+   */
+  app?: string | null;
+  /** The web origin the session was opened on, when the node recorded one. */
+  origin?: string | null;
+}
+
+/** One web origin registered for a package (`GET /package-origins/{package}`). */
+export interface PackageOrigin {
+  /** `scheme://host[:port]`. */
+  origin: string;
+  /** The WebAuthn relying-party id passkeys made there are bound to. */
+  rpId: string;
+  /** The account that registered it. */
+  addedBy: string;
+  addedAt: string | number;
+}
+
+/** What registering an origin answers. */
+export interface PackageOriginAdded extends PackageOrigin {
+  package: string;
+}
+
+/** What removing an origin answers. */
+export interface PackageOriginRemoved {
+  package: string;
+  origin: string;
+  removed: true;
+}
+
+/**
+ * The web origins a package's frontend may sign users in from besides the
+ * cluster's own, so a developer can host it themselves. A session opened on
+ * one is bound to the package. For the package's managers.
+ */
+export interface PackageOrigins {
+  /** The origins registered for `pkg`. `NotFound` for an unknown package; `403` to anyone not managing it. */
+  list(pkg: string): Promise<PackageOrigin[]>;
+  /**
+   * Register `origin` for `pkg`, approved with `passkey` (`412
+   * CONFIRM_REQUIRED` over `__add_origin`; without a passkey it reaches the
+   * caller as {@link ConfirmRequired}). `rpId` defaults to the node's choice
+   * for the origin (its host). Refusals: {@link BadOrigin} (`BAD_ORIGIN`,
+   * `BAD_RP_ID`), {@link OriginTaken}, {@link QuotaExceeded}.
+   */
+  add(pkg: string, origin: string, passkey?: PasskeyProvider, options?: { rpId?: string }): Promise<PackageOriginAdded>;
+  /**
+   * Remove `origin` from `pkg`, approved with `passkey` (`__remove_origin`).
+   * Sessions opened there stop working (`401`). `NotFound` if it was not registered.
+   */
+  remove(pkg: string, origin: string, passkey?: PasskeyProvider): Promise<PackageOriginRemoved>;
+}
+
+/**
+ * Where a sign-up or sign-in says it runs. By default the page's origin
+ * (`window.location.origin`) when it is not the origin of a node the client
+ * talks to; nothing outside a browser. A string sends that origin; `null`
+ * sends none (the cluster's own origins).
+ */
+export interface SignInOptions {
+  origin?: string | null;
 }
 
 /** One URL path segment, so an id cannot reach another route. */
@@ -824,13 +900,19 @@ export class CalimeroClient {
 
   /**
    * Create an account with a new passkey, and sign in. The node then asks the
-   * new passkey to sign the account it creates (`412 CONFIRM_REQUIRED`, core
-   * #proofs-at-apply-rest), so a sign-up prompts twice: create, then sign.
+   * new passkey to sign the account it creates (`412 CONFIRM_REQUIRED`), so a
+   * sign-up prompts twice: create, then sign. On a page whose origin is not
+   * the cluster's ({@link SignInOptions}), the node makes the passkey for that
+   * origin's relying party (the confirmation's `rpId` is that origin's too)
+   * and binds the session to the package the origin is registered for; an
+   * unregistered origin is refused with {@link OriginNotRegistered}.
    */
-  async signUp(passkey: PasskeyProvider, name: string): Promise<CalimeroSession> {
-    const begin = await this.post<{ challengeId: string; options: Record<string, unknown> }>(
+  async signUp(passkey: PasskeyProvider, name: string, options: SignInOptions = {}): Promise<CalimeroSession> {
+    const origin = this.pageOrigin(options);
+    const begin = await this.begin<{ challengeId: string; options: Record<string, unknown> }>(
       'auth/passkey/register/begin',
-      { name },
+      origin === undefined ? { name } : { name, origin },
+      origin,
     );
     const registration = await passkey.create(begin.options);
     const session = await this.postConfirmed<CalimeroSession>(
@@ -842,18 +924,59 @@ export class CalimeroClient {
     return session;
   }
 
-  /** Sign in with an existing passkey. */
-  async signIn(passkey: PasskeyProvider): Promise<CalimeroSession> {
-    const begin = await this.post<{ challengeId: string; options: { challenge: string; rpId: string } }>(
-      'auth/passkey/login/begin',
-    );
-    const assertion = await passkey.get(fromB64url(begin.options.challenge), begin.options.rpId);
+  /**
+   * Sign in with an existing passkey. On a page whose origin is not the
+   * cluster's ({@link SignInOptions}), the assertion is made for that
+   * origin's relying-party id, as the node answers it, and the session is
+   * bound to the origin's package; an unregistered origin is refused with
+   * {@link OriginNotRegistered}.
+   */
+  async signIn(passkey: PasskeyProvider, options: SignInOptions = {}): Promise<CalimeroSession> {
+    const origin = this.pageOrigin(options);
+    const begin = await this.begin<{
+      challengeId: string;
+      options: { challenge: string; rpId?: string; rp?: { id?: string } };
+    }>('auth/passkey/login/begin', origin === undefined ? undefined : { origin }, origin);
+    const rpId = begin.options.rpId ?? begin.options.rp?.id ?? '';
+    const assertion = await passkey.get(fromB64url(begin.options.challenge), rpId);
     const session = await this.post<CalimeroSession>('auth/passkey/login/finish', {
       challengeId: begin.challengeId,
       assertion,
     });
     this.useSession(session);
     return session;
+  }
+
+  /**
+   * The origin a sign-up or sign-in sends: the one given, or the page's own
+   * when it is not a node's origin; `undefined` for none.
+   */
+  private pageOrigin(options: SignInOptions): string | undefined {
+    if (options.origin !== undefined) return options.origin ?? undefined;
+    const page = (globalThis as { location?: { origin?: string } }).location?.origin;
+    if (!page || page === 'null') return undefined;
+    const nodes = new Set(
+      this.nodeUrls.map((url) => {
+        try {
+          return new URL(url).origin;
+        } catch {
+          return url;
+        }
+      }),
+    );
+    return nodes.has(page) ? undefined : page;
+  }
+
+  /** POST a ceremony's `begin`, naming the page's `origin` in an {@link OriginNotRegistered} the node leaves it out of. */
+  private async begin<T>(path: string, body: Record<string, unknown> | undefined, origin: string | undefined): Promise<T> {
+    try {
+      return await this.post<T>(path, body);
+    } catch (error) {
+      if (error instanceof OriginNotRegistered && !error.origin && origin !== undefined) {
+        throw new OriginNotRegistered(error.nodeMessage, { ...error.details, origin });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -906,7 +1029,8 @@ export class CalimeroClient {
     this.current = undefined;
   }
 
-  me(): Promise<Record<string, unknown>> {
+  /** Who the credential is: the account, how it signed in, and the package (`app`) and `origin` a session is bound to. */
+  me(): Promise<MeInfo> {
     return this.get('auth/me');
   }
 
@@ -1700,6 +1824,29 @@ export class CalimeroClient {
   redeemInvite(token: string): Promise<Record<string, unknown>> {
     return this.post(`invites/${seg(token)}/redeem`);
   }
+
+  // ---------------------------------------------------------------- package origins
+
+  /**
+   * The web origins `{package}`'s managers registered so a frontend they host
+   * themselves can sign users in with passkeys ({@link PackageOrigins}).
+   * Adding and removing one is approved with a passkey.
+   */
+  readonly packageOrigins: PackageOrigins = {
+    list: async (pkg) => {
+      const { origins } = await this.get<{ origins: PackageOrigin[] }>(`package-origins/${seg(pkg)}`);
+      return origins ?? [];
+    },
+    add: (pkg, origin, passkey, options = {}) =>
+      this.confirmed<PackageOriginAdded>(
+        'POST',
+        `package-origins/${seg(pkg)}`,
+        options.rpId === undefined ? { origin } : { origin, rpId: options.rpId },
+        passkey,
+      ),
+    remove: (pkg, origin, passkey) =>
+      this.confirmed<PackageOriginRemoved>('DELETE', `package-origins/${seg(pkg)}`, { origin }, passkey),
+  };
 
   // ---------------------------------------------------------------- deployers
 
