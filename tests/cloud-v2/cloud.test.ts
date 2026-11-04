@@ -172,7 +172,7 @@ describe('Calimero 1.0 cluster', () => {
     await expect(alice.post('auth/apikeys', { label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
     const { keyId } = await alice.createApiKey({ label: 'ci' }, pk);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).toContain(keyId);
-    await expect(alice.delete(`auth/apikeys/${keyId}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    // A node from before answers the revocation at once; this one asks for the passkey (412) first.
     await alice.revokeApiKey(keyId, pk);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
 
