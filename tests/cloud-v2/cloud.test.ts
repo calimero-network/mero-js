@@ -40,7 +40,9 @@ describe('Calimero 1.0 cluster', () => {
     expect(s.accountId).toBe(me.accountId);
 
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('kv', bundle, { confirmMethods: ['clear'] });
+    // `clear` needs a passkey confirmation because the kv component declares it
+    // `#[app::confirm]`; the node takes confirm methods from the component.
+    const app = await alice.createApp('kv', bundle);
 
     const r = await alice.call(app, 'set', { key: 'a', value: '1' }, 'k1');
     expect(r.index).toBeGreaterThan(0);
