@@ -129,6 +129,31 @@ await client.listApiKeys(); // never the keys themselves
 await client.revokeApiKey(keyId, passkey); // approved with the passkey
 ```
 
+### Upgrade keys for CI
+
+An upgrade with a session needs a passkey every time, which a CI job does
+not have. An **upgrade key** is made once, with the passkey, for one app: it
+upgrades that app to signed releases of its package (by the package's pinned
+signer) with no passkey, and the node refuses it everything else,
+reads included (`403 UPGRADE_KEY_ONLY`). The approval gates still apply:
+who may upgrade the app, release deadlines and deployer grants.
+
+```ts
+// Once, by the app's owner:
+const { key } = await client.createApiKey(
+  { label: 'ci', upgrades: { app: appId }, ttlSecs: 90 * 86_400 },
+  passkey,
+);
+
+// In CI, after publishing 1.4.0 to the registry:
+const ci = new CalimeroClient({ baseUrl, policy });
+ci.useApiKey(key);
+await ci.upgradeApp(appId, { version: '1.4.0' });
+```
+
+Revoke it with `revokeApiKey`; the app's `lastUpgrade` names the key that
+made each upgrade.
+
 ## Confirmations
 
 Some requests need the account holder's passkey over that exact request: a
