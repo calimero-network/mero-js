@@ -207,17 +207,31 @@ describe('signing in from a registered origin', () => {
     expect(asked[0].rpId).toBe('chat.example.com');
   });
 
-  it("signUp sends the name and the page's origin; the passkey is made with the node's options", async () => {
-    const { pk, created } = recording();
+  it("signUp sends the page's origin, then signs the 412 on finish with the new passkey for the origin's rpId", async () => {
+    const { pk, created, asked } = recording();
     const options = { challenge: 'AAEC', rp: { id: 'chat.example.com', name: 'chat' }, user: { id: 'AA', name: 'bob' } };
-    ceremony(options);
-    await client().signUp(pk, 'bob', { origin: SITE });
+    const proof = { challengeId: 'p-1', challenge: 'AAEC', rpId: 'chat.example.com', allowCredentials: ['cred'] };
+    node.answer = (head, body) => {
+      if (head.path.endsWith('/begin')) return { status: 200, json: { challengeId: 'r-1', options } };
+      return body.confirm ? { status: 200, json: SESSION } : refuse(412, 'CONFIRM_REQUIRED', proof);
+    };
+    expect(await client().signUp(pk, 'bob', { origin: SITE })).toEqual(SESSION);
     expect(sent()).toEqual([
       ['POST', '/auth/passkey/register/begin'],
+      ['POST', '/auth/passkey/register/finish'],
       ['POST', '/auth/passkey/register/finish'],
     ]);
     expect(node.requests[0].body).toEqual({ name: 'bob', origin: SITE });
     expect(created).toEqual([options]);
+    const registration = { attestationObject: 'ao', clientDataJson: 'cd' };
+    expect(node.requests[1].body).toEqual({ challengeId: 'r-1', registration });
+    expect(last().body).toEqual({
+      challengeId: 'r-1',
+      registration,
+      confirm: { challengeId: 'p-1', assertion: expect.objectContaining({ signature: 'sig' }) },
+    });
+    // The same new passkey signs, for the origin's relying party, not the cluster's.
+    expect(asked).toEqual([{ rpId: 'chat.example.com', allow: ['cred'] }]);
   });
 
   it("in a browser, defaults to window.location.origin when it is not a node's", async () => {

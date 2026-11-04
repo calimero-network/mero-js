@@ -899,11 +899,13 @@ export class CalimeroClient {
   // ---------------------------------------------------------------- identity
 
   /**
-   * Create an account with a new passkey, and sign in. On a page whose
-   * origin is not the cluster's ({@link SignInOptions}), the node makes the
-   * passkey for that origin's relying party and binds the session to the
-   * package the origin is registered for; an unregistered origin is refused
-   * with {@link OriginNotRegistered}.
+   * Create an account with a new passkey, and sign in. The node then asks the
+   * new passkey to sign the account it creates (`412 CONFIRM_REQUIRED`), so a
+   * sign-up prompts twice: create, then sign. On a page whose origin is not
+   * the cluster's ({@link SignInOptions}), the node makes the passkey for that
+   * origin's relying party (the confirmation's `rpId` is that origin's too)
+   * and binds the session to the package the origin is registered for; an
+   * unregistered origin is refused with {@link OriginNotRegistered}.
    */
   async signUp(passkey: PasskeyProvider, name: string, options: SignInOptions = {}): Promise<CalimeroSession> {
     const origin = this.pageOrigin(options);
@@ -913,10 +915,11 @@ export class CalimeroClient {
       origin,
     );
     const registration = await passkey.create(begin.options);
-    const session = await this.post<CalimeroSession>('auth/passkey/register/finish', {
-      challengeId: begin.challengeId,
-      registration,
-    });
+    const session = await this.postConfirmed<CalimeroSession>(
+      'auth/passkey/register/finish',
+      { challengeId: begin.challengeId, registration },
+      passkey,
+    );
     this.useSession(session);
     return session;
   }
@@ -1080,8 +1083,9 @@ export class CalimeroClient {
     return keys;
   }
 
-  async revokeApiKey(keyId: string): Promise<void> {
-    await this.delete(`auth/apikeys/${seg(keyId)}`);
+  /** Revoke one of the account's API keys, approved with its `passkey` (`412 CONFIRM_REQUIRED`). */
+  async revokeApiKey(keyId: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`auth/apikeys/${seg(keyId)}`, passkey);
   }
 
   /**
