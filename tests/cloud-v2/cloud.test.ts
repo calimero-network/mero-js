@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { CalimeroClient, CalimeroError } from '../../src/cloud-v2/index.js';
+import {
+  BadOrigin,
+  CalimeroClient,
+  CalimeroError,
+  ConfirmRequired,
+  LoginRequired,
+  NotFound,
+  OriginNotRegistered,
+} from '../../src/cloud-v2/index.js';
 import { KV_STORE_WASM, startCluster, type LocalCluster } from './cluster.js';
 import { publisher, signedMpk, variant } from './mpk.js';
 import { SoftPasskey } from './soft-passkey.js';
@@ -317,6 +325,53 @@ describe('Calimero 1.0 cluster', () => {
 
     await alice.transferApp(app, bobId, pk);
     expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
+  });
+
+  // Core's `claude/package-origins`: a node without the routes answers the
+  // listing of an installed package 404, and the case is skipped.
+  it("registers a package's own origin, signs in from it, and removes it", async (ctx) => {
+    const [alice, alicePk] = await person(0, 'alice-origins');
+    const pkg = 'com.mero-js.origins';
+    const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
+    await alice.uploadPackage(signedMpk(pkg, '1.0.0', variant(kv, 'origins'), publisher()));
+    const listed = await alice.packageOrigins.list(pkg).catch((e: unknown) => e);
+    if (listed instanceof CalimeroError && (listed.status === 404 || listed.status === 405)) return ctx.skip();
+    expect(listed).toEqual([]);
+
+    const site = 'https://chat.mero-js.test';
+    // Adding one is a step-up; without a passkey the node asks for it.
+    await expect(alice.packageOrigins.add(pkg, site)).rejects.toBeInstanceOf(ConfirmRequired);
+    const added = await alice.packageOrigins.add(pkg, site, alicePk);
+    expect(added).toMatchObject({ package: pkg, origin: site, rpId: 'chat.mero-js.test' });
+    expect((await alice.packageOrigins.list(pkg)).map((o) => o.origin)).toEqual([site]);
+    await expect(alice.packageOrigins.add(pkg, 'not an origin', alicePk)).rejects.toBeInstanceOf(BadOrigin);
+
+    // A person signs up on the developer's site: the passkey is that site's,
+    // the session bound to the package.
+    const carol = client(1);
+    const carolPk = new SoftPasskey('chat.mero-js.test', site);
+    await carol.signUp(carolPk, 'carol', { origin: site });
+    const me = await carol.me();
+    expect(me.origin).toBe(site);
+    expect(me.app).toBeTruthy();
+    const again = client(2);
+    await again.signIn(carolPk, { origin: site });
+
+    // A site nobody registered is refused before any passkey prompt.
+    const stranger = await client(0)
+      .signIn(new SoftPasskey('stranger.mero-js.test', 'https://stranger.mero-js.test'), {
+        origin: 'https://stranger.mero-js.test',
+      })
+      .catch((e: unknown) => e);
+    expect(stranger).toBeInstanceOf(OriginNotRegistered);
+    expect((stranger as OriginNotRegistered).origin).toBe('https://stranger.mero-js.test');
+
+    // Removing the origin ends the sessions opened there.
+    expect(await alice.packageOrigins.remove(pkg, site, alicePk)).toMatchObject({ package: pkg, origin: site, removed: true });
+    await new Promise((r) => setTimeout(r, 300));
+    await expect(carol.me()).rejects.toBeInstanceOf(LoginRequired);
+    await expect(alice.packageOrigins.remove(pkg, site, alicePk)).rejects.toBeInstanceOf(NotFound);
+    expect(await alice.packageOrigins.list(pkg)).toEqual([]);
   });
 
   it('keeps serving after a node dies', async () => {

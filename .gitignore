@@ -45,3 +45,6 @@ data/
 # scripts/download-released-merod.sh output
 /merod
 /kv_store.wasm
+
+# Node compile cache (NODE_COMPILE_CACHE)
+node-compile-cache/

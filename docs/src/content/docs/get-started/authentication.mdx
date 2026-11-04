@@ -39,6 +39,39 @@ await client.labelPasskey(credentialId, 'work laptop');
 await client.removePasskey(credentialId, passkey); // never the last one
 ```
 
+## Sign in from your own site
+
+A package's frontend served by the cluster signs people in on the cluster's
+origin. To host it yourself (`https://chat.example.com`), a manager of the
+package registers that origin, approved with their passkey:
+
+```ts
+await client.packageOrigins.add('com.example.chat', 'https://chat.example.com', passkey);
+// { package, origin, rpId: 'chat.example.com', addedBy, addedAt }; rpId defaults to the host
+await client.packageOrigins.list('com.example.chat');
+await client.packageOrigins.remove('com.example.chat', 'https://chat.example.com', passkey);
+```
+
+On that site, `signUp` and `signIn` work as anywhere else: in a browser whose
+`window.location.origin` is not one of the client's nodes, they send it, and
+the passkey is made for (and asserted with) the relying-party id the node
+answers for it. Pass `{ origin }` to name it yourself, or `{ origin: null }` to
+send none. The session is bound to the package, as on an app's own frontend;
+`me()` answers its `app` and `origin`, and its passkey confirmations are signed
+for the same relying-party id.
+
+```ts
+try {
+  await client.signIn(browserPasskey());
+} catch (e) {
+  if (e instanceof OriginNotRegistered) showError(e.message); // "this site (https://…) is not registered for …"
+  else throw e;
+}
+```
+
+Removing the origin ends the sessions opened there: their next request is
+refused `401` (`LoginRequired`).
+
 ## Sessions
 
 `signUp` and `signIn` answer a `CalimeroSession`
