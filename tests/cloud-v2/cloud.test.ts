@@ -172,7 +172,8 @@ describe('Calimero 1.0 cluster', () => {
     await expect(alice.post('auth/apikeys', { label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
     const { keyId } = await alice.createApiKey({ label: 'ci' }, pk);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).toContain(keyId);
-    await alice.revokeApiKey(keyId);
+    await expect(alice.delete(`auth/apikeys/${keyId}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.revokeApiKey(keyId, pk);
     expect((await alice.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
 
     const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
@@ -267,7 +268,7 @@ describe('Calimero 1.0 cluster', () => {
 
     const { key: apiKey, keyId } = await tab.createApiKey({ label: 'console', apps: [app], readOnly: true }, pk);
     expect(apiKey).toBeTruthy();
-    await tab.revokeApiKey(keyId);
+    await tab.revokeApiKey(keyId, pk);
     expect((await tab.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
     const token = await tab.invite(org, 'member', pk);
     await bob.redeemInvite(token);

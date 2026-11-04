@@ -16,9 +16,14 @@ sees it. A client holds one credential at a time: a session or an API key.
 import { browserPasskey } from '@calimero-network/mero-js';
 
 const passkey = browserPasskey(); // Touch ID, Windows Hello, a security key, a synced passkey
-await client.signUp(passkey, 'alice'); // new account and passkey
+await client.signUp(passkey, 'alice'); // new account and passkey: asks the passkey twice
 await client.signIn(passkey);          // existing passkey
 ```
+
+A sign-up prompts twice: once to register the new passkey, once for that
+passkey to sign the account it creates. A registration carries no signature
+by the new key, so the cluster takes the account only with that second
+assertion (the node's `412 CONFIRM_REQUIRED`, which `signUp` answers).
 
 `browserPasskey()` wraps `navigator.credentials`. Anything that implements
 `PasskeyProvider` (`create(options)` and `get(challenge, rpId, allowCredentials?)`,
@@ -88,7 +93,7 @@ const agent = new CalimeroClient({ baseUrl, policy });
 agent.useApiKey(key);
 
 await client.listApiKeys(); // never the keys themselves
-await client.revokeApiKey(keyId);
+await client.revokeApiKey(keyId, passkey); // approved with the passkey
 ```
 
 ## Confirmations
