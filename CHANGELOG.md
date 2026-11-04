@@ -1,3 +1,9 @@
+## [29.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.0.0...mero-js-v29.1.0) (2026-11-04)
+
+### Features
+
+* **cloud-v2:** package origins and origin-aware passkey sign-in ([#326](https://github.com/calimero-network/mero-js/issues/326)) ([4ebf6b6](https://github.com/calimero-network/mero-js/commit/4ebf6b6ba004e6aa330b05ca4e3b7eef224cb1ec))
+
 ## [29.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v28.1.2...mero-js-v29.0.0) (2026-11-04)
 
 ### ⚠ BREAKING CHANGES
