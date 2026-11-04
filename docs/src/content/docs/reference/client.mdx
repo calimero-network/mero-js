@@ -37,7 +37,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 
 | Method | Route |
 | --- | --- |
-| `signUp(passkey, name)` → `CalimeroSession` | `POST auth/passkey/register/begin`, `…/finish` |
+| `signUp(passkey, name)` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates, `412 CONFIRM_REQUIRED`) | `POST auth/passkey/register/begin`, `…/finish` |
 | `signIn(passkey)` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
 | `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
 | `signOut()` | `POST auth/logout` |
@@ -50,7 +50,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `removePasskey(credentialId, passkey)` | `DELETE auth/passkeys/{cred}` |
 | `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs? }, passkey)` → `{ keyId, key }` (a passkey session) | `POST auth/apikeys` |
 | `listApiKeys()` | `GET auth/apikeys` |
-| `revokeApiKey(keyId)` | `DELETE auth/apikeys/{key}` |
+| `revokeApiKey(keyId, passkey)` (approved with the account's passkey) | `DELETE auth/apikeys/{key}` |
 | `attestation()` → `AttestationDoc` (unverified, for display) | `GET attestation` (in the clear) |
 
 ## Packages and bundles
