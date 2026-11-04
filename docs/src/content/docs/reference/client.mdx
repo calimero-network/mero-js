@@ -104,8 +104,8 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 
 | Method | Route |
 | --- | --- |
-| `createOrg(name)` → org id | `POST orgs` |
-| `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`) | `GET orgs/{org}` |
+| `createOrg(name, { recoveryKey? })` → org id | `POST orgs` |
+| `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`, `recovery`) | `GET orgs/{org}` |
 | `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
 | `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
 | `setMember(org, account, role, passkey)` | `POST orgs/{org}/members` |
@@ -120,6 +120,10 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
 | `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
 | `redeemInvite(token)` (no approval) | `POST invites/{token}/redeem` |
+| `setRecoveryKey(org, publicKey \| null, passkey)` (the owner) | `POST orgs/{org}/recovery` |
+| `startRecovery(org, seed)` → `{ startedAt, readyAt }` (signs locally) | `POST orgs/{org}/recovery/start` |
+| `cancelRecovery(org, passkey)` (the owner) | `POST orgs/{org}/recovery/cancel` |
+| `finishRecovery(org, passkey)` → `{ org, previousOwners }` | `POST orgs/{org}/recovery/finish` |
 | `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
 | `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
 | `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |
