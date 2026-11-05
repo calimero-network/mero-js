@@ -33,6 +33,20 @@ const token = await client.invite(org, 'member', passkey, [teamId], { ttlSecs: 3
 await invitee.redeemInvite(token);
 ```
 
+Someone without an account yet signs up with the invite and joins the
+organization in the same step. On a cluster whose sign-up policy is `invite`
+this is the only way in; read the policy first, without a session, to say so
+before any passkey prompt:
+
+```ts
+const { policy, inviteRequired } = await client.signUpPolicy(); // GET /sign-up
+await client.signUp(passkey, 'bob', { invite: token });
+```
+
+An unknown, expired or used invite, or a sign-up the policy does not take, is
+`SignUpRefused`, with `reason` (`invite-only`, `closed`, `unknown-invite`,
+`expired-invite`, `org-gone`), raised before the browser makes a passkey.
+
 ## Teams
 
 ```ts

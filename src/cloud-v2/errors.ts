@@ -190,6 +190,42 @@ export class OriginTaken extends CalimeroError {
   }
 }
 
+/** Why a sign-up was refused ({@link SignUpRefused.reason}), read from what the node said. */
+export type SignUpRefusal = 'invite-only' | 'closed' | 'unknown-invite' | 'expired-invite' | 'org-gone' | 'other';
+
+/**
+ * `403 SIGN_UP_REFUSED`: the cluster's sign-up policy does not take this
+ * sign-up (core `SystemState::admits`), answered by `register/begin` before a
+ * passkey is made and by `register/finish` before its challenge is spent.
+ * `reason` says why, so a page can say "invite only" or "this invite has
+ * expired" instead of the node's sentence:
+ *
+ * - `invite-only`: the cluster takes new accounts with an invite only.
+ * - `closed`: only a cluster sign-up invite (the operator's or the owner's) admits.
+ * - `unknown-invite`: the invite is not one the cluster knows (mistyped, revoked,
+ *   or used up: a spent invite is gone).
+ * - `expired-invite`: past its expiry, or no use left.
+ * - `org-gone`: the organization the invite was for was deleted.
+ */
+export class SignUpRefused extends CalimeroError {
+  readonly reason: SignUpRefusal;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(403, 'SIGN_UP_REFUSED', message, details);
+    this.name = 'SignUpRefused';
+    this.reason = signUpRefusal(message);
+  }
+}
+
+function signUpRefusal(message: string): SignUpRefusal {
+  if (/invite only/.test(message)) return 'invite-only';
+  if (/pre-authorized|sign-up invite/.test(message)) return 'closed';
+  if (/unknown invite/.test(message)) return 'unknown-invite';
+  if (/invite has expired/.test(message)) return 'expired-invite';
+  if (/organization is gone/.test(message)) return 'org-gone';
+  return 'other';
+}
+
 /** `429 QUOTA_EXCEEDED`: the caller holds as many of something (origins, blobs, ...) as it may. */
 export class QuotaExceeded extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -315,6 +351,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new OriginTaken(message, details);
     case '429 QUOTA_EXCEEDED':
       return new QuotaExceeded(message, details);
+    case '403 SIGN_UP_REFUSED':
+      return new SignUpRefused(message, details);
     case '412 CONFIRM_REQUIRED':
       return new ConfirmRequired(message, details);
     case '413 ARGS_TOO_LARGE':

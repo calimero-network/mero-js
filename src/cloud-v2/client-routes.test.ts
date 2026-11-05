@@ -14,6 +14,7 @@ import {
   ConfirmRequired,
   NotFound,
   ORG_CAPABILITIES,
+  SignUpRefused,
   deployerKey,
   frontendManifest,
   orgCapabilities,
@@ -113,6 +114,45 @@ describe("the console's passkey actions", () => {
       registration,
       confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
     });
+  });
+
+  it('signs up with an invite: the token goes on begin, finish and the confirmed retry', async () => {
+    const c = client();
+    node.answer = (head, body) => {
+      if (head.path === '/auth/passkey/register/begin') return { status: 200, json: { challengeId: 'r-1', options: { challenge: 'AAEC' } } };
+      if (!body.confirm) return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'sign', details: CHALLENGE } };
+      return { status: 200, json: { accountId: 'acc-2', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' } };
+    };
+    await c.signUp(passkey, 'bob', { invite: 'inv_x', origin: null });
+    expect(node.requests.map((r) => r.body)).toEqual([
+      { name: 'bob', invite: 'inv_x' },
+      { challengeId: 'r-1', registration: expect.anything(), invite: 'inv_x' },
+      { challengeId: 'r-1', registration: expect.anything(), invite: 'inv_x', confirm: expect.anything() },
+    ]);
+  });
+
+  it('reads the sign-up policy, and a refused sign-up says why before any passkey prompt', async () => {
+    const c = client();
+    const policy = { policy: 'invite', orgInvites: true, signUpInvites: true, inviteRequired: true };
+    node.answer = () => ({ status: 200, json: policy });
+    expect(await c.signUpPolicy()).toEqual(policy);
+    expect(sent()).toEqual([['GET', '/sign-up']]);
+    const refusals: Array<[string, string]> = [
+      ['sign-up refused: this cluster takes new accounts by invite only', 'invite-only'],
+      ['sign-up refused: this cluster takes only accounts its operator or owner pre-authorized with a sign-up invite', 'closed'],
+      ['sign-up refused: unknown invite', 'unknown-invite'],
+      ['sign-up refused: the invite has expired', 'expired-invite'],
+      ["sign-up refused: the invite's organization is gone", 'org-gone'],
+    ];
+    for (const [message, reason] of refusals) {
+      node.answer = () => ({ status: 403, json: { error: 'SIGN_UP_REFUSED', message } });
+      let prompted = false;
+      const pk = { ...passkey, create: async () => ((prompted = true), passkey.create({})) };
+      const error = await c.signUp(pk, 'bob', { invite: 'inv_x' }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SignUpRefused);
+      expect((error as SignUpRefused).reason).toBe(reason);
+      expect(prompted).toBe(false);
+    }
   });
 
   it('upgrades an org with one passkey approval, follows the run and retries it', async () => {

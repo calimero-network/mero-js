@@ -97,7 +97,7 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 ## The API
 
-- **Credentials**: `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
+- **Credentials**: `signUp` (with an `invite`, on a cluster that takes new accounts by invite; `signUpPolicy` reads which), `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
 - **Package origins**: `packageOrigins.list`, `packageOrigins.add`, `packageOrigins.remove`. A package's managers register the web origins of a frontend they host themselves (approved with a passkey); `signUp` and `signIn` on such a page send its origin, sign for that origin's relying-party id, and open a session bound to the package (`me()` answers its `app` and `origin`). An unregistered origin is refused with `OriginNotRegistered`.
 - **Packages**: `installPackage`, `uploadPackage`, `packages`, `package`, `uninstallPackage`; `uploadBundle` (raw WASM, development clusters only).
 - **Apps**: `createApp`, `listApps`, `getApp`, `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `upgradeApp`, `transferApp`.

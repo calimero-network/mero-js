@@ -58,12 +58,13 @@ export {
   OriginTaken,
   QuotaExceeded,
   ReleaseDeadlineError,
+  SignUpRefused,
   TrapError,
   UnavailableError,
   WrongNode,
   errorFrom,
 } from './errors.js';
-export type { Committed } from './errors.js';
+export type { Committed, SignUpRefusal } from './errors.js';
 
 export interface CalimeroSession {
   accountId: string;
@@ -409,6 +410,32 @@ export interface PackageOrigins {
  */
 export interface SignInOptions {
   origin?: string | null;
+}
+
+/**
+ * {@link SignInOptions} for a sign-up, and the invite it is made with: an
+ * organization invite's token (the new account joins the organization at
+ * the invite's role) or a cluster sign-up invite's. A cluster whose policy
+ * is `invite` or `closed` ({@link CalimeroClient.signUpPolicy}) needs one.
+ */
+export interface SignUpOptions extends SignInOptions {
+  invite?: string;
+}
+
+/**
+ * `GET /sign-up`: who may create an account on the cluster (core's sign-up
+ * policy, read without a session), so a page can say "invite only" before
+ * any passkey prompt.
+ */
+export interface SignUpPolicy {
+  /** `open` (anyone), `invite` (an organization or sign-up invite), `closed` (a sign-up invite only). */
+  policy: 'open' | 'invite' | 'closed';
+  /** Whether an organization invite lets a new person sign up (and join it). */
+  orgInvites: boolean;
+  /** Whether a cluster sign-up invite does (always). */
+  signUpInvites: boolean;
+  /** Whether a sign-up without an invite is refused. */
+  inviteRequired: boolean;
 }
 
 /** One URL path segment, so an id cannot reach another route. */
@@ -906,22 +933,33 @@ export class CalimeroClient {
    * origin's relying party (the confirmation's `rpId` is that origin's too)
    * and binds the session to the package the origin is registered for; an
    * unregistered origin is refused with {@link OriginNotRegistered}.
+   *
+   * `invite` ({@link SignUpOptions}) goes on both halves and on the retry,
+   * as the node judges it on each before it spends anything; a sign-up the
+   * cluster's policy refuses, or an unknown, expired or used invite, is
+   * {@link SignUpRefused} (from `begin`, before any passkey is made).
    */
-  async signUp(passkey: PasskeyProvider, name: string, options: SignInOptions = {}): Promise<CalimeroSession> {
+  async signUp(passkey: PasskeyProvider, name: string, options: SignUpOptions = {}): Promise<CalimeroSession> {
     const origin = this.pageOrigin(options);
+    const invite = options.invite ? { invite: options.invite } : {};
     const begin = await this.begin<{ challengeId: string; options: Record<string, unknown> }>(
       'auth/passkey/register/begin',
-      origin === undefined ? { name } : { name, origin },
+      origin === undefined ? { name, ...invite } : { name, origin, ...invite },
       origin,
     );
     const registration = await passkey.create(begin.options);
     const session = await this.postConfirmed<CalimeroSession>(
       'auth/passkey/register/finish',
-      { challengeId: begin.challengeId, registration },
+      { challengeId: begin.challengeId, registration, ...invite },
       passkey,
     );
     this.useSession(session);
     return session;
+  }
+
+  /** Who may create an account on the cluster (`GET /sign-up`); needs no session. */
+  signUpPolicy(): Promise<SignUpPolicy> {
+    return this.get('sign-up');
   }
 
   /**
