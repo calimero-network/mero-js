@@ -1,3 +1,9 @@
+## [29.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.5.0...mero-js-v29.6.0) (2026-11-05)
+
+### Features
+
+* **cloud-v2:** register served origins (custom domains) ([#333](https://github.com/calimero-network/mero-js/issues/333)) ([e840c0a](https://github.com/calimero-network/mero-js/commit/e840c0a909b78edc6076dc61ac5eed050f2f1b17))
+
 ## [29.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.4.0...mero-js-v29.5.0) (2026-11-05)
 
 ### Features
