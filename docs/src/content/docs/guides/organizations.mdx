@@ -25,6 +25,30 @@ await client.deleteOrg(org, passkey); // the owner's passkey; takes its teams, i
 
 Ownership moves with `setMember(org, account, 'owner', passkey)`.
 
+## Recovery
+
+An owner who loses every passkey gets the organization back with its recovery
+seed. The seed never leaves the client: the node stores only its public key and
+checks a signature the seed makes for the recovering account.
+
+```ts
+import { newRecoverySeed, parseRecoverySeed, recoveryPublicKey, recoverySeedText } from '@calimero-network/mero-js';
+
+const seed = newRecoverySeed();
+showToOwner(recoverySeedText(seed)); // 64 hex digits; keep it offline
+const org = await client.createOrg('Acme', { recoveryKey: await recoveryPublicKey(seed) });
+// later, or for an organization created without one (the owner, with a passkey):
+await client.setRecoveryKey(org, await recoveryPublicKey(newRecoverySeed()), passkey);
+
+// Every passkey lost: sign up again with a new passkey, then
+const { readyAt } = await fresh.startRecovery(org, parseRecoverySeed(written));
+// 72 hours later (the owner may cancelRecovery meanwhile; every member sees getOrg(org).recovery.pending)
+await fresh.finishRecovery(org, newPasskey); // this account owns it; the old owner leaves it
+```
+
+Rotating the key (`setRecoveryKey`) cancels a recovery under way, and the old
+seed is refused from then on.
+
 ## Invites
 
 ```ts

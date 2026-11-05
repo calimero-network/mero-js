@@ -19,6 +19,9 @@ import {
   frontendManifest,
   orgCapabilities,
   pageDeployment,
+  recoveryPublicKey,
+  recoverySeedText,
+  signRecovery,
   type UpgradeRun,
 } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
@@ -398,6 +401,55 @@ describe('credentials, memberships and invites are approved with a passkey (412 
     expect(await client().redeemInvite('inv-1')).toEqual({ orgId: 'org-1' });
     expect(sent()).toEqual([['POST', '/invites/inv-1/redeem']]);
     expect(last().body).toEqual({});
+  });
+});
+
+describe('organization recovery', () => {
+  const seed = new Uint8Array(32).fill(1);
+  const confirmed = { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) };
+
+  it('creates an org with a recovery key, then rotates and removes it with the owner\'s passkey', async () => {
+    const c = client();
+    node.answer = () => ({ status: 200, json: { orgId: 'org-1' } });
+    const key = await recoveryPublicKey(seed);
+    expect(await c.createOrg('Acme', { recoveryKey: key })).toBe('org-1');
+    expect(last().body).toEqual({ name: 'Acme', recoveryKey: key });
+    confirming({});
+    await c.setRecoveryKey('org-1', key, passkey);
+    expect(last().body).toEqual({ publicKey: key, confirm: confirmed });
+    confirming({});
+    await c.setRecoveryKey('org-1', null, passkey);
+    expect(last().body).toEqual({ publicKey: null, confirm: confirmed });
+    expect(sent().slice(1)).toEqual([
+      ['POST', '/orgs/org-1/recovery'],
+      ['POST', '/orgs/org-1/recovery'],
+      ['POST', '/orgs/org-1/recovery'],
+      ['POST', '/orgs/org-1/recovery'],
+    ]);
+  });
+
+  it('starts with a signature the seed makes locally, then cancels or finishes with a passkey', async () => {
+    const c = client();
+    node.answer = (head) =>
+      head.path === '/auth/me'
+        ? { status: 200, json: { accountId: 'acc-2' } }
+        : { status: 200, json: { startedAt: 1, readyAt: 2 } };
+    expect(await c.startRecovery('org-1', seed)).toEqual({ startedAt: 1, readyAt: 2 });
+    const { nonce, signature } = last().body as { nonce: string; signature: string };
+    expect(signature).toBe(await signRecovery(seed, 'org-1', 'acc-2', nonce));
+    expect(JSON.stringify(node.requests)).not.toContain(recoverySeedText(seed).replace(/-/g, ''));
+    confirming({});
+    await c.cancelRecovery('org-1', passkey);
+    confirming({ org: 'org-1', previousOwners: ['acc-1'] });
+    expect(await c.finishRecovery('org-1', passkey)).toEqual({ org: 'org-1', previousOwners: ['acc-1'] });
+    expect(sent()).toEqual([
+      ['GET', '/auth/me'],
+      ['POST', '/orgs/org-1/recovery/start'],
+      ['POST', '/orgs/org-1/recovery/cancel'],
+      ['POST', '/orgs/org-1/recovery/cancel'],
+      ['POST', '/orgs/org-1/recovery/finish'],
+      ['POST', '/orgs/org-1/recovery/finish'],
+    ]);
   });
 });
 

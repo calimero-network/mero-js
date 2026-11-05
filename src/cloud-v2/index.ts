@@ -54,6 +54,8 @@ export type {
   PackageInstalled,
   CloudRetryOptions,
   OrgInfo,
+  OrgRecovery,
+  RecoveryTimes,
   OrgUpgradeTarget,
   PresenceEntry,
   UpgradeRun,
@@ -62,6 +64,16 @@ export type {
 export { claimedRelease, fetchAttestedKey, freshCollateral, MOCK_QUOTE_HEADER } from './attestation.js';
 export type { AttestationDoc, CloudPolicy, CloudReleasePolicy } from './attestation.js';
 export { browserPasskey, b64url, fromB64url } from './passkey.js';
+export {
+  MAX_RECOVERY_NONCE_BYTES,
+  RECOVERY_DOMAIN,
+  newRecoverySeed,
+  parseRecoverySeed,
+  recoveryMessage,
+  recoveryPublicKey,
+  recoverySeedText,
+  signRecovery,
+} from './recovery.js';
 export type { AssertionJSON, PasskeyProvider, RegistrationJSON } from './passkey.js';
 export {
   MAX_REPORT_PAGE,

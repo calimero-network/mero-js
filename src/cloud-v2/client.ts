@@ -24,6 +24,7 @@ import {
   errorFrom,
 } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
+import { signRecovery } from './recovery.js';
 import {
   confirmationCode,
   pageQuery,
@@ -188,6 +189,24 @@ export interface OrgInfo extends Record<string, unknown> {
   publishes: string[];
   /** `null` unless a deadline stopped new work: approve `release` (or newer) to lift it. */
   newWorkStopped: { release: string; after: string } | null;
+  /** The recovery key and any recovery under way; absent while the organization has none. */
+  recovery?: OrgRecovery;
+}
+
+/** An organization's recovery key (core `Org::recovery`). */
+export interface OrgRecovery {
+  /** The key's Ed25519 public half, base64url. */
+  publicKey: string;
+  /** When the owner set it (Unix seconds). */
+  setAt: number;
+  /** A recovery under way: warn every member, the owner first, who may cancel it. */
+  pending: RecoveryTimes & { account: string } | null;
+}
+
+/** When a recovery started and the earliest it may finish (Unix seconds). */
+export interface RecoveryTimes {
+  startedAt: number;
+  readyAt: number;
 }
 
 /** A blob's bytes with the content type the node serves them as. */
@@ -1503,9 +1522,54 @@ export class CalimeroClient {
 
   // ---------------------------------------------------------------- organizations
 
-  async createOrg(name: string): Promise<string> {
-    const { orgId } = await this.post<{ orgId: string }>('orgs', { name });
+  /**
+   * Create an organization. `recoveryKey` (from {@link recoveryPublicKey}) lets
+   * whoever holds its seed recover the organization if its owner loses every
+   * passkey; keep the seed offline ({@link recoverySeedText}).
+   */
+  async createOrg(name: string, options: { recoveryKey?: string } = {}): Promise<string> {
+    const body: Record<string, unknown> = { name };
+    if (options.recoveryKey !== undefined) body.recoveryKey = options.recoveryKey;
+    const { orgId } = await this.post<{ orgId: string }>('orgs', body);
     return orgId;
+  }
+
+  /**
+   * Set or rotate (`publicKey`, from {@link recoveryPublicKey}) or remove
+   * (`null`) the organization's recovery key: its owner only, approved with
+   * `passkey`. A recovery under way is cancelled, and the old seed's
+   * signatures are refused from then on.
+   */
+  async setRecoveryKey(org: string, publicKey: string | null, passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/recovery`, { publicKey }, passkey);
+  }
+
+  /**
+   * Start handing `org` to the signed-in account with the recovery seed,
+   * which signs here and never leaves this process. Finish with
+   * {@link finishRecovery} once `readyAt` has passed; until then the owner may
+   * cancel. A wrong seed (or no organization, or none set) is a `403`.
+   */
+  async startRecovery(org: string, seed: Uint8Array): Promise<RecoveryTimes> {
+    const account = (await this.me()).accountId as string;
+    const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    const signature = await signRecovery(seed, org, account, nonce);
+    return this.post(`orgs/${seg(org)}/recovery/start`, { nonce, signature });
+  }
+
+  /** Cancel the recovery under way: the organization's owner, approved with `passkey`. */
+  async cancelRecovery(org: string, passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/recovery/cancel`, {}, passkey);
+  }
+
+  /**
+   * Finish a recovery this account started, once its delay passed
+   * (`409 RECOVERY_NOT_READY` before, with `readyAt`), approved with this
+   * account's `passkey`. The account becomes the owner; the previous owner
+   * leaves the organization.
+   */
+  finishRecovery(org: string, passkey: PasskeyProvider): Promise<{ org: string; previousOwners: string[] }> {
+    return this.postConfirmed(`orgs/${seg(org)}/recovery/finish`, {}, passkey);
   }
 
   /** The organization, with the teams this caller reaches or manages. */
