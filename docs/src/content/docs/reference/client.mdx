@@ -79,13 +79,21 @@ bound to the package. See
 
 | Method | Route |
 | --- | --- |
-| `packageOrigins.list(package)` → `PackageOrigin[]` (`{ origin, rpId, addedBy, addedAt }`) | `GET package-origins/{package}` |
-| `packageOrigins.add(package, origin, passkey?, { rpId? })` → `{ package, origin, rpId, addedBy, addedAt }` | `POST package-origins/{package}` (`412` over `__add_origin`) |
+| `packageOrigins.list(package)` → `PackageOrigin[]` (`{ origin, rpId, addedBy, addedAt, served }`) | `GET package-origins/{package}` |
+| `packageOrigins.add(package, origin, passkey?, { rpId?, served? })` → `{ package, origin, rpId, addedBy, addedAt, served }` | `POST package-origins/{package}` (`412` over `__add_origin`) |
 | `packageOrigins.remove(package, origin, passkey?)` → `{ package, origin, removed: true }` | `DELETE package-origins/{package}` (`412` over `__remove_origin`) |
 
 `add` refuses with `BadOrigin` (`BAD_ORIGIN`, `BAD_RP_ID`), `OriginTaken` and
 `QuotaExceeded`; `list` and `remove` with `NotFound`. Without a passkey the
 `412` reaches the caller as `ConfirmRequired`.
+
+`served: true` registers a custom domain: the cluster also serves the
+package's frontend on it from the signed bundle. The origin must be
+`https://host` with no port, and the consent the passkey signs names it
+(`{ origin, rpId, served: true }`). It further refuses with `NotServing` (the
+cluster serves no frontends), `ClusterNotUpgraded` (a node is on an older
+release), `QuotaExceeded` (4 served per package, 64 per cluster) and
+`OriginTaken` (held with the other `served`; remove it first).
 
 ## Apps
 
@@ -181,6 +189,7 @@ With the operator token (`useApiKey(token)`):
 | --- | --- |
 | `opsApps({ after?, limit? })` → `OpsAppsReport` | `GET ops/apps` |
 | `opsOrgs({ after?, limit? })` → `OpsOrgsReport` | `GET ops/orgs` |
+| `opsServedOrigins()` → `{ fresh, origins: [{ origin, host, label, addedAt }] }` | `GET ops/served-origins` |
 | `setReleaseDeadline(version, after)` | `POST ops/releases/{version}/deadline` |
 | `liftReleaseDeadline(version)` | `DELETE ops/releases/{version}/deadline` |
 

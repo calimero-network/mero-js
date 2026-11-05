@@ -32,6 +32,8 @@ describe('the package root', () => {
       'TrapError',
       'UnavailableError',
       'WrongNode',
+      'NotServing',
+      'ClusterNotUpgraded',
       'ORG_CAPABILITIES',
       'orgCapabilities',
       'createSealedFetch',

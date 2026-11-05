@@ -12,9 +12,11 @@ import {
   BadOrigin,
   CalimeroClient,
   CalimeroError,
+  ClusterNotUpgraded,
   ConfirmRequired,
   LoginRequired,
   NotFound,
+  NotServing,
   OriginNotRegistered,
   OriginTaken,
   QuotaExceeded,
@@ -144,6 +146,71 @@ describe('packageOrigins.add', () => {
     await expect(client().packageOrigins.add(PKG, 'not an origin', pk)).rejects.toBeInstanceOf(BadOrigin);
     expect(asked).toEqual([]);
     expect(sent()).toHaveLength(1);
+  });
+});
+
+describe('packageOrigins.add served (a custom domain)', () => {
+  const DOMAIN = 'https://kv.example.com';
+  const SERVED = { package: PKG, origin: DOMAIN, rpId: 'kv.example.com', addedBy: 'acc-1', addedAt: '2026-11-05T10:00:00Z', served: true };
+
+  it('sends served: true in both attempts and answers the served registration', async () => {
+    const { pk, asked } = recording();
+    stepUp(SERVED);
+    expect(await client().packageOrigins.add(PKG, DOMAIN, pk, { served: true })).toEqual(SERVED);
+    expect(node.requests[0].body).toEqual({ origin: DOMAIN, served: true });
+    expect(last().body).toEqual({ origin: DOMAIN, served: true, confirm });
+    expect(asked).toEqual([{ rpId: 'cluster.example', allow: ['cred'] }]);
+  });
+
+  it('sends rpId and served together', async () => {
+    stepUp({ ...SERVED, rpId: 'example.com' });
+    await client().packageOrigins.add(PKG, DOMAIN, recording().pk, { rpId: 'example.com', served: true });
+    expect(node.requests[0].body).toEqual({ origin: DOMAIN, rpId: 'example.com', served: true });
+  });
+
+  it('leaves served out unless it is true, so a node that predates served origins takes a plain add', async () => {
+    stepUp({ package: PKG, ...ORIGIN });
+    await client().packageOrigins.add(PKG, SITE, recording().pk, { served: false });
+    expect(node.requests[0].body).toEqual({ origin: SITE });
+    expect(last().body).toEqual({ origin: SITE, confirm });
+  });
+
+  it.each([
+    [400, 'NOT_SERVING', NotServing],
+    [400, 'BAD_ORIGIN', BadOrigin],
+    [409, 'ORIGIN_TAKEN', OriginTaken],
+    [409, 'CLUSTER_NOT_UPGRADED', ClusterNotUpgraded],
+    [429, 'QUOTA_EXCEEDED', QuotaExceeded],
+  ] as const)('a %i %s refusal before any step-up is a typed error, without a prompt', async (status, code, type) => {
+    const { pk, asked } = recording();
+    node.answer = () => refuse(status, code);
+    const error = await client().packageOrigins.add(PKG, DOMAIN, pk, { served: true }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(type);
+    expect(error).toBeInstanceOf(CalimeroError);
+    expect(error).toMatchObject({ status, code });
+    expect(asked).toEqual([]);
+    expect(sent()).toHaveLength(1);
+  });
+
+  it('list answers served on each origin', async () => {
+    const { package: _p, ...listed } = SERVED;
+    node.answer = () => ({ status: 200, json: { package: PKG, origins: [{ ...ORIGIN, served: false }, listed] } });
+    const origins = await client().packageOrigins.list(PKG);
+    expect(origins.map((o) => o.served)).toEqual([false, true]);
+  });
+});
+
+describe('opsServedOrigins', () => {
+  it('reads GET /ops/served-origins with the operator token', async () => {
+    const report = {
+      fresh: true,
+      origins: [{ origin: 'https://kv.example.com', host: 'kv.example.com', label: 'a'.repeat(52), addedAt: '2026-11-05T10:00:00Z' }],
+    };
+    node.answer = () => ({ status: 200, json: report });
+    const c = client();
+    c.useApiKey('ops-token');
+    expect(await c.opsServedOrigins()).toEqual(report);
+    expect(sent()).toEqual([['GET', '/ops/served-origins']]);
   });
 });
 

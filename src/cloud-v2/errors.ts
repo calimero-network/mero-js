@@ -173,7 +173,9 @@ export class OriginNotRegistered extends CalimeroError {
  * `400 BAD_ORIGIN` or `400 BAD_RP_ID`: the node does not accept the origin a
  * package's manager tried to register (it must be a bare web origin,
  * `scheme://host[:port]`), or the relying-party id given for it (which must
- * fit the origin's host). `code` says which.
+ * fit the origin's host). `code` says which. A served origin (`served: true`)
+ * must also be `https://host` with no port, and not a name under the
+ * cluster's apps domain or its rp-id.
  */
 export class BadOrigin extends CalimeroError {
   constructor(code: 'BAD_ORIGIN' | 'BAD_RP_ID', message: string, details: Record<string, unknown> = {}) {
@@ -182,11 +184,42 @@ export class BadOrigin extends CalimeroError {
   }
 }
 
-/** `409 ORIGIN_TAKEN`: the origin is registered already (for this package or another). */
+/**
+ * `409 ORIGIN_TAKEN`: the origin is registered already (for another package,
+ * or for this one with the other `served`: remove it first), or it is one of
+ * the cluster's own (a node's API host, a cluster origin, a frontend it
+ * serves).
+ */
 export class OriginTaken extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
     super(409, 'ORIGIN_TAKEN', message, details);
     this.name = 'OriginTaken';
+  }
+}
+
+/**
+ * `400 NOT_SERVING`: a served origin (a custom domain, `served: true`) was
+ * asked of a cluster that serves no frontends (merod without
+ * `--apps-domain`). Register the origin unserved, or use a cluster that
+ * serves them.
+ */
+export class NotServing extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(400, 'NOT_SERVING', message, details);
+    this.name = 'NotServing';
+  }
+}
+
+/**
+ * `409 CLUSTER_NOT_UPGRADED`: the change needs every node of the cluster
+ * (replicas, voters and learners) on the node's release or later, and one
+ * is not yet; for instance adding a served origin. Retry once the cluster is
+ * upgraded.
+ */
+export class ClusterNotUpgraded extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'CLUSTER_NOT_UPGRADED', message, details);
+    this.name = 'ClusterNotUpgraded';
   }
 }
 
@@ -254,7 +287,10 @@ function signUpRefusal(message: string): SignUpRefusal {
   return 'other';
 }
 
-/** `429 QUOTA_EXCEEDED`: the caller holds as many of something (origins, blobs, ...) as it may. */
+/**
+ * `429 QUOTA_EXCEEDED`: the caller holds as many of something (origins,
+ * served origins per package or per cluster, blobs, ...) as it may.
+ */
 export class QuotaExceeded extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
     super(429, 'QUOTA_EXCEEDED', message, details);
@@ -377,6 +413,10 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new BadOrigin(code as 'BAD_ORIGIN' | 'BAD_RP_ID', message, details);
     case '409 ORIGIN_TAKEN':
       return new OriginTaken(message, details);
+    case '400 NOT_SERVING':
+      return new NotServing(message, details);
+    case '409 CLUSTER_NOT_UPGRADED':
+      return new ClusterNotUpgraded(message, details);
     case '429 QUOTA_EXCEEDED':
       return new QuotaExceeded(message, details);
     case '409 RECOVERY_NOT_READY':
