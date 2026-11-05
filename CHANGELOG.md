@@ -1,3 +1,9 @@
+## [29.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.2.0...mero-js-v29.3.0) (2026-11-05)
+
+### Features
+
+* **cloud-v2:** sign up with an invite and read the sign-up policy ([#329](https://github.com/calimero-network/mero-js/issues/329)) ([f7dbf7f](https://github.com/calimero-network/mero-js/commit/f7dbf7f681483fad95805bb2612e47b2d176ea4e))
+
 ## [29.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.1.0...mero-js-v29.2.0) (2026-11-04)
 
 ### Features
