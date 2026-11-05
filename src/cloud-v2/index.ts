@@ -15,11 +15,13 @@ export {
   OriginNotRegistered,
   OriginTaken,
   QuotaExceeded,
+  RecoveryNotReady,
   ReleaseDeadlineError,
   SignUpRefused,
   TrapError,
   UnavailableError,
   WrongNode,
+  WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
 export type { Committed, SignUpRefusal } from './errors.js';
@@ -42,6 +44,7 @@ export type {
   PackageOriginRemoved,
   PackageOrigins,
   SignInOptions,
+  AccountRecovery,
   SignUpOptions,
   SignUpPolicy,
   PublicDeployment,

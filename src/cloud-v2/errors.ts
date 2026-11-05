@@ -190,6 +190,34 @@ export class OriginTaken extends CalimeroError {
   }
 }
 
+/**
+ * `409 RECOVERY_NOT_READY`: a recovery (an account's or an organization's)
+ * may finish only once its 72-hour delay has passed. `readyAt` is when it may
+ * (Unix seconds), when the node said.
+ */
+export class RecoveryNotReady extends CalimeroError {
+  readonly readyAt: number | undefined;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'RECOVERY_NOT_READY', message, details);
+    this.name = 'RecoveryNotReady';
+    this.readyAt = typeof details.readyAt === 'number' ? details.readyAt : undefined;
+  }
+}
+
+/**
+ * The recovery code is not one the cluster holds: mistyped, replaced by a
+ * newer one, or spent by a recovery that started (whether it finished or was
+ * cancelled). The node answers it `401`; a recovery is signed out, so it is
+ * this error, not {@link LoginRequired}.
+ */
+export class WrongRecoveryCode extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(401, 'UNAUTHENTICATED', message || 'unknown or used recovery code', details);
+    this.name = 'WrongRecoveryCode';
+  }
+}
+
 /** Why a sign-up was refused ({@link SignUpRefused.reason}), read from what the node said. */
 export type SignUpRefusal = 'invite-only' | 'closed' | 'unknown-invite' | 'expired-invite' | 'org-gone' | 'other';
 
@@ -351,6 +379,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new OriginTaken(message, details);
     case '429 QUOTA_EXCEEDED':
       return new QuotaExceeded(message, details);
+    case '409 RECOVERY_NOT_READY':
+      return new RecoveryNotReady(message, details);
     case '403 SIGN_UP_REFUSED':
       return new SignUpRefused(message, details);
     case '412 CONFIRM_REQUIRED':

@@ -40,6 +40,11 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `signUp(passkey, name, { origin?, invite? })` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates, `412 CONFIRM_REQUIRED`; `invite` joins its organization, `SignUpRefused` when the policy or the invite refuses) | `POST auth/passkey/register/begin`, `…/finish` |
 | `signUpPolicy()` → `{ policy, orgInvites, signUpInvites, inviteRequired }` (no session) | `GET sign-up` |
 | `signIn(passkey, { origin? })` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
+| `createRecoveryCode(passkey)` → the code, once (core #4844) | `POST auth/recovery` |
+| `removeRecoveryCode(passkey)` | `DELETE auth/recovery` |
+| `startAccountRecovery(code, passkey)` → `AccountRecovery` (signed out; `passkey` creates the new passkey; `WrongRecoveryCode`) | `POST auth/recovery/begin`, `…/start` |
+| `cancelAccountRecovery(passkey)` (a passkey the account already has) | `POST auth/recovery/cancel` |
+| `finishAccountRecovery(passkey, accountId?)` → `CalimeroSession` (at `readyAt`; `RecoveryNotReady` before) | `POST auth/recovery/finish` |
 | `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
 | `signOut()` | `POST auth/logout` |
 | `signOutEverywhere()` | `POST auth/logout-all` |
