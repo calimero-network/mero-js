@@ -190,6 +190,34 @@ export class OriginTaken extends CalimeroError {
   }
 }
 
+/**
+ * `409 RECOVERY_NOT_READY`: a recovery (an account's or an organization's)
+ * may finish only once its 72-hour delay has passed. `readyAt` is when it may
+ * (Unix seconds), when the node said.
+ */
+export class RecoveryNotReady extends CalimeroError {
+  readonly readyAt: number | undefined;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'RECOVERY_NOT_READY', message, details);
+    this.name = 'RecoveryNotReady';
+    this.readyAt = typeof details.readyAt === 'number' ? details.readyAt : undefined;
+  }
+}
+
+/**
+ * The recovery code is not one the cluster holds: mistyped, replaced by a
+ * newer one, or spent by a recovery that started (whether it finished or was
+ * cancelled). The node answers it `401`; a recovery is signed out, so it is
+ * this error, not {@link LoginRequired}.
+ */
+export class WrongRecoveryCode extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(401, 'UNAUTHENTICATED', message || 'unknown or used recovery code', details);
+    this.name = 'WrongRecoveryCode';
+  }
+}
+
 /** `429 QUOTA_EXCEEDED`: the caller holds as many of something (origins, blobs, ...) as it may. */
 export class QuotaExceeded extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -315,6 +343,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new OriginTaken(message, details);
     case '429 QUOTA_EXCEEDED':
       return new QuotaExceeded(message, details);
+    case '409 RECOVERY_NOT_READY':
+      return new RecoveryNotReady(message, details);
     case '412 CONFIRM_REQUIRED':
       return new ConfirmRequired(message, details);
     case '413 ARGS_TOO_LARGE':

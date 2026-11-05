@@ -21,6 +21,7 @@ import {
   OriginNotRegistered,
   UnavailableError,
   WrongNode,
+  WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
@@ -57,10 +58,12 @@ export {
   OriginNotRegistered,
   OriginTaken,
   QuotaExceeded,
+  RecoveryNotReady,
   ReleaseDeadlineError,
   TrapError,
   UnavailableError,
   WrongNode,
+  WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
 export type { Committed } from './errors.js';
@@ -353,6 +356,26 @@ export interface MeInfo extends Record<string, unknown> {
   app?: string | null;
   /** The web origin the session was opened on, when the node recorded one. */
   origin?: string | null;
+  /** Whether the account holds a recovery code ({@link CalimeroClient.createRecoveryCode}); never the code. */
+  recoveryCode?: boolean;
+  /**
+   * A recovery of this account under way: someone holding its recovery code
+   * started it with a new passkey. Warn on every device; a passkey the
+   * account has cancels it ({@link CalimeroClient.cancelAccountRecovery})
+   * until `readyAt`.
+   */
+  recoveryPending?: AccountRecovery | null;
+}
+
+/** A recovery of an account under way (core #4844, `docs/specs/account-recovery.md`). */
+export interface AccountRecovery {
+  accountId: string;
+  /** The new passkey the recovery adds when it finishes. */
+  credentialId: string;
+  /** When it started (Unix seconds). */
+  startedAt: number;
+  /** The earliest it may finish (Unix seconds): 72 hours after the start. */
+  readyAt: number;
 }
 
 /** One web origin registered for a package (`GET /package-origins/{package}`). */
@@ -572,8 +595,11 @@ interface DirectorySource {
  * before it spends the challenge or the refresh token (core #4774).
  */
 function ceremony(path: string): boolean {
-  return path === 'auth/refresh' || path.startsWith('auth/passkey/');
+  return path === 'auth/refresh' || path.startsWith('auth/passkey/') || RECOVERY_CEREMONIES.has(path);
 }
+
+/** The signed-out halves of an account recovery: a `401` there is the code's, not a session's. */
+const RECOVERY_CEREMONIES = new Set(['auth/recovery/begin', 'auth/recovery/start', 'auth/recovery/finish']);
 
 export class CalimeroClient {
   /** Every node this client may use, `baseUrl` first (or as the directory last ordered them). */
@@ -1059,6 +1085,77 @@ export class CalimeroClient {
   /** Name one of the account's passkeys (a device label); `''` clears the name. */
   async labelPasskey(credentialId: string, label: string): Promise<void> {
     await this.post(`auth/passkeys/${seg(credentialId)}`, { label });
+  }
+
+  // ---------------------------------------------------------------- account recovery
+  //
+  // core #4844 (`docs/specs/account-recovery.md`): a recovery code, made with
+  // a passkey and shown once, lets someone who lost every passkey register a
+  // new one; it is added, and the account signed in, 72 hours later unless a
+  // passkey the account still has cancels it first.
+
+  /**
+   * Make the account's recovery code (replacing any it had), approved with
+   * `passkey` (`412 CONFIRM_REQUIRED`). Answers the code, once: show it to
+   * the person to keep offline; the node keeps only its public key. A passkey
+   * session on the cluster's own origin only (never an API key or a
+   * package-bound session).
+   */
+  async createRecoveryCode(passkey: PasskeyProvider): Promise<string> {
+    const { code } = await this.postConfirmed<{ code: string }>('auth/recovery', {}, passkey);
+    return code;
+  }
+
+  /** Remove the account's recovery code, approved with `passkey`. */
+  async removeRecoveryCode(passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed('auth/recovery', passkey);
+  }
+
+  /**
+   * Signed out: start recovering the account `code` names. `passkey` makes a
+   * new passkey for it (the browser's create prompt, user verified); the
+   * node spends the code and keeps the passkey as pending. Nothing is added
+   * and no session opens: finish with {@link finishAccountRecovery} at
+   * `readyAt`. A code the cluster does not hold (mistyped, replaced or
+   * spent) is {@link WrongRecoveryCode}; an account with a recovery already
+   * under way `409 RECOVERY_PENDING`.
+   */
+  async startAccountRecovery(code: string, passkey: PasskeyProvider): Promise<AccountRecovery> {
+    try {
+      const begin = await this.post<{ challengeId: string; options: Record<string, unknown> }>('auth/recovery/begin', { code });
+      const registration = await passkey.create(begin.options);
+      return await this.post<AccountRecovery>('auth/recovery/start', { challengeId: begin.challengeId, code, registration });
+    } catch (error) {
+      if (error instanceof LoginRequired) throw new WrongRecoveryCode(error.message.replace(/^401 UNAUTHENTICATED: /, ''), error.details);
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel the recovery of the signed-in account under way, approved with
+   * `passkey` (one the account already has). The code stays spent: make a
+   * new one.
+   */
+  async cancelAccountRecovery(passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed('auth/recovery/cancel', {}, passkey);
+  }
+
+  /**
+   * Signed out, once the delay passed: finish the recovery with the passkey
+   * it registered (`passkey` signs the node's sign-in challenge). The passkey
+   * joins the account, every other session of the account ends, and this
+   * client is signed in. `accountId` (from the start) lets the node refuse
+   * early and offer only that passkey; before `readyAt` it is
+   * {@link RecoveryNotReady}, with no recovery under way {@link NotFound}.
+   */
+  async finishAccountRecovery(passkey: PasskeyProvider, accountId?: string): Promise<CalimeroSession> {
+    const session = await this.postConfirmed<CalimeroSession>(
+      'auth/recovery/finish',
+      accountId ? { accountId } : {},
+      passkey,
+    );
+    this.useSession(session);
+    return session;
   }
 
   /** What this account uses (apps, bundle bytes, API keys, owned orgs), with the cluster's quotas. */

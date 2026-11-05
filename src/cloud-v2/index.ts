@@ -15,10 +15,12 @@ export {
   OriginNotRegistered,
   OriginTaken,
   QuotaExceeded,
+  RecoveryNotReady,
   ReleaseDeadlineError,
   TrapError,
   UnavailableError,
   WrongNode,
+  WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
 export type { Committed } from './errors.js';
@@ -41,6 +43,7 @@ export type {
   PackageOriginRemoved,
   PackageOrigins,
   SignInOptions,
+  AccountRecovery,
   PublicDeployment,
   CallResult,
   CalimeroClientOptions,

@@ -178,3 +178,23 @@ sent. An API key can answer a confirmation only if it was created with
   to that package: it reaches only that package's apps and cannot create API
   keys, approve releases or upgrade.
 </Aside>
+
+## Account recovery
+
+Someone who loses every passkey cannot sign in, and nobody can act for them.
+A **recovery code**, made with a passkey and shown once, is the way back
+(core #4844):
+
+```ts
+const code = await client.createRecoveryCode(passkey); // show it once; keep it offline
+
+// Every passkey lost, signed out: the code and a new passkey start a recovery.
+const { accountId, readyAt } = await fresh.startAccountRecovery(code, browserPasskey());
+// 72 hours later (until then, any passkey the account still has may cancel it):
+await fresh.finishAccountRecovery(browserPasskey(), accountId); // signed in; other sessions end
+```
+
+A signed-in client sees a recovery under way in `me().recoveryPending` and
+cancels it with `cancelAccountRecovery(passkey)`. A code starts one recovery
+and is spent whether it finishes or is cancelled; a wrong or spent one is
+`WrongRecoveryCode`, finishing early `RecoveryNotReady` (with `readyAt`).
