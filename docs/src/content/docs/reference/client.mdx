@@ -37,7 +37,8 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 
 | Method | Route |
 | --- | --- |
-| `signUp(passkey, name, { origin? })` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates, `412 CONFIRM_REQUIRED`) | `POST auth/passkey/register/begin`, `…/finish` |
+| `signUp(passkey, name, { origin?, invite? })` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates, `412 CONFIRM_REQUIRED`; `invite` joins its organization, `SignUpRefused` when the policy or the invite refuses) | `POST auth/passkey/register/begin`, `…/finish` |
+| `signUpPolicy()` → `{ policy, orgInvites, signUpInvites, inviteRequired }` (no session) | `GET sign-up` |
 | `signIn(passkey, { origin? })` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
 | `createRecoveryCode(passkey)` → the code, once (core #4844) | `POST auth/recovery` |
 | `removeRecoveryCode(passkey)` | `DELETE auth/recovery` |

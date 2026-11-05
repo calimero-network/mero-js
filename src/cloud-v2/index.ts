@@ -17,13 +17,14 @@ export {
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
+  SignUpRefused,
   TrapError,
   UnavailableError,
   WrongNode,
   WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
-export type { Committed } from './errors.js';
+export type { Committed, SignUpRefusal } from './errors.js';
 export type {
   AppInfo,
   AppXcalls,
@@ -44,6 +45,8 @@ export type {
   PackageOrigins,
   SignInOptions,
   AccountRecovery,
+  SignUpOptions,
+  SignUpPolicy,
   PublicDeployment,
   CallResult,
   CalimeroClientOptions,
