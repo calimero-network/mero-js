@@ -1,3 +1,9 @@
+## [29.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.3.0...mero-js-v29.4.0) (2026-11-05)
+
+### Features
+
+* **cloud-v2:** recover an organization with its recovery seed ([#331](https://github.com/calimero-network/mero-js/issues/331)) ([fd87ae7](https://github.com/calimero-network/mero-js/commit/fd87ae7974686d352269a2998fea1f1b7030971d))
+
 ## [29.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.2.0...mero-js-v29.3.0) (2026-11-05)
 
 ### Features
