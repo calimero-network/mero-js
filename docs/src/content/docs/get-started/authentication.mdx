@@ -52,6 +52,16 @@ await client.packageOrigins.list('com.example.chat');
 await client.packageOrigins.remove('com.example.chat', 'https://chat.example.com', passkey);
 ```
 
+To have the cluster serve the package's frontend on that name too (a custom
+domain, from the signed bundle), add it with `served: true`:
+
+```ts
+await client.packageOrigins.add('com.example.chat', 'https://chat.example.com', passkey, { served: true });
+```
+
+The record is the cluster's half: browsers reach the name once Calimero Cloud
+holds a certificate and a route for it.
+
 On that site, `signUp` and `signIn` work as anywhere else: in a browser whose
 `window.location.origin` is not one of the client's nodes, they send it, and
 the passkey is made for (and asserted with) the relying-party id the node

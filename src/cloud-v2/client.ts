@@ -407,6 +407,12 @@ export interface PackageOrigin {
   /** The account that registered it. */
   addedBy: string;
   addedAt: string | number;
+  /**
+   * The cluster serves the package's frontend on this origin too (a custom
+   * domain, from its signed bundle). Absent (`false`) from a node that
+   * predates served origins.
+   */
+  served?: boolean;
 }
 
 /** What registering an origin answers. */
@@ -435,13 +441,47 @@ export interface PackageOrigins {
    * caller as {@link ConfirmRequired}). `rpId` defaults to the node's choice
    * for the origin (its host). Refusals: {@link BadOrigin} (`BAD_ORIGIN`,
    * `BAD_RP_ID`), {@link OriginTaken}, {@link QuotaExceeded}.
+   *
+   * `served: true` makes it a custom domain: the cluster also serves the
+   * package's frontend on it (`https://host`, no port; never a name under the
+   * apps domain or the cluster's rp-id), and the consent the passkey signs
+   * names it (`{ origin, rpId, served: true }`). Further refusals:
+   * {@link NotServing} (the cluster serves no frontends),
+   * {@link ClusterNotUpgraded} (a node of the cluster is on an older release),
+   * {@link QuotaExceeded} for the served limits (4 per package, 64 per
+   * cluster), {@link OriginTaken} when the origin is held with the other
+   * `served` (remove it first). Serving it to browsers also needs the
+   * certificate and route Calimero Cloud sets up for the domain.
    */
-  add(pkg: string, origin: string, passkey?: PasskeyProvider, options?: { rpId?: string }): Promise<PackageOriginAdded>;
+  add(
+    pkg: string,
+    origin: string,
+    passkey?: PasskeyProvider,
+    options?: { rpId?: string; served?: boolean },
+  ): Promise<PackageOriginAdded>;
   /**
    * Remove `origin` from `pkg`, approved with `passkey` (`__remove_origin`).
    * Sessions opened there stop working (`401`). `NotFound` if it was not registered.
    */
   remove(pkg: string, origin: string, passkey?: PasskeyProvider): Promise<PackageOriginRemoved>;
+}
+
+/** One served origin (custom domain) of the cluster, as `GET /ops/served-origins` lists it. */
+export interface ServedOrigin {
+  /** `https://host`. */
+  origin: string;
+  /** The origin's host, the name a certificate and a route are for. */
+  host: string;
+  /** The package's app-host label (`{label}.{apps domain}`); the listing names no package. */
+  label: string;
+  addedAt: string;
+}
+
+/** `GET /ops/served-origins`: every served origin the cluster's log holds. Operator token. */
+export interface ServedOrigins {
+  /** This node had caught up with the system leader. */
+  fresh: boolean;
+  origins: ServedOrigin[];
 }
 
 /**
@@ -1918,6 +1958,15 @@ export class CalimeroClient {
   }
 
   /**
+   * `GET /ops/served-origins`: every served origin (custom domain) the
+   * cluster's log holds, with its package's label and no package name or
+   * account. Operator token.
+   */
+  opsServedOrigins(): Promise<ServedOrigins> {
+    return this.get('ops/served-origins');
+  }
+
+  /**
    * Announce when work on images older than `version` ends: from `after` on,
    * a scope that has not approved it (or newer) starts no new work. Operator
    * token.
@@ -2049,7 +2098,13 @@ export class CalimeroClient {
       this.confirmed<PackageOriginAdded>(
         'POST',
         `package-origins/${seg(pkg)}`,
-        options.rpId === undefined ? { origin } : { origin, rpId: options.rpId },
+        // Only the fields set: the node refuses unknown ones, and one that
+        // predates served origins takes a plain add unchanged.
+        {
+          origin,
+          ...(options.rpId === undefined ? {} : { rpId: options.rpId }),
+          ...(options.served ? { served: true } : {}),
+        },
         passkey,
       ),
     remove: (pkg, origin, passkey) =>

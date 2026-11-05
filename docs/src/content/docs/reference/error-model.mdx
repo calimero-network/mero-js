@@ -23,7 +23,9 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `ConsentStale` | `409 CONSENT_STALE` | What a consent page showed changed before the approval; ask for a new request. |
 | `OriginNotRegistered` | `403 ORIGIN_NOT_REGISTERED` | A sign-up or sign-in from a web origin nobody registered: "this site (`origin`) is not registered for `package`". |
 | `BadOrigin` | `400 BAD_ORIGIN`, `400 BAD_RP_ID` | `packageOrigins.add` was given an origin, or a relying-party id for it, the node does not accept. |
-| `OriginTaken` | `409 ORIGIN_TAKEN` | The origin is registered already. |
+| `OriginTaken` | `409 ORIGIN_TAKEN` | The origin is registered already (or with the other `served`), or is one of the cluster's own. |
+| `NotServing` | `400 NOT_SERVING` | A served origin (`served: true`) on a cluster that serves no frontends. |
+| `ClusterNotUpgraded` | `409 CLUSTER_NOT_UPGRADED` | The change (a served origin, say) needs every node of the cluster on the node's release; one is older. |
 | `QuotaExceeded` | `429 QUOTA_EXCEEDED` | The caller holds as many of something (registered origins, a component app's blobs, …) as it may. |
 | `ArgsTooLarge` | `413 ARGS_TOO_LARGE` | The call's arguments are over the node's limit (512 KiB); it did not run. |
 | `AppError` | `422 APP_ERROR` | The app refused the call: `appCode` (its declared error) and `fields`. The call was logged; its key is spent. |
