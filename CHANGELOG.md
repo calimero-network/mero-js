@@ -1,3 +1,9 @@
+## [29.5.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.4.0...mero-js-v29.5.0) (2026-11-05)
+
+### Features
+
+* **cloud-v2:** account recovery with a recovery code ([#330](https://github.com/calimero-network/mero-js/issues/330)) ([afa158d](https://github.com/calimero-network/mero-js/commit/afa158d8c6841df47c7019519200ec376b1239ec))
+
 ## [29.4.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.3.0...mero-js-v29.4.0) (2026-11-05)
 
 ### Features
