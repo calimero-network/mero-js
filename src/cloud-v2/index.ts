@@ -16,12 +16,13 @@ export {
   OriginTaken,
   QuotaExceeded,
   ReleaseDeadlineError,
+  SignUpRefused,
   TrapError,
   UnavailableError,
   WrongNode,
   errorFrom,
 } from './errors.js';
-export type { Committed } from './errors.js';
+export type { Committed, SignUpRefusal } from './errors.js';
 export type {
   AppInfo,
   AppXcalls,
@@ -41,6 +42,8 @@ export type {
   PackageOriginRemoved,
   PackageOrigins,
   SignInOptions,
+  SignUpOptions,
+  SignUpPolicy,
   PublicDeployment,
   CallResult,
   CalimeroClientOptions,
