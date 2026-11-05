@@ -48,7 +48,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `addPasskey(passkey, approver)` → credential id (`approver`: a passkey the account already has) | `POST auth/passkeys/add/begin`, `…/finish` |
 | `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
 | `removePasskey(credentialId, passkey)` | `DELETE auth/passkeys/{cred}` |
-| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs? }, passkey)` → `{ keyId, key }` (a passkey session) | `POST auth/apikeys` |
+| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs?, upgrades? }, passkey)` → `{ keyId, key }` (a passkey session; `upgrades: { app, package? }` makes an upgrade key) | `POST auth/apikeys` |
 | `listApiKeys()` | `GET auth/apikeys` |
 | `revokeApiKey(keyId, passkey)` (approved with the account's passkey) | `DELETE auth/apikeys/{key}` |
 | `attestation()` → `AttestationDoc` (unverified, for display) | `GET attestation` (in the clear) |

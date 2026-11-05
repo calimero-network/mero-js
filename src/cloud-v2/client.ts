@@ -1111,6 +1111,12 @@ export class CalimeroClient {
    * Create an API key for an agent or server, approved with the account's
    * `passkey` (`412 CONFIRM_REQUIRED`); needs a passkey session (an API key
    * is refused `403`). The key is returned once.
+   *
+   * `upgrades: { app, package? }` makes an upgrade key, for CI: it upgrades
+   * that one app to signed releases of its package (default: the one the app
+   * runs, by that package's pinned signer) with {@link upgradeApp} and no
+   * passkey, and every other request with it is refused
+   * `403 UPGRADE_KEY_ONLY`. It takes no other scope field.
    */
   createApiKey(
     options: {
@@ -1120,6 +1126,7 @@ export class CalimeroClient {
       readOnly?: boolean;
       allowConfirm?: boolean;
       ttlSecs?: number;
+      upgrades?: { app: string; package?: string };
     },
     passkey: PasskeyProvider,
   ): Promise<{ keyId: string; key: string }> {
@@ -1290,6 +1297,8 @@ export class CalimeroClient {
    * `passkey` gives. Refused (`403`) to a session opened on an app's
    * frontend: an app asks its user with {@link requestConsent} instead. Past
    * a release deadline its approver has not met: {@link ReleaseDeadlineError}.
+   * With an upgrade key ({@link createApiKey} `upgrades`) pass no passkey and
+   * a `version` of the key's package: the key's own proof stands in for it.
    */
   upgradeApp(
     app: string,

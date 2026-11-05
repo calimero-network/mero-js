@@ -1,3 +1,9 @@
+## [29.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.1.0...mero-js-v29.2.0) (2026-11-04)
+
+### Features
+
+* **cloud-v2:** create upgrade keys for ci deploys ([#328](https://github.com/calimero-network/mero-js/issues/328)) ([4ef759d](https://github.com/calimero-network/mero-js/commit/4ef759db683b5600eeb03fc6d187877ee8971993))
+
 ## [29.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.0.0...mero-js-v29.1.0) (2026-11-04)
 
 ### Features

@@ -179,6 +179,31 @@ describe("the console's passkey actions", () => {
     expect(last().body).toMatchObject({ version: '2.3.110', approved: false });
   });
 
+  it('creates an upgrade key with the passkey, and upgrades with it alone', async () => {
+    const c = client();
+    node.answer = (head, body) => {
+      if (head.path === '/auth/apikeys' && !body.confirm) {
+        return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
+      }
+      return head.path === '/auth/apikeys'
+        ? { status: 200, json: { keyId: 'k-ci', key: 'cal_ci' } }
+        : { status: 200, json: { index: 7, status: 'ok', error: null } };
+    };
+    expect(await c.createApiKey({ label: 'ci', upgrades: { app: 'a-1' }, ttlSecs: 3600 }, passkey)).toEqual({
+      keyId: 'k-ci',
+      key: 'cal_ci',
+    });
+    expect(node.requests[0].body).toEqual({ label: 'ci', upgrades: { app: 'a-1' }, ttlSecs: 3600 });
+    c.useApiKey('cal_ci');
+    expect(await c.upgradeApp('a-1', { version: '1.1.0' })).toEqual({ index: 7, status: 'ok', error: null });
+    expect(sent()).toEqual([
+      ['POST', '/auth/apikeys'],
+      ['POST', '/auth/apikeys'],
+      ['POST', '/apps/a-1/upgrade'],
+    ]);
+    expect(last().body).toEqual({ version: '1.1.0' });
+  });
+
   it('creates and revokes an API key and mints an invite, each create approved with the passkey', async () => {
     const c = client();
     node.answer = (head, body) => {
