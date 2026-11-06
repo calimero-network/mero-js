@@ -23,6 +23,7 @@ describe('the package root', () => {
       'errorFrom',
       'CalimeroError',
       'LoginRequired',
+      'PasskeyUnknownHere',
       'NotFound',
       'ConfirmRequired',
       'ConfirmCancelled',

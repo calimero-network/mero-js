@@ -39,6 +39,36 @@ await client.labelPasskey(credentialId, 'work laptop');
 await client.removePasskey(credentialId, passkey); // never the last one
 ```
 
+### Passkeys are per cluster
+
+An account and its passkeys belong to one cluster. Clusters may share a
+WebAuthn relying-party id (every Calimero Cloud cluster uses
+`calimero.network`), so the browser also offers a passkey made on one cluster
+when a page signs in on another. That sign-in fails with
+`PasskeyUnknownHere` (`401 PASSKEY_UNKNOWN_HERE`): "this passkey belongs to
+another Calimero cluster or was removed from this one; sign up here, or open
+the app from the link for the cluster your account is on". A removed passkey
+gets the same answer, and the node never says which cluster or account a
+passkey is from: it knows only its own.
+
+To tell them apart, the node names each passkey after its cluster: a password
+manager lists `alice · eu-shared-1`, or `alice · kv-store (eu-shared-1)` for one
+made by signing up on an app's frontend.
+
+```ts
+import { PasskeyUnknownHere } from '@calimero-network/mero-js';
+
+try {
+  await client.signIn(passkey);
+} catch (e) {
+  if (e instanceof PasskeyUnknownHere) showSignUpOrRightClusterLink();
+  else throw e;
+}
+```
+
+The client does not refresh for this error (it is not `LoginRequired`), and
+trying the same passkey again fails the same way.
+
 ## Sign in from your own site
 
 A package's frontend served by the cluster signs people in on the cluster's

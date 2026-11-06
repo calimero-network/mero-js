@@ -12,8 +12,10 @@ import {
   CalimeroClient,
   ConfirmCancelled,
   ConfirmRequired,
+  LoginRequired,
   NotFound,
   ORG_CAPABILITIES,
+  PasskeyUnknownHere,
   SignUpRefused,
   deployerKey,
   frontendManifest,
@@ -156,6 +158,27 @@ describe("the console's passkey actions", () => {
       expect((error as SignUpRefused).reason).toBe(reason);
       expect(prompted).toBe(false);
     }
+  });
+
+  it('a passkey from another cluster is refused as such, and not refreshed for', async () => {
+    const c = client();
+    const message =
+      'this passkey belongs to another Calimero cluster or was removed from this one; ' +
+      'sign up here, or open the app from the link for the cluster your account is on';
+    node.answer = (head) =>
+      head.path === '/auth/passkey/login/begin'
+        ? { status: 200, json: { challengeId: 'l-1', options: CHALLENGE } }
+        : { status: 401, json: { error: 'PASSKEY_UNKNOWN_HERE', message } };
+    const error = await c.signIn(passkey).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PasskeyUnknownHere);
+    expect(error).not.toBeInstanceOf(LoginRequired);
+    expect(error).toMatchObject({ status: 401, code: 'PASSKEY_UNKNOWN_HERE', name: 'PasskeyUnknownHere' });
+    expect((error as Error).message).toContain('another Calimero cluster');
+    expect(sent()).toEqual([
+      ['POST', '/auth/passkey/login/begin'],
+      ['POST', '/auth/passkey/login/finish'],
+    ]);
+    expect(c.session).toBeUndefined();
   });
 
   it('upgrades an org with one passkey approval, follows the run and retries it', async () => {

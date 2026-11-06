@@ -16,6 +16,7 @@ export {
   NotServing,
   OriginNotRegistered,
   OriginTaken,
+  PasskeyUnknownHere,
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
