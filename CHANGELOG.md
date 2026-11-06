@@ -1,3 +1,9 @@
+## [29.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.6.0...mero-js-v29.7.0) (2026-11-06)
+
+### Features
+
+* **cloud-v2:** type a passkey from another cluster as PasskeyUnknownHere ([#334](https://github.com/calimero-network/mero-js/issues/334)) ([8292763](https://github.com/calimero-network/mero-js/commit/82927638909ce158179bceed1921edc827fc47cc))
+
 ## [29.6.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.5.0...mero-js-v29.6.0) (2026-11-05)
 
 ### Features
