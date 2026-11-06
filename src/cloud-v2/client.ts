@@ -58,6 +58,7 @@ export {
   NotFound,
   OriginNotRegistered,
   OriginTaken,
+  PasskeyUnknownHere,
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
@@ -1052,7 +1053,8 @@ export class CalimeroClient {
    * cluster's ({@link SignInOptions}), the assertion is made for that
    * origin's relying-party id, as the node answers it, and the session is
    * bound to the origin's package; an unregistered origin is refused with
-   * {@link OriginNotRegistered}.
+   * {@link OriginNotRegistered}. A passkey this cluster does not know (made
+   * on another cluster, or removed) is refused with {@link PasskeyUnknownHere}.
    */
   async signIn(passkey: PasskeyProvider, options: SignInOptions = {}): Promise<CalimeroSession> {
     const origin = this.pageOrigin(options);

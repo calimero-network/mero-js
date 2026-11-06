@@ -14,6 +14,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | Error | Status and code | Meaning |
 | --- | --- | --- |
 | `LoginRequired` | `401 UNAUTHENTICATED` | The client's own refresh did not help (or there is no refresh token): sign in again, then repeat. See [Restarts and other nodes](#restarts-and-other-nodes). |
+| `PasskeyUnknownHere` | `401 PASSKEY_UNKNOWN_HERE` | A sign-in (or confirmation) with a passkey no account of this cluster has: one made on another cluster under the same rp-id, or a removed one. Not refreshed for; offer sign-up here or the app link for the person's own cluster. See [Passkeys are per cluster](/get-started/authentication/#passkeys-are-per-cluster). |
 | `WrongNode` | `421 WRONG_NODE` | This node's release may not serve the account, and the client knows no other node that took the request: use another node of the cluster. |
 | `NotFound` | `404 NOT_FOUND` | Does not exist for this caller: a missing app and one you may not reach answer alike. |
 | `ConfirmRequired` | `412 CONFIRM_REQUIRED` | The request needs a passkey over the challenge in `details`; only reaches you from a method given no passkey. |

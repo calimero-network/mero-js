@@ -46,6 +46,32 @@ export class LoginRequired extends CalimeroError {
 }
 
 /**
+ * `401 PASSKEY_UNKNOWN_HERE`: a sign-in (or a confirmation) with a passkey no
+ * account of this cluster has. Accounts and passkeys are each cluster's own,
+ * while clusters may share one WebAuthn rp-id (every Calimero Cloud cluster
+ * uses `calimero.network`), so the browser offers a passkey made on another
+ * cluster here too; a passkey removed from its account answers the same.
+ *
+ * It is not a {@link LoginRequired}: the client does not refresh for it, and
+ * signing in again with the same passkey fails the same way. Offer to sign up
+ * on this cluster, or point the person to the app link for the cluster their
+ * account is on; the passkey's name in their password manager names that
+ * cluster (`alice · eu-shared-1`). The node does not say which cluster or
+ * account the passkey belongs to: it only knows its own.
+ */
+export class PasskeyUnknownHere extends CalimeroError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(
+      401,
+      'PASSKEY_UNKNOWN_HERE',
+      message || 'this passkey belongs to another Calimero cluster or was removed from this one',
+      details,
+    );
+    this.name = 'PasskeyUnknownHere';
+  }
+}
+
+/**
  * `421 WRONG_NODE`: this node runs a mero-tee release the account's owners have
  * not approved, so it neither issues nor takes the account's sessions. Use
  * another node of the cluster; refreshing here would not help.
@@ -396,6 +422,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
   switch (`${status} ${code}`) {
     case '401 UNAUTHENTICATED':
       return new LoginRequired(message, details);
+    case '401 PASSKEY_UNKNOWN_HERE':
+      return new PasskeyUnknownHere(message, details);
     case '421 WRONG_NODE':
       return new WrongNode(message, details);
     case '404 NOT_FOUND':
