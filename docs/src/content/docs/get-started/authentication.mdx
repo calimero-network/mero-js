@@ -26,9 +26,13 @@ by the new key, so the cluster takes the account only with that second
 assertion (the node's `412 CONFIRM_REQUIRED`, which `signUp` answers).
 
 `browserPasskey()` wraps `navigator.credentials`. Anything that implements
-`PasskeyProvider` (`create(options)` and `get(challenge, rpId, allowCredentials?)`,
-answering base64url fields) works in its place, for example a software
-authenticator in tests.
+`PasskeyProvider` (`create(options)` and
+`get(challenge, rpId, allowCredentials?, options?)`, answering base64url fields)
+works in its place, for example a software authenticator in tests. When the
+client answers a confirmation it passes `{ userVerification: 'required' }`: the
+node takes a confirmation only with the user-verified flag (PIN or biometric).
+A plain sign-in passes nothing, and `browserPasskey()` then asks for
+`preferred`. A provider that always verifies the user may ignore it.
 
 Each passkey is a device of the account. Adding or removing one is approved
 with a passkey the account already has (the new one cannot approve itself):
@@ -210,7 +214,23 @@ await client.postConfirmed(`orgs/${org}/outbound`, { package: 'com.example.kv' }
 ```
 
 A prompt the user dismisses rejects with `ConfirmCancelled`, and nothing more is
-sent. An API key can answer a confirmation only if it was created with
+sent. A prompt the browser or a password manager would not show (the page was
+not focused because an extension's popup still held it, or another prompt was
+still open) rejects with `ConfirmPromptBlocked` instead, its `cause` the
+browser's error; nothing was sent there either. The user did not decline, so
+offer to try again from a click:
+
+```ts
+try {
+  await client.callConfirmed(app, 'clear', {}, passkey);
+} catch (error) {
+  if (error instanceof ConfirmPromptBlocked) {
+    showRetry('Your password manager or browser blocked the second prompt. Click to try again.');
+  } else if (!(error instanceof ConfirmCancelled)) {
+    throw error;
+  }
+}
+``` An API key can answer a confirmation only if it was created with
 `allowConfirm`.
 
 <Aside type="note">

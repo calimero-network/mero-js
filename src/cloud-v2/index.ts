@@ -8,6 +8,7 @@ export {
   CalimeroError,
   ClusterNotUpgraded,
   ConfirmCancelled,
+  ConfirmPromptBlocked,
   ConfirmRequired,
   IdempotencyMismatch,
   LoginRequired,
@@ -82,7 +83,13 @@ export {
   recoverySeedText,
   signRecovery,
 } from './recovery.js';
-export type { AssertionJSON, PasskeyProvider, RegistrationJSON } from './passkey.js';
+export type {
+  AssertionJSON,
+  PasskeyGetOptions,
+  PasskeyProvider,
+  PasskeyUserVerification,
+  RegistrationJSON,
+} from './passkey.js';
 export {
   MAX_REPORT_PAGE,
   RELEASE_VERIFIER,

@@ -121,6 +121,21 @@ export class ConfirmCancelled extends Error {
   }
 }
 
+/**
+ * The browser or a password manager refused to show the passkey prompt a
+ * confirmation asked for: the page was not focused (an extension's popup
+ * still held focus), or another prompt was still open. The user did not
+ * decline; nothing was sent. Ask them to try again from a click, e.g. "Your
+ * password manager or browser blocked the second prompt. Click to try again."
+ * `cause` is the browser's error.
+ */
+export class ConfirmPromptBlocked extends Error {
+  constructor(readonly cause?: unknown) {
+    super('the passkey prompt was blocked by the browser or a password manager');
+    this.name = 'ConfirmPromptBlocked';
+  }
+}
+
 /** `413 ARGS_TOO_LARGE`: the call's arguments are over the node's limit; it did not run. */
 export class ArgsTooLarge extends CalimeroError {
   constructor(message: string, details: Record<string, unknown> = {}) {
