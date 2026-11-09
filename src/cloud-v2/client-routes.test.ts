@@ -121,6 +121,30 @@ describe("the console's passkey actions", () => {
     });
   });
 
+  it("signs up: the confirmation asks the passkey for user verification 'preferred', as the node checks it", async () => {
+    // core verifies the sign-up confirmation with `require_uv: false` (it made
+    // the passkey with `preferred`); `required` would leave a security key
+    // without a PIN with a passkey and no account. A value the node names wins.
+    const asked: unknown[] = [];
+    const pk: PasskeyProvider = {
+      create: async () => ({ attestationObject: 'ao', clientDataJson: 'cd' }),
+      get: async (_c, _r, _a, options) => {
+        asked.push(options?.userVerification);
+        return { credentialId: 'cred', authenticatorData: 'ad', clientDataJson: 'cd', signature: 'sig' };
+      },
+    };
+    let named: Record<string, unknown> = {};
+    node.answer = (head, body) => {
+      if (head.path === '/auth/passkey/register/begin') return { status: 200, json: { challengeId: 'r-1', options: { challenge: 'AAEC' } } };
+      if (!body.confirm) return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'sign', details: { ...CHALLENGE, ...named } } };
+      return { status: 200, json: { accountId: 'acc-1', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' } };
+    };
+    await client().signUp(pk, 'alice');
+    named = { userVerification: 'required' };
+    await client().signUp(pk, 'alice');
+    expect(asked).toEqual(['preferred', 'required']);
+  });
+
   it('signs up with an invite: the token goes on begin, finish and the confirmed retry', async () => {
     const c = client();
     node.answer = (head, body) => {

@@ -525,11 +525,13 @@ export interface SignUpPolicy {
 
 /**
  * The user verification a confirmation asks the passkey for: what the node's
- * `412` details name, if it names one WebAuthn knows, else `required` (the
- * node takes a confirmation only with the user verified).
+ * `412` details name, if it names one WebAuthn knows, else `fallback` (the
+ * flow's own requirement: `required` for a step-up, which the node takes only
+ * with the user verified; `preferred` for the sign-up confirmation, which it
+ * takes with the user present).
  */
-function userVerificationOf(named: unknown): PasskeyUserVerification {
-  return named === 'required' || named === 'preferred' || named === 'discouraged' ? named : 'required';
+function userVerificationOf(named: unknown, fallback: PasskeyUserVerification): PasskeyUserVerification {
+  return named === 'required' || named === 'preferred' || named === 'discouraged' ? named : fallback;
 }
 
 /**
@@ -1064,10 +1066,18 @@ export class CalimeroClient {
       origin,
     );
     const registration = await passkey.create(begin.options);
-    const session = await this.postConfirmed<CalimeroSession>(
+    // The node checks the sign-up's confirmation with the user present, not
+    // verified (core `api.rs`: `rp(node)`, `require_uv: false`), as it made
+    // the passkey with `preferred`: asking `required` here would refuse a
+    // security key without a PIN after it has made the passkey, leaving a
+    // passkey with no account.
+    const session = await this.confirmed<CalimeroSession>(
+      'POST',
       'auth/passkey/register/finish',
       { challengeId: begin.challengeId, registration, ...invite },
       passkey,
+      undefined,
+      'preferred',
     );
     this.useSession(session);
     return session;
@@ -1542,6 +1552,7 @@ export class CalimeroClient {
     body: Record<string, unknown>,
     passkey: PasskeyProvider | undefined,
     send: (body: Record<string, unknown>) => Promise<T> = (b) => this.json<T>(method, path, b),
+    userVerification: PasskeyUserVerification = 'required',
   ): Promise<T> {
     try {
       return await send(body);
@@ -1556,11 +1567,12 @@ export class CalimeroClient {
       };
       let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
       try {
-        // The node takes a confirmation only with the user verified (PIN or
-        // biometric); `preferred` lets a password manager skip it, and the
-        // node then refuses. A requirement the node names itself wins.
+        // A step-up is taken only with the user verified (PIN or biometric);
+        // `preferred` lets a password manager skip it, and the node then
+        // refuses. Only the sign-up confirmation passes `preferred`. A
+        // requirement the node names itself wins.
         assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials, {
-          userVerification: userVerificationOf(d.userVerification),
+          userVerification: userVerificationOf(d.userVerification, userVerification),
         });
       } catch (declined) {
         throw promptFailure(declined);
