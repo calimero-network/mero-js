@@ -1,3 +1,9 @@
+## [29.7.5](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.4...mero-js-v29.7.5) (2026-11-09)
+
+### Bug Fixes
+
+* **passkey:** always use the browser's own passkey prompt, and create ES256 passkeys ([#339](https://github.com/calimero-network/mero-js/issues/339)) ([23ac97e](https://github.com/calimero-network/mero-js/commit/23ac97e844dd7b24dbed47093f92ba96dc3591cb))
+
 ## [29.7.4](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.3...mero-js-v29.7.4) (2026-11-09)
 
 ### Bug Fixes
