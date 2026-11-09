@@ -19,6 +19,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `NotFound` | `404 NOT_FOUND` | Does not exist for this caller: a missing app and one you may not reach answer alike. |
 | `ConfirmRequired` | `412 CONFIRM_REQUIRED` | The request needs a passkey over the challenge in `details`; only reaches you from a method given no passkey. |
 | `ConfirmCancelled` | (not from the node) | The user dismissed the passkey prompt. Nothing was sent. |
+| `ConfirmPromptBlocked` | (not from the node) | The browser or a password manager refused to show the passkey prompt (the page was not focused, or another prompt was still open). The user did not decline and nothing was sent: offer to try again from a click. `cause` is the browser's error. |
 | `IdempotencyMismatch` | `409 IDEMPOTENCY_MISMATCH` | The key was used before with other arguments. |
 | `ReleaseDeadlineError` | `409 RELEASE_DEADLINE` | A release's deadline passed unapproved: no new apps, installs or upgrades until `release` (or newer) is approved. Running apps keep running. |
 | `ConsentStale` | `409 CONSENT_STALE` | What a consent page showed changed before the approval; ask for a new request. |

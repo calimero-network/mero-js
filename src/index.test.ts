@@ -27,6 +27,7 @@ describe('the package root', () => {
       'NotFound',
       'ConfirmRequired',
       'ConfirmCancelled',
+      'ConfirmPromptBlocked',
       'ArgsTooLarge',
       'IdempotencyMismatch',
       'AppError',

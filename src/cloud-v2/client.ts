@@ -16,6 +16,7 @@ import { DEFAULT_DIRECTORY, orderNodes, readDirectory } from './directory.js';
 import {
   CalimeroError,
   ConfirmCancelled,
+  ConfirmPromptBlocked,
   ConfirmRequired,
   LoginRequired,
   OriginNotRegistered,
@@ -24,7 +25,7 @@ import {
   WrongRecoveryCode,
   errorFrom,
 } from './errors.js';
-import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
+import { b64url, fromB64url, type PasskeyProvider, type PasskeyUserVerification } from './passkey.js';
 import { signRecovery } from './recovery.js';
 import {
   confirmationCode,
@@ -51,6 +52,7 @@ export {
   BadOrigin,
   CalimeroError,
   ConfirmCancelled,
+  ConfirmPromptBlocked,
   ConfirmRequired,
   IdempotencyMismatch,
   LoginRequired,
@@ -519,6 +521,34 @@ export interface SignUpPolicy {
   signUpInvites: boolean;
   /** Whether a sign-up without an invite is refused. */
   inviteRequired: boolean;
+}
+
+/**
+ * The user verification a confirmation asks the passkey for: what the node's
+ * `412` details name, if it names one WebAuthn knows, else `required` (the
+ * node takes a confirmation only with the user verified).
+ */
+function userVerificationOf(named: unknown): PasskeyUserVerification {
+  return named === 'required' || named === 'preferred' || named === 'discouraged' ? named : 'required';
+}
+
+/**
+ * What a failed confirmation prompt means to the caller. The browser or a
+ * password manager refusing to show the prompt (the page not focused because
+ * an extension's popup still holds focus, or another prompt still open) is
+ * {@link ConfirmPromptBlocked}; the user dismissing it (`NotAllowedError`, or
+ * `AbortError` when it was aborted) is {@link ConfirmCancelled}; anything
+ * else is a real failure, passed through.
+ */
+function promptFailure(error: unknown): unknown {
+  const e = error as { name?: unknown; message?: unknown } | null;
+  const name = e?.name;
+  const message = typeof e?.message === 'string' ? e.message : '';
+  if (name === 'InvalidStateError' || /not focused|already pending/i.test(message)) {
+    return new ConfirmPromptBlocked(error);
+  }
+  if (name === 'NotAllowedError' || name === 'AbortError') return new ConfirmCancelled(error);
+  return error;
 }
 
 /** One URL path segment, so an id cannot reach another route. */
@@ -1517,16 +1547,23 @@ export class CalimeroClient {
       return await send(body);
     } catch (error) {
       if (!(error instanceof ConfirmRequired) || !passkey) throw error;
-      const d = error.details as { challengeId: string; challenge: string; rpId: string; allowCredentials?: string[] };
+      const d = error.details as {
+        challengeId: string;
+        challenge: string;
+        rpId: string;
+        allowCredentials?: string[];
+        userVerification?: unknown;
+      };
       let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
       try {
-        assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials);
+        // The node takes a confirmation only with the user verified (PIN or
+        // biometric); `preferred` lets a password manager skip it, and the
+        // node then refuses. A requirement the node names itself wins.
+        assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials, {
+          userVerification: userVerificationOf(d.userVerification),
+        });
       } catch (declined) {
-        // WebAuthn rejects a prompt the user dismissed with `NotAllowedError`
-        // (`AbortError` when it was aborted); anything else is a real failure.
-        const name = (declined as { name?: unknown } | null)?.name;
-        if (name === 'NotAllowedError' || name === 'AbortError') throw new ConfirmCancelled(declined);
-        throw declined;
+        throw promptFailure(declined);
       }
       return send({ ...body, confirm: { challengeId: d.challengeId, assertion } });
     }

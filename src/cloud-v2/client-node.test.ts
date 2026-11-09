@@ -16,6 +16,7 @@ import {
   CalimeroClient,
   CalimeroError,
   ConfirmCancelled,
+  ConfirmPromptBlocked,
   ConfirmRequired,
   IdempotencyMismatch,
   LoginRequired,
@@ -101,6 +102,88 @@ describe('refusals map to typed errors in one place (D64)', () => {
     expect(error).toBeInstanceOf(ConfirmCancelled);
     expect((error as ConfirmCancelled).cause).toBe(declined);
     expect(intents()).toHaveLength(1);
+  });
+
+  it('a confirmation asks the passkey to verify the user (required), unless the node names otherwise', async () => {
+    const asked: unknown[] = [];
+    const passkey: PasskeyProvider = {
+      create: async () => ({ attestationObject: '', clientDataJson: '' }),
+      get: async (_c, _r, _a, options) => {
+        asked.push(options?.userVerification);
+        return { credentialId: 'cred', authenticatorData: 'ad', clientDataJson: 'cd', signature: 'sig' };
+      },
+    };
+    node.answer = (_, body) =>
+      body.confirm ? { status: 200, json: { index: 7, result: 'ok', events: [] } } : refused(412, 'CONFIRM_REQUIRED', challenge);
+    await client().callConfirmed('app-1', 'adminRelease', {}, passkey);
+    node.answer = (_, body) =>
+      body.confirm
+        ? { status: 200, json: { index: 8, result: 'ok', events: [] } }
+        : refused(412, 'CONFIRM_REQUIRED', { ...challenge, userVerification: 'preferred' });
+    await client().callConfirmed('app-1', 'adminRelease', {}, passkey);
+    node.answer = (_, body) =>
+      body.confirm
+        ? { status: 200, json: { index: 9, result: 'ok', events: [] } }
+        : refused(412, 'CONFIRM_REQUIRED', { ...challenge, userVerification: 'bogus' });
+    await client().callConfirmed('app-1', 'adminRelease', {}, passkey);
+    expect(asked).toEqual(['required', 'preferred', 'required']);
+  });
+
+  it('a passkey written for the three-argument get still answers a confirmation', async () => {
+    node.answer = (_, body) =>
+      body.confirm ? { status: 200, json: { index: 7, result: 'ok', events: [] } } : refused(412, 'CONFIRM_REQUIRED', challenge);
+    const legacy = {
+      create: async () => ({ attestationObject: '', clientDataJson: '' }),
+      get: async (_c: Uint8Array, _r: string, _a?: string[]) => ({
+        credentialId: 'cred',
+        authenticatorData: 'ad',
+        clientDataJson: 'cd',
+        signature: 'sig',
+      }),
+    };
+    const answer = await client().callConfirmed('app-1', 'adminRelease', {}, legacy);
+    expect(answer.result).toBe('ok');
+  });
+
+  for (const [what, blocked] of [
+    ['the page is not focused', Object.assign(new Error('The document is not focused.'), { name: 'NotAllowedError' })],
+    ['another prompt is pending', Object.assign(new Error('A request is already pending.'), { name: 'NotAllowedError' })],
+    ['the browser is in a bad state', Object.assign(new Error('x'), { name: 'InvalidStateError' })],
+    ['an extension says a request is pending', Object.assign(new Error('A request is already pending.'), { name: 'OperationError' })],
+  ] as const) {
+    it(`a prompt refused because ${what} is ConfirmPromptBlocked, not a cancel, and nothing more is sent`, async () => {
+      node.answer = () => refused(412, 'CONFIRM_REQUIRED', challenge);
+      const passkey: PasskeyProvider = {
+        create: async () => ({ attestationObject: '', clientDataJson: '' }),
+        get: async () => {
+          throw blocked;
+        },
+      };
+      const error = await failure(client().callConfirmed('app-1', 'adminRelease', {}, passkey));
+      expect(error).toBeInstanceOf(ConfirmPromptBlocked);
+      expect(error).not.toBeInstanceOf(ConfirmCancelled);
+      expect((error as ConfirmPromptBlocked).cause).toBe(blocked);
+      expect(intents()).toHaveLength(1);
+    });
+  }
+
+  it('an AbortError is still ConfirmCancelled; any other failure passes through', async () => {
+    node.answer = () => refused(412, 'CONFIRM_REQUIRED', challenge);
+    const aborted = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    const broken = new TypeError('boom');
+    for (const [thrown, expected] of [
+      [aborted, ConfirmCancelled],
+      [broken, TypeError],
+    ] as const) {
+      const passkey: PasskeyProvider = {
+        create: async () => ({ attestationObject: '', clientDataJson: '' }),
+        get: async () => {
+          throw thrown;
+        },
+      };
+      const error = await failure(client().callConfirmed('app-1', 'adminRelease', {}, passkey));
+      expect(error).toBeInstanceOf(expected);
+    }
   });
 
   it('413 ARGS_TOO_LARGE is ArgsTooLarge', async () => {
