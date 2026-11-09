@@ -1,3 +1,9 @@
+## [29.7.6](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.5...mero-js-v29.7.6) (2026-11-09)
+
+### Bug Fixes
+
+* **passkey:** ask the sign-up confirmation for user verification 'preferred', not 'required' ([#340](https://github.com/calimero-network/mero-js/issues/340)) ([1eecdb0](https://github.com/calimero-network/mero-js/commit/1eecdb0121e3efbafeb0c6e7bbe52b63aa2fb0ec))
+
 ## [29.7.5](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.4...mero-js-v29.7.5) (2026-11-09)
 
 ### Bug Fixes
