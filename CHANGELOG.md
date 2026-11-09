@@ -1,3 +1,9 @@
+## [29.7.4](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.3...mero-js-v29.7.4) (2026-11-09)
+
+### Bug Fixes
+
+* **passkey:** require user verification on confirm prompts; tell a blocked prompt from a cancel ([#338](https://github.com/calimero-network/mero-js/issues/338)) ([e56d135](https://github.com/calimero-network/mero-js/commit/e56d1355da6e28c4ae16aa92be46c5287a541e02))
+
 ## [29.7.3](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.2...mero-js-v29.7.3) (2026-11-09)
 
 ### Bug Fixes

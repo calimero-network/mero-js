@@ -71,6 +71,26 @@ describe("browserPasskey", () => {
     expect(browser).toHaveBeenCalledTimes(1);
   });
 
+  it("asks for user verification when told to, and prefers it otherwise", async () => {
+    const browser = vi.fn(async (_o: unknown) => assertion());
+    page({ browser });
+    await browserPasskey().get(new Uint8Array([9]), "calimero.network");
+    await browserPasskey().get(
+      new Uint8Array([9]),
+      "calimero.network",
+      ["AQID"],
+      {
+        userVerification: "required",
+      },
+    );
+    const uv = browser.mock.calls.map(
+      ([o]) =>
+        (o as { publicKey: { userVerification: string } }).publicKey
+          .userVerification,
+    );
+    expect(uv).toEqual(["preferred", "required"]);
+  });
+
   it("uses navigator.credentials where there is no CredentialsContainer", async () => {
     const get = vi.fn(async () => assertion());
     vi.stubGlobal("CredentialsContainer", undefined);

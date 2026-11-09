@@ -17,15 +17,34 @@ export interface AssertionJSON {
   signature: string;
 }
 
+/** How strongly an assertion must verify the user (WebAuthn's `UserVerificationRequirement`). */
+export type PasskeyUserVerification = "required" | "preferred" | "discouraged";
+
+/** What a confirmation asks of the passkey beyond the challenge. */
+export interface PasskeyGetOptions {
+  /**
+   * `"required"` for a confirmation (`412 CONFIRM_REQUIRED`): the node
+   * accepts only an assertion with the user-verified flag (PIN or
+   * biometric). Absent for a plain sign-in, where `"preferred"` is enough.
+   */
+  userVerification?: PasskeyUserVerification;
+}
+
 /** Something that holds a passkey. */
 export interface PasskeyProvider {
   /** Answer `navigator.credentials.create` for the node's options. */
   create(options: Record<string, unknown>): Promise<RegistrationJSON>;
-  /** Sign `challenge` (an assertion), optionally limited to `allowCredentials`. */
+  /**
+   * Sign `challenge` (an assertion), optionally limited to
+   * `allowCredentials`. `options.userVerification` is `"required"` when the
+   * client answers a confirmation; a provider that always verifies the user
+   * may ignore it.
+   */
   get(
     challenge: Uint8Array,
     rpId: string,
     allowCredentials?: string[],
+    options?: PasskeyGetOptions,
   ): Promise<AssertionJSON>;
 }
 
@@ -136,12 +155,12 @@ export function browserPasskey(): PasskeyProvider {
         clientDataJson: b64url(new Uint8Array(r.clientDataJSON)),
       };
     },
-    async get(challenge, rpId, allowCredentials) {
+    async get(challenge, rpId, allowCredentials, options) {
       const cred = (await ask("get", {
         publicKey: {
           challenge: buf(challenge),
           rpId,
-          userVerification: "preferred",
+          userVerification: options?.userVerification ?? "preferred",
           allowCredentials: (allowCredentials ?? []).map((id) => ({
             type: "public-key",
             id: buf(fromB64url(id)),
