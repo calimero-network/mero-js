@@ -1,3 +1,9 @@
+## [29.7.1](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.0...mero-js-v29.7.1) (2026-11-09)
+
+### Bug Fixes
+
+* **fleet:** judge each pnpm catalog on its own version line ([#335](https://github.com/calimero-network/mero-js/issues/335)) ([2ba3961](https://github.com/calimero-network/mero-js/commit/2ba3961baf358e0f7bd6faa404dfc3a9e80bdeb3)), closes [apps#765](https://github.com/calimero-network/apps/issues/765)
+
 ## [29.7.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.6.0...mero-js-v29.7.0) (2026-11-06)
 
 ### Features
