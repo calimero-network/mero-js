@@ -1,3 +1,9 @@
+## [29.7.7](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.6...mero-js-v29.7.7) (2026-11-09)
+
+### Bug Fixes
+
+* **passkey:** sign out locally when logout fails; let a signal cancel a passkey prompt ([#341](https://github.com/calimero-network/mero-js/issues/341)) ([363f371](https://github.com/calimero-network/mero-js/commit/363f37156658d46d35fa499865b4a45cbba9c4df))
+
 ## [29.7.6](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.5...mero-js-v29.7.6) (2026-11-09)
 
 ### Bug Fixes
