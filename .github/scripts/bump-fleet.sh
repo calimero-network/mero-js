@@ -532,20 +532,27 @@ find_lock_root() {
 # (`apps/*`) and app-registry (`packages/*` + `shared`) have no manifest outside
 # their globs, and mero-chat-pwa has no workspace file at all and so still takes
 # the `find` path below.
+#
+# Each glob is read as a line, never word-split out of `$(...)`: unquoted, that
+# expanded `packages/*` against the directory the script was RUN from, so a run
+# from a checkout with a `packages/` of its own looked for its members in the
+# consumer. And every test is an `if`, so a last member without a package.json
+# is not the function's exit status, which under `set -e` ended the whole run
+# with 1 and no output.
 workspace_manifests() {
   local ws="$1" glob d
-  [ -f "$DIR/package.json" ] && printf '%s\n' "$DIR/package.json"
-  for glob in $(perl -ne '
+  if [ -f "$DIR/package.json" ]; then printf '%s\n' "$DIR/package.json"; fi
+  while IFS= read -r glob; do
+    for d in $DIR/$glob; do
+      if [ -f "$d/package.json" ]; then printf '%s\n' "$d/package.json"; fi
+    done
+  done < <(perl -ne '
       if (m/^packages:\s*$/) { $in = 1; next }
       if ($in) {
         last if m/^\S/;
         if (m/^\s*-\s*["\x27]?([^"\x27#\s]+)/) { print "$1\n" }
       }
-    ' "$ws"); do
-    for d in $DIR/$glob; do
-      [ -f "$d/package.json" ] && printf '%s\n' "$d/package.json"
-    done
-  done
+    ' "$ws")
 }
 
 # A pnpm CATALOG is the npm half of what [workspace.dependencies] is to cargo,

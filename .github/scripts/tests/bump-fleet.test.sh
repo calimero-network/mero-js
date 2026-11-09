@@ -331,6 +331,34 @@ expect_exit 0 "a literal pin beside a peer range moves" \
 expect_file "$D/lib/package.json" '"@calimero-network/mero-js": "^29.7.0"' "  devDependency moved, ^ kept"
 expect_file "$D/lib/package.json" '"@calimero-network/mero-js": ">=29.3.0"' "  peer range left alone"
 
+# A workspace's member globs are the consumer's, whatever directory the script
+# is run from. They used to be word-split out of `$(...)` unquoted, so
+# `packages/*` expanded against the CURRENT directory: run from a checkout with
+# a `packages/` of its own (design-system's), the members looked for were that
+# checkout's names inside the consumer. And a last member with no package.json
+# was the listing's exit status, which under `set -e` ended the run with 1 and
+# no output.
+D=$(mkfixture member-globs); mkdir -p "$D/packages/connect" "$D/packages/zz-no-manifest"
+cat > "$D/pnpm-workspace.yaml" <<'EOF'
+packages:
+  - "packages/*"
+EOF
+cat > "$D/packages/connect/package.json" <<'EOF'
+{
+  "name": "connect",
+  "dependencies": {
+    "@calimero-network/mero-js": "^29.6.0"
+  }
+}
+EOF
+touch "$D/pnpm-lock.yaml"
+commit "$D"
+CWD="$ROOT/elsewhere"; mkdir -p "$CWD/packages/ui"
+expect_exit 0 "member globs are expanded in the consumer, not the current directory" \
+  sh -c 'cd "$1" && shift && exec bash "$@"' _ "$CWD" "$BUMP" --surface npm \
+  --pkg @calimero-network/mero-js=29.7.0 --dir "$D" --no-lock
+expect_file "$D/packages/connect/package.json" '"@calimero-network/mero-js": "^29.7.0"' "  the member is moved"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
