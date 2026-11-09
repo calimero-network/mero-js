@@ -65,6 +65,44 @@ const RUN: UpgradeRun = {
 };
 
 describe("the console's passkey actions", () => {
+  it("threads a sign-in's and a sign-up's signal to every passkey prompt, and its abort is a cancel", async () => {
+    const signals: Array<[string, AbortSignal | undefined]> = [];
+    const pk: PasskeyProvider = {
+      create: async (_o, o) => {
+        signals.push(['create', o?.signal]);
+        return { attestationObject: 'ao', clientDataJson: 'cd' };
+      },
+      get: async (_c, _r, _a, o) => {
+        signals.push(['get', o?.signal]);
+        if (o?.signal?.aborted) throw Object.assign(new Error('cancelled'), { name: 'NotAllowedError' });
+        return { credentialId: 'cred', authenticatorData: 'ad', clientDataJson: 'cd', signature: 'sig' };
+      },
+    };
+    const session = { accountId: 'acc-1', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' };
+    node.answer = (head, body) => {
+      if (head.path === '/auth/passkey/login/begin') return { status: 200, json: { challengeId: 'l-1', options: CHALLENGE } };
+      if (head.path === '/auth/passkey/register/begin') return { status: 200, json: { challengeId: 'r-1', options: { challenge: 'AAEC' } } };
+      if (head.path === '/auth/passkey/register/finish' && !body.confirm) {
+        return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'sign', details: CHALLENGE } };
+      }
+      return { status: 200, json: session };
+    };
+    const controller = new AbortController();
+    await client().signIn(pk, { signal: controller.signal });
+    await client().signUp(pk, 'alice', { signal: controller.signal });
+    expect(signals).toEqual([
+      ['get', controller.signal],
+      ['create', controller.signal],
+      ['get', controller.signal],
+    ]);
+    // Aborted at the sign-up's confirmation: the prompt's cancel is ConfirmCancelled.
+    controller.abort();
+    const error = await client()
+      .signUp({ ...pk, create: async () => ({ attestationObject: 'ao', clientDataJson: 'cd' }) }, 'alice', { signal: controller.signal })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConfirmCancelled);
+  });
+
   it('signs in, creates an org and installs a package', async () => {
     const c = client();
     node.answer = (head) => {

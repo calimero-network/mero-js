@@ -495,6 +495,13 @@ export interface ServedOrigins {
  */
 export interface SignInOptions {
   origin?: string | null;
+  /**
+   * Closes an open passkey prompt when it aborts (a Cancel button): the
+   * ceremony then rejects as a dismissed prompt does (`NotAllowedError`; in a
+   * sign-up's confirmation, {@link ConfirmCancelled}). Given to the
+   * {@link PasskeyProvider} as `signal`.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -1065,7 +1072,8 @@ export class CalimeroClient {
       origin === undefined ? { name, ...invite } : { name, origin, ...invite },
       origin,
     );
-    const registration = await passkey.create(begin.options);
+    const signal = options.signal;
+    const registration = await (signal ? passkey.create(begin.options, { signal }) : passkey.create(begin.options));
     // The node checks the sign-up's confirmation with the user present, not
     // verified (core `api.rs`: `rp(node)`, `require_uv: false`), as it made
     // the passkey with `preferred`: asking `required` here would refuse a
@@ -1078,6 +1086,7 @@ export class CalimeroClient {
       passkey,
       undefined,
       'preferred',
+      signal,
     );
     this.useSession(session);
     return session;
@@ -1103,7 +1112,10 @@ export class CalimeroClient {
       options: { challenge: string; rpId?: string; rp?: { id?: string } };
     }>('auth/passkey/login/begin', origin === undefined ? undefined : { origin }, origin);
     const rpId = begin.options.rpId ?? begin.options.rp?.id ?? '';
-    const assertion = await passkey.get(fromB64url(begin.options.challenge), rpId);
+    const challenge = fromB64url(begin.options.challenge);
+    const assertion = await (options.signal
+      ? passkey.get(challenge, rpId, undefined, { signal: options.signal })
+      : passkey.get(challenge, rpId));
     const session = await this.post<CalimeroSession>('auth/passkey/login/finish', {
       challengeId: begin.challengeId,
       assertion,
@@ -1181,17 +1193,33 @@ export class CalimeroClient {
     return session;
   }
 
+  /**
+   * End this session. The client is signed out whether or not the node
+   * answers: the revoke (`POST /auth/logout`) is attempted, and its failure
+   * (the node unreachable, say) is thrown after the session is dropped, so a
+   * caller can say the server may still hold it, but no request after this
+   * one carries its token.
+   */
   async signOut(): Promise<void> {
-    await this.post('auth/logout');
-    this.auth = undefined;
-    this.current = undefined;
+    await this.signingOut('auth/logout');
   }
 
-  /** End every session of the signed-in account, on every device, this one too. */
+  /**
+   * End every session of the signed-in account, on every device, this one
+   * too. Like {@link signOut}, this client is signed out even when the
+   * request fails, and the failure is thrown.
+   */
   async signOutEverywhere(): Promise<void> {
-    await this.post('auth/logout-all');
-    this.auth = undefined;
-    this.current = undefined;
+    await this.signingOut('auth/logout-all');
+  }
+
+  private async signingOut(path: string): Promise<void> {
+    try {
+      await this.post(path);
+    } finally {
+      this.auth = undefined;
+      this.current = undefined;
+    }
   }
 
   /** Who the credential is: the account, how it signed in, and the package (`app`) and `origin` a session is bound to. */
@@ -1553,6 +1581,7 @@ export class CalimeroClient {
     passkey: PasskeyProvider | undefined,
     send: (body: Record<string, unknown>) => Promise<T> = (b) => this.json<T>(method, path, b),
     userVerification: PasskeyUserVerification = 'required',
+    signal?: AbortSignal,
   ): Promise<T> {
     try {
       return await send(body);
@@ -1573,6 +1602,7 @@ export class CalimeroClient {
         // requirement the node names itself wins.
         assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials, {
           userVerification: userVerificationOf(d.userVerification, userVerification),
+          ...(signal ? { signal } : {}),
         });
       } catch (declined) {
         throw promptFailure(declined);
