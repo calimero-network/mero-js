@@ -23,9 +23,11 @@ export type PasskeyUserVerification = "required" | "preferred" | "discouraged";
 /** What a confirmation asks of the passkey beyond the challenge. */
 export interface PasskeyGetOptions {
   /**
-   * `"required"` for a confirmation (`412 CONFIRM_REQUIRED`): the node
-   * accepts only an assertion with the user-verified flag (PIN or
-   * biometric). Absent for a plain sign-in, where `"preferred"` is enough.
+   * `"required"` for a step-up confirmation (`412 CONFIRM_REQUIRED`): the
+   * node accepts only an assertion with the user-verified flag (PIN or
+   * biometric). `"preferred"` for the sign-up's confirmation, which the node
+   * takes with the user present. Absent for a plain sign-in, where
+   * `"preferred"` is enough.
    */
   userVerification?: PasskeyUserVerification;
 }
@@ -37,8 +39,8 @@ export interface PasskeyProvider {
   /**
    * Sign `challenge` (an assertion), optionally limited to
    * `allowCredentials`. `options.userVerification` is `"required"` when the
-   * client answers a confirmation; a provider that always verifies the user
-   * may ignore it.
+   * client answers a step-up confirmation (`"preferred"` for the sign-up's);
+   * a provider that always verifies the user may ignore it.
    */
   get(
     challenge: Uint8Array,

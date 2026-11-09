@@ -29,10 +29,13 @@ assertion (the node's `412 CONFIRM_REQUIRED`, which `signUp` answers).
 `PasskeyProvider` (`create(options)` and
 `get(challenge, rpId, allowCredentials?, options?)`, answering base64url fields)
 works in its place, for example a software authenticator in tests. When the
-client answers a confirmation it passes `{ userVerification: 'required' }`: the
-node takes a confirmation only with the user-verified flag (PIN or biometric).
-A plain sign-in passes nothing, and `browserPasskey()` then asks for
-`preferred`. A provider that always verifies the user may ignore it.
+client answers a confirmation (below) it passes `{ userVerification: 'required' }`:
+the node takes those only with the user-verified flag (PIN or biometric). The
+sign-up's own confirmation is the exception: the node takes it with the user
+present, as it made the passkey, so `signUp` passes `preferred` and a security
+key without a PIN can still sign up. A plain sign-in passes nothing, and
+`browserPasskey()` then asks for `preferred`. A provider that always verifies
+the user may ignore it.
 
 Each passkey is a device of the account. Adding or removing one is approved
 with a passkey the account already has (the new one cannot approve itself):
@@ -230,7 +233,9 @@ try {
     throw error;
   }
 }
-``` An API key can answer a confirmation only if it was created with
+```
+
+An API key can answer a confirmation only if it was created with
 `allowConfirm`.
 
 <Aside type="note">
