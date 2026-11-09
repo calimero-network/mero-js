@@ -1,3 +1,9 @@
+## [29.7.3](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.2...mero-js-v29.7.3) (2026-11-09)
+
+### Bug Fixes
+
+* **passkey:** ask the browser directly when an extension refuses a prompt as already pending ([#337](https://github.com/calimero-network/mero-js/issues/337)) ([51513fd](https://github.com/calimero-network/mero-js/commit/51513fdff177518d73ce55e0d634ae5363be123f))
+
 ## [29.7.2](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.1...mero-js-v29.7.2) (2026-11-09)
 
 ### Bug Fixes
