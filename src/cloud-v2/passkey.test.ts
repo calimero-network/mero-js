@@ -133,3 +133,71 @@ describe("browserPasskey.create", () => {
     ).toEqual([-8]);
   });
 });
+
+describe("browserPasskey with an AbortSignal", () => {
+  /** A browser prompt that stays open until its `signal` aborts, then rejects as WebAuthn does. */
+  const openPrompt = (seen: unknown[]) => (o: unknown) => {
+    seen.push(o);
+    const signal = (o as { signal?: AbortSignal }).signal;
+    return new Promise((_, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason));
+    });
+  };
+  const creation = {
+    challenge: "AA",
+    rp: { id: "calimero.network", name: "Calimero" },
+    user: { id: "AA", name: "ana", displayName: "ana" },
+    pubKeyCredParams: [{ type: "public-key" as const, alg: -7 }],
+  };
+
+  it("passes the signal to the browser's get, and an abort rejects as cancelled", async () => {
+    const seen: unknown[] = [];
+    page({ browser: openPrompt(seen) });
+    const controller = new AbortController();
+    const pending = browserPasskey()
+      .get(new Uint8Array([9]), "calimero.network", undefined, {
+        signal: controller.signal,
+      })
+      .catch((e: unknown) => e);
+    controller.abort();
+    const error = (await pending) as Error;
+    expect((seen[0] as { signal?: AbortSignal }).signal).toBe(controller.signal);
+    expect(error.name).toBe("NotAllowedError");
+    expect(error.message).toBe("passkey sign-in was cancelled");
+    expect((error.cause as Error).name).toBe("AbortError");
+  });
+
+  it("passes the signal to the browser's create, and an abort rejects as cancelled", async () => {
+    const seen: unknown[] = [];
+    page({ browser: openPrompt(seen) });
+    const controller = new AbortController();
+    const pending = browserPasskey()
+      .create(creation, { signal: controller.signal })
+      .catch((e: unknown) => e);
+    controller.abort(new Error("closed by the page"));
+    const error = (await pending) as Error;
+    expect((seen[0] as { signal?: AbortSignal }).signal).toBe(controller.signal);
+    // ES256-first still applies with a signal.
+    expect(
+      (seen[0] as { publicKey: { pubKeyCredParams: unknown[] } }).publicKey
+        .pubKeyCredParams,
+    ).toEqual([{ type: "public-key", alg: -7 }]);
+    expect(error.name).toBe("NotAllowedError");
+    expect(error.message).toBe("passkey creation was cancelled");
+  });
+
+  it("maps a bare AbortError to the same cancel, and sends no signal key when none is given", async () => {
+    const seen: unknown[] = [];
+    page({
+      browser: async (o) => {
+        seen.push(o);
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      },
+    });
+    const error = (await browserPasskey()
+      .get(new Uint8Array([9]), "calimero.network")
+      .catch((e: unknown) => e)) as Error;
+    expect(error.name).toBe("NotAllowedError");
+    expect(seen[0]).not.toHaveProperty("signal");
+  });
+});

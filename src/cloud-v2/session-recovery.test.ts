@@ -205,3 +205,24 @@ describe('421 WRONG_NODE', () => {
     expect(at(a, '/auth/refresh')).toHaveLength(1);
   });
 });
+
+describe('sign-out when the node cannot be reached', () => {
+  for (const [method, path] of [
+    ['signOut', '/auth/logout'],
+    ['signOutEverywhere', '/auth/logout-all'],
+  ] as const) {
+    it(`${method} still clears the session, and reports the failure`, async () => {
+      a.answer = (head) => (head.path === path ? { status: 200, drop: true } : ok({}));
+      const client = signedIn();
+      const error = await failure(client[method]());
+      expect(error).toBeDefined();
+      // The revoke was attempted with the session's token.
+      expect(at(a, path).length).toBeGreaterThanOrEqual(1);
+      expect(bearer(at(a, path)[0].head)).toBe(`Bearer ${OLD.sessionToken}`);
+      expect(client.session).toBeUndefined();
+      // The next request goes without the old bearer token.
+      await client.get('health');
+      expect(bearer(at(a, '/health')[0].head)).toBeUndefined();
+    });
+  }
+});

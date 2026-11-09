@@ -85,6 +85,7 @@ export {
 } from './recovery.js';
 export type {
   AssertionJSON,
+  PasskeyCreateOptions,
   PasskeyGetOptions,
   PasskeyProvider,
   PasskeyUserVerification,

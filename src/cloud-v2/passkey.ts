@@ -30,17 +30,34 @@ export interface PasskeyGetOptions {
    * `"preferred"` is enough.
    */
   userVerification?: PasskeyUserVerification;
+  /**
+   * Closes the open prompt when it aborts (a Cancel button, a page leaving).
+   * The browser provider then rejects as a dismissed prompt does
+   * (`NotAllowedError`), so the caller treats it as a cancel.
+   */
+  signal?: AbortSignal;
+}
+
+/** What a passkey creation takes beyond the node's options. */
+export interface PasskeyCreateOptions {
+  /** As {@link PasskeyGetOptions.signal}: aborting closes the prompt, rejecting as a cancel (`NotAllowedError`). */
+  signal?: AbortSignal;
 }
 
 /** Something that holds a passkey. */
 export interface PasskeyProvider {
-  /** Answer `navigator.credentials.create` for the node's options. */
-  create(options: Record<string, unknown>): Promise<RegistrationJSON>;
+  /**
+   * Answer `navigator.credentials.create` for the node's options.
+   * `createOptions.signal` closes the prompt when it aborts; a provider with
+   * no prompt to close may ignore it.
+   */
+  create(options: Record<string, unknown>, createOptions?: PasskeyCreateOptions): Promise<RegistrationJSON>;
   /**
    * Sign `challenge` (an assertion), optionally limited to
    * `allowCredentials`. `options.userVerification` is `"required"` when the
    * client answers a step-up confirmation (`"preferred"` for the sign-up's);
    * a provider that always verifies the user may ignore it.
+   * `options.signal` closes the prompt when it aborts.
    */
   get(
     challenge: Uint8Array,
@@ -94,6 +111,8 @@ type Ask = (
 async function ask(
   method: "create" | "get",
   options: CredentialCreationOptions | CredentialRequestOptions,
+  signal: AbortSignal | undefined,
+  what: string,
 ): Promise<Credential | null> {
   const container = navigator.credentials;
   const own = (
@@ -102,7 +121,17 @@ async function ask(
     }
   ).CredentialsContainer?.prototype?.[method] as Ask | undefined;
   const call = own ?? (container[method] as Ask);
-  return call.call(container, options);
+  try {
+    return await call.call(container, signal ? { ...options, signal } : options);
+  } catch (error) {
+    // An aborted `signal` rejects with its reason (an `AbortError` unless the
+    // caller gave another): the prompt was closed on purpose, so it reads as
+    // a dismissed one.
+    if (signal?.aborted || (error as { name?: unknown } | null)?.name === "AbortError") {
+      throw Object.assign(cancelled(`${what} was cancelled`), { cause: error });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -125,7 +154,7 @@ export function es256First(
 /** The platform authenticator (Touch ID, Face ID, Windows Hello, a security key, a synced passkey). */
 export function browserPasskey(): PasskeyProvider {
   return {
-    async create(options) {
+    async create(options, createOptions) {
       const o = options as {
         challenge: string;
         rp: { id: string; name: string };
@@ -149,7 +178,7 @@ export function browserPasskey(): PasskeyProvider {
           attestation: "none",
           timeout: o.timeout,
         },
-      })) as PublicKeyCredential | null;
+      }, createOptions?.signal, "passkey creation")) as PublicKeyCredential | null;
       if (!cred) throw cancelled("passkey creation was cancelled");
       const r = cred.response as AuthenticatorAttestationResponse;
       return {
@@ -168,7 +197,7 @@ export function browserPasskey(): PasskeyProvider {
             id: buf(fromB64url(id)),
           })),
         },
-      })) as PublicKeyCredential | null;
+      }, options?.signal, "passkey sign-in")) as PublicKeyCredential | null;
       if (!cred) throw cancelled("passkey sign-in was cancelled");
       const r = cred.response as AuthenticatorAssertionResponse;
       return {
