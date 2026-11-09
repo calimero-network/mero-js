@@ -55,16 +55,16 @@ function cancelled(message: string): Error {
 }
 
 /**
- * Ask `navigator.credentials[method]`. When a password manager extension has
- * replaced it on the page and answers "A request is already pending" with no
- * request of the browser's open, ask the browser's own
- * `CredentialsContainer.prototype[method]` once instead.
- *
- * LastPass does this: after one passkey prompt it refuses every later one in
- * the tab, and a sign-up takes two (create, then approve with the new
- * passkey). The browser's own API, asked directly, shows its prompt (iCloud
- * Keychain, Google Password Manager, Windows Hello, a phone). An extension
- * that answers normally is still used.
+ * Ask the browser's own WebAuthn API (`CredentialsContainer.prototype[method]`),
+ * not whatever a password manager extension put on `navigator.credentials`.
+ * Calimero's passkeys live in the platform's authenticators: iCloud Keychain
+ * and Touch ID, Google Password Manager, Windows Hello, a phone over a QR code,
+ * a security key. Extensions sit in between and broke sign-up: LastPass, after
+ * creating a passkey, opened a hidden request of its own on the next prompt,
+ * so the browser refused it ("A request is already pending") and every try
+ * left a passkey with no account. A passkey kept only in an extension's vault
+ * is therefore not offered here. Where the browser has no
+ * `CredentialsContainer` (tests, older runtimes), `navigator.credentials` is used.
  */
 type Ask = (
   options: CredentialCreationOptions | CredentialRequestOptions,
@@ -75,25 +75,30 @@ async function ask(
   options: CredentialCreationOptions | CredentialRequestOptions,
 ): Promise<Credential | null> {
   const container = navigator.credentials;
-  const page = container[method] as Ask;
-  try {
-    return await page.call(container, options);
-  } catch (error) {
-    const own = (
-      globalThis as unknown as {
-        CredentialsContainer?: { prototype: Record<string, unknown> };
-      }
-    ).CredentialsContainer?.prototype?.[method] as Ask | undefined;
-    if (!own || own === page || !stuck(error)) throw error;
-    return own.call(container, options);
-  }
+  const own = (
+    globalThis as unknown as {
+      CredentialsContainer?: { prototype: Record<string, unknown> };
+    }
+  ).CredentialsContainer?.prototype?.[method] as Ask | undefined;
+  const call = own ?? (container[method] as Ask);
+  return call.call(container, options);
 }
 
-/** The refusal of a prompt while another is open, as browsers and extensions word it. */
-function stuck(error: unknown): boolean {
-  return /request is already pending/i.test(
-    (error as { message?: unknown } | null)?.message?.toString() ?? "",
-  );
+/**
+ * The node's algorithms with ES256 alone when it is among them. Some password
+ * managers make an Ed25519 (EdDSA, -8) passkey when the site offers it and
+ * then fail to sign with it: the account's create succeeds and its very next
+ * prompt fails. LastPass did this on Calimero's sign-up (create, then approve
+ * at once), refusing the approval as "A request is already pending"; Proton
+ * Pass answers UnsupportedAlgorithm. ES256 is what every authenticator makes,
+ * and the node checks it as it checks EdDSA, so a passkey already made with
+ * EdDSA still signs in.
+ */
+export function es256First(
+  params: Array<{ type: "public-key"; alg: number }>,
+): Array<{ type: "public-key"; alg: number }> {
+  const es256 = params.filter((p) => p.alg === -7);
+  return es256.length ? es256 : params;
 }
 
 /** The platform authenticator (Touch ID, Face ID, Windows Hello, a security key, a synced passkey). */
@@ -114,7 +119,7 @@ export function browserPasskey(): PasskeyProvider {
           challenge: buf(fromB64url(o.challenge)),
           rp: o.rp,
           user: { ...o.user, id: buf(fromB64url(o.user.id)) },
-          pubKeyCredParams: o.pubKeyCredParams,
+          pubKeyCredParams: es256First(o.pubKeyCredParams),
           excludeCredentials: (o.excludeCredentials ?? []).map((c) => ({
             type: c.type,
             id: buf(fromB64url(c.id)),

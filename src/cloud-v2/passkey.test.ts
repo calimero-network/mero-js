@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { browserPasskey, b64url } from "./passkey";
+import { browserPasskey, b64url, es256First } from "./passkey";
 
 // A page where an extension (LastPass) has replaced navigator.credentials:
 // after one prompt it answers every later one in the tab with "A request is
@@ -45,45 +45,71 @@ function page({
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browserPasskey", () => {
-  it("asks the browser's own API when an extension refuses with a request already pending", async () => {
+  it("asks the browser's own API, never an extension's replacement of navigator.credentials", async () => {
     const browser = vi.fn(async () => assertion());
-    page({ extension: async () => Promise.reject(pending()), browser });
+    const extension = vi.fn(async () => assertion());
+    page({ extension, browser });
     const out = await browserPasskey().get(
       new Uint8Array([9]),
       "calimero.network",
     );
     expect(out.credentialId).toBe(b64url(new Uint8Array([1, 2, 3])));
     expect(browser).toHaveBeenCalledTimes(1);
+    expect(extension).not.toHaveBeenCalled();
   });
 
-  it("uses an extension that answers", async () => {
-    const browser = vi.fn(async () => assertion());
-    const extension = vi.fn(async () => assertion());
-    page({ extension, browser });
-    await browserPasskey().get(new Uint8Array([9]), "calimero.network");
-    expect(extension).toHaveBeenCalledTimes(1);
-    expect(browser).not.toHaveBeenCalled();
-  });
-
-  it("passes any other refusal through, and does not ask twice", async () => {
-    const browser = vi.fn(async () => assertion());
+  it("passes the browser's refusal through, asked once", async () => {
     const declined = Object.assign(
       new Error("The operation either timed out or was not allowed."),
       { name: "NotAllowedError" },
     );
-    page({ extension: async () => Promise.reject(declined), browser });
-    await expect(
-      browserPasskey().get(new Uint8Array([9]), "calimero.network"),
-    ).rejects.toBe(declined);
-    expect(browser).not.toHaveBeenCalled();
-  });
-
-  it("with no extension, the browser's own refusal stands (nothing else to ask)", async () => {
-    const browser = vi.fn(async () => Promise.reject(pending()));
+    const browser = vi.fn(async () => Promise.reject(declined));
     page({ browser });
     await expect(
       browserPasskey().get(new Uint8Array([9]), "calimero.network"),
-    ).rejects.toThrow("already pending");
+    ).rejects.toBe(declined);
     expect(browser).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses navigator.credentials where there is no CredentialsContainer", async () => {
+    const get = vi.fn(async () => assertion());
+    vi.stubGlobal("CredentialsContainer", undefined);
+    vi.stubGlobal("navigator", { credentials: { get } });
+    await browserPasskey().get(new Uint8Array([9]), "calimero.network");
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("browserPasskey.create", () => {
+  it("asks the authenticator for ES256 only, never Ed25519 a password manager cannot sign with later", async () => {
+    let asked: Array<{ alg: number }> = [];
+    const bytes = new Uint8Array([1]).buffer;
+    const made = {
+      response: { attestationObject: bytes, clientDataJSON: bytes },
+    };
+    page({
+      browser: async (o) => {
+        asked = (
+          o as { publicKey: { pubKeyCredParams: Array<{ alg: number }> } }
+        ).publicKey.pubKeyCredParams;
+        return made;
+      },
+    });
+    await browserPasskey().create({
+      challenge: "AA",
+      rp: { id: "calimero.network", name: "Calimero" },
+      user: { id: "AA", name: "ana", displayName: "ana" },
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -8 },
+      ],
+    });
+    expect(asked.map((p) => p.alg)).toEqual([-7]);
+  });
+
+  it("keeps what the node offers when ES256 is not among it", () => {
+    expect(
+      es256First([{ type: "public-key", alg: -8 }]).map((p) => p.alg),
+    ).toEqual([-8]);
   });
 });
