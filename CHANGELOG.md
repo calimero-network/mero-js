@@ -1,3 +1,9 @@
+## [29.7.2](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.1...mero-js-v29.7.2) (2026-11-09)
+
+### Bug Fixes
+
+* **fleet:** expand workspace member globs in the consumer, whatever the current directory ([#336](https://github.com/calimero-network/mero-js/issues/336)) ([fdf02ba](https://github.com/calimero-network/mero-js/commit/fdf02bace8a4949e1e94775200304f612cf1f311))
+
 ## [29.7.1](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.0...mero-js-v29.7.1) (2026-11-09)
 
 ### Bug Fixes
