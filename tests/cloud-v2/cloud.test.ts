@@ -5,10 +5,12 @@ import {
   BadOrigin,
   CalimeroClient,
   CalimeroError,
+  type CallResult,
   ConfirmRequired,
   LoginRequired,
   NotFound,
   OriginNotRegistered,
+  type ViewResult,
 } from '../../src/cloud-v2/index.js';
 import { KV_STORE_WASM, startCluster, type LocalCluster } from './cluster.js';
 import { publisher, signedMpk, variant } from './mpk.js';
@@ -366,6 +368,34 @@ describe('Calimero 1.0 cluster', () => {
     await expect(bob.orgMembersSecurity(org)).rejects.toMatchObject({ status: 403 });
     await alice.removeMember(org, bobId, alicePk);
     expect((await alice.orgMembersSecurity(org)).map((m) => m.account)).not.toContain(bobId);
+  });
+
+  it("serves an app's OpenAPI document and runs its methods by their own routes, on a node that has them (core feat/app-openapi)", async () => {
+    const [alice, pk] = await person(0, 'alice-openapi');
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const app = await alice.createApp('openapi-kv', bundle);
+    let doc;
+    try {
+      doc = await alice.appOpenApi(app);
+    } catch (error) {
+      // merod before the route: a bare `404`.
+      if (!(error instanceof CalimeroError && (error.status === 404 || error.status === 405)) || error instanceof NotFound) {
+        throw error;
+      }
+      return;
+    }
+    expect(doc.openapi).toBe('3.1.0');
+    const paths = doc.paths as Record<string, Record<string, { operationId: string; tags: string[] }>>;
+    expect(paths['/apps/{app}/methods/set']?.post).toMatchObject({ operationId: 'set', tags: ['call'] });
+    expect(paths['/apps/{app}/methods/len']?.post).toMatchObject({ operationId: 'len', tags: ['view'] });
+
+    const set = await alice.callMethod<CallResult>(app, 'set', { args: { key: 'a', value: '1' }, idempotencyKey: 'oa-1' });
+    const replay = await alice.call(app, 'set', { key: 'a', value: '2' }, 'oa-1');
+    expect(replay.index).toBe(set.index);
+    expect((await alice.callMethod<ViewResult>(app, 'get', { args: { key: 'a' } })).result).toBe('1');
+    await expect(alice.callMethod(app, 'clear')).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.callMethod(app, 'clear', {}, pk);
+    expect((await alice.view(app, 'len', {})).result).toBe(0);
   });
 
   it("lists the account's sign-ins and approvals, on a node that has them (core #4901)", async () => {

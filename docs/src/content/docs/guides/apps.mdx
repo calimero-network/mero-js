@@ -41,6 +41,8 @@ await client.setAccess(app, { kind: 'accounts', accounts: [bobId] });
 await client.setAppMetadata(app, { colour: 'teal' }); // at most 16 KiB
 await client.appStorage(app); // { keys, bytes, blobs, blobBytes }
 await client.appAbi(app);     // the ABI the bundle embeds
+await client.appOpenApi(app); // the same, as an OpenAPI 3.1 document
+await client.callMethod(app, 'set', { args: { key: 'a', value: '1' } }); // POST apps/{app}/methods/set
 await client.setAlias('notes', app);
 await client.transferApp(app, bobId, passkey); // the owner's passkey, or an org admin's for an org app
 await client.moveApp(app, otherOrg, { bringMembers: true }, passkey); // into an org you administer

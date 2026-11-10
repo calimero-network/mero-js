@@ -848,6 +848,7 @@ describe('the rest of the node API', () => {
     expect(last().body).toEqual({ metadata: { colour: 'teal' } });
     expect(await c.appStorage('a-1')).toEqual({ keys: 1 });
     await c.appAbi('a-1');
+    await c.appOpenApi('a-1');
     await c.transferApp('a-1', 'acc-2', passkey);
     expect(last().body).toMatchObject({ to: 'acc-2', confirm: { challengeId: 'c-1' } });
     expect(await c.listBlobs('a-1')).toEqual([blob]);
@@ -857,11 +858,39 @@ describe('the rest of the node API', () => {
       ['POST', '/apps/a-1/metadata'],
       ['GET', '/apps/a-1/storage'],
       ['GET', '/apps/a-1/abi'],
+      ['GET', '/apps/a-1/openapi.json'],
       ['POST', '/apps/a-1/transfer'],
       ['POST', '/apps/a-1/transfer'],
       ['GET', '/apps/a-1/blobs'],
       ['GET', '/apps/a-1/blobs/3yZe7d/info'],
       ['DELETE', '/apps/a-1/blobs/3yZe7d'],
+    ]);
+  });
+
+  it('runs a method by its own route: a key for retries, the step-up with a passkey', async () => {
+    const c = client();
+    node.answer = (head, body) => {
+      if (head.path.endsWith('/methods/clear') && !body.confirm) {
+        return { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
+      }
+      return { status: 200, json: { index: 3, result: 'v', events: [] } };
+    };
+    expect(await c.callMethod('a-1', 'set', { args: { key: 'k', value: 'v' } })).toMatchObject({ result: 'v' });
+    expect(last().body).toMatchObject({ args: { key: 'k', value: 'v' }, idempotencyKey: expect.any(String) });
+    await c.callMethod('a-1', 'get', { args: { key: 'k' }, consistency: 'stale', minIndex: 2, idempotencyKey: 'mine' });
+    expect(last().body).toEqual({ args: { key: 'k' }, consistency: 'stale', minIndex: 2, idempotencyKey: 'mine' });
+    await c.callMethod('a-1', 'len');
+    expect(last().body).toMatchObject({ args: {} });
+    await expect(c.callMethod('a-1', 'clear')).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await c.callMethod('a-1', 'clear', {}, passkey);
+    expect(last().body).toMatchObject({ args: {}, confirm: { challengeId: 'c-1' } });
+    expect(sent()).toEqual([
+      ['POST', '/apps/a-1/methods/set'],
+      ['POST', '/apps/a-1/methods/get'],
+      ['POST', '/apps/a-1/methods/len'],
+      ['POST', '/apps/a-1/methods/clear'],
+      ['POST', '/apps/a-1/methods/clear'],
+      ['POST', '/apps/a-1/methods/clear'],
     ]);
   });
 

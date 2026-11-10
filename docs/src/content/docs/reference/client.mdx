@@ -110,6 +110,8 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `setAppMetadata(app, metadata)` | `POST apps/{app}/metadata` |
 | `appStorage(app)` | `GET apps/{app}/storage` |
 | `appAbi(app)` | `GET apps/{app}/abi` |
+| `appOpenApi(app)` (the ABI as an OpenAPI 3.1 document; `404` on a node from before the route) | `GET apps/{app}/openapi.json` |
+| `callMethod(app, method, { args?, idempotencyKey?, consistency?, minIndex? }?, passkey?)` → `CallResult` or `ViewResult` (the node runs it as `intents` or `views`; `passkey` answers a `412`) | `POST apps/{app}/methods/{method}` |
 | `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
 | `transferApp(app, to, passkey)` (the owner, for an organization's app only while a member, or an organization admin) | `POST apps/{app}/transfer` |
 | `moveApp(app, toOrg, { bringMembers }, passkey?)` (whoever manages the app now, as an admin of `toOrg`; its data stays put, its payer and access go to the target; `404` on a node from before the route) | `POST apps/{app}/move` |
