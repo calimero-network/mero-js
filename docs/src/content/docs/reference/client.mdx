@@ -48,8 +48,10 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
 | `signOut()` | `POST auth/logout` |
 | `signOutEverywhere()` | `POST auth/logout-all` |
+| `listSessions()` → `AccountSession[]` (`session`, `passkey`, `app`, `origin`, `openedAt`, `lastActiveAt`, `current`; latest active first; the account holder's own session, never an API key or a package-bound one) | `GET auth/sessions` |
+| `revokeSession(session)` (one of the account's sessions; `NotFound` for one it does not hold live) | `DELETE auth/sessions/{session}` |
 | `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
-| `me()` → `MeInfo` (`accountId`, `via`, and the package `app` and `origin` a session is bound to) | `GET auth/me` |
+| `me()` → `MeInfo` (`accountId`, `name`, `passkeys` with each one's `addedAt` and `lastSignInAt`, `orgs` with the account's role in each, `via`, the `passkeyId` the session was opened with, and the package `app` and `origin` a session is bound to) | `GET auth/me` |
 | `usage()` | `GET auth/usage` |
 | `addPasskey(passkey, approver)` → credential id (`approver`: a passkey the account already has) | `POST auth/passkeys/add/begin`, `…/finish` |
 | `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
@@ -108,7 +110,7 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `appStorage(app)` | `GET apps/{app}/storage` |
 | `appAbi(app)` | `GET apps/{app}/abi` |
 | `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
-| `transferApp(app, to, passkey)` | `POST apps/{app}/transfer` |
+| `transferApp(app, to, passkey)` (the owner, for an organization's app only while a member, or an organization admin) | `POST apps/{app}/transfer` |
 | `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `view(app, method, args?, { stale?, minIndex? })` → `ViewResult` | `POST apps/{app}/views` |

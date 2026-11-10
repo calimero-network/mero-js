@@ -723,6 +723,51 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it("reads the passkeys' times from me(), lists the account's sessions and ends one (core #4894)", async () => {
+    const c = client();
+    const SESSIONS = [
+      { session: 's-2', passkey: 'cred', app: null, origin: null, openedAt: 10, lastActiveAt: 20, current: true },
+      { session: 's/1', passkey: 'cred', app: 'com.example.kv', origin: 'https://kv.example', openedAt: null, lastActiveAt: 5, current: false },
+    ];
+    node.answer = (head) => {
+      if (head.path === '/auth/me') {
+        return {
+          status: 200,
+          json: {
+            accountId: 'acc-1',
+            passkeyId: 'cred',
+            orgs: [{ orgId: 'org-1', name: 'Acme', role: 'admin' }],
+            passkeys: [
+              { id: 'cred', label: 'laptop', signCount: 3, addedAt: 10, lastSignInAt: 30 },
+              { id: 'old', label: null, signCount: 0, addedAt: null, lastSignInAt: null },
+            ],
+          },
+        };
+      }
+      if (head.path === '/auth/sessions') return { status: 200, json: { sessions: SESSIONS } };
+      if (head.path === '/auth/sessions/gone') return { status: 404, json: { error: 'NOT_FOUND', message: 'no such session' } };
+      return { status: 200, json: {} };
+    };
+    const me = await c.me();
+    expect(me.passkeyId).toBe('cred');
+    expect(me.orgs?.[0]?.role).toBe('admin');
+    expect(me.passkeys?.map((p) => [p.id, p.addedAt, p.lastSignInAt])).toEqual([
+      ['cred', 10, 30],
+      ['old', null, null],
+    ]);
+    const sessions = await c.listSessions();
+    expect(sessions).toEqual(SESSIONS);
+    expect(sessions.find((s) => s.current)?.session).toBe('s-2');
+    await c.revokeSession('s/1');
+    await expect(c.revokeSession('gone')).rejects.toBeInstanceOf(NotFound);
+    expect(sent()).toEqual([
+      ['GET', '/auth/me'],
+      ['GET', '/auth/sessions'],
+      ['DELETE', '/auth/sessions/s%2F1'],
+      ['DELETE', '/auth/sessions/gone'],
+    ]);
+  });
+
   it("covers an app's metadata, storage, ABI, transfer and blobs", async () => {
     const c = client();
     const blob = { blobId: '3yZe7d', id: 'ab'.repeat(32), size: 3 };

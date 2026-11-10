@@ -298,6 +298,45 @@ describe('Calimero 1.0 cluster', () => {
     expect(bobId).toBeTruthy();
   });
 
+  it("dates the account's passkeys, lists its sessions and ends one, on a node that has them (core #4894)", async () => {
+    const [laptop, pk] = await person(0, 'alice-sessions');
+    const me = await laptop.me();
+    const mine = me.passkeys?.find((p) => p.id === me.passkeyId);
+    expect(mine).toBeTruthy();
+    const phone = client(1);
+    await phone.signIn(pk);
+
+    let sessions;
+    try {
+      sessions = await laptop.listSessions();
+    } catch (error) {
+      // merod 1.0.0-rc.14 and earlier: no `/auth/sessions`, no passkey times.
+      if (!(error instanceof CalimeroError && error.status === 404)) throw error;
+      expect(mine?.addedAt ?? null).toBeNull();
+      return;
+    }
+    expect(mine?.addedAt).toEqual(expect.any(Number));
+    expect(mine?.lastSignInAt).toBeGreaterThanOrEqual(mine?.addedAt as number);
+
+    expect(sessions).toHaveLength(2);
+    const own = sessions.find((s) => s.current);
+    const other = sessions.find((s) => !s.current);
+    expect(own && other).toBeTruthy();
+    for (const s of sessions) {
+      expect(s.passkey).toBe(me.passkeyId);
+      expect(s.app).toBeNull();
+      expect(s.lastActiveAt).toEqual(expect.any(Number));
+    }
+    expect((await phone.listSessions()).find((s) => s.current)?.session).toBe(other?.session);
+
+    // The laptop ends the phone's session: the phone must sign in again.
+    await laptop.revokeSession(other?.session as string);
+    await expect(phone.me()).rejects.toBeInstanceOf(LoginRequired);
+    expect((await laptop.listSessions()).map((s) => s.session)).toEqual([own?.session]);
+    await expect(laptop.revokeSession(other?.session as string)).rejects.toBeInstanceOf(NotFound);
+    expect((await laptop.me()).accountId).toBe(me.accountId);
+  });
+
   it("covers the rest of 1.0's routes: metadata, usage, blobs, presence, transfer", async () => {
     const [alice, pk] = await person(0, 'alice-rest');
     const [bob] = await person(1, 'bob-rest');
