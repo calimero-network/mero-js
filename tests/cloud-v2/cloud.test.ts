@@ -337,6 +337,37 @@ describe('Calimero 1.0 cluster', () => {
     expect((await laptop.me()).accountId).toBe(me.accountId);
   });
 
+  it("shows an organization's admins their members' lockout risk, on a node that has it (core #4902)", async () => {
+    const [alice, alicePk] = await person(0, 'alice-security');
+    const [bob] = await person(1, 'bob-security');
+    const org = await alice.createOrg('Lockout Co');
+    await bob.redeemInvite(await alice.invite(org, 'member', alicePk));
+    const bobId = (await bob.me()).accountId as string;
+    let members;
+    try {
+      members = await alice.orgMembersSecurity(org);
+    } catch (error) {
+      // merod before core #4902: no `GET /orgs/{org}/members` (a bare `404`).
+      if (!(error instanceof CalimeroError && (error.status === 404 || error.status === 405)) || error instanceof NotFound) {
+        throw error;
+      }
+      return;
+    }
+    expect(members).toHaveLength(2);
+    const b = members.find((m) => m.account === bobId);
+    expect(b).toMatchObject({ role: 'member', passkeys: 1, recoveryCode: false, sessions: 1 });
+    expect(b?.lastActiveDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    for (const m of members) {
+      expect(Object.keys(m).sort()).toEqual(
+        ['account', 'lastActiveDay', 'name', 'passkeys', 'recoveryCode', 'role', 'sessions', 'teams'],
+      );
+    }
+    // A member is refused; removed, bob is gone from the listing.
+    await expect(bob.orgMembersSecurity(org)).rejects.toMatchObject({ status: 403 });
+    await alice.removeMember(org, bobId, alicePk);
+    expect((await alice.orgMembersSecurity(org)).map((m) => m.account)).not.toContain(bobId);
+  });
+
   it("covers the rest of 1.0's routes: metadata, usage, blobs, presence, transfer", async () => {
     const [alice, pk] = await person(0, 'alice-rest');
     const [bob] = await person(1, 'bob-rest');
