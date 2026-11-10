@@ -557,6 +557,20 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
     expect(last().body).toEqual({ apps, shared: true, confirm: confirmed });
   });
 
+  it('closes one app team keeping whom it names, the per-package join and keep sent as given', async () => {
+    const result = {
+      mode: 'shared',
+      teams: [
+        { package: 'com.example.chat', teamId: 't-1', created: false, apps: [], added: 1, join: 'invite', dropped: 2 },
+      ],
+    };
+    confirming(result);
+    const apps = [{ package: 'com.example.chat', join: 'invite' as const, keep: ['acc-bob'] }];
+    expect(await client().scopeApps('org-1', passkey, { apps })).toEqual(result);
+    expect(node.requests[0].body).toEqual({ apps });
+    expect(last().body).toEqual({ apps, confirm: confirmed });
+  });
+
   it('scopes every package with defaults: an empty body, never null fields the node would refuse', async () => {
     confirming({ mode: 'standalone', teams: [] });
     await client().scopeApps('org-1', passkey);
