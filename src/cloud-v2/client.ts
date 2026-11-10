@@ -2150,6 +2150,19 @@ export class CalimeroClient {
     await this.deleteConfirmed(`orgs/${seg(org)}`, passkey);
   }
 
+  /**
+   * Rename the organization (core `POST /orgs/{org}/name`): its owner or an
+   * admin, approved with `passkey` (`__rename_org { name }`). The name is
+   * one line of 1 to 64 characters with no space at either end, as
+   * {@link createOrg} takes it (`400` otherwise). Every reader of the name
+   * ({@link getOrg}, {@link me}'s `orgs`) answers the new one. A member below
+   * admin is refused (`403`), someone outside the organization gets
+   * {@link NotFound}; a node from before the route answers a bare `404`.
+   */
+  renameOrg(org: string, name: string, passkey: PasskeyProvider): Promise<{ orgId: string; name: string }> {
+    return this.postConfirmed(`orgs/${seg(org)}/name`, { name }, passkey);
+  }
+
   /** Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB. */
   async setOrgMetadata(org: string, metadata: unknown): Promise<void> {
     await this.post(`orgs/${seg(org)}/metadata`, { metadata });

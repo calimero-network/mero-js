@@ -782,6 +782,28 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it('renames an organization with a passkey, and says when the node has no route', async () => {
+    const c = client();
+    const renamed = { orgId: 'o-1', name: 'Acme Labs' };
+    node.answer = (_head, body) =>
+      body.confirm
+        ? { status: 200, json: renamed }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
+    expect(await c.renameOrg('o/1', 'Acme Labs', passkey)).toEqual(renamed);
+    expect(sent()).toEqual([
+      ['POST', '/orgs/o%2F1/name'],
+      ['POST', '/orgs/o%2F1/name'],
+    ]);
+    expect(node.requests[0].body).toEqual({ name: 'Acme Labs' });
+    expect(last().body).toMatchObject({ name: 'Acme Labs', confirm: { challengeId: 'c-1' } });
+    // Without a passkey the step-up reaches the caller.
+    const none = undefined as unknown as PasskeyProvider;
+    expect(await c.renameOrg('o-1', 'x', none).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
+    // A node from before the route.
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
+    await expect(c.renameOrg('o-1', 'x', passkey)).rejects.toMatchObject({ status: 404 });
+  });
+
   it('moves an app to another organization with a passkey, and says when the node has no route', async () => {
     const c = client();
     const moved = { appId: 'a-1', from: 'o-1', org: 'o-2', access: { kind: 'org' }, created: false, added: [], revokedInvites: 0 };

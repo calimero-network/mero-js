@@ -444,6 +444,30 @@ describe('Calimero 1.0 cluster', () => {
     expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
   });
 
+  // Core's `feat/org-rename`: a node without the route answers the rename
+  // 404, and the case is skipped.
+  it('renames an organization with an admin\'s passkey; every reader answers the new name', async (ctx) => {
+    const [alice, alicePk] = await person(0, 'alice-rename');
+    const [bob, bobPk] = await person(1, 'bob-rename');
+    const [carol, carolPk] = await person(2, 'carol-rename');
+    const org = await alice.createOrg('Rename Co');
+    await bob.redeemInvite(await alice.invite(org, 'admin', alicePk));
+    await carol.redeemInvite(await alice.invite(org, 'member', alicePk));
+    const renamed = await bob.renameOrg(org, 'Renamed Co', bobPk).catch((e: unknown) => e);
+    if (renamed instanceof CalimeroError && (renamed.status === 404 || renamed.status === 405) && !(renamed instanceof NotFound)) {
+      return ctx.skip();
+    }
+    expect(renamed).toEqual({ orgId: org, name: 'Renamed Co' });
+    for (const p of [alice, bob, carol]) {
+      expect((await p.getOrg(org)).name).toBe('Renamed Co');
+      const mine = (await p.me()).orgs?.find((o) => o.orgId === org);
+      expect(mine?.name).toBe('Renamed Co');
+    }
+    // A member below admin is refused; a name that would not make an organization is too.
+    await expect(carol.renameOrg(org, 'Carol Co', carolPk)).rejects.toMatchObject({ status: 403 });
+    await expect(alice.renameOrg(org, ' padded', alicePk)).rejects.toMatchObject({ status: 400 });
+  });
+
   // Core's `feat/move-app-to-org`: a node without the route answers the move
   // 404, and the case is skipped.
   it('moves an app with its people into another organization, its data kept', async (ctx) => {

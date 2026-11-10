@@ -20,6 +20,7 @@ await client.setMember(org, bobId, 'member', passkey); // guest | member | admin
 await client.removeMember(org, bobId, passkey); // your own account id to leave
 await client.setOrgMetadata(org, { logo: '…' });
 await client.setMemberMetadata(org, bobId, { title: 'engineer' }); // null clears it
+await client.renameOrg(org, 'Acme Labs', passkey); // the owner's or an admin's passkey
 await client.deleteOrg(org, passkey); // the owner's passkey; takes its teams, invites and apps
 ```
 
