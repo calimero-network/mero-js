@@ -243,6 +243,20 @@ export interface ScopeApp {
    * instance of the package here; `[]`: none, for a fresh install).
    */
   instances?: string[];
+  /**
+   * Open (`everyone`) or close (`invite`) this package's app team in this
+   * step, and no other (absent: as `shared` says). Naming it on any package
+   * leaves an absent `shared` meaning "no other team"; `shared: true` with an
+   * `everyone` is refused.
+   */
+  join?: 'everyone' | 'invite';
+  /**
+   * Closing (`join: 'invite'`) only: who keeps the app besides the team's
+   * leads, members of the organization (at most 1024). Absent: everyone who
+   * reaches it now keeps it. Everyone else loses it, with their rows in the
+   * teams below it (its private channels); opening the team again lets them back.
+   */
+  keep?: string[];
 }
 
 /** What {@link CalimeroClient.scopeApps} asks for; every field absent takes the node's default. */
@@ -261,8 +275,12 @@ export interface ScopedAppTeam {
   created: boolean;
   /** The instances moved onto it. */
   apps: string[];
-  /** How many rows were added for people who reached those instances. */
+  /** How many rows were added for people who reached those instances (or kept on a close). */
   added: number;
+  /** The team's `join` after the step (absent from nodes before per-app close). */
+  join?: 'everyone' | 'invite';
+  /** How many people lost the app in this step (a close with `keep`; absent from nodes before per-app close). */
+  dropped?: number;
 }
 
 /** `POST /orgs/{org}/app-teams`: the organization's mode after, and each package's team. */
@@ -595,6 +613,31 @@ export interface AccountSession {
   lastActiveAt: number;
   /** Whether it is the caller's own session. */
   current: boolean;
+}
+
+/**
+ * One thing one of the account's passkeys did, as
+ * {@link CalimeroClient.listActivity} lists it (core #4901). Every key is
+ * present; the ones its `kind` does not have are `null`.
+ */
+export interface AccountActivity {
+  /** When (Unix seconds). */
+  at: number;
+  /** The passkey (credential id) that did it; it may since have been removed. */
+  passkey: string;
+  /**
+   * `signIn`: a sign-up, a sign-in or an account recovery's finish (a refresh
+   * is none). `approval`: a change the passkey approved with a step-up.
+   */
+  kind: 'signIn' | 'approval';
+  /** A sign-in's package, whose frontend opened the session; `null` on the cluster's own origin. */
+  app: string | null;
+  /** A sign-in's registered origin; `null` on the cluster's own origin. */
+  origin: string | null;
+  /** An approval's method, e.g. `__add_passkey`, `__create_api_key`, `__upgrade`. */
+  method: string | null;
+  /** What an approval's method acted on: an app id, `org:<id>`, `account:<id>`, ... */
+  subject: string | null;
 }
 
 /** A recovery of an account under way (core #4844, `docs/specs/account-recovery.md`). */
@@ -1443,6 +1486,20 @@ export class CalimeroClient {
    */
   async revokeSession(session: string): Promise<void> {
     await this.delete(`auth/sessions/${seg(session)}`);
+  }
+
+  /**
+   * What the signed-in account's passkeys did, newest first (the last 100,
+   * `GET /auth/activity`): each sign-in, with the package and origin its
+   * session is bound to, and each change a passkey approved, with its method
+   * and subject. `after` (Unix seconds) keeps only what came later. Gated as
+   * {@link listSessions}: the account holder's own session on the cluster's
+   * origin only. A node before core #4901 has no such route ({@link NotFound}).
+   */
+  async listActivity(after?: number): Promise<AccountActivity[]> {
+    const query = after === undefined ? '' : `?after=${encodeURIComponent(String(after))}`;
+    const { activity } = await this.get<{ activity: AccountActivity[] }>(`auth/activity${query}`);
+    return activity;
   }
 
   private async signingOut(path: string): Promise<void> {
@@ -2480,6 +2537,8 @@ export class CalimeroClient {
    * Give apps their own access lists in one step (owner or admin): find or
    * make each package's app team, add everyone who reaches its instances now,
    * and move those instances onto it; with `shared`, close every app team.
+   * A package's own `join` opens or closes its team alone, a close keeping
+   * everyone who reaches it or only the leads and `keep`.
    * Idempotent per package. Approved with the caller's `passkey`
    * (`__scope_apps { apps, shared }`); a refusal is `400 REJECTED` with the
    * node's reason. For a fresh standalone install pass

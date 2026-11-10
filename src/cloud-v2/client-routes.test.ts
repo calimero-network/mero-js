@@ -557,6 +557,20 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
     expect(last().body).toEqual({ apps, shared: true, confirm: confirmed });
   });
 
+  it('closes one app team keeping whom it names, the per-package join and keep sent as given', async () => {
+    const result = {
+      mode: 'shared',
+      teams: [
+        { package: 'com.example.chat', teamId: 't-1', created: false, apps: [], added: 1, join: 'invite', dropped: 2 },
+      ],
+    };
+    confirming(result);
+    const apps = [{ package: 'com.example.chat', join: 'invite' as const, keep: ['acc-bob'] }];
+    expect(await client().scopeApps('org-1', passkey, { apps })).toEqual(result);
+    expect(node.requests[0].body).toEqual({ apps });
+    expect(last().body).toEqual({ apps, confirm: confirmed });
+  });
+
   it('scopes every package with defaults: an empty body, never null fields the node would refuse', async () => {
     confirming({ mode: 'standalone', teams: [] });
     await client().scopeApps('org-1', passkey);
@@ -778,6 +792,22 @@ describe('the rest of the node API', () => {
       head.path.startsWith('/orgs/o%2F1/members') ? { status: 200, json: { orgId: 'o/1', members: MEMBERS } } : { status: 200, json: {} };
     expect(await c.orgMembersSecurity('o/1')).toEqual(MEMBERS);
     expect(sent()).toEqual([['GET', '/orgs/o%2F1/members?detail=security']]);
+  });
+
+  it("lists what the account's passkeys did (core #4901)", async () => {
+    const c = client();
+    const ACTIVITY = [
+      { at: 30, passkey: 'cred', kind: 'approval', app: null, origin: null, method: '__create_api_key', subject: 'account:acc-1' },
+      { at: 10, passkey: 'cred', kind: 'signIn', app: 'com.example.kv', origin: 'https://kv.example', method: null, subject: null },
+    ];
+    node.answer = (head) =>
+      head.path.startsWith('/auth/activity') ? { status: 200, json: { activity: ACTIVITY } } : { status: 200, json: {} };
+    expect(await c.listActivity()).toEqual(ACTIVITY);
+    await c.listActivity(20);
+    expect(sent()).toEqual([
+      ['GET', '/auth/activity'],
+      ['GET', '/auth/activity?after=20'],
+    ]);
   });
 
   it("covers an app's metadata, storage, ABI, transfer and blobs", async () => {

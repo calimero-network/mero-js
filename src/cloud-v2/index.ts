@@ -49,6 +49,7 @@ export type {
   MeOrg,
   MePasskey,
   AccountSession,
+  AccountActivity,
   PackageOrigin,
   PackageOriginAdded,
   PackageOriginRemoved,
