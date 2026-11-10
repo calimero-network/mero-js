@@ -1,3 +1,9 @@
+## [29.13.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.12.0...mero-js-v29.13.0) (2026-11-10)
+
+### Features
+
+* **cloud-v2:** moveApp, an app instance to another organization ([#348](https://github.com/calimero-network/mero-js/issues/348)) ([cfe08f6](https://github.com/calimero-network/mero-js/commit/cfe08f63a91f0aff6ba9b82edc8b7a4dbb753a2e))
+
 ## [29.12.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.11.0...mero-js-v29.12.0) (2026-11-10)
 
 ### Features
