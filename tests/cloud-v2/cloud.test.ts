@@ -444,6 +444,36 @@ describe('Calimero 1.0 cluster', () => {
     expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
   });
 
+  // Core's `feat/batch-team-members`: a node without the routes answers 404,
+  // and the case is skipped.
+  it("sets and takes one account's rows in several teams with one passkey", async (ctx) => {
+    const [alice, pk] = await person(0, 'alice-rows');
+    const [bob, bobPk] = await person(1, 'bob-rows');
+    const aliceId = (await alice.me()).accountId as string;
+    const bobId = (await bob.me()).accountId as string;
+    const org = await alice.createOrg('rows');
+    await alice.setMember(org, bobId, 'member', pk);
+    const teams = [
+      await alice.createTeam(org, 'chat', 'invite'),
+      await alice.createTeam(org, 'blocks', 'invite'),
+      await alice.createTeam(org, 'notes', 'invite'),
+    ];
+    const rows = async (team: string) => (await alice.getTeam(org, team)).members.map((m) => m.account);
+    const set = await alice.setTeamMembers(org, bobId, teams.map((team) => ({ team })), pk).catch((e: unknown) => e);
+    if (set instanceof CalimeroError && (set.status === 404 || set.status === 405)) return ctx.skip();
+    expect(set).toBeUndefined();
+    for (const team of teams) expect(await rows(team)).toContain(bobId);
+    // Bob manages none of them: refused.
+    await expect(bob.setTeamMembers(org, aliceId, [{ team: teams[0] }], bobPk)).rejects.toBeInstanceOf(CalimeroError);
+    // Out of two with one approval; he leaves the third himself.
+    await alice.removeTeamMembers(org, bobId, teams.slice(0, 2), pk);
+    expect(await rows(teams[0])).not.toContain(bobId);
+    expect(await rows(teams[2])).toContain(bobId);
+    await bob.removeTeamMembers(org, bobId, [teams[2]], bobPk);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await rows(teams[2])).not.toContain(bobId);
+  });
+
   // Core's `feat/move-app-to-org`: a node without the route answers the move
   // 404, and the case is skipped.
   it('moves an app with its people into another organization, its data kept', async (ctx) => {

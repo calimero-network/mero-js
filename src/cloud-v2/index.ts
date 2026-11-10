@@ -82,6 +82,7 @@ export type {
   ScopeAppsResult,
   ScopedAppTeam,
   TeamInfo,
+  TeamRow,
   TeamMemberInfo,
   UpgradeRun,
   ViewResult,

@@ -155,6 +155,8 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `deleteTeam(org, team, passkey?)` | `DELETE orgs/{org}/teams/{team}`; when its teams hold apps, approved with `passkey` (the `412` details list the `apps`) |
 | `setTeamMember(org, team, account, passkey, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
 | `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
+| `setTeamMembers(org, account, [{ team, role?, capabilities? }], passkey)` (one account's rows in up to 64 teams with one approval, each judged as `setTeamMember`; all or nothing; `404` on a node from before the route) | `POST orgs/{org}/members/{account}/teams` |
+| `removeTeamMembers(org, account, teams, passkey)` (out of several teams with one approval, or leaving them; all or nothing) | `DELETE orgs/{org}/members/{account}/teams` |
 | `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
 | `redeemInvite(token)` (no approval) | `POST invites/{token}/redeem` |
 | `listInvites(org)` → `OrgInvite[]` (the ones the caller may see; never a token) | `GET orgs/{org}/invites` |

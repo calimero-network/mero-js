@@ -438,6 +438,20 @@ describe('credentials, memberships and invites are approved with a passkey (412 
       { account: 'acc-2', role: 'readOnly' },
     ],
     ['removeTeamMember', (c) => c.removeTeamMember('org-1', 't-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/teams/t-1/members/acc-2', {}],
+    [
+      'setTeamMembers',
+      (c) => c.setTeamMembers('org-1', 'acc-2', [{ team: 't-1' }, { team: 't-2', role: 'readOnly', capabilities: 2 }], passkey),
+      'POST',
+      '/orgs/org-1/members/acc-2/teams',
+      { teams: [{ team: 't-1' }, { team: 't-2', role: 'readOnly', capabilities: 2 }] },
+    ],
+    [
+      'removeTeamMembers',
+      (c) => c.removeTeamMembers('org-1', 'acc-2', ['t-1', 't-2'], passkey),
+      'DELETE',
+      '/orgs/org-1/members/acc-2/teams',
+      { teams: ['t-1', 't-2'] },
+    ],
     ['deleteTeam', (c) => c.deleteTeam('org-1', 't-1', passkey), 'DELETE', '/orgs/org-1/teams/t-1', {}],
     ['invite', (c) => c.invite('org-1', 'guest', passkey), 'POST', '/orgs/org-1/invites', { role: 'guest', teams: [] }],
   ];

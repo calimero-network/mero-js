@@ -250,6 +250,15 @@ export interface AppTeams {
   appTeams: AppTeam[];
 }
 
+/** One team of {@link CalimeroClient.setTeamMembers} (core `TeamRow`): the row as {@link CalimeroClient.setTeamMember} sets it. */
+export interface TeamRow {
+  team: string;
+  /** Absent: `member`. */
+  role?: 'lead' | 'member' | 'readOnly';
+  /** Absent: a new row takes the organization's and the team's default; an existing row keeps its own. */
+  capabilities?: number;
+}
+
 /** One package to give an app team ({@link CalimeroClient.scopeApps}, core `ScopeApp`). */
 export interface ScopeApp {
   package: string;
@@ -2515,6 +2524,30 @@ export class CalimeroClient {
   /** Remove a member from a team, approved with the caller's `passkey`. */
   async removeTeamMember(org: string, team: string, account: string, passkey: PasskeyProvider): Promise<void> {
     await this.deleteConfirmed(`orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}`, passkey);
+  }
+
+  /**
+   * Set one account's row in several teams of `org` at once (`POST
+   * /orgs/{org}/members/{account}/teams`), approved with one `passkey`:
+   * Calimero Home's "give all apps". Each team is judged as
+   * {@link setTeamMember} would judge it, and nothing is set unless every
+   * one may be. At most 64 teams, each named once. A node from before the
+   * route answers `404`.
+   */
+  async setTeamMembers(org: string, account: string, teams: TeamRow[], passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/members/${seg(account)}/teams`, { teams }, passkey);
+  }
+
+  /**
+   * Take one account out of several teams of `org` at once, or leave them
+   * (`account` being the caller), approved with one `passkey` (`DELETE
+   * /orgs/{org}/members/{account}/teams`): each judged as
+   * {@link removeTeamMember} would judge it, the teams below included, and
+   * nothing taken unless every one may be. A node from before the route
+   * answers `404`.
+   */
+  async removeTeamMembers(org: string, account: string, teams: string[], passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`orgs/${seg(org)}/members/${seg(account)}/teams`, passkey, { teams });
   }
 
   /**

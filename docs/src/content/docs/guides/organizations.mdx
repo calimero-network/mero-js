@@ -87,6 +87,9 @@ const team = await client.createTeam(org, 'eng', 'invite'); // or 'everyone'; op
 await client.setTeamMember(org, team, bobId, passkey, { role: 'readOnly' }); // lead | member | readOnly
 await client.updateTeam(org, team, { name: 'platform', parent: null, metadata: { colour: 'blue' } });
 await client.removeTeamMember(org, team, bobId, passkey);
+// One account in (or out of) several teams with one approval, all or nothing:
+await client.setTeamMembers(org, bobId, [{ team: chat }, { team: notes, role: 'readOnly' }], passkey);
+await client.removeTeamMembers(org, bobId, [chat, notes], passkey);
 await client.deleteTeam(org, team, passkey); // and the teams below it, and their apps
 ```
 
