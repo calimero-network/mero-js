@@ -43,6 +43,7 @@ await client.appStorage(app); // { keys, bytes, blobs, blobBytes }
 await client.appAbi(app);     // the ABI the bundle embeds
 await client.setAlias('notes', app);
 await client.transferApp(app, bobId, passkey); // the owner's passkey, or an org admin's for an org app
+await client.moveApp(app, otherOrg, { bringMembers: true }, passkey); // into an org you administer
 await client.deleteApp(app);
 ```
 

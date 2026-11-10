@@ -47,6 +47,7 @@ export type {
   MeInfo,
   MeOrg,
   MePasskey,
+  MoveAppResult,
   AccountSession,
   PackageOrigin,
   PackageOriginAdded,

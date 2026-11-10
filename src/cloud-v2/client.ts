@@ -126,6 +126,23 @@ export interface PackageInfo {
 }
 
 /** One app instance as `listApps` answers it. */
+/** What {@link CalimeroClient.moveApp} answers. */
+export interface MoveAppResult {
+  appId: string;
+  /** The organization it left; `null` for a personal app. */
+  from: string | null;
+  /** The organization it is in now. */
+  org: string;
+  /** Its access there: `{ kind: 'team', team }` on the target's app team, or as it was. */
+  access: Record<string, unknown>;
+  /** Whether the target's app team of its package was made for it. */
+  created: boolean;
+  /** The accounts that joined the target with it (`bringMembers`). */
+  added: string[];
+  /** The source's invites into the team it left that were revoked. */
+  revokedInvites: number;
+}
+
 export interface AppInfo {
   appId: string;
   name: string;
@@ -1740,6 +1757,28 @@ export class CalimeroClient {
    */
   async transferApp(app: string, to: string, passkey: PasskeyProvider): Promise<void> {
     await this.postConfirmed(`apps/${seg(app)}/transfer`, { to }, passkey);
+  }
+
+  /**
+   * Move an app instance to another organization (`toOrg`), its data where it
+   * is (core `POST /apps/{app}/move`), approved with `passkey`. Whoever
+   * manages the app now (its owner while a member of its organization, an
+   * admin there, or a personal app's owner) moves it, as an admin or the
+   * owner of `toOrg`. Its files, runs and quotas go to the target; `org` or
+   * app-team access becomes the target's app team of its package.
+   * `bringMembers` adds the people of its organization who reach it to the
+   * target (capped at `member`). A node from before the route answers `404`
+   * ({@link NotFound}): the feature is not there yet.
+   */
+  moveApp(
+    app: string,
+    toOrg: string,
+    options: { bringMembers?: boolean } = {},
+    passkey?: PasskeyProvider,
+  ): Promise<MoveAppResult> {
+    const path = `apps/${seg(app)}/move`;
+    const body = { toOrg, bringMembers: options.bringMembers ?? false };
+    return passkey ? this.postConfirmed(path, body, passkey) : this.post(path, body);
   }
 
   /**
