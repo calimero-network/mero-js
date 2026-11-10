@@ -444,6 +444,30 @@ describe('Calimero 1.0 cluster', () => {
     expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
   });
 
+  // Core's `feat/org-all-apps`: a node without the route answers 404, and the
+  // case is skipped.
+  it('gives a member every app added later, by invite and by an admin', async (ctx) => {
+    const [alice, alicePk] = await person(0, 'alice-allapps');
+    const [bob] = await person(1, 'bob-allapps');
+    const [carol, carolPk] = await person(2, 'carol-allapps');
+    const org = await alice.createOrg('All Apps Co');
+    await carol.redeemInvite(await alice.invite(org, 'member', alicePk));
+    const carolId = (await carol.me()).accountId as string;
+    const set = await alice.setAllApps(org, carolId, true, alicePk).catch((e: unknown) => e);
+    if (set instanceof CalimeroError && (set.status === 404 || set.status === 405) && !(set instanceof NotFound)) {
+      return ctx.skip();
+    }
+    expect(set).toBeUndefined();
+    await bob.redeemInvite(await alice.invite(org, 'member', alicePk, [], { allApps: true }));
+    const bobId = (await bob.me()).accountId as string;
+    expect([...((await alice.getOrg(org)).allApps ?? [])].sort()).toEqual([bobId, carolId].sort());
+    // A member below admin gives nobody every app, and mints no such invite.
+    await expect(carol.setAllApps(org, carolId, false, carolPk)).rejects.toMatchObject({ status: 403 });
+    await expect(carol.invite(org, 'member', carolPk, [], { allApps: true })).rejects.toMatchObject({ status: 403 });
+    await alice.setAllApps(org, carolId, false, alicePk);
+    expect((await alice.getOrg(org)).allApps).toEqual([bobId]);
+  });
+
   // Core's `feat/move-app-to-org`: a node without the route answers the move
   // 404, and the case is skipped.
   it('moves an app with its people into another organization, its data kept', async (ctx) => {

@@ -216,6 +216,12 @@ export interface OrgInfo extends Record<string, unknown> {
   recovery?: OrgRecovery;
   /** How it holds its apps ({@link OrgMode}); absent from nodes before app teams. */
   mode?: OrgMode;
+  /**
+   * The members (those the caller sees) who get every app added from now on
+   * ({@link CalimeroClient.setAllApps}); absent while there are none, and
+   * from nodes before core's `feat/org-all-apps`.
+   */
+  allApps?: string[];
 }
 
 /**
@@ -322,6 +328,8 @@ export interface OrgInvite {
   createdBy: string | null;
   /** Unix seconds; `null` for invites made before core recorded it. */
   createdAt: number | null;
+  /** Whoever redeems it also gets every app added later; absent from nodes before core's `feat/org-all-apps`. */
+  allApps?: boolean;
 }
 
 /** One direct row of a team ({@link TeamInfo}). */
@@ -2443,6 +2451,21 @@ export class CalimeroClient {
   }
 
   /**
+   * Give a member every app added to the organization from now on, or stop
+   * it (`allApps: false`), core `POST /orgs/{org}/all-apps`: the owner's or
+   * an admin's, approved with `passkey` (`__set_all_apps { account, allApps
+   * }`). Each app team made after gives them a row, so in an organization
+   * that keeps its apps apart a new app reaches them though nobody named
+   * them; apps already there are untouched. {@link invite} with
+   * `{ allApps: true }` gives it to whoever redeems the invite. A member
+   * below admin is refused (`403`), someone outside gets {@link NotFound};
+   * a node from before the route answers a bare `404`.
+   */
+  async setAllApps(org: string, account: string, allApps: boolean, passkey: PasskeyProvider): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/all-apps`, { account, allApps }, passkey);
+  }
+
+  /**
    * Set the capability bits everyone in `team` holds there on top of their
    * own, unless their row sets its own (`POST /orgs/{org}/capabilities` with
    * `team` and no `account`): `ORG_CAPABILITIES.INVITE_MEMBERS` is "members
@@ -2527,7 +2550,7 @@ export class CalimeroClient {
     role: 'guest' | 'member' | 'admin',
     passkey: PasskeyProvider,
     teams: string[] = [],
-    options: { ttlSecs?: number; uses?: number } = {},
+    options: { ttlSecs?: number; uses?: number; allApps?: boolean } = {},
   ): Promise<string> {
     const { token } = await this.postConfirmed<{ token: string }>(
       `orgs/${seg(org)}/invites`,

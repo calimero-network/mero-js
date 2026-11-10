@@ -782,6 +782,29 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it('gives a member every app added later, and mints an invite that does, with a passkey', async () => {
+    const c = client();
+    node.answer = (_head, body) =>
+      body.confirm
+        ? { status: 200, json: { token: 'inv_1' } }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
+    await c.setAllApps('o/1', 'acc-bob', true, passkey);
+    expect(sent()).toEqual([
+      ['POST', '/orgs/o%2F1/all-apps'],
+      ['POST', '/orgs/o%2F1/all-apps'],
+    ]);
+    expect(node.requests[0].body).toEqual({ account: 'acc-bob', allApps: true });
+    expect(last().body).toMatchObject({ account: 'acc-bob', allApps: true, confirm: { challengeId: 'c-1' } });
+    expect(await c.invite('o-1', 'member', passkey, [], { allApps: true })).toBe('inv_1');
+    expect(last().body).toMatchObject({ role: 'member', teams: [], allApps: true });
+    // An invite without it sends no such field.
+    await c.invite('o-1', 'member', passkey);
+    expect(last().body).not.toHaveProperty('allApps');
+    // A node from before the route.
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
+    await expect(c.setAllApps('o-1', 'acc-bob', false, passkey)).rejects.toMatchObject({ status: 404 });
+  });
+
   it('moves an app to another organization with a passkey, and says when the node has no route', async () => {
     const c = client();
     const moved = { appId: 'a-1', from: 'o-1', org: 'o-2', access: { kind: 'org' }, created: false, added: [], revokedInvites: 0 };
