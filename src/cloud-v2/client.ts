@@ -281,7 +281,7 @@ export interface ScopeApp {
    * (absent: as they are). How an app team made before that default gets it;
    * with `instances: []` the step changes nothing else. Like `join`, naming it
    * leaves an absent `shared` meaning "no other team". A node from before
-   * refuses the field (`400`).
+   * refuses the request as an unknown field.
    */
   childTeams?: boolean;
 }
