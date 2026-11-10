@@ -337,6 +337,38 @@ describe('Calimero 1.0 cluster', () => {
     expect((await laptop.me()).accountId).toBe(me.accountId);
   });
 
+  it("lists the account's sign-ins and approvals, on a node that has them (core #4901)", async () => {
+    const [laptop, pk] = await person(0, 'alice-activity');
+    const me = await laptop.me();
+    let activity;
+    try {
+      activity = await laptop.listActivity();
+    } catch (error) {
+      // merod before core #4901: no `/auth/activity` (a bare `404`).
+      if (!(error instanceof CalimeroError && error.status === 404) || error instanceof NotFound) throw error;
+      return;
+    }
+    expect(activity).toEqual([
+      expect.objectContaining({ kind: 'signIn', passkey: me.passkeyId, app: null, origin: null }),
+    ]);
+    const signedUp = activity[0]?.at as number;
+
+    await laptop.createApiKey({ label: 'ci' }, pk);
+    activity = await laptop.listActivity();
+    expect(activity.map((a) => [a.kind, a.method, a.passkey])).toEqual([
+      ['approval', '__create_api_key', me.passkeyId],
+      ['signIn', null, me.passkeyId],
+    ]);
+    // `after` keeps only what came later.
+    expect((await laptop.listActivity(signedUp)).every((a) => a.at > signedUp)).toBe(true);
+
+    // Each account reads only its own.
+    const [bob] = await person(1, 'bob-activity');
+    const bobs = await bob.listActivity();
+    expect(bobs).toHaveLength(1);
+    expect(bobs[0]?.passkey).not.toBe(me.passkeyId);
+  });
+
   it("covers the rest of 1.0's routes: metadata, usage, blobs, presence, transfer", async () => {
     const [alice, pk] = await person(0, 'alice-rest');
     const [bob] = await person(1, 'bob-rest');

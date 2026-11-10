@@ -1,3 +1,9 @@
+## [29.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.9.0...mero-js-v29.10.0) (2026-11-10)
+
+### Features
+
+* **cloud-v2:** scopeApps closes or opens one app team, keeping whom it names ([#347](https://github.com/calimero-network/mero-js/issues/347)) ([ff119e2](https://github.com/calimero-network/mero-js/commit/ff119e2cf3a817329fc9c6ad74adb02d821a68a0))
+
 ## [29.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.8.1...mero-js-v29.9.0) (2026-11-10)
 
 ### Features

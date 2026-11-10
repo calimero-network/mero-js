@@ -50,6 +50,7 @@ answers the node's `412 CONFIRM_REQUIRED` with it.
 | `signOutEverywhere()` | `POST auth/logout-all` |
 | `listSessions()` → `AccountSession[]` (`session`, `passkey`, `app`, `origin`, `openedAt`, `lastActiveAt`, `current`; latest active first; the account holder's own session, never an API key or a package-bound one) | `GET auth/sessions` |
 | `revokeSession(session)` (one of the account's sessions; `NotFound` for one it does not hold live) | `DELETE auth/sessions/{session}` |
+| `listActivity(after?)` → `AccountActivity[]` (`at`, `passkey`, `kind` `signIn` with `app`/`origin` or `approval` with `method`/`subject`; newest first, the last 100; gated as `listSessions`) | `GET auth/activity` |
 | `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
 | `me()` → `MeInfo` (`accountId`, `name`, `passkeys` with each one's `addedAt` and `lastSignInAt`, `orgs` with the account's role in each, `via`, the `passkeyId` the session was opened with, and the package `app` and `origin` a session is bound to) | `GET auth/me` |
 | `usage()` | `GET auth/usage` |
