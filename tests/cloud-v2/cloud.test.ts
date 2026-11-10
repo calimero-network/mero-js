@@ -200,8 +200,20 @@ describe('Calimero 1.0 cluster', () => {
     expect(await alice.getTeam(org, team)).toMatchObject({ name: 'platform' });
     await alice.setCapabilities(org, 0, pk, { account: bobId });
     await alice.removeTeamMember(org, team, bobId, pk);
+    // `ops` holds no apps: it goes without a passkey.
     await alice.deleteTeam(org, team);
     await expect(alice.getTeam(org, team)).rejects.toMatchObject({ status: 404 });
+    // A team whose sub-team holds an app goes with alice's passkey, and the node's ask names the app.
+    const eng = await alice.createTeam(org, 'eng', 'invite');
+    const backend = await alice.createTeam(org, 'backend', 'invite', eng);
+    const teamApp = await alice.createApp('eng-kv', bundle, { org, access: { kind: 'team', team: backend } });
+    const asked = await alice.deleteTeam(org, eng).then(() => undefined, (e: unknown) => e);
+    expect(asked).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: { apps: [teamApp] } });
+    expect(await alice.getApp(teamApp)).toBeTruthy();
+    await alice.deleteTeam(org, eng, pk);
+    await new Promise((r) => setTimeout(r, 300));
+    await expect(alice.getTeam(org, eng)).rejects.toMatchObject({ status: 404 });
+    await expect(alice.getApp(teamApp)).rejects.toMatchObject({ status: 404 });
     const token = await alice.invite(org, 'guest', pk, [], { ttlSecs: 60, uses: 1 });
     expect(token).toBeTruthy();
     expect(await alice.getOrg(org)).toMatchObject({ orgId: org });

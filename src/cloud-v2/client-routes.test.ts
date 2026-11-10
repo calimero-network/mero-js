@@ -438,6 +438,7 @@ describe('credentials, memberships and invites are approved with a passkey (412 
       { account: 'acc-2', role: 'readOnly' },
     ],
     ['removeTeamMember', (c) => c.removeTeamMember('org-1', 't-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/teams/t-1/members/acc-2', {}],
+    ['deleteTeam', (c) => c.deleteTeam('org-1', 't-1', passkey), 'DELETE', '/orgs/org-1/teams/t-1', {}],
     ['invite', (c) => c.invite('org-1', 'guest', passkey), 'POST', '/orgs/org-1/invites', { role: 'guest', teams: [] }],
   ];
 
@@ -464,6 +465,33 @@ describe('credentials, memberships and invites are approved with a passkey (412 
     expect(error).toBeInstanceOf(ConfirmRequired);
     expect(error).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: CHALLENGE });
     expect(sent()).toEqual([['DELETE', '/orgs/org-1/members/acc-2']]);
+  });
+
+  it('deletes a team holding no apps without a passkey; one holding apps is ConfirmRequired naming them', async () => {
+    node.answer = () => ({ status: 200, json: { apps: [] } });
+    await client().deleteTeam('org-1', 't-empty');
+    expect(sent()).toEqual([['DELETE', '/orgs/org-1/teams/t-empty']]);
+
+    node.requests.length = 0;
+    const details = { ...CHALLENGE, allowCredentials: ['cred'], apps: ['app-1'] };
+    node.answer = (_, body) =>
+      body.confirm
+        ? { status: 200, json: { apps: ['app-1'] } }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details } };
+    const error = await client()
+      .deleteTeam('org-1', 't-1')
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ConfirmRequired);
+    expect(error).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: { apps: ['app-1'] } });
+    expect(sent()).toEqual([['DELETE', '/orgs/org-1/teams/t-1']]);
+
+    node.requests.length = 0;
+    await client().deleteTeam('org-1', 't-1', passkey);
+    expect(sent()).toEqual([
+      ['DELETE', '/orgs/org-1/teams/t-1'],
+      ['DELETE', '/orgs/org-1/teams/t-1'],
+    ]);
+    expect(last().body).toEqual({ confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) } });
   });
 
   it('a declined prompt is ConfirmCancelled, and the confirmed request is never sent', async () => {

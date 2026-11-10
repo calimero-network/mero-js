@@ -2115,9 +2115,17 @@ export class CalimeroClient {
     await this.post(`orgs/${seg(org)}/teams/${seg(team)}`, update);
   }
 
-  /** Delete a team, the teams below it and their apps. */
-  async deleteTeam(org: string, team: string): Promise<void> {
-    await this.delete(`orgs/${seg(org)}/teams/${seg(team)}`);
+  /**
+   * Delete a team, the teams below it and their apps. When any of those
+   * teams holds apps the node asks for the caller's passkey (`412
+   * CONFIRM_REQUIRED`, its details listing the `apps` that go, which the
+   * approval names; an app added after it is refused), which `passkey` gives.
+   * Without one that `412` reaches the caller as {@link ConfirmRequired}. A
+   * team with no apps is deleted without a passkey.
+   */
+  async deleteTeam(org: string, team: string, passkey?: PasskeyProvider): Promise<void> {
+    const path = `orgs/${seg(org)}/teams/${seg(team)}`;
+    await (passkey ? this.deleteConfirmed(path, passkey) : this.delete(path));
   }
 
   /**
