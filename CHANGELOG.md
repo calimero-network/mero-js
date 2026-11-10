@@ -1,3 +1,9 @@
+## [29.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.10.0...mero-js-v29.11.0) (2026-11-10)
+
+### Features
+
+* **auth:** listActivity(), what the account's passkeys signed in to and approved ([#345](https://github.com/calimero-network/mero-js/issues/345)) ([e836a92](https://github.com/calimero-network/mero-js/commit/e836a9247392e1240f33c0063175dbe2e9d1817b))
+
 ## [29.10.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.9.0...mero-js-v29.10.0) (2026-11-10)
 
 ### Features

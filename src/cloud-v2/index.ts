@@ -43,6 +43,7 @@ export type {
   DeploymentInfo,
   DeploymentOffer,
   DeploymentOrgs,
+  OrgMemberSecurity,
   FrontendManifest,
   MeInfo,
   MeOrg,
