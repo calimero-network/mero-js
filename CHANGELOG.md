@@ -1,3 +1,9 @@
+## [29.12.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.11.0...mero-js-v29.12.0) (2026-11-10)
+
+### Features
+
+* **orgs:** orgMembersSecurity(), members' lockout risk for an org's admins ([#346](https://github.com/calimero-network/mero-js/issues/346)) ([3c92890](https://github.com/calimero-network/mero-js/commit/3c9289039ddf47a93310684872f1c95710c32b29))
+
 ## [29.11.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.10.0...mero-js-v29.11.0) (2026-11-10)
 
 ### Features
