@@ -57,6 +57,17 @@ const token = await client.invite(org, 'member', passkey, [teamId], { ttlSecs: 3
 await invitee.redeemInvite(token);
 ```
 
+An owner or admin can also give someone every app added to the organization
+later: each app team made from then on gives them a row, so in an
+organization that keeps its apps apart a new app reaches them though nobody
+named them. Apps already there are untouched.
+
+```ts
+const all = await client.invite(org, 'member', passkey, [], { allApps: true });
+await client.setAllApps(org, bobId, true, passkey); // false stops it
+(await client.getOrg(org)).allApps; // who holds it
+```
+
 The invites a caller may see (an admin all, a team's manager those naming only
 its teams, anyone their own) are listed without their tokens, and withdrawn by
 key with a passkey:
