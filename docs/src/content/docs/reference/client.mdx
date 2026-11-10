@@ -140,6 +140,7 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | --- | --- |
 | `createOrg(name, { recoveryKey? })` → org id | `POST orgs` |
 | `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`, `recovery`) | `GET orgs/{org}` |
+| `orgMembersSecurity(org)` → `OrgMemberSecurity[]` (`account`, `name`, `role`, `teams`, `passkeys` to `'3+'`, `recoveryCode`, `lastActiveDay`, `sessions`; the owner and admins only, `403` below; never ids, labels, sessions or activity) | `GET orgs/{org}/members?detail=security` |
 | `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
 | `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
 | `setMember(org, account, role, passkey)` | `POST orgs/{org}/members` |

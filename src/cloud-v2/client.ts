@@ -455,6 +455,10 @@ export interface DeploymentOrgs {
     apps: Array<{ app: string; version: string }>;
     /** RFC 3339: when its first instance from the deployment was created. */
     firstCreatedAt: string;
+    /** How many members it has (counts only, never who; core #4902). Absent from an older node. */
+    memberCount?: number;
+    /** How many of them signed in or used a session in the last 30 days (core #4902). Absent from an older node. */
+    activeMembers30d?: number;
   }>;
   /** Instances outside any organization, counted only. */
   outsideOrgs: number;
@@ -469,6 +473,28 @@ export interface FrontendManifest {
   versions: string[];
   deployments: Array<{ id: string; name: string; app: string; version: string }>;
   api: string[];
+}
+
+/**
+ * One member's lockout risk, as {@link CalimeroClient.orgMembersSecurity}
+ * lists it for an organization's owner and admins (core #4902). Never a
+ * credential id, a passkey's label or times, a session or an activity entry.
+ */
+export interface OrgMemberSecurity {
+  account: string;
+  /** The member's self-set name (`memberMetadata.name`); `null` when unset. */
+  name: string | null;
+  role: 'guest' | 'member' | 'admin' | 'owner';
+  /** The teams they are in. */
+  teams: string[];
+  /** How many passkeys they hold, capped: whether they have a backup, not how many devices. */
+  passkeys: 0 | 1 | 2 | '3+';
+  /** Whether a recovery code is set. */
+  recoveryCode: boolean;
+  /** The UTC day (`YYYY-MM-DD`) of their latest sign-in or session exchange; `null` when unknown. */
+  lastActiveDay: string | null;
+  /** How many live sessions they hold. */
+  sessions: number;
 }
 
 /**
@@ -2062,6 +2088,22 @@ export class CalimeroClient {
   }
 
   /**
+   * Each member's lockout risk (`GET /orgs/{org}/members?detail=security`),
+   * for the organization's owner and admins: name, role, teams, passkeys held
+   * (to `'3+'`), recovery code set, last active UTC day and live sessions.
+   * A member below admin is refused (`403 FORBIDDEN`), someone outside the
+   * organization gets {@link NotFound}; the admin's own session on the
+   * cluster's origin only, never an API key or a package-bound session. A
+   * node before core #4902 has no such route (a bare `404`).
+   */
+  async orgMembersSecurity(org: string): Promise<OrgMemberSecurity[]> {
+    const { members } = await this.get<{ members: OrgMemberSecurity[] }>(
+      `orgs/${seg(org)}/members?detail=security`,
+    );
+    return members;
+  }
+
+  /**
    * Delete an organization with its teams, invites and apps (its owner only).
    * The node asks for the owner's passkey (`412 CONFIRM_REQUIRED`), which `passkey` gives.
    */
@@ -2630,8 +2672,9 @@ export class CalimeroClient {
 
   /**
    * The organizations with instances created from deployment `id`, for its
-   * managers: each one's id, name, instance count, apps and releases, and
-   * first instance. Never members, teams or app data.
+   * managers: each one's id, name, instance count, apps and releases, first
+   * instance, and (core #4902) how many members it has and how many were
+   * active in 30 days. Never who the members are, teams or app data.
    */
   deploymentOrgs(id: string): Promise<DeploymentOrgs> {
     return this.get(`deployments/${seg(id)}/orgs`);

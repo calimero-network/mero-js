@@ -782,6 +782,18 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it("lists an organization's members' lockout risk for its admins (core #4902)", async () => {
+    const c = client();
+    const MEMBERS = [
+      { account: 'acc-1', name: 'Ana', role: 'admin', teams: ['t1'], passkeys: '3+', recoveryCode: true, lastActiveDay: '2026-11-10', sessions: 2 },
+      { account: 'acc-2', name: null, role: 'guest', teams: [], passkeys: 1, recoveryCode: false, lastActiveDay: null, sessions: 0 },
+    ];
+    node.answer = (head) =>
+      head.path.startsWith('/orgs/o%2F1/members') ? { status: 200, json: { orgId: 'o/1', members: MEMBERS } } : { status: 200, json: {} };
+    expect(await c.orgMembersSecurity('o/1')).toEqual(MEMBERS);
+    expect(sent()).toEqual([['GET', '/orgs/o%2F1/members?detail=security']]);
+  });
+
   it("lists what the account's passkeys did (core #4901)", async () => {
     const c = client();
     const ACTIVITY = [
