@@ -197,6 +197,125 @@ export interface OrgInfo extends Record<string, unknown> {
   newWorkStopped: { release: string; after: string } | null;
   /** The recovery key and any recovery under way; absent while the organization has none. */
   recovery?: OrgRecovery;
+  /** How it holds its apps ({@link OrgMode}); absent from nodes before app teams. */
+  mode?: OrgMode;
+}
+
+/**
+ * How an organization holds its apps, derived from its app teams (core
+ * `OrgMode`): `legacy` has none (its apps use organization access),
+ * `standalone` has only open ones (everyone has every app), `shared` has a
+ * closed one (each app lists who is in it).
+ */
+export type OrgMode = 'legacy' | 'standalone' | 'shared';
+
+/** One app team, as `GET /orgs/{org}/app-teams` lists it ({@link CalimeroClient.listAppTeams}). */
+export interface AppTeam {
+  /** The package this team is the app team of (one per package per organization). */
+  package: string;
+  teamId: string;
+  name: string;
+  /** `everyone` (open) or `invite` (closed). */
+  join: 'everyone' | 'invite';
+  /** How many of the organization's people are in the team. */
+  memberCount: number;
+  /** Capability bits everyone in the team holds there ({@link ORG_CAPABILITIES}); `null` when unset. */
+  defaultCapabilities: number | null;
+  /** Whether the caller is in the team. */
+  member: boolean;
+  /** Whether the caller manages it (its lead, an ancestor's lead, or an admin). */
+  manages: boolean;
+}
+
+/** `GET /orgs/{org}/app-teams`: the organization's mode and its app teams. A guest sees only the app teams they are in. */
+export interface AppTeams {
+  mode: OrgMode;
+  appTeams: AppTeam[];
+}
+
+/** One package to give an app team ({@link CalimeroClient.scopeApps}, core `ScopeApp`). */
+export interface ScopeApp {
+  package: string;
+  /** The team's name when one is made, 1..64 characters (absent: the package's display name, else the package id). */
+  name?: string;
+  /**
+   * The instances to move onto the team (absent: every organization-access
+   * instance of the package here; `[]`: none, for a fresh install).
+   */
+  instances?: string[];
+}
+
+/** What {@link CalimeroClient.scopeApps} asks for; every field absent takes the node's default. */
+export interface ScopeAppsOptions {
+  /** At most 64 packages (absent: every package with an organization-access instance here). */
+  apps?: ScopeApp[];
+  /** Close every app team (absent: when the organization then holds two or more). */
+  shared?: boolean;
+}
+
+/** One package's app team after {@link CalimeroClient.scopeApps}. */
+export interface ScopedAppTeam {
+  package: string;
+  teamId: string;
+  /** Whether the team was made now (`false`: it existed already). */
+  created: boolean;
+  /** The instances moved onto it. */
+  apps: string[];
+  /** How many rows were added for people who reached those instances. */
+  added: number;
+}
+
+/** `POST /orgs/{org}/app-teams`: the organization's mode after, and each package's team. */
+export interface ScopeAppsResult {
+  mode: OrgMode;
+  teams: ScopedAppTeam[];
+}
+
+/** A pending organization invite, as `GET /orgs/{org}/invites` lists it (never its token). */
+export interface OrgInvite {
+  /** The invite's key, which {@link CalimeroClient.revokeInvite} takes. */
+  inviteKey: string;
+  role: 'guest' | 'member' | 'admin';
+  /** The teams it adds its holder to. */
+  teams: string[];
+  usesLeft: number;
+  /** Unix seconds. */
+  expiresAt: number;
+  /** Listed until revoked, even past `expiresAt`. */
+  expired: boolean;
+  /** The account that made it; `null` for invites made before core recorded it. */
+  createdBy: string | null;
+  /** Unix seconds; `null` for invites made before core recorded it. */
+  createdAt: number | null;
+}
+
+/** One direct row of a team ({@link TeamInfo}). */
+export interface TeamMemberInfo {
+  account: string;
+  role: 'lead' | 'member' | 'readOnly';
+  /** Their effective bits there: their row's own, else the organization's with the team's default on top. */
+  capabilities: number;
+}
+
+/** `GET /orgs/{org}/teams/{team}` ({@link CalimeroClient.getTeam}). */
+export interface TeamInfo extends Record<string, unknown> {
+  teamId: string;
+  name: string;
+  parent: string | null;
+  join: 'everyone' | 'invite';
+  metadata: unknown;
+  /** The package it is the app team of (`metadata.app.package` on a top-level team), else `null`. */
+  package?: string | null;
+  /** Capability bits everyone in the team holds there on top of their own; `null` when unset. */
+  defaultCapabilities?: number | null;
+  members: TeamMemberInfo[];
+  /** The child teams the caller sees. */
+  children: string[];
+  apps: Array<{ appId: string; name: string; contextId: string }>;
+  /** The caller's direct row's role, if any. */
+  myRole: 'lead' | 'member' | 'readOnly' | null;
+  /** Whether the caller is in the team. */
+  member: boolean;
 }
 
 /** An organization's recovery key (core `Org::recovery`). */
@@ -2082,8 +2201,9 @@ export class CalimeroClient {
 
   /**
    * Set capability bits ({@link ORG_CAPABILITIES}): for a member (`account`),
-   * for a member of one team (`account` and `team`), or the organization's
-   * default (neither). Approved with the caller's `passkey`.
+   * for a member of one team (`account` and `team`), a team's default
+   * (`team` alone, {@link setTeamDefaultCapabilities}), or the
+   * organization's default (neither). Approved with the caller's `passkey`.
    */
   async setCapabilities(
     org: string,
@@ -2094,12 +2214,34 @@ export class CalimeroClient {
     await this.postConfirmed(`orgs/${seg(org)}/capabilities`, { capabilities, ...at }, passkey);
   }
 
+  /**
+   * Set the capability bits everyone in `team` holds there on top of their
+   * own, unless their row sets its own (`POST /orgs/{org}/capabilities` with
+   * `team` and no `account`): `ORG_CAPABILITIES.INVITE_MEMBERS` is "members
+   * may invite others to this app". The team's managers, or whoever holds
+   * `MANAGE_MEMBERS` on it; approved with the caller's `passkey`
+   * (`__set_default_capabilities { team, capabilities }`).
+   */
+  async setTeamDefaultCapabilities(
+    org: string,
+    team: string,
+    capabilities: number,
+    passkey: PasskeyProvider,
+  ): Promise<void> {
+    await this.postConfirmed(`orgs/${seg(org)}/capabilities`, { team, capabilities }, passkey);
+  }
+
   async createTeam(org: string, name: string, join: 'everyone' | 'invite', parent?: string): Promise<string> {
     const { teamId } = await this.post<{ teamId: string }>(`orgs/${seg(org)}/teams`, { name, join, parent });
     return teamId;
   }
 
-  getTeam(org: string, team: string): Promise<Record<string, unknown>> {
+  /**
+   * A team the caller sees: its rows (each with its effective capabilities),
+   * children, apps, the package it is the app team of and its default
+   * capabilities.
+   */
+  getTeam(org: string, team: string): Promise<TeamInfo> {
     return this.get(`orgs/${seg(org)}/teams/${seg(team)}`);
   }
 
@@ -2169,6 +2311,55 @@ export class CalimeroClient {
 
   redeemInvite(token: string): Promise<Record<string, unknown>> {
     return this.post(`invites/${seg(token)}/redeem`);
+  }
+
+  /**
+   * The organization's pending invites the caller may see (never a token):
+   * every one for an owner or admin, their own, and those naming only teams
+   * they manage. Expired ones are listed (`expired: true`) until revoked. A
+   * caller outside the organization: {@link NotFound}.
+   */
+  async listInvites(org: string): Promise<OrgInvite[]> {
+    const { invites } = await this.get<{ invites: OrgInvite[] }>(`orgs/${seg(org)}/invites`);
+    return invites;
+  }
+
+  /**
+   * Withdraw an invite by its key ({@link listInvites}), approved with the
+   * caller's `passkey` (`__revoke_invite { inviteKey }`). One the caller may
+   * not see: {@link NotFound}.
+   */
+  async revokeInvite(org: string, inviteKey: string, passkey: PasskeyProvider): Promise<void> {
+    await this.deleteConfirmed(`orgs/${seg(org)}/invites/${seg(inviteKey)}`, passkey);
+  }
+
+  // ---------------------------------------------------------------- app teams
+
+  /**
+   * The organization's mode and its app teams (one per package), for any
+   * member; a guest sees only those they are in. A caller outside the
+   * organization: {@link NotFound}.
+   */
+  listAppTeams(org: string): Promise<AppTeams> {
+    return this.get(`orgs/${seg(org)}/app-teams`);
+  }
+
+  /**
+   * Give apps their own access lists in one step (owner or admin): find or
+   * make each package's app team, add everyone who reaches its instances now,
+   * and move those instances onto it; with `shared`, close every app team.
+   * Idempotent per package. Approved with the caller's `passkey`
+   * (`__scope_apps { apps, shared }`); a refusal is `400 REJECTED` with the
+   * node's reason. For a fresh standalone install pass
+   * `{ apps: [{ package, name, instances: [] }] }`.
+   */
+  scopeApps(org: string, passkey: PasskeyProvider, options: ScopeAppsOptions = {}): Promise<ScopeAppsResult> {
+    // The node refuses unknown fields and reads an absent one as its default,
+    // so only the fields given go.
+    const body: Record<string, unknown> = {};
+    if (options.apps !== undefined) body.apps = options.apps;
+    if (options.shared !== undefined) body.shared = options.shared;
+    return this.postConfirmed(`orgs/${seg(org)}/app-teams`, body, passkey);
   }
 
   // ---------------------------------------------------------------- package origins

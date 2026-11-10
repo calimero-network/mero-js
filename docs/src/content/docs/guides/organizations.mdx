@@ -57,6 +57,15 @@ const token = await client.invite(org, 'member', passkey, [teamId], { ttlSecs: 3
 await invitee.redeemInvite(token);
 ```
 
+The invites a caller may see (an admin all, a team's manager those naming only
+its teams, anyone their own) are listed without their tokens, and withdrawn by
+key with a passkey:
+
+```ts
+const invites = await client.listInvites(org); // { inviteKey, role, teams, usesLeft, expiresAt, expired, createdBy, createdAt }
+await client.revokeInvite(org, invites[0].inviteKey, passkey);
+```
+
 Someone without an account yet signs up with the invite and joins the
 organization in the same step. On a cluster whose sign-up policy is `invite`
 this is the only way in; read the policy first, without a session, to say so
@@ -88,6 +97,28 @@ Deleting a team whose teams hold apps takes the deleter's passkey: the node's
 `412 CONFIRM_REQUIRED` lists the `apps` that go in its details, and the
 approval names exactly those (an app added after it is refused). A team with
 no apps is deleted without one, so `passkey` may be left out there.
+
+## App teams
+
+An app team is a top-level team that holds one package's instances (one per
+package per organization). The organization's mode follows from them:
+`legacy` (none), `standalone` (every app team open) or `shared` (some closed,
+and each app lists who is in it).
+
+```ts
+const { mode, appTeams } = await client.listAppTeams(org); // any member; a guest sees only its own
+// The owner or an admin, with the passkey: find or make each package's team,
+// add everyone who reaches its instances now, move them onto it.
+const { teams } = await client.scopeApps(org, passkey, {
+  apps: [{ package: 'com.example.chat', name: 'Chat' }], // absent: every package with an org-access instance
+  shared: true, // absent: when the organization then holds two or more
+});
+// "Members may invite others to this app":
+await client.setTeamDefaultCapabilities(org, teams[0].teamId, ORG_CAPABILITIES.INVITE_MEMBERS, passkey);
+```
+
+`getTeam` answers the team's `package` and `defaultCapabilities`, and each
+member's effective `capabilities`.
 
 ## Capabilities
 

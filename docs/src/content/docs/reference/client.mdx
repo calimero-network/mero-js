@@ -143,14 +143,19 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `removeMember(org, account, passkey)` (also to leave: your own account) | `DELETE orgs/{org}/members/{account}` |
 | `setMemberMetadata(org, account, metadata)` | `POST orgs/{org}/members/{account}/metadata` |
 | `setCapabilities(org, bits, passkey, { account?, team? })` | `POST orgs/{org}/capabilities` |
+| `setTeamDefaultCapabilities(org, team, bits, passkey)` (what everyone in the team holds there) | `POST orgs/{org}/capabilities` |
 | `createTeam(org, name, join, parent?)` → team id | `POST orgs/{org}/teams` |
-| `getTeam(org, team)` | `GET orgs/{org}/teams/{team}` |
+| `getTeam(org, team)` → `TeamInfo` (with `package`, `defaultCapabilities`) | `GET orgs/{org}/teams/{team}` |
 | `updateTeam(org, team, { name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
 | `deleteTeam(org, team, passkey?)` | `DELETE orgs/{org}/teams/{team}`; when its teams hold apps, approved with `passkey` (the `412` details list the `apps`) |
 | `setTeamMember(org, team, account, passkey, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
 | `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
 | `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
 | `redeemInvite(token)` (no approval) | `POST invites/{token}/redeem` |
+| `listInvites(org)` → `OrgInvite[]` (the ones the caller may see; never a token) | `GET orgs/{org}/invites` |
+| `revokeInvite(org, inviteKey, passkey)` | `DELETE orgs/{org}/invites/{inviteKey}` |
+| `listAppTeams(org)` → `{ mode, appTeams }` | `GET orgs/{org}/app-teams` |
+| `scopeApps(org, passkey, { apps?, shared? })` → `{ mode, teams }` (owner or admin) | `POST orgs/{org}/app-teams` |
 | `setRecoveryKey(org, publicKey \| null, passkey)` (the owner) | `POST orgs/{org}/recovery` |
 | `startRecovery(org, seed)` → `{ startedAt, readyAt }` (signs locally) | `POST orgs/{org}/recovery/start` |
 | `cancelRecovery(org, passkey)` (the owner) | `POST orgs/{org}/recovery/cancel` |
