@@ -8,6 +8,29 @@
 // The client, its errors and its types
 export * from './cloud-v2/index.js';
 
+// The runtime the client sends every route through (also its own entry point,
+// `@calimero-network/mero-js/runtime`): one `Transport.request` over the
+// attested, sealed channel, with the session, step-up and error mapping.
+export {
+  DEFAULT_RETRY,
+  NodeTransport,
+  directoryTransport,
+  newIdempotencyKey,
+  queryString,
+  refusal,
+  retryDelayMs,
+  routePath,
+  sseFrames,
+} from './runtime/transport.js';
+export type {
+  DirectorySource,
+  HttpMethod,
+  NodeTransportOptions,
+  QueryValue,
+  RequestOptions,
+  Transport,
+} from './runtime/transport.js';
+
 // Sealed transport: requests encrypted end to end to a TEE node's attested key,
 // and the checks that decide whether a quote is trusted.
 export * from './sealed/index.js';

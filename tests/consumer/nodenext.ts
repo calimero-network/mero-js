@@ -27,3 +27,17 @@ export const failedList: UpgradeRun['failed'] = ['a-1'];
 export function needsPasskey(e: unknown): boolean {
   return e instanceof ConfirmRequired && e.status === 412;
 }
+
+// The runtime entry point: a route layer of its own sends through a client's transport.
+import { NodeTransport, routePath } from '@calimero-network/mero-js/runtime';
+import type { RequestOptions, Transport } from '@calimero-network/mero-js/runtime';
+
+export const transport: Transport = client.transport;
+export const own = new NodeTransport(options);
+export const sameClient = new CalimeroClient(own);
+export const getApp = (app: string): Promise<{ appId: string }> => transport.json('GET', routePath('apps/{app}', { app }));
+
+// @ts-expect-error a method is one of the node's
+export const badMethod = (): Promise<Response> => transport.request('FETCH', 'apps');
+
+export const stepUp: RequestOptions = { body: {}, passkey, retry: 'once' };

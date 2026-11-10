@@ -10,21 +10,22 @@
  * ```
  */
 
-import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
-import { fetchAttestedKey, type AttestationDoc, type CloudPolicy } from './attestation.js';
-import { DEFAULT_DIRECTORY, orderNodes, readDirectory } from './directory.js';
 import {
-  CalimeroError,
-  ConfirmCancelled,
-  ConfirmPromptBlocked,
-  ConfirmRequired,
-  LoginRequired,
-  OriginNotRegistered,
-  UnavailableError,
-  WrongNode,
-  WrongRecoveryCode,
-  errorFrom,
-} from './errors.js';
+  DEFAULT_RETRY,
+  NodeTransport,
+  directoryTransport,
+  newIdempotencyKey,
+  refusal,
+  retryDelayMs,
+  type CalimeroSession,
+  type CloudEvent,
+  type CloudRetryOptions,
+  type HttpMethod,
+  type RequestOptions,
+} from '../runtime/transport.js';
+import { type AttestationDoc, type CloudPolicy } from './attestation.js';
+import { DEFAULT_DIRECTORY } from './directory.js';
+import { CalimeroError, LoginRequired, OriginNotRegistered, WrongRecoveryCode } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider, type PasskeyUserVerification } from './passkey.js';
 import { signRecovery } from './recovery.js';
 import {
@@ -73,12 +74,7 @@ export {
 } from './errors.js';
 export type { Committed, SignUpRefusal } from './errors.js';
 
-export interface CalimeroSession {
-  accountId: string;
-  sessionToken: string;
-  expiresAt: number;
-  refreshToken: string;
-}
+export type { CalimeroSession, CloudEvent };
 
 export interface CallResult {
   index: number;
@@ -89,12 +85,6 @@ export interface CallResult {
 export interface ViewResult {
   index: number;
   result: unknown;
-}
-
-export interface CloudEvent {
-  id: string;
-  kind: string;
-  data: unknown;
 }
 
 /** What installing a package release answers. */
@@ -797,99 +787,9 @@ export interface SignUpPolicy {
   inviteRequired: boolean;
 }
 
-/**
- * The user verification a confirmation asks the passkey for: what the node's
- * `412` details name, if it names one WebAuthn knows, else `fallback` (the
- * flow's own requirement: `required` for a step-up, which the node takes only
- * with the user verified; `preferred` for the sign-up confirmation, which it
- * takes with the user present).
- */
-function userVerificationOf(named: unknown, fallback: PasskeyUserVerification): PasskeyUserVerification {
-  return named === 'required' || named === 'preferred' || named === 'discouraged' ? named : fallback;
-}
-
-/**
- * What a failed confirmation prompt means to the caller. The browser or a
- * password manager refusing to show the prompt (the page not focused because
- * an extension's popup still holds focus, or another prompt still open) is
- * {@link ConfirmPromptBlocked}; the user dismissing it (`NotAllowedError`, or
- * `AbortError` when it was aborted) is {@link ConfirmCancelled}; anything
- * else is a real failure, passed through.
- */
-function promptFailure(error: unknown): unknown {
-  const e = error as { name?: unknown; message?: unknown } | null;
-  const name = e?.name;
-  const message = typeof e?.message === 'string' ? e.message : '';
-  if (name === 'InvalidStateError' || /not focused|already pending/i.test(message)) {
-    return new ConfirmPromptBlocked(error);
-  }
-  if (name === 'NotAllowedError' || name === 'AbortError') return new ConfirmCancelled(error);
-  return error;
-}
-
 /** One URL path segment, so an id cannot reach another route. */
 function seg(value: string): string {
   return encodeURIComponent(value);
-}
-
-/**
- * The node refuses an envelope past its 64 MiB sealed cap with `413` in the
- * clear, before opening it, so the refusal arrives as the transport's. To the
- * caller it is the API's `TOO_LARGE`, as the Rust client reports it.
- */
-function sealedError(error: unknown): unknown {
-  if (error instanceof SealedTransportError && error.status === 413) {
-    return errorFrom(413, {
-      error: 'TOO_LARGE',
-      message: error.message.replace(/^Sealed request refused: /, ''),
-    });
-  }
-  return error;
-}
-
-/** Read a refused response's body and map it ({@link errorFrom}). */
-async function refusal(response: Response): Promise<CalimeroError> {
-  const text = await response.text().catch(() => '');
-  let body: unknown = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { message: text };
-  }
-  return errorFrom(response.status, body, response.headers.get('retry-after'));
-}
-
-/** Server-sent event frames from a response body: `{ id, kind, data }` each, `data` parsed as JSON when it is. */
-async function* sseFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<CloudEvent> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-    let cut: number;
-    while ((cut = buffer.indexOf('\n\n')) >= 0) {
-      const frame = buffer.slice(0, cut);
-      buffer = buffer.slice(cut + 2);
-      let id = '';
-      let kind = '';
-      let data = '';
-      for (const line of frame.split('\n')) {
-        if (line.startsWith('id:')) id = line.slice(3).trim();
-        else if (line.startsWith('event:')) kind = line.slice(6).trim();
-        else if (line.startsWith('data:')) data += line.slice(5).trim();
-      }
-      if (!kind && !data) continue;
-      let parsed: unknown = data;
-      try {
-        parsed = JSON.parse(data);
-      } catch {
-        /* plain text */
-      }
-      yield { id, kind, data: parsed };
-    }
-  }
 }
 
 /** Bytes as lower-case hex. */
@@ -897,40 +797,8 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * A key for a call the caller gave none, made once so every retry shares it:
- * `node:c-` and 16 random bytes in base64url without padding, as the Rust
- * client mints it. It only has to outlive this client's own retries, so it
- * takes the node's short-lived class: a key starting `node:` is kept 10
- * minutes, a caller's own key 24 hours.
- * `getRandomValues`, not `randomUUID`, which a page outside a secure context lacks.
- */
-function newIdempotencyKey(): string {
-  return `node:c-${b64url(crypto.getRandomValues(new Uint8Array(16)))}`;
-}
-
-/**
- * How a call or a view is sent again while the node is unavailable (D70): with
- * the same key, after a backoff that starts at `baseDelayMs` and doubles up to
- * `maxDelayMs`, no jitter, at most `retries` times. The defaults are the Rust
- * client's: 6 retries, 200 ms doubling, at most 2 s (about 9 s in all, past a
- * leader election).
- */
-export interface CloudRetryOptions {
-  /** Retries after the first attempt. Default 6. */
-  retries?: number;
-  /** The first backoff; each retry doubles it. Default 200 ms. */
-  baseDelayMs?: number;
-  /** The longest backoff. Default 2 s. */
-  maxDelayMs?: number;
-}
-
-export const DEFAULT_RETRY = { retries: 6, baseDelayMs: 200, maxDelayMs: 2000 } as const;
-
-/** The backoff before retry `retry` (0 for the first): `baseDelayMs` doubling, at most `maxDelayMs`. */
-export function retryDelayMs(retry: number, options: { baseDelayMs: number; maxDelayMs: number }): number {
-  return Math.min(options.baseDelayMs * 2 ** retry, options.maxDelayMs);
-}
+export { DEFAULT_RETRY, retryDelayMs };
+export type { CloudRetryOptions };
 
 export interface CalimeroClientOptions {
   /** One node of the cluster: the one the client talks to first. */
@@ -968,51 +836,16 @@ export interface CalimeroConnectOptions {
   random?: () => number;
 }
 
-/** Where a client made by {@link CalimeroClient.connect} re-reads its node list. */
-interface DirectorySource {
-  directory: string;
-  cluster: string;
-  zone: string | undefined;
-  random: () => number;
-  /** When the listing is due to be read again (ms since the epoch). */
-  due: number;
-  /** The re-read under way, if any. */
-  reading?: Promise<void>;
-}
-
-/**
- * The ceremonies that mint a session, which {@link CalimeroClient.send} never
- * repeats by itself: a sign-in or sign-up is started again by its caller (with
- * the passkey), and a refresh moves through the nodes in
- * {@link CalimeroClient.exchangeRefresh}. A node answers them `421 WRONG_NODE`
- * before it spends the challenge or the refresh token (core #4774).
- */
-function ceremony(path: string): boolean {
-  return path === 'auth/refresh' || path.startsWith('auth/passkey/') || RECOVERY_CEREMONIES.has(path);
-}
-
-/** The signed-out halves of an account recovery: a `401` there is the code's, not a session's. */
-const RECOVERY_CEREMONIES = new Set(['auth/recovery/begin', 'auth/recovery/start', 'auth/recovery/finish']);
-
 export class CalimeroClient {
-  /** Every node this client may use, `baseUrl` first (or as the directory last ordered them). */
-  private nodeUrls: string[];
-  /** The one in use: an index into {@link nodeUrls}. */
-  private at = 0;
-  /** A sealed fetch per node, each attesting its own node on first use. */
-  private readonly channels = new Map<string, typeof fetch>();
-  private readonly policy: CloudPolicy;
-  /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
-  private readonly raw: typeof fetch;
-  private auth: string | undefined;
-  private current: CalimeroSession | undefined;
-  /** The refresh under way, which every request that needs one shares. */
-  private refreshing: Promise<CalimeroSession> | undefined;
-  private readonly retry: Required<CloudRetryOptions>;
-  /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
-  private readonly networkFailures = new WeakSet<object>();
-  /** The directory the node list came from, for a client made by {@link connect}. */
-  private source: DirectorySource | undefined;
+  /**
+   * The runtime every route of this client is sent through
+   * (`@calimero-network/mero-js/runtime`): the attested, sealed channel to each
+   * node, the credential and its refresh, the `412 CONFIRM_REQUIRED` step-up,
+   * D70 retries and error mapping. A route layer of its own (one generated from
+   * the node's OpenAPI document, say) sends through it and shares this
+   * client's session.
+   */
+  readonly transport: NodeTransport;
 
   /**
    * A client for the Calimero Cloud cluster named `cluster`: its node list read
@@ -1025,278 +858,42 @@ export class CalimeroClient {
    * first request once the directory's `refreshAfterSeconds` has passed.
    */
   static async connect(options: CalimeroConnectOptions): Promise<CalimeroClient> {
-    const directory = options.directory ?? DEFAULT_DIRECTORY;
-    const random = options.random ?? Math.random;
-    const fetcher = options.fetch ?? ((input, init) => fetch(input, init));
-    const listing = await readDirectory(directory, options.cluster, fetcher);
-    const [baseUrl, ...nodes] = orderNodes(listing.nodes, options.zone, random);
-    const client = new CalimeroClient({ baseUrl, nodes, policy: options.policy, fetch: options.fetch, retry: options.retry });
-    client.source = {
-      directory,
-      cluster: options.cluster,
-      zone: options.zone,
-      random,
-      due: Date.now() + listing.refreshAfterSeconds * 1000,
-    };
-    return client;
+    const transport = await directoryTransport({ ...options, directory: options.directory ?? DEFAULT_DIRECTORY });
+    return new CalimeroClient(transport);
   }
 
-  constructor(options: CalimeroClientOptions) {
-    const trim = (url: string) => url.replace(/\/+$/, '');
-    this.nodeUrls = [...new Set([options.baseUrl, ...(options.nodes ?? [])].map(trim))];
-    this.policy = options.policy;
-    this.retry = { ...DEFAULT_RETRY, ...options.retry };
-    const given = options.fetch ?? ((input, init) => fetch(input, init));
-    // `fetch` rejects with a `TypeError` when it gets no answer: the connection
-    // was refused, reset or dropped before the response. The sealed fetch passes
-    // that rejection on unchanged, so it is recognised here, at its source, and
-    // not by its type alone (a bad URL is a `TypeError` too, and is not retried).
-    const raw: typeof fetch = async (input, init) => {
-      try {
-        return await given(input, init);
-      } catch (error) {
-        if (error instanceof TypeError) this.networkFailures.add(error);
-        throw error;
-      }
-    };
-    this.raw = raw;
+  /** A client of the nodes `options` names, or one sending through an existing `transport`. */
+  constructor(options: CalimeroClientOptions | NodeTransport) {
+    this.transport = options instanceof NodeTransport ? options : new NodeTransport(options);
   }
 
   /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` or a failover moved the client on. */
   get nodeUrl(): string {
-    return this.nodeUrls[this.at];
+    return this.transport.nodeUrl;
   }
 
   /** Every node this client may use, in the order it moves through them. */
   get nodes(): string[] {
-    return [...this.nodeUrls];
-  }
-
-  /** The sealed channel to `url`, attested under the client's policy before its first request. */
-  private channel(url: string): typeof fetch {
-    let sealed = this.channels.get(url);
-    if (!sealed) {
-      sealed = createSealedFetch({
-        baseUrl: url,
-        transportPublicKey: () => fetchAttestedKey(url, this.policy, this.raw),
-        fetch: this.raw,
-      });
-      this.channels.set(url, sealed);
-    }
-    return sealed;
-  }
-
-  /**
-   * Move on from node `from` (the one that answered `421 WRONG_NODE`) to the
-   * next one. False when there is no other. A request that saw the same node
-   * refuse after another request moved on already does not move again.
-   */
-  private moveOn(from: string): boolean {
-    if (this.nodeUrls.length < 2) return false;
-    if (this.nodeUrl === from) this.at = (this.at + 1) % this.nodeUrls.length;
-    return true;
-  }
-
-  /**
-   * Fail over from node `from`, where a request's retries ran out, to the next
-   * node it has not `tried`. False when it has tried them all. A request whose
-   * node another request moved away from already goes to that node, if untried.
-   */
-  private failOver(from: string, tried: Set<string>): boolean {
-    if (this.nodeUrl !== from && !tried.has(this.nodeUrl)) return true;
-    const count = this.nodeUrls.length;
-    for (let step = 1; step < count; step++) {
-      const next = (this.at + step) % count;
-      if (!tried.has(this.nodeUrls[next])) {
-        this.at = next;
-        this.reread();
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Read the node list again from the directory, in the background, for a
-   * client made by {@link connect}: the node in use stays first, then the
-   * directory's order; a node no longer listed is dropped. A failed read is
-   * ignored. One read at a time.
-   */
-  private reread(): void {
-    const source = this.source;
-    if (!source || source.reading) return;
-    source.reading = readDirectory(source.directory, source.cluster, this.raw)
-      .then((listing) => {
-        const current = this.nodeUrl;
-        const listed = orderNodes(listing.nodes, source.zone, source.random);
-        this.nodeUrls = [current, ...listed.filter((url) => url !== current)];
-        this.at = 0;
-        source.due = Date.now() + listing.refreshAfterSeconds * 1000;
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        source.reading = undefined;
-      });
+    return this.transport.nodes;
   }
 
   /** Authenticate every request with an API key. */
   useApiKey(key: string): void {
-    this.auth = key;
-    this.current = undefined;
+    this.transport.useApiKey(key);
   }
 
   useSession(session: CalimeroSession): void {
-    this.auth = session.sessionToken;
-    this.current = session;
+    this.transport.useSession(session);
   }
 
   get session(): CalimeroSession | undefined {
-    return this.current;
+    return this.transport.session;
   }
 
-  /**
-   * Send one request to the node in use, with the credential held now, and
-   * answer the response, whatever its status. {@link send} judges it.
-   */
-  private async request(
-    method: string,
-    path: string,
-    body?: unknown,
-    raw?: Uint8Array,
-    contentType = 'application/wasm',
-    signal?: AbortSignal,
-  ): Promise<Response> {
-    const headers: Record<string, string> = {};
-    if (this.auth) headers.authorization = `Bearer ${this.auth}`;
-    let payload: BodyInit | undefined;
-    if (raw) {
-      headers['content-type'] = contentType;
-      payload = raw as unknown as BodyInit;
-    } else if (body !== undefined) {
-      headers['content-type'] = 'application/json';
-      payload = JSON.stringify(body);
-    }
-    if (this.source && Date.now() >= this.source.due) this.reread();
-    const url = this.nodeUrl;
-    try {
-      return await this.channel(url)(`${url}/${path}`, { method, headers, body: payload, signal });
-    } catch (error) {
-      throw sealedError(error);
-    }
-  }
-
-  /**
-   * {@link request}, answering what a lost issuing node or a node on the
-   * wrong release does to a session: a successful response, or the refusal as a
-   * typed error ({@link errorFrom}).
-   *
-   * - `401 UNAUTHENTICATED` to a request that carried a session: the node that
-   *   signed the session may be gone, replaced, or out of reach of the node
-   *   asked, which any node of the cluster answers with a refresh. The client
-   *   refreshes once, shared by every request that needs it at the same time
-   *   ({@link refresh}), and repeats the request once. A refresh that is
-   *   refused surfaces as {@link LoginRequired}.
-   * - `421 WRONG_NODE`: this node's release may not serve the account. The
-   *   client moves to the next node it knows and repeats the request once; with
-   *   none, the {@link WrongNode} reaches the caller.
-   *
-   * Repeating is safe even for a request that is not idempotent: the node
-   * answers `401` and `421` when it judges the credential, before it reads what
-   * the request asks, so the first attempt ran nothing. The exceptions are the
-   * ceremonies that mint a session ({@link ceremony}), never repeated here.
-   */
-  private async send(
-    method: string,
-    path: string,
-    body?: unknown,
-    raw?: Uint8Array,
-    contentType?: string,
-    signal?: AbortSignal,
-  ): Promise<Response> {
-    let refreshed = false;
-    let moved = false;
-    for (;;) {
-      const [token, at] = [this.auth, this.nodeUrl];
-      const response = await this.request(method, path, body, raw, contentType, signal);
-      if (response.ok) return response;
-      const error = await refusal(response);
-      if (error instanceof WrongNode && !moved) {
-        moved = true;
-        if (this.moveOn(at) && !ceremony(path)) continue;
-      } else if (error instanceof LoginRequired && !refreshed && this.mayRefresh(token, path)) {
-        refreshed = true;
-        await this.renew(token as string);
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  /** Whether a `401` to a request sent with `token` is one a refresh may answer. */
-  private mayRefresh(token: string | undefined, path: string): boolean {
-    return token !== undefined && this.current !== undefined && !ceremony(path);
-  }
-
-  /**
-   * A fresh session in place of the one `token` belonged to: by the refresh
-   * another request already made, or by one this request starts.
-   */
-  private async renew(token: string): Promise<void> {
-    if (this.auth !== token) return;
-    await this.refresh();
-  }
-
-  private async json<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    raw?: Uint8Array,
-    contentType?: string,
-  ): Promise<T> {
-    const response = await this.send(method, path, body, raw, contentType);
-    const text = await response.text();
-    return (text ? JSON.parse(text) : {}) as T;
-  }
-
-  /**
-   * {@link json} for a call or a view (D70): while the node answers 503 or
-   * cannot be reached, the same request, with the same idempotency key, is sent
-   * again after {@link retryDelayMs} (or the pause the node asked for, if
-   * longer), at most `retries` times. Every other answer is final.
-   *
-   * When a node's retries run out, the request fails over to the next node the
-   * client knows and its retries start again there, with the same key: the
-   * key is kept in the app's replicated log, so the cluster answers it once
-   * whichever node it reaches. Each node is tried once per request. The last
-   * failure surfaces as {@link UnavailableError}: the node's 503, or reason
-   * `network` for a connection that failed, whose `committed` is `'unknown'`.
-   *
-   * `once` sends the request exactly once, to the node in use (the confirmed
-   * attempt of {@link callConfirmed}, whose challenge is single-use).
-   */
-  private async retried<T>(method: string, path: string, body: Record<string, unknown>, once = false): Promise<T> {
-    const retries = once ? 0 : this.retry.retries;
-    const tried = new Set<string>();
-    for (;;) {
-      let unavailable: UnavailableError | undefined;
-      let node = this.nodeUrl;
-      for (let attempt = 0; ; attempt++) {
-        node = this.nodeUrl;
-        tried.add(node);
-        try {
-          return await this.json<T>(method, path, body);
-        } catch (error) {
-          if (error instanceof UnavailableError) unavailable = error;
-          else if (error instanceof TypeError && this.networkFailures.has(error)) {
-            unavailable = new UnavailableError('NETWORK', `the node could not be reached: ${error.message}`, {}, undefined, error);
-          } else throw error;
-        }
-        if (attempt >= retries) break;
-        const backoff = retryDelayMs(attempt, this.retry);
-        await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (unavailable.retryAfter ?? 0) * 1000)));
-      }
-      if (once || !this.failOver(node, tried)) throw unavailable;
-    }
+  /** A JSON request, or a raw one when `raw` is given (as `contentType`, the transport's default when absent). */
+  private json<T>(method: HttpMethod, path: string, body?: unknown, raw?: Uint8Array, contentType?: string): Promise<T> {
+    const options: RequestOptions = raw ? { bytes: raw, ...(contentType === undefined ? {} : { contentType }) } : { body };
+    return this.transport.json<T>(method, path, options);
   }
 
   post<T = Record<string, unknown>>(path: string, body: unknown = {}): Promise<T> {
@@ -1351,7 +948,6 @@ export class CalimeroClient {
       'auth/passkey/register/finish',
       { challengeId: begin.challengeId, registration, ...invite },
       passkey,
-      undefined,
       'preferred',
       signal,
     );
@@ -1400,7 +996,7 @@ export class CalimeroClient {
     const page = (globalThis as { location?: { origin?: string } }).location?.origin;
     if (!page || page === 'null') return undefined;
     const nodes = new Set(
-      this.nodeUrls.map((url) => {
+      this.transport.nodes.map((url) => {
         try {
           return new URL(url).origin;
         } catch {
@@ -1430,34 +1026,7 @@ export class CalimeroClient {
    * same token again (which would revoke the session).
    */
   refresh(): Promise<CalimeroSession> {
-    if (!this.refreshing) {
-      const pending = this.exchangeRefresh();
-      this.refreshing = pending;
-      const clear = () => {
-        if (this.refreshing === pending) this.refreshing = undefined;
-      };
-      pending.then(clear, clear);
-    }
-    return this.refreshing;
-  }
-
-  private async exchangeRefresh(): Promise<CalimeroSession> {
-    const current = this.current;
-    if (!current) throw new Error('no session to refresh');
-    let session: CalimeroSession | undefined;
-    // A node that may not serve the account answers `421 WRONG_NODE` before it
-    // spends the refresh token (core #4774), so the same token goes to the next
-    // node (`send` moved there already): once per node, at most.
-    for (let tried = 1; session === undefined; tried++) {
-      try {
-        session = await this.post<CalimeroSession>('auth/refresh', { refreshToken: current.refreshToken });
-      } catch (error) {
-        if (!(error instanceof WrongNode) || tried >= this.nodeUrls.length) throw error;
-      }
-    }
-    // A sign-in or another session taken while this one was refreshing wins.
-    if (this.current === current) this.useSession(session);
-    return session;
+    return this.transport.refresh();
   }
 
   /**
@@ -1523,8 +1092,7 @@ export class CalimeroClient {
     try {
       await this.post(path);
     } finally {
-      this.auth = undefined;
-      this.current = undefined;
+      this.transport.signOut();
     }
   }
 
@@ -1642,8 +1210,7 @@ export class CalimeroClient {
    */
   async attestation(): Promise<AttestationDoc> {
     const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
-    const response = await this.raw(`${this.nodeUrl}/attestation?nonce=${nonce}`);
-    if (!response.ok) throw await refusal(response);
+    const response = await this.transport.unsealed('attestation', { query: { nonce } });
     return (await response.json()) as AttestationDoc;
   }
 
@@ -1728,8 +1295,9 @@ export class CalimeroClient {
    * app; `application/octet-stream` otherwise.
    */
   async blobContent(app: string, id: string, options: { grant?: string } = {}): Promise<BlobContent> {
-    const query = options.grant === undefined ? '' : `?grant=${encodeURIComponent(options.grant)}`;
-    const response = await this.send('GET', `apps/${seg(app)}/blobs/${seg(id)}${query}`);
+    const response = await this.transport.request('GET', `apps/${seg(app)}/blobs/${seg(id)}`, {
+      query: { grant: options.grant },
+    });
     return {
       data: new Uint8Array(await response.arrayBuffer()),
       contentType: response.headers.get('content-type') ?? 'application/octet-stream',
@@ -1905,41 +1473,19 @@ export class CalimeroClient {
     return this.confirmed<T>('DELETE', path, body, passkey);
   }
 
-  private async confirmed<T>(
+  /**
+   * `body` to `path`, answering a `412 CONFIRM_REQUIRED` with `passkey` when one
+   * is given; `signal` aborts only the passkey prompt.
+   */
+  private confirmed<T>(
     method: 'POST' | 'DELETE',
     path: string,
     body: Record<string, unknown>,
     passkey: PasskeyProvider | undefined,
-    send: (body: Record<string, unknown>) => Promise<T> = (b) => this.json<T>(method, path, b),
-    userVerification: PasskeyUserVerification = 'required',
+    userVerification?: PasskeyUserVerification,
     signal?: AbortSignal,
   ): Promise<T> {
-    try {
-      return await send(body);
-    } catch (error) {
-      if (!(error instanceof ConfirmRequired) || !passkey) throw error;
-      const d = error.details as {
-        challengeId: string;
-        challenge: string;
-        rpId: string;
-        allowCredentials?: string[];
-        userVerification?: unknown;
-      };
-      let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
-      try {
-        // A step-up is taken only with the user verified (PIN or biometric);
-        // `preferred` lets a password manager skip it, and the node then
-        // refuses. Only the sign-up confirmation passes `preferred`. A
-        // requirement the node names itself wins.
-        assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials, {
-          userVerification: userVerificationOf(d.userVerification, userVerification),
-          ...(signal ? { signal } : {}),
-        });
-      } catch (declined) {
-        throw promptFailure(declined);
-      }
-      return send({ ...body, confirm: { challengeId: d.challengeId, assertion } });
-    }
+    return this.transport.json<T>(method, path, { body, passkey, userVerification, promptSignal: signal });
   }
 
   /**
@@ -1975,7 +1521,7 @@ export class CalimeroClient {
    */
   call(app: string, method: string, args: unknown = {}, idempotencyKey?: string): Promise<CallResult> {
     const key = idempotencyKey ?? newIdempotencyKey();
-    return this.retried('POST', `apps/${seg(app)}/intents`, { method, args, idempotencyKey: key });
+    return this.transport.json('POST', `apps/${seg(app)}/intents`, { body: { method, args, idempotencyKey: key }, retry: true });
   }
 
   /**
@@ -1994,31 +1540,25 @@ export class CalimeroClient {
     const key = idempotencyKey ?? newIdempotencyKey();
     // The confirmed attempt goes out exactly once: its challenge is single-use,
     // so a resend would be refused on the challenge, not answered from the key.
-    return this.confirmed<CallResult>('POST', path, { method, args, idempotencyKey: key }, passkey, (body) =>
-      this.retried<CallResult>('POST', path, body, body.confirm !== undefined),
-    );
+    return this.transport.json<CallResult>('POST', path, { body: { method, args, idempotencyKey: key }, passkey, retry: true });
   }
 
   /** Run a read-only method: strong by default, or stale from any replica. */
   view(app: string, method: string, args: unknown = {}, options: { stale?: boolean; minIndex?: number } = {}): Promise<ViewResult> {
-    return this.retried('POST', `apps/${seg(app)}/views`, {
-      method,
-      args,
-      consistency: options.stale ? 'stale' : 'strong',
-      minIndex: options.minIndex ?? 0,
+    return this.transport.json('POST', `apps/${seg(app)}/views`, {
+      body: {
+        method,
+        args,
+        consistency: options.stale ? 'stale' : 'strong',
+        minIndex: options.minIndex ?? 0,
+      },
+      retry: true,
     });
   }
 
   /** Committed events from index `from`, then live, until `signal` aborts. */
   events(app: string, from = 0, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    return this.stream(`apps/${seg(app)}/events?from=${from}`, signal);
-  }
-
-  /** A server-sent event stream on `path`, sealed like every other answer. */
-  private async *stream(path: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    const response = await this.send('GET', path, undefined, undefined, undefined, signal);
-    if (!response.body) throw new CalimeroError(response.status, 'EVENTS', 'the event stream has no body');
-    yield* sseFrames(response.body);
+    return this.transport.events(`apps/${seg(app)}/events`, { query: { from }, signal });
   }
 
   // ---------------------------------------------------------------- presence
@@ -2043,7 +1583,7 @@ export class CalimeroClient {
    * entries present), then a `presence` event (`data` one entry) per change.
    */
   presenceStream(app: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    return this.stream(`apps/${seg(app)}/presence/stream`, signal);
+    return this.transport.events(`apps/${seg(app)}/presence/stream`, { signal });
   }
 
   // ---------------------------------------------------------------- aliases
