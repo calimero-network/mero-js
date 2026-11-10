@@ -1,3 +1,9 @@
+## [29.14.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.13.0...mero-js-v29.14.0) (2026-11-10)
+
+### Features
+
+* **cloud-v2:** setAllApps and invite allApps, every app added later ([#351](https://github.com/calimero-network/mero-js/issues/351)) ([18d5979](https://github.com/calimero-network/mero-js/commit/18d59791a52a05e156437498e224304c74dc1e6b))
+
 ## [29.13.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.12.0...mero-js-v29.13.0) (2026-11-10)
 
 ### Features
