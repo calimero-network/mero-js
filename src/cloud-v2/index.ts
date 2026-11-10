@@ -13,6 +13,7 @@ export {
   IdempotencyMismatch,
   LoginRequired,
   ConsentStale,
+  FeatureNotActive,
   NotFound,
   NotServing,
   OriginNotRegistered,

@@ -57,6 +57,7 @@ export {
   IdempotencyMismatch,
   LoginRequired,
   ConsentStale,
+  FeatureNotActive,
   NotFound,
   OriginNotRegistered,
   OriginTaken,
@@ -1851,7 +1852,9 @@ export class CalimeroClient {
    * app-team access becomes the target's app team of its package.
    * `bringMembers` adds the people of its organization who reach it to the
    * target (capped at `member`). A node from before the route answers `404`
-   * ({@link NotFound}): the feature is not there yet.
+   * ({@link NotFound}): the feature is not there yet. While a node of the
+   * cluster runs a release before moves, a node that has them refuses it with
+   * {@link FeatureNotActive} before asking for the passkey.
    */
   moveApp(
     app: string,
