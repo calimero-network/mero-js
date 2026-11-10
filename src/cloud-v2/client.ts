@@ -571,6 +571,31 @@ export interface AccountSession {
   current: boolean;
 }
 
+/**
+ * One thing one of the account's passkeys did, as
+ * {@link CalimeroClient.listActivity} lists it (core #4901). Every key is
+ * present; the ones its `kind` does not have are `null`.
+ */
+export interface AccountActivity {
+  /** When (Unix seconds). */
+  at: number;
+  /** The passkey (credential id) that did it; it may since have been removed. */
+  passkey: string;
+  /**
+   * `signIn`: a sign-up, a sign-in or an account recovery's finish (a refresh
+   * is none). `approval`: a change the passkey approved with a step-up.
+   */
+  kind: 'signIn' | 'approval';
+  /** A sign-in's package, whose frontend opened the session; `null` on the cluster's own origin. */
+  app: string | null;
+  /** A sign-in's registered origin; `null` on the cluster's own origin. */
+  origin: string | null;
+  /** An approval's method, e.g. `__add_passkey`, `__create_api_key`, `__upgrade`. */
+  method: string | null;
+  /** What an approval's method acted on: an app id, `org:<id>`, `account:<id>`, ... */
+  subject: string | null;
+}
+
 /** A recovery of an account under way (core #4844, `docs/specs/account-recovery.md`). */
 export interface AccountRecovery {
   accountId: string;
@@ -1417,6 +1442,20 @@ export class CalimeroClient {
    */
   async revokeSession(session: string): Promise<void> {
     await this.delete(`auth/sessions/${seg(session)}`);
+  }
+
+  /**
+   * What the signed-in account's passkeys did, newest first (the last 100,
+   * `GET /auth/activity`): each sign-in, with the package and origin its
+   * session is bound to, and each change a passkey approved, with its method
+   * and subject. `after` (Unix seconds) keeps only what came later. Gated as
+   * {@link listSessions}: the account holder's own session on the cluster's
+   * origin only. A node before core #4901 has no such route ({@link NotFound}).
+   */
+  async listActivity(after?: number): Promise<AccountActivity[]> {
+    const query = after === undefined ? '' : `?after=${encodeURIComponent(String(after))}`;
+    const { activity } = await this.get<{ activity: AccountActivity[] }>(`auth/activity${query}`);
+    return activity;
   }
 
   private async signingOut(path: string): Promise<void> {
