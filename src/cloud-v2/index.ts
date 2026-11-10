@@ -31,6 +31,8 @@ export {
 export type { Committed, SignUpRefusal } from './errors.js';
 export type {
   AppInfo,
+  AppTeam,
+  AppTeams,
   AppXcalls,
   BlobContent,
   BlobInfo,
@@ -63,10 +65,18 @@ export type {
   PackageInstalled,
   CloudRetryOptions,
   OrgInfo,
+  OrgInvite,
+  OrgMode,
   OrgRecovery,
   RecoveryTimes,
   OrgUpgradeTarget,
   PresenceEntry,
+  ScopeApp,
+  ScopeAppsOptions,
+  ScopeAppsResult,
+  ScopedAppTeam,
+  TeamInfo,
+  TeamMemberInfo,
   UpgradeRun,
   ViewResult,
 } from './client.js';

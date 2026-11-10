@@ -489,6 +489,147 @@ describe('credentials, memberships and invites are approved with a passkey (412 
   });
 });
 
+describe('app teams, the invite list and team default capabilities (core #4890)', () => {
+  const confirmed = { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) };
+
+  it('lists the app teams and the mode, with no approval', async () => {
+    const listed = {
+      mode: 'shared',
+      appTeams: [
+        {
+          package: 'com.example.chat',
+          teamId: 't-1',
+          name: 'Chat',
+          join: 'invite',
+          memberCount: 12,
+          defaultCapabilities: null,
+          member: true,
+          manages: false,
+        },
+      ],
+    };
+    node.answer = () => ({ status: 200, json: listed });
+    expect(await client().listAppTeams('org/1')).toEqual(listed);
+    expect(sent()).toEqual([['GET', '/orgs/org%2F1/app-teams']]);
+  });
+
+  it('scopes apps with the passkey: only the fields given go, the same body again with confirm', async () => {
+    const result = {
+      mode: 'shared',
+      teams: [{ package: 'com.example.chat', teamId: 't-1', created: true, apps: ['a-1'], added: 3 }],
+    };
+    confirming(result);
+    const apps = [{ package: 'com.example.chat', name: 'Chat', instances: ['a-1'] }];
+    expect(await client().scopeApps('org-1', passkey, { apps, shared: true })).toEqual(result);
+    expect(sent()).toEqual([
+      ['POST', '/orgs/org-1/app-teams'],
+      ['POST', '/orgs/org-1/app-teams'],
+    ]);
+    expect(node.requests[0].body).toEqual({ apps, shared: true });
+    expect(last().body).toEqual({ apps, shared: true, confirm: confirmed });
+  });
+
+  it('scopes every package with defaults: an empty body, never null fields the node would refuse', async () => {
+    confirming({ mode: 'standalone', teams: [] });
+    await client().scopeApps('org-1', passkey);
+    expect(node.requests[0].body).toEqual({});
+    expect(last().body).toEqual({ confirm: confirmed });
+    confirming({ mode: 'standalone', teams: [] });
+    await client().scopeApps('org-1', passkey, { apps: [{ package: 'com.example.blocks', instances: [] }], shared: false });
+    expect(last().body).toEqual({ apps: [{ package: 'com.example.blocks', instances: [] }], shared: false, confirm: confirmed });
+  });
+
+  it('lists the invites the caller may see', async () => {
+    const invites = [
+      {
+        inviteKey: 'k-1',
+        role: 'member',
+        teams: ['t-1'],
+        usesLeft: 1,
+        expiresAt: 1731300000,
+        expired: false,
+        createdBy: 'acc-1',
+        createdAt: 1731200000,
+      },
+      { inviteKey: 'k-0', role: 'guest', teams: [], usesLeft: 2, expiresAt: 1, expired: true, createdBy: null, createdAt: null },
+    ];
+    node.answer = () => ({ status: 200, json: { invites } });
+    expect(await client().listInvites('org-1')).toEqual(invites);
+    expect(sent()).toEqual([['GET', '/orgs/org-1/invites']]);
+  });
+
+  it('revokes an invite by its key, approved with the passkey (__revoke_invite)', async () => {
+    confirming({});
+    await client().revokeInvite('org-1', 'k/1', passkey);
+    expect(sent()).toEqual([
+      ['DELETE', '/orgs/org-1/invites/k%2F1'],
+      ['DELETE', '/orgs/org-1/invites/k%2F1'],
+    ]);
+    expect(node.requests[0].body).toEqual({});
+    expect(last().body).toEqual({ confirm: confirmed });
+  });
+
+  it("sets a team's default capabilities: the team and no account", async () => {
+    confirming({});
+    await client().setTeamDefaultCapabilities('org-1', 't-1', ORG_CAPABILITIES.INVITE_MEMBERS, passkey);
+    expect(sent()).toEqual([
+      ['POST', '/orgs/org-1/capabilities'],
+      ['POST', '/orgs/org-1/capabilities'],
+    ]);
+    expect(node.requests[0].body).toEqual({ team: 't-1', capabilities: 2 });
+    expect(last().body).toEqual({ team: 't-1', capabilities: 2, confirm: confirmed });
+  });
+
+  it('without a passkey a scope or a revoke is ConfirmRequired, and nothing more is sent', async () => {
+    confirming({});
+    const none = undefined as unknown as PasskeyProvider;
+    const c = client();
+    expect(await c.scopeApps('org-1', none).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
+    expect(await c.revokeInvite('org-1', 'k-1', none).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
+    expect(sent()).toEqual([
+      ['POST', '/orgs/org-1/app-teams'],
+      ['DELETE', '/orgs/org-1/invites/k-1'],
+    ]);
+  });
+
+  it("an invite the caller may not see is NotFound; a refused scope keeps the node's message", async () => {
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no such invite' } });
+    expect(await client().revokeInvite('org-1', 'k-1', passkey).catch((e: unknown) => e)).toBeInstanceOf(NotFound);
+    const message = "only the organization's owner and admins install apps in it and change its app teams";
+    node.answer = (_, body) =>
+      body.confirm
+        ? { status: 400, json: { error: 'REJECTED', message } }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
+    const error = await client()
+      .scopeApps('org-1', passkey)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 400, code: 'REJECTED' });
+    expect((error as Error).message).toContain(message);
+  });
+
+  it("reads a team's package and default capabilities", async () => {
+    const team = {
+      teamId: 't-1',
+      name: 'Chat',
+      parent: null,
+      join: 'invite',
+      metadata: { app: { package: 'com.example.chat', name: 'Chat' } },
+      package: 'com.example.chat',
+      defaultCapabilities: 2,
+      members: [{ account: 'acc-1', role: 'lead', capabilities: 6 }],
+      children: [],
+      apps: [{ appId: 'a-1', name: 'chat', contextId: 'ab' }],
+      myRole: 'lead',
+      member: true,
+    };
+    node.answer = () => ({ status: 200, json: team });
+    const got = await client().getTeam('org-1', 't-1');
+    expect(got.package).toBe('com.example.chat');
+    expect(got.defaultCapabilities).toBe(2);
+    expect(got).toEqual(team);
+  });
+});
+
 describe('organization recovery', () => {
   const seed = new Uint8Array(32).fill(1);
   const confirmed = { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) };
