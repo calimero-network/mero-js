@@ -243,6 +243,20 @@ export interface ScopeApp {
    * instance of the package here; `[]`: none, for a fresh install).
    */
   instances?: string[];
+  /**
+   * Open (`everyone`) or close (`invite`) this package's app team in this
+   * step, and no other (absent: as `shared` says). Naming it on any package
+   * leaves an absent `shared` meaning "no other team"; `shared: true` with an
+   * `everyone` is refused.
+   */
+  join?: 'everyone' | 'invite';
+  /**
+   * Closing (`join: 'invite'`) only: who keeps the app besides the team's
+   * leads, members of the organization (at most 1024). Absent: everyone who
+   * reaches it now keeps it. Everyone else loses it, with their rows in the
+   * teams below it (its private channels); opening the team again lets them back.
+   */
+  keep?: string[];
 }
 
 /** What {@link CalimeroClient.scopeApps} asks for; every field absent takes the node's default. */
@@ -261,8 +275,12 @@ export interface ScopedAppTeam {
   created: boolean;
   /** The instances moved onto it. */
   apps: string[];
-  /** How many rows were added for people who reached those instances. */
+  /** How many rows were added for people who reached those instances (or kept on a close). */
   added: number;
+  /** The team's `join` after the step (absent from nodes before per-app close). */
+  join?: 'everyone' | 'invite';
+  /** How many people lost the app in this step (a close with `keep`; absent from nodes before per-app close). */
+  dropped?: number;
 }
 
 /** `POST /orgs/{org}/app-teams`: the organization's mode after, and each package's team. */
@@ -2438,6 +2456,8 @@ export class CalimeroClient {
    * Give apps their own access lists in one step (owner or admin): find or
    * make each package's app team, add everyone who reaches its instances now,
    * and move those instances onto it; with `shared`, close every app team.
+   * A package's own `join` opens or closes its team alone, a close keeping
+   * everyone who reaches it or only the leads and `keep`.
    * Idempotent per package. Approved with the caller's `passkey`
    * (`__scope_apps { apps, shared }`); a refusal is `400 REJECTED` with the
    * node's reason. For a fresh standalone install pass
