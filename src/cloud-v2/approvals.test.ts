@@ -14,6 +14,7 @@ import {
   ConsentStale,
   ORG_CAPABILITIES,
   ReleaseDeadlineError,
+  RuntimeTooOld,
   confirmationCode,
   consentReturn,
   pageQuery,
@@ -96,7 +97,17 @@ describe('pendingApprovalsFrom', () => {
       expect.objectContaining({ version: '2.3.120', deadline: RULES.deadlines[0] }),
     ]);
     expect(pending.upgrades).toEqual([
-      { app: 'a-1', name: 'app a-1', package: 'com.example.kv', from: '1.0.0', to: '1.1.0', available: ['1.0.1', '1.1.0'], actionable: true },
+      {
+        app: 'a-1',
+        name: 'app a-1',
+        package: 'com.example.kv',
+        from: '1.0.0',
+        to: '1.1.0',
+        reachable: true,
+        blocked: null,
+        available: ['1.0.1', '1.1.0'],
+        actionable: true,
+      },
     ]);
     expect(pending.stalledBy).toBeNull();
     expect(pending.actionable).toBe(true);
@@ -109,6 +120,23 @@ describe('pendingApprovalsFrom', () => {
     expect(stalledBy(['2.3.130'], RULES.deadlines, after)).toBeNull();
     // Unrestricted (no approvals ever recorded) is never stopped.
     expect(stalledBy(null, RULES.deadlines, after)).toBeNull();
+  });
+
+  it('offers the newest release an app can reach, and says why the latest is not it', () => {
+    const blocked = {
+      version: '1.1.0',
+      reason: 'runtime' as const,
+      message: 'com.example.kv@1.1.0 needs runtime 1.0.0 or newer, and node 4 runs 0.9.0',
+      minRuntimeVersion: '1.0.0',
+      nodes: [{ node: 4, runtime: '0.9.0' }],
+    };
+    const behind = { ...app('a-1', '1.0.0', ['1.0.1', '1.1.0']), latestReachable: '1.0.1', latestBlocked: blocked };
+    const stuck = { ...app('a-2', '1.0.0', ['1.1.0']), latestReachable: null, latestBlocked: { ...blocked } };
+    const pending = pendingApprovalsFrom({ ...REPORT, apps: [behind, stuck] }, RULES, at('2027-01-01T00:00:00Z'));
+    expect(pending.upgrades).toEqual([
+      expect.objectContaining({ app: 'a-1', to: '1.0.1', reachable: true, blocked }),
+      expect.objectContaining({ app: 'a-2', to: '1.1.0', reachable: false, blocked }),
+    ]);
   });
 
   it('marks nothing actionable where the operator holds the decisions', () => {
@@ -304,6 +332,18 @@ describe('over the sealed channel', () => {
     const refused = await c.upgradeApp('a-1', { version: '1.1.0' }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(ReleaseDeadlineError);
     expect(refused).toMatchObject({ status: 409, release: '2.3.120', after: '2027-03-12T00:00:00Z' });
+
+    node.answer = () => ({
+      status: 409,
+      json: {
+        error: 'RUNTIME_TOO_OLD',
+        message: 'com.example.kv@1.1.0 needs runtime 1.0.0 or newer, and node 4 runs 0.9.0',
+        details: { minRuntimeVersion: '1.0.0', nodes: [{ node: 4, runtime: '0.9.0' }] },
+      },
+    });
+    const tooOld = await c.upgradeApp('a-1', { version: '1.1.0' }).catch((e: unknown) => e);
+    expect(tooOld).toBeInstanceOf(RuntimeTooOld);
+    expect(tooOld).toMatchObject({ status: 409, minRuntimeVersion: '1.0.0', nodes: [{ node: 4, runtime: '0.9.0' }] });
 
     node.answer = () => ({ status: 409, json: { error: 'CONSENT_STALE', message: 'the target changed' } });
     expect(await c.requestConsent(upgradeConsent('a-1', '1.1.0', 'https://kv.apps.example/')).catch((e: unknown) => e)).toBeInstanceOf(

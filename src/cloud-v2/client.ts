@@ -64,6 +64,7 @@ export {
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
+  RuntimeTooOld,
   SignUpRefused,
   TrapError,
   UnavailableError,
@@ -1866,8 +1867,10 @@ export class CalimeroClient {
 
   /**
    * Move an app to another release of its package (`{ version }`), another
-   * package, or a bundle hash, running its migration. Answers the upgrade's
-   * entry; a failed migration rejects with code `UPGRADE_FAILED` (422).
+   * package, or a bundle hash. An upgrade is code only: the app moves to any
+   * newer release in one step. Answers the upgrade's entry; one the app's
+   * group refuses rejects with code `UPGRADE_FAILED` (422), and one a
+   * replica's node is too old to run with {@link RuntimeTooOld} (409).
    * Where owners hold app upgrades, the node asks for the approval of
    * whoever the package's manifest names (`412 CONFIRM_REQUIRED`), which
    * `passkey` gives. Refused (`403`) to a session opened on an app's
