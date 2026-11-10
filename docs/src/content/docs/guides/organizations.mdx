@@ -87,11 +87,16 @@ const team = await client.createTeam(org, 'eng', 'invite'); // or 'everyone'; op
 await client.setTeamMember(org, team, bobId, passkey, { role: 'readOnly' }); // lead | member | readOnly
 await client.updateTeam(org, team, { name: 'platform', parent: null, metadata: { colour: 'blue' } });
 await client.removeTeamMember(org, team, bobId, passkey);
-await client.deleteTeam(org, team); // and the teams below it, and their apps
+await client.deleteTeam(org, team, passkey); // and the teams below it, and their apps
 ```
 
 An app created with `access: { kind: 'team', team }` is reached by the team's
 members; a read-only member's calls that would write are refused.
+
+Deleting a team whose teams hold apps takes the deleter's passkey: the node's
+`412 CONFIRM_REQUIRED` lists the `apps` that go in its details, and the
+approval names exactly those (an app added after it is refused). A team with
+no apps is deleted without one, so `passkey` may be left out there.
 
 ## App teams
 

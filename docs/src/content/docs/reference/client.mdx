@@ -147,7 +147,7 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `createTeam(org, name, join, parent?)` → team id | `POST orgs/{org}/teams` |
 | `getTeam(org, team)` → `TeamInfo` (with `package`, `defaultCapabilities`) | `GET orgs/{org}/teams/{team}` |
 | `updateTeam(org, team, { name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
-| `deleteTeam(org, team)` | `DELETE orgs/{org}/teams/{team}` |
+| `deleteTeam(org, team, passkey?)` | `DELETE orgs/{org}/teams/{team}`; when its teams hold apps, approved with `passkey` (the `412` details list the `apps`) |
 | `setTeamMember(org, team, account, passkey, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
 | `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
 | `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
