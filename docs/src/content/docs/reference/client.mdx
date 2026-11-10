@@ -112,6 +112,7 @@ release), `QuotaExceeded` (4 served per package, 64 per cluster) and
 | `appAbi(app)` | `GET apps/{app}/abi` |
 | `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
 | `transferApp(app, to, passkey)` (the owner, for an organization's app only while a member, or an organization admin) | `POST apps/{app}/transfer` |
+| `moveApp(app, toOrg, { bringMembers }, passkey?)` (whoever manages the app now, as an admin of `toOrg`; its data stays put, its payer and access go to the target; `404` on a node from before the route) | `POST apps/{app}/move` |
 | `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
 | `view(app, method, args?, { stale?, minIndex? })` → `ViewResult` | `POST apps/{app}/views` |

@@ -444,6 +444,27 @@ describe('Calimero 1.0 cluster', () => {
     expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
   });
 
+  // Core's `feat/move-app-to-org`: a node without the route answers the move
+  // 404, and the case is skipped.
+  it('moves an app with its people into another organization, its data kept', async (ctx) => {
+    const [alice, pk] = await person(0, 'alice-move');
+    const [bob] = await person(1, 'bob-move');
+    const bobId = (await bob.me()).accountId as string;
+    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
+    const src = await alice.createOrg('move-src');
+    const dst = await alice.createOrg('move-dst');
+    await alice.setMember(src, bobId, 'member', pk);
+    const app = await alice.createApp('moving', bundle, { org: src });
+    await alice.call(app, 'set', { key: 'a', value: '1' });
+    const moved = await alice.moveApp(app, dst, { bringMembers: true }, pk).catch((e: unknown) => e);
+    if (moved instanceof CalimeroError && (moved.status === 404 || moved.status === 405)) return ctx.skip();
+    expect(moved).toMatchObject({ appId: app, from: src, org: dst, added: [bobId], access: { kind: 'org' } });
+    expect(await alice.getApp(app)).toMatchObject({ org: dst });
+    expect((await bob.view(app, 'get', { key: 'a' })).result).toBe('1');
+    // Back again, now without a passkey: the node asks for one.
+    await expect(alice.moveApp(app, src)).rejects.toBeInstanceOf(ConfirmRequired);
+  });
+
   // Core's `claude/package-origins`: a node without the routes answers the
   // listing of an installed package 404, and the case is skipped.
   it("registers a package's own origin, signs in from it, and removes it", async (ctx) => {

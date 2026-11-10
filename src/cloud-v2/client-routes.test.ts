@@ -782,6 +782,27 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it('moves an app to another organization with a passkey, and says when the node has no route', async () => {
+    const c = client();
+    const moved = { appId: 'a-1', from: 'o-1', org: 'o-2', access: { kind: 'org' }, created: false, added: [], revokedInvites: 0 };
+    node.answer = (_head, body) =>
+      body.confirm
+        ? { status: 200, json: moved }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
+    expect(await c.moveApp('a-1', 'o-2', { bringMembers: true }, passkey)).toEqual(moved);
+    expect(last().body).toMatchObject({ toOrg: 'o-2', bringMembers: true, confirm: { challengeId: 'c-1' } });
+    expect(sent()).toEqual([
+      ['POST', '/apps/a-1/move'],
+      ['POST', '/apps/a-1/move'],
+    ]);
+    // Without a passkey the step-up reaches the caller; bringMembers defaults to false.
+    await expect(c.moveApp('a-1', 'o-2')).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    expect(last().body).toEqual({ toOrg: 'o-2', bringMembers: false });
+    // A node from before the route.
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
+    await expect(c.moveApp('a-1', 'o-2', {}, passkey)).rejects.toMatchObject({ status: 404 });
+  });
+
   it("lists an organization's members' lockout risk for its admins (core #4902)", async () => {
     const c = client();
     const MEMBERS = [
