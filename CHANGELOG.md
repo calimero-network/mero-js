@@ -1,3 +1,9 @@
+## [29.9.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.8.1...mero-js-v29.9.0) (2026-11-10)
+
+### Features
+
+* **auth:** list and end the account's sessions, and type /auth/me's passkeys ([#344](https://github.com/calimero-network/mero-js/issues/344)) ([373213a](https://github.com/calimero-network/mero-js/commit/373213a285b189cc4ac912c5407d9115965517f1))
+
 ## [29.8.1](https://github.com/calimero-network/mero-js/compare/mero-js-v29.8.0...mero-js-v29.8.1) (2026-11-10)
 
 ### Bug Fixes
