@@ -274,6 +274,16 @@ export interface ScopeApp {
    * teams below it (its private channels); opening the team again lets them back.
    */
   keep?: string[];
+  /**
+   * Whether the app team's members make private channels below it
+   * (`CREATE_CHILD_TEAM`): `true` adds it to the team's default and to every
+   * row there that sets its own capabilities, `false` takes it out of both
+   * (absent: as they are). How an app team made before that default gets it;
+   * with `instances: []` the step changes nothing else. Like `join`, naming it
+   * leaves an absent `shared` meaning "no other team". A node from before
+   * refuses the field (`400`).
+   */
+  childTeams?: boolean;
 }
 
 /** What {@link CalimeroClient.scopeApps} asks for; every field absent takes the node's default. */

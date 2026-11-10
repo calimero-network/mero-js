@@ -115,6 +115,9 @@ const { teams } = await client.scopeApps(org, passkey, {
 });
 // "Members may invite others to this app":
 await client.setTeamDefaultCapabilities(org, teams[0].teamId, ORG_CAPABILITIES.INVITE_MEMBERS, passkey);
+// "Members may make private channels" on app teams made before that was the default,
+// with one passkey and no other change:
+await client.scopeApps(org, passkey, { apps: [{ package: 'com.example.chat', instances: [], childTeams: true }] });
 ```
 
 `getTeam` answers the team's `package` and `defaultCapabilities`, and each

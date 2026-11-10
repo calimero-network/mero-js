@@ -571,6 +571,18 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
     expect(last().body).toEqual({ apps, confirm: confirmed });
   });
 
+  it("turns on an older app team's private channels, childTeams sent as given", async () => {
+    const result = {
+      mode: 'standalone',
+      teams: [{ package: 'com.example.chat', teamId: 't-1', created: false, apps: [], added: 0, join: 'everyone', dropped: 0 }],
+    };
+    confirming(result);
+    const apps = [{ package: 'com.example.chat', instances: [], childTeams: true }];
+    expect(await client().scopeApps('org-1', passkey, { apps })).toEqual(result);
+    expect(node.requests[0].body).toEqual({ apps });
+    expect(last().body).toEqual({ apps, confirm: confirmed });
+  });
+
   it('scopes every package with defaults: an empty body, never null fields the node would refuse', async () => {
     confirming({ mode: 'standalone', teams: [] });
     await client().scopeApps('org-1', passkey);
