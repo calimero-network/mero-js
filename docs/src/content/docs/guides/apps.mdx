@@ -42,7 +42,7 @@ await client.setAppMetadata(app, { colour: 'teal' }); // at most 16 KiB
 await client.appStorage(app); // { keys, bytes, blobs, blobBytes }
 await client.appAbi(app);     // the ABI the bundle embeds
 await client.setAlias('notes', app);
-await client.transferApp(app, bobId, passkey); // the owner's passkey
+await client.transferApp(app, bobId, passkey); // the owner's passkey, or an org admin's for an org app
 await client.deleteApp(app);
 ```
 

@@ -46,6 +46,11 @@ await client.labelPasskey(credentialId, 'work laptop');
 await client.removePasskey(credentialId, passkey); // never the last one
 ```
 
+`me()` lists the account's passkeys, each with when it was added and last
+signed in (`addedAt`, `lastSignInAt`, Unix seconds; `null` for what happened
+before the node kept times), and `passkeyId`, the one this session was opened
+with.
+
 ### Passkeys are per cluster
 
 An account and its passkeys belong to one cluster. Clusters may share a
@@ -149,6 +154,16 @@ refresh replaces it, and the refresh token you stored before is then spent.
 ```ts
 await client.signOut();           // this session
 await client.signOutEverywhere(); // every session of the account, on every device
+```
+
+The account holder can see its sessions and end one of them, a lost phone's
+say, from another device. Both take a session on the cluster's own origin
+(never an API key or an app's frontend session) and ask no passkey:
+
+```ts
+const sessions = await client.listSessions(); // latest active first; `current` marks this one
+const other = sessions.find((s) => !s.current); // { session, passkey, app, origin, openedAt, lastActiveAt }
+if (other) await client.revokeSession(other.session); // that device must sign in again
 ```
 
 ## API keys

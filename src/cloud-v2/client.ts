@@ -485,11 +485,48 @@ export function pageDeployment(href?: string): string | null {
   }
 }
 
+/** One of the account's passkeys (devices), as `GET /auth/me` lists it. */
+export interface MePasskey {
+  /** The credential id, which {@link CalimeroClient.labelPasskey} and {@link CalimeroClient.removePasskey} take. */
+  id: string;
+  /** The account's name for it; `null` when unnamed. */
+  label?: string | null;
+  signCount: number;
+  /**
+   * When it was added (Unix seconds). `null` when it was added on a release
+   * that kept no times (1.0.0-rc.14 and earlier); absent from such a node.
+   */
+  addedAt?: number | null;
+  /**
+   * When it last signed in (Unix seconds): a sign-up, a sign-in or an account
+   * recovery's finish; a refresh does not move it. `null` when it has not
+   * signed in since the node kept times; absent from a node that keeps none.
+   */
+  lastSignInAt?: number | null;
+}
+
+/** An organization the account is in, as `GET /auth/me` lists it. */
+export interface MeOrg {
+  orgId: string;
+  name: string;
+  role: 'guest' | 'member' | 'admin' | 'owner';
+}
+
 /** `GET /auth/me`: who the credential is. */
 export interface MeInfo extends Record<string, unknown> {
   accountId?: string;
-  /** `session` or `apikey`. */
+  name?: string;
+  /** The account's passkeys. */
+  passkeys?: MePasskey[];
+  /** The organizations the account is in, with its role in each. */
+  orgs?: MeOrg[];
+  /** `session` or `apiKey`. */
   via?: string;
+  /**
+   * The passkey (credential id) this session was opened with; `null` for an
+   * API key.
+   */
+  passkeyId?: string | null;
   /**
    * The package the session is bound to: opened on an app's frontend or on
    * an origin its manager registered ({@link CalimeroClient.packageOrigins}).
@@ -507,6 +544,31 @@ export interface MeInfo extends Record<string, unknown> {
    * until `readyAt`.
    */
   recoveryPending?: AccountRecovery | null;
+}
+
+/**
+ * One of the account's live sessions, as {@link CalimeroClient.listSessions}
+ * lists it (core #4894).
+ */
+export interface AccountSession {
+  /** The session's id, which {@link CalimeroClient.revokeSession} takes. */
+  session: string;
+  /** The passkey (credential id) it was opened with. */
+  passkey: string | null;
+  /** The package it is bound to; `null` on the cluster's own origin. */
+  app: string | null;
+  /** The registered origin it was opened on; `null` on the cluster's own origin. */
+  origin: string | null;
+  /** When it opened (Unix seconds); `null` when opened before the node kept it. */
+  openedAt: number | null;
+  /**
+   * When its refresh token was last exchanged (Unix seconds). A token younger
+   * than an hour refreshes without a write and a session token lives 15
+   * minutes, so the session may have been used up to about 1 h 15 min later.
+   */
+  lastActiveAt: number;
+  /** Whether it is the caller's own session. */
+  current: boolean;
 }
 
 /** A recovery of an account under way (core #4844, `docs/specs/account-recovery.md`). */
@@ -1332,6 +1394,31 @@ export class CalimeroClient {
     await this.signingOut('auth/logout-all');
   }
 
+  /**
+   * The signed-in account's live sessions, latest active first (at most 256,
+   * `GET /auth/sessions`); `current` marks this one. The account holder's own
+   * session on the cluster's origin only: an API key or a package-bound
+   * session is refused (`403`). A node before core #4894 has no such route
+   * ({@link NotFound}).
+   */
+  async listSessions(): Promise<AccountSession[]> {
+    const { sessions } = await this.get<{ sessions: AccountSession[] }>('auth/sessions');
+    return sessions;
+  }
+
+  /**
+   * End one of the signed-in account's sessions (`DELETE
+   * /auth/sessions/{session}`), say a lost phone's, from another; no passkey
+   * is asked. A session the account does not hold live (ended already, or
+   * another account's) is {@link NotFound}; gated as {@link listSessions}.
+   * To end this client's own session ({@link AccountSession.current}) use
+   * {@link signOut}, which also drops its tokens: ended here, they stay
+   * held and the next request or refresh is {@link LoginRequired}.
+   */
+  async revokeSession(session: string): Promise<void> {
+    await this.delete(`auth/sessions/${seg(session)}`);
+  }
+
   private async signingOut(path: string): Promise<void> {
     try {
       await this.post(path);
@@ -1646,7 +1733,10 @@ export class CalimeroClient {
 
   /**
    * Hand the app to another account (an organization's app only to one of its
-   * members). The owner approves with `passkey`.
+   * members), approved with `passkey`. The app's owner may; for an
+   * organization's app, its owner only while a member of the organization
+   * (`member` or above), and the organization's admins (`admin`, `owner`)
+   * too, so an organization can hand on an app whose owner left (core #4893).
    */
   async transferApp(app: string, to: string, passkey: PasskeyProvider): Promise<void> {
     await this.postConfirmed(`apps/${seg(app)}/transfer`, { to }, passkey);
