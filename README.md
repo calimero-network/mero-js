@@ -111,7 +111,7 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
 
 Refusals are typed (`LoginRequired`, `PasskeyUnknownHere`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`, `ConfirmPromptBlocked`,
-`ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `ConsentStale`, `AppError`, `TrapError`,
+`ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `RuntimeTooOld`, `ConsentStale`, `AppError`, `TrapError`,
 `UnavailableError`, `OriginNotRegistered`, `BadOrigin`, `OriginTaken`, `QuotaExceeded`),
 all extending `CalimeroError` with the node's `status` and `code`. A `401` once
 the node that issued the session is replaced or out of reach is answered by one

@@ -46,7 +46,11 @@ It reads `GET /auth/apps` (or `/orgs/{org}/apps`, every page) and the public
   approved, newest first, each with `nodes`, `releaseNotesUrl`, `verifyUrl`
   (the public verifier's page for its signed measurements) and `deadline`;
 - `upgrades`: apps with newer releases of their package (`from`, `to`, and
-  every one it may move to in `available`);
+  every one it may see in `available`). `to` is the newest an upgrade would
+  take now (the report's `latestReachable`); `reachable: false` when none
+  would, and `blocked` says why the newest is out of reach (`runtime`: a
+  node holding the app runs an older runtime than the release needs;
+  `authority`: it would give the owner's upgrades to the publisher);
 - `approvedReleases` and `governance`;
 - `stalledBy`: when set, a release's deadline has passed and the scope has
   not approved it or a newer one, so the node refuses new apps, installs and
