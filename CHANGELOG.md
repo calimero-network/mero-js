@@ -1,3 +1,9 @@
+## [29.8.1](https://github.com/calimero-network/mero-js/compare/mero-js-v29.8.0...mero-js-v29.8.1) (2026-11-10)
+
+### Bug Fixes
+
+* **orgs:** delete a team holding apps with the deleter's passkey ([#343](https://github.com/calimero-network/mero-js/issues/343)) ([b14f052](https://github.com/calimero-network/mero-js/commit/b14f05273bbbd4443d6b5b94d312b24bfb78d250))
+
 ## [29.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.7...mero-js-v29.8.0) (2026-11-10)
 
 ### Features
