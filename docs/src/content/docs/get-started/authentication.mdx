@@ -166,6 +166,17 @@ const other = sessions.find((s) => !s.current); // { session, passkey, app, orig
 if (other) await client.revokeSession(other.session); // that device must sign in again
 ```
 
+`listActivity()` answers what the account's passkeys did, newest first (the
+last 100): each sign-in, with the package and origin its session is bound to,
+and each change a passkey approved, with its method and subject. Gated as
+`listSessions`:
+
+```ts
+for (const a of await client.listActivity()) {
+  // { at, passkey, kind: 'signIn', app, origin } or { at, passkey, kind: 'approval', method, subject }
+}
+```
+
 ## API keys
 
 Agents and servers authenticate with an API key (`cal_...`), scoped and

@@ -782,6 +782,22 @@ describe('the rest of the node API', () => {
     ]);
   });
 
+  it("lists what the account's passkeys did (core #4901)", async () => {
+    const c = client();
+    const ACTIVITY = [
+      { at: 30, passkey: 'cred', kind: 'approval', app: null, origin: null, method: '__create_api_key', subject: 'account:acc-1' },
+      { at: 10, passkey: 'cred', kind: 'signIn', app: 'com.example.kv', origin: 'https://kv.example', method: null, subject: null },
+    ];
+    node.answer = (head) =>
+      head.path.startsWith('/auth/activity') ? { status: 200, json: { activity: ACTIVITY } } : { status: 200, json: {} };
+    expect(await c.listActivity()).toEqual(ACTIVITY);
+    await c.listActivity(20);
+    expect(sent()).toEqual([
+      ['GET', '/auth/activity'],
+      ['GET', '/auth/activity?after=20'],
+    ]);
+  });
+
   it("covers an app's metadata, storage, ABI, transfer and blobs", async () => {
     const c = client();
     const blob = { blobId: '3yZe7d', id: 'ab'.repeat(32), size: 3 };
