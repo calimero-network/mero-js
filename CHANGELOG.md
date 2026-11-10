@@ -1,3 +1,9 @@
+## [29.8.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.7...mero-js-v29.8.0) (2026-11-10)
+
+### Features
+
+* **cloud-v2:** wrap core's org app-teams APIs ([#342](https://github.com/calimero-network/mero-js/issues/342)) ([929ebe6](https://github.com/calimero-network/mero-js/commit/929ebe63a3f1bce58b454e703c2193f735afb7b8)), closes [#4890](https://github.com/calimero-network/mero-js/issues/4890)
+
 ## [29.7.7](https://github.com/calimero-network/mero-js/compare/mero-js-v29.7.6...mero-js-v29.7.7) (2026-11-09)
 
 ### Bug Fixes
