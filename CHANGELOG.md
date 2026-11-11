@@ -1,3 +1,9 @@
+## [29.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.14.0...mero-js-v29.15.0) (2026-11-11)
+
+### Features
+
+* **cloud-v2:** offer the newest release an app can reach, and type RUNTIME_TOO_OLD ([#355](https://github.com/calimero-network/mero-js/issues/355)) ([57bd0d0](https://github.com/calimero-network/mero-js/commit/57bd0d0e7912450eba67ad1c1288da9940e71f87))
+
 ## [29.14.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.13.0...mero-js-v29.14.0) (2026-11-10)
 
 ### Features
