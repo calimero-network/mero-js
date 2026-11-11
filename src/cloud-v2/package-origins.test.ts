@@ -23,6 +23,7 @@ import {
   type PackageOrigin,
 } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
+import { passkeyConfirm } from '../api/step-up.js';
 
 const node = new StandInCloudNode();
 beforeAll(() => node.start());
@@ -75,21 +76,21 @@ const ORIGIN: PackageOrigin = { origin: SITE, rpId: 'chat.example.com', addedBy:
 describe('packageOrigins.list', () => {
   it('reads GET /package-origins/{package} and answers its origins', async () => {
     node.answer = () => ({ status: 200, json: { package: PKG, origins: [ORIGIN] } });
-    expect(await client().packageOrigins.list(PKG)).toEqual([ORIGIN]);
+    expect(await (await client().packages.originsList({ package: PKG })).origins).toEqual([ORIGIN]);
     expect(sent()).toEqual([['GET', '/package-origins/com.example.chat']]);
   });
 
   it('encodes the package as one path segment', async () => {
     node.answer = () => ({ status: 200, json: { package: 'a/b', origins: [] } });
-    expect(await client().packageOrigins.list('a/b')).toEqual([]);
+    expect(await (await client().packages.originsList({ package: 'a/b' })).origins).toEqual([]);
     expect(last().head.path).toBe('/package-origins/a%2Fb');
   });
 
   it('an unknown package is NotFound, a caller not managing it 403 FORBIDDEN', async () => {
     node.answer = () => refuse(404, 'NOT_FOUND');
-    await expect(client().packageOrigins.list(PKG)).rejects.toBeInstanceOf(NotFound);
+    await expect(client().packages.originsList({ package: PKG })).rejects.toBeInstanceOf(NotFound);
     node.answer = () => refuse(403, 'FORBIDDEN');
-    const error = await client().packageOrigins.list(PKG).catch((e: unknown) => e);
+    const error = await client().packages.originsList({ package: PKG }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CalimeroError);
     expect(error).toMatchObject({ status: 403, code: 'FORBIDDEN' });
   });
@@ -100,7 +101,7 @@ describe('packageOrigins.add', () => {
     const { pk, asked } = recording();
     const added = { package: PKG, ...ORIGIN };
     stepUp(added);
-    expect(await client().packageOrigins.add(PKG, SITE, pk)).toEqual(added);
+    expect(await client().packages.originsAdd({ package: PKG, origin: SITE }, { confirm: passkeyConfirm(pk) })).toEqual(added);
     expect(sent()).toEqual([
       ['POST', '/package-origins/com.example.chat'],
       ['POST', '/package-origins/com.example.chat'],
@@ -113,7 +114,7 @@ describe('packageOrigins.add', () => {
 
   it('sends an explicit rpId in both attempts', async () => {
     stepUp({ package: PKG, ...ORIGIN, rpId: 'example.com' });
-    const added = await client().packageOrigins.add(PKG, SITE, recording().pk, { rpId: 'example.com' });
+    const added = await client().packages.originsAdd({ package: PKG, origin: SITE, rpId: 'example.com' }, { confirm: passkeyConfirm(recording().pk) });
     expect(added.rpId).toBe('example.com');
     expect(node.requests[0].body).toEqual({ origin: SITE, rpId: 'example.com' });
     expect(last().body).toEqual({ origin: SITE, rpId: 'example.com', confirm });
@@ -121,7 +122,7 @@ describe('packageOrigins.add', () => {
 
   it('without a passkey the 412 is ConfirmRequired, carrying the challenge', async () => {
     stepUp({});
-    const error = await client().packageOrigins.add(PKG, SITE).catch((e: unknown) => e);
+    const error = await client().packages.originsAdd({ package: PKG, origin: SITE }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConfirmRequired);
     expect(error).toMatchObject({ details: STEP_UP });
     expect(sent()).toEqual([['POST', '/package-origins/com.example.chat']]);
@@ -134,7 +135,7 @@ describe('packageOrigins.add', () => {
     [429, 'QUOTA_EXCEEDED', QuotaExceeded],
   ] as const)('a confirmed %i %s is a typed error', async (status, code, type) => {
     stepUp({}, () => refuse(status, code));
-    const error = await client().packageOrigins.add(PKG, SITE, recording().pk).catch((e: unknown) => e);
+    const error = await client().packages.originsAdd({ package: PKG, origin: SITE }, { confirm: passkeyConfirm(recording().pk) }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(type);
     expect(error).toBeInstanceOf(CalimeroError);
     expect(error).toMatchObject({ status, code });
@@ -143,7 +144,7 @@ describe('packageOrigins.add', () => {
   it('a refusal before any step-up reaches the caller without a prompt', async () => {
     const { pk, asked } = recording();
     node.answer = () => refuse(400, 'BAD_ORIGIN');
-    await expect(client().packageOrigins.add(PKG, 'not an origin', pk)).rejects.toBeInstanceOf(BadOrigin);
+    await expect(client().packages.originsAdd({ package: PKG, origin: 'not an origin' }, { confirm: passkeyConfirm(pk) })).rejects.toBeInstanceOf(BadOrigin);
     expect(asked).toEqual([]);
     expect(sent()).toHaveLength(1);
   });
@@ -156,7 +157,7 @@ describe('packageOrigins.add served (a custom domain)', () => {
   it('sends served: true in both attempts and answers the served registration', async () => {
     const { pk, asked } = recording();
     stepUp(SERVED);
-    expect(await client().packageOrigins.add(PKG, DOMAIN, pk, { served: true })).toEqual(SERVED);
+    expect(await client().packages.originsAdd({ package: PKG, origin: DOMAIN, served: true }, { confirm: passkeyConfirm(pk) })).toEqual(SERVED);
     expect(node.requests[0].body).toEqual({ origin: DOMAIN, served: true });
     expect(last().body).toEqual({ origin: DOMAIN, served: true, confirm });
     expect(asked).toEqual([{ rpId: 'cluster.example', allow: ['cred'] }]);
@@ -164,13 +165,13 @@ describe('packageOrigins.add served (a custom domain)', () => {
 
   it('sends rpId and served together', async () => {
     stepUp({ ...SERVED, rpId: 'example.com' });
-    await client().packageOrigins.add(PKG, DOMAIN, recording().pk, { rpId: 'example.com', served: true });
+    await client().packages.originsAdd({ package: PKG, origin: DOMAIN, rpId: 'example.com', served: true }, { confirm: passkeyConfirm(recording().pk) });
     expect(node.requests[0].body).toEqual({ origin: DOMAIN, rpId: 'example.com', served: true });
   });
 
-  it('leaves served out unless it is true, so a node that predates served origins takes a plain add', async () => {
+  it('a plain add sends no served, so a node that predates served origins takes it', async () => {
     stepUp({ package: PKG, ...ORIGIN });
-    await client().packageOrigins.add(PKG, SITE, recording().pk, { served: false });
+    await client().packages.originsAdd({ package: PKG, origin: SITE }, { confirm: passkeyConfirm(recording().pk) });
     expect(node.requests[0].body).toEqual({ origin: SITE });
     expect(last().body).toEqual({ origin: SITE, confirm });
   });
@@ -184,7 +185,7 @@ describe('packageOrigins.add served (a custom domain)', () => {
   ] as const)('a %i %s refusal before any step-up is a typed error, without a prompt', async (status, code, type) => {
     const { pk, asked } = recording();
     node.answer = () => refuse(status, code);
-    const error = await client().packageOrigins.add(PKG, DOMAIN, pk, { served: true }).catch((e: unknown) => e);
+    const error = await client().packages.originsAdd({ package: PKG, origin: DOMAIN, served: true }, { confirm: passkeyConfirm(pk) }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(type);
     expect(error).toBeInstanceOf(CalimeroError);
     expect(error).toMatchObject({ status, code });
@@ -195,7 +196,8 @@ describe('packageOrigins.add served (a custom domain)', () => {
   it('list answers served on each origin', async () => {
     const { package: _p, ...listed } = SERVED;
     node.answer = () => ({ status: 200, json: { package: PKG, origins: [{ ...ORIGIN, served: false }, listed] } });
-    const origins = await client().packageOrigins.list(PKG);
+    // The document leaves an origin untyped (core #4937).
+    const origins = (await client().packages.originsList({ package: PKG })).origins as Array<{ served?: boolean }>;
     expect(origins.map((o) => o.served)).toEqual([false, true]);
   });
 });
@@ -209,7 +211,7 @@ describe('opsServedOrigins', () => {
     node.answer = () => ({ status: 200, json: report });
     const c = client();
     c.useApiKey('ops-token');
-    expect(await c.opsServedOrigins()).toEqual(report);
+    expect(await c.ops.served()).toEqual(report);
     expect(sent()).toEqual([['GET', '/ops/served-origins']]);
   });
 });
@@ -218,7 +220,7 @@ describe('packageOrigins.remove', () => {
   it('answers the 412 over __remove_origin and DELETEs with confirm', async () => {
     const removed = { package: PKG, origin: SITE, removed: true };
     stepUp(removed);
-    expect(await client().packageOrigins.remove(PKG, SITE, recording().pk)).toEqual(removed);
+    expect(await client().packages.originsRemove({ package: PKG, origin: SITE }, { confirm: passkeyConfirm(recording().pk) })).toEqual(removed);
     expect(sent()).toEqual([
       ['DELETE', '/package-origins/com.example.chat'],
       ['DELETE', '/package-origins/com.example.chat'],
@@ -229,19 +231,19 @@ describe('packageOrigins.remove', () => {
 
   it('an origin that is not registered is NotFound', async () => {
     stepUp({}, () => refuse(404, 'NOT_FOUND'));
-    await expect(client().packageOrigins.remove(PKG, SITE, recording().pk)).rejects.toBeInstanceOf(NotFound);
+    await expect(client().packages.originsRemove({ package: PKG, origin: SITE }, { confirm: passkeyConfirm(recording().pk) })).rejects.toBeInstanceOf(NotFound);
   });
 
   it('without a passkey the 412 is ConfirmRequired', async () => {
     stepUp({});
-    await expect(client().packageOrigins.remove(PKG, SITE)).rejects.toBeInstanceOf(ConfirmRequired);
+    await expect(client().packages.originsRemove({ package: PKG, origin: SITE })).rejects.toBeInstanceOf(ConfirmRequired);
   });
 
   it("a session opened on a removed origin gets 401, which a refused refresh makes LoginRequired", async () => {
     const c = client();
     c.useSession({ accountId: 'acc-2', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' });
     node.answer = () => refuse(401, 'UNAUTHENTICATED');
-    await expect(c.me()).rejects.toBeInstanceOf(LoginRequired);
+    await expect(c.auth.me()).rejects.toBeInstanceOf(LoginRequired);
     expect(sent()).toEqual([
       ['GET', '/auth/me'],
       ['POST', '/auth/refresh'],
@@ -344,13 +346,13 @@ describe('signing in from a registered origin', () => {
       body.confirm
         ? { status: 200, json: { keyId: 'k', key: 'secret' } }
         : refuse(412, 'CONFIRM_REQUIRED', { ...STEP_UP, rpId: 'chat.example.com' });
-    await c.createApiKey({ label: 'x' }, pk);
+    await c.auth.apikeyCreate({ label: 'x' }, { confirm: passkeyConfirm(pk) });
     expect(asked).toEqual([{ rpId: 'chat.example.com', allow: ['cred'] }]);
   });
 
   it("me() answers the package (app) and origin the session is bound to", async () => {
     node.answer = () => ({ status: 200, json: { accountId: 'acc-2', via: 'session', app: PKG, origin: SITE } });
-    const me = await client().me();
+    const me = await client().auth.me();
     expect(me.app).toBe(PKG);
     expect(me.origin).toBe(SITE);
   });

@@ -84,7 +84,7 @@ a hint and confirm it:
 ```ts
 const back = consentReturn(location.href);
 if (back) {
-  const { status } = await client.consentResult(back.requestId);
+  const { status } = await client.consent.pageResult({ request: back.requestId });
   if (status === 'approved') refresh();
 }
 ```
@@ -114,7 +114,7 @@ yourself; check the code the same way:
 ```ts
 import { confirmationCode } from '@calimero-network/mero-js';
 
-const started = await client.requestConsent(request);
+const started = await client.consent.pageCreate({ body: request });
 if (started.code !== undefined && started.code !== (await confirmationCode(started.requestId))) {
   throw new Error('the node answered a code that is not its request');
 }

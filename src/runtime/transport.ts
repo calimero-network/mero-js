@@ -2,10 +2,10 @@
  * The runtime every route of a Calimero node is sent through: the part of
  * this client that is not a route.
  *
- * A route layer (the one generated from the node's OpenAPI document,
- * `createApiClient` in `../api`, and the hand-written {@link CalimeroClient}
- * methods on it) knows a method, a path and what the route takes and answers. Everything else is here, behind one call,
- * {@link Transport.request}:
+ * A route layer (the one generated from the node's OpenAPI document:
+ * `createApiClient` and `createRoutes` in `../api`, which {@link CalimeroClient}
+ * exposes) knows a method, a path and what the route takes and answers.
+ * Everything else is here, behind one call, {@link Transport.request}:
  *
  * - the sealed channel to each node, opened only after the node's attestation
  *   passed the caller's policy (`../sealed`, `../cloud-v2/attestation`);

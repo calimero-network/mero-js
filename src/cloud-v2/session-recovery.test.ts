@@ -59,7 +59,7 @@ describe('a 401 once the issuing node is gone', () => {
   it('refreshes once and repeats the call with the same idempotency key', async () => {
     a.answer = restartedNode;
     const client = signedIn();
-    const answer = await client.call('app-1', 'set', { key: 'k' });
+    const answer = await client.apps.call({ app: 'app-1', method: 'set', args: { key: 'k' } });
     expect(answer.result).toBe('v1');
     expect(at(a, '/auth/refresh').map((r) => r.body)).toEqual([{ refreshToken: 'rt_old' }]);
     const calls = at(a, '/apps/app-1/intents');
@@ -73,7 +73,7 @@ describe('a 401 once the issuing node is gone', () => {
       head.path === '/auth/refresh'
         ? refused(401, 'UNAUTHENTICATED', { reason: 'refresh token already used' })
         : restartedNode(head, body);
-    const error = await failure(signedIn().view('app-1', 'get', {}));
+    const error = await failure(signedIn().apps.view({ app: 'app-1', method: 'get', args: {} }));
     expect(error).toBeInstanceOf(LoginRequired);
     expect(at(a, '/auth/refresh')).toHaveLength(1);
     expect(at(a, '/apps/app-1/views')).toHaveLength(1);
@@ -82,7 +82,7 @@ describe('a 401 once the issuing node is gone', () => {
   it('shares one refresh among requests refused at the same time', async () => {
     a.answer = restartedNode;
     const client = signedIn();
-    const answers = await Promise.all(Array.from({ length: 6 }, () => client.view('app-1', 'get', {})));
+    const answers = await Promise.all(Array.from({ length: 6 }, () => client.apps.view({ app: 'app-1', method: 'get', args: {} })));
     expect(answers.map((x) => x.result)).toEqual(Array(6).fill('v1'));
     // A refresh token is single use: sent twice, the second would revoke the session.
     expect(at(a, '/auth/refresh')).toHaveLength(1);
@@ -90,7 +90,7 @@ describe('a 401 once the issuing node is gone', () => {
 
   it('refreshes at most once per request: a second 401 is LoginRequired', async () => {
     a.answer = (head) => (head.path === '/auth/refresh' ? ok(NEW) : refused(401, 'UNAUTHENTICATED'));
-    const error = await failure(signedIn().get('auth/me'));
+    const error = await failure(signedIn().auth.me());
     expect(error).toBeInstanceOf(LoginRequired);
     expect(at(a, '/auth/refresh')).toHaveLength(1);
     expect(at(a, '/auth/me')).toHaveLength(2);
@@ -108,7 +108,7 @@ describe('a 401 once the issuing node is gone', () => {
     a.answer = () => refused(401, 'UNAUTHENTICATED');
     const client = new CalimeroClient({ baseUrl: a.url, policy: { allowMock: true } });
     client.useApiKey('cal_key');
-    expect(await failure(client.get('auth/me'))).toBeInstanceOf(LoginRequired);
+    expect(await failure(client.auth.me())).toBeInstanceOf(LoginRequired);
     expect(at(a, '/auth/refresh')).toHaveLength(0);
   });
 });
@@ -120,7 +120,7 @@ describe('421 WRONG_NODE', () => {
     a.answer = wrongNode;
     b.answer = () => ok({ index: 4, result: 'v2', events: [] });
     const client = signedIn([b.url]);
-    const answer = await client.call('app-1', 'set', { key: 'k' });
+    const answer = await client.apps.call({ app: 'app-1', method: 'set', args: { key: 'k' } });
     expect(answer.result).toBe('v2');
     const [first] = at(a, '/apps/app-1/intents');
     const [second] = at(b, '/apps/app-1/intents');
@@ -128,14 +128,14 @@ describe('421 WRONG_NODE', () => {
     expect(bearer(second.head)).toBe(`Bearer ${OLD.sessionToken}`);
     // The next requests go to the new node too.
     expect(client.nodeUrl).toBe(b.url);
-    await client.get('auth/me');
+    await client.auth.me();
     expect(at(a, '/auth/me')).toHaveLength(0);
     expect(at(b, '/auth/me')).toHaveLength(1);
   });
 
   it('is WrongNode, with its details, when the client knows no other node', async () => {
     a.answer = wrongNode;
-    const error = await failure(signedIn().view('app-1', 'get', {}));
+    const error = await failure(signedIn().apps.view({ app: 'app-1', method: 'get', args: {} }));
     expect(error).toBeInstanceOf(WrongNode);
     expect(error).toMatchObject({ status: 421, code: 'WRONG_NODE', details: { node: 1 } });
     expect(at(a, '/apps/app-1/views')).toHaveLength(1);
@@ -144,7 +144,7 @@ describe('421 WRONG_NODE', () => {
   it('is WrongNode when the next node refuses too, after one move', async () => {
     a.answer = wrongNode;
     b.answer = wrongNode;
-    const error = await failure(signedIn([b.url]).view('app-1', 'get', {}));
+    const error = await failure(signedIn([b.url]).apps.view({ app: 'app-1', method: 'get', args: {} }));
     expect(error).toBeInstanceOf(WrongNode);
     expect(a.requests.length + b.requests.length).toBe(2);
   });
@@ -152,7 +152,7 @@ describe('421 WRONG_NODE', () => {
   it('is not NOT_LEADER: another 421 code is not a move', async () => {
     a.answer = () => refused(421, 'NOT_LEADER', { leaderUrl: 'http://elsewhere' });
     const client = signedIn([b.url]);
-    const error = await failure(client.get('ops/placement'));
+    const error = await failure(client.ops.placement());
     expect(error).not.toBeInstanceOf(WrongNode);
     expect(error).toMatchObject({ status: 421, code: 'NOT_LEADER' });
     expect(client.nodeUrl).toBe(a.url);
@@ -179,7 +179,7 @@ describe('421 WRONG_NODE', () => {
     a.answer = (head) => (head.path === '/auth/refresh' ? wrongNode() : refused(401, 'UNAUTHENTICATED'));
     b.answer = restartedNode;
     const client = signedIn([b.url]);
-    const answer = await client.view('app-1', 'get', {});
+    const answer = await client.apps.view({ app: 'app-1', method: 'get', args: {} });
     expect(answer.result).toBe('v1');
     expect(at(a, '/auth/refresh').map((r) => r.body)).toEqual([{ refreshToken: 'rt_old' }]);
     expect(at(b, '/auth/refresh').map((r) => r.body)).toEqual([{ refreshToken: 'rt_old' }]);
@@ -221,7 +221,7 @@ describe('sign-out when the node cannot be reached', () => {
       expect(bearer(at(a, path)[0].head)).toBe(`Bearer ${OLD.sessionToken}`);
       expect(client.session).toBeUndefined();
       // The next request goes without the old bearer token.
-      await client.get('health');
+      await client.transport.json('GET', 'health');
       expect(bearer(at(a, '/health')[0].head)).toBeUndefined();
     });
   }

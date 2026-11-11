@@ -290,7 +290,7 @@ describe("CalimeroClient's api", () => {
     client.useSession({ accountId: 'acc-1', sessionToken: 'tok', expiresAt: 9e9, refreshToken: 'r' });
     node.answer = () => ({ status: 200, json: { accountId: 'acc-1' } });
     const viaApi = await unwrap(client.api.GET('/auth/me'));
-    const viaWrapper = await client.me();
+    const viaWrapper = await client.auth.me();
     expect(viaApi).toEqual(viaWrapper);
     expect(sent()).toEqual([
       ['GET', '/auth/me'],
