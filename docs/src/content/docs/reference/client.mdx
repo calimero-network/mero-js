@@ -297,6 +297,36 @@ Every generated method, by group (`?` marks an optional argument):
 | `publisherBinding({ signer })` | `GET publishers/{signer}` |
 | `releasesPublic()` | `GET releases` |
 
+## The generated methods
+
+Every route of the node is a method, generated from core's OpenAPI document
+(`openapi/core-openapi.json`, by `pnpm gen:api` into `src/generated/`), in a
+group per tag: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`. Each takes
+one typed argument object (path parameters, query and body fields merged; a raw
+body under `body`, with `contentType`) and answers the route's typed payload; a
+refusal is thrown as its typed `CalimeroError`.
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });
+await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: passkeyConfirm(passkey) });
+```
+
+The second argument, `{ confirm, operatorProof, signal }`, answers this call's
+`412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
+`new CalimeroClient(options, { confirm, operatorProof })` answers every call that
+gives none. Routes the document marks retry-safe are retried on `503` (D70), and
+one that requires an idempotency key gets one. The route methods above are thin calls onto these,
+deprecated until the apps have moved; the event streams stay on the transport.
+`createRoutes(createApiClient(transport))` builds the groups on any
+`NodeTransport`.
+
+`client.api` is the low-level `openapi-fetch` client they run on (`{ data,
+error, response }`, with `stepUp` / `operatorSignature` middleware and `unwrap`),
+kept as an escape hatch.
+
 ## The runtime
 
 Every request goes through `client.transport`, a `Transport` from

@@ -215,6 +215,14 @@ fetches it again, records the commit and regenerates `src/generated/`;
 `pnpm check:api` fails when the generated types or methods are not those of the
 vendored document.
 
+`.github/workflows/openapi-sync.yml` does this on its own: core sends a
+`repository_dispatch` (`core-openapi`, with the core commit) whenever its
+document changes, and a weekly run catches a missed one (or run it by hand with a
+`ref`). When the document or the generated code changed, it opens or refreshes a
+pull request on `chore/core-openapi` that lists the generated methods added,
+removed or changed (`scripts/openapi-sync-summary.mjs`); a removed or renamed
+one needs a major release.
+
 ## Upgrading from 29.x
 
 30.0 removes the single-route methods 29.x deprecated, and the untyped `get`,
