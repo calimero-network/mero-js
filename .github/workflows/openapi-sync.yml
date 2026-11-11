@@ -14,9 +14,10 @@ name: OpenAPI sync
 # Two things here are load-bearing:
 #
 #   * The pull request is pushed and opened with a GitHub App installation
-#     token (vars.GH_APP_ID / secrets.GH_APP_PRIVATE_KEY, as fleet-bump.yml
-#     does), NOT with GITHUB_TOKEN: a pull request made by GITHUB_TOKEN runs no
-#     workflows, so the sync would arrive with no CI and read as green. The app
+#     token (the organization's shared vars.ACTIONS_APP_ID /
+#     secrets.ACTIONS_APP_PRIVATE_KEY, as fleet-bump.yml uses), NOT with
+#     GITHUB_TOKEN: a pull request made by GITHUB_TOKEN runs no workflows, so
+#     the sync would arrive with no CI and read as green. The app
 #     must be installed on this repository with contents and pull-requests write.
 #
 #   * `chore/core-openapi` belongs to this workflow and is force-pushed on every
@@ -148,8 +149,8 @@ jobs:
         id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ vars.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ACTIONS_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           # Only what pushing the branch and opening the pull request needs.

@@ -230,6 +230,12 @@ pull request on `chore/core-openapi` that lists the generated methods added,
 removed or changed (`scripts/openapi-sync-summary.mjs`); a removed or renamed
 one needs a major release.
 
+It opens that pull request with a GitHub App's token, so the pull request's CI
+runs: the organization's shared `vars.ACTIONS_APP_ID` /
+`secrets.ACTIONS_APP_PRIVATE_KEY`, which must be shared with this repository. The
+app must be installed on this repository
+with contents and pull-requests write.
+
 ## Development
 
 ```bash
