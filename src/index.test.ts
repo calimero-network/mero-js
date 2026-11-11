@@ -36,6 +36,7 @@ describe('the package root', () => {
       'WrongNode',
       'NotServing',
       'ClusterNotUpgraded',
+      'FeatureNotActive',
       'ORG_CAPABILITIES',
       'orgCapabilities',
       'createSealedFetch',

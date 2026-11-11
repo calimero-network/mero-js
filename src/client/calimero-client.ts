@@ -58,6 +58,7 @@ export {
   IdempotencyMismatch,
   LoginRequired,
   ConsentStale,
+  FeatureNotActive,
   NotFound,
   OriginNotRegistered,
   OriginTaken,
