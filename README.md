@@ -97,10 +97,10 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 ## The API
 
-Every route of the node is on `client.api`, generated from core's OpenAPI
-document ([below](#the-runtime-and-the-route-layer)). The methods listed here
-are the hand-written ones, which now call `client.api`; the single-route ones are
-deprecated and go once the apps have moved to it.
+Every route of the node is a generated method (`client.orgs.get({ org })`,
+[below](#the-runtime-and-the-route-layer)). The methods listed here are the
+hand-written ones, which now call those; the single-route ones are deprecated and
+go once the apps have moved.
 
 
 - **Credentials**: `signUp` (with an `invite`, on a cluster that takes new accounts by invite; `signUpPolicy` reads which), `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `listSessions`, `revokeSession`, `listActivity`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
@@ -114,7 +114,7 @@ deprecated and go once the apps have moved to it.
 - **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.
 - **Approvals from an app**: `appsReport`, `releaseRules`, `pendingApprovals`, then `requestConsent` / `openConsentPage` to send the user to the node's consent page, and `consentResult`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 - **Operator** (ops token): `opsApps`, `opsOrgs`, `opsServedOrigins` (every custom domain the log holds, by package label), `setReleaseDeadline`, `liftReleaseDeadline`.
-- **Any route**: `client.api` (below), typed from core's OpenAPI document. The untyped `get`, `post`, `put`, `delete`, `postConfirmed` and `deleteConfirmed` are deprecated.
+- **Any route**: its generated method (below). The untyped `get`, `post`, `put`, `delete`, `postConfirmed` and `deleteConfirmed` are deprecated.
 
 Refusals are typed (`LoginRequired`, `PasskeyUnknownHere`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`, `ConfirmPromptBlocked`,
 `ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `RuntimeTooOld`, `ConsentStale`, `AppError`, `TrapError`,
@@ -138,42 +138,56 @@ The client is two layers. The **runtime** (`@calimero-network/mero-js/runtime`,
 sealed channel, the credential and the session's refresh on a `401`, moving on
 `421 WRONG_NODE`, D70 retries and failover, error mapping and server-sent
 events. The **route layer** is generated from core's OpenAPI document
-(`openapi/core-openapi.json`, the node's `docs/public/openapi.json`): its types
-are `src/generated/api.ts` (`pnpm gen:api`), and `openapi-fetch` runs them over
-the runtime. `client.api` is that client, sharing `client.transport`'s session:
+(`openapi/core-openapi.json`, the node's `docs/public/openapi.json`) by
+`pnpm gen:api`: `openapi-typescript` writes the types (`src/generated/api.ts`)
+and `scripts/gen-methods.mjs` one method per operation
+(`src/generated/methods.ts`), grouped by the operation's tag. `CalimeroClient`
+exposes the groups, which share `client.transport`'s session:
 
 ```ts
-import { passkeyConfirm, stepUp, unwrap } from '@calimero-network/mero-js';
+import { passkeyConfirm } from '@calimero-network/mero-js';
 
-// A typed route: `data` or the node's `error`, both typed per route.
-const { data, error } = await client.api.GET('/apps/{app}', { params: { path: { app: appId } } });
-
-// A step-up (`412 CONFIRM_REQUIRED`): the middleware signs the node's
-// challenge with the passkey and sends the same body again with `confirm`.
-await unwrap(
-  client.api.DELETE('/orgs/{org}', { params: { path: { org } }, middleware: [stepUp(passkeyConfirm(passkey))] }),
+const org = await client.orgs.get({ org: orgId });             // the typed payload
+const { result } = await client.apps.call({ app, method: 'set', args: { key: 'a' } });
+const { token } = await client.orgs.inviteCreate(               // a step-up (412)
+  { org: orgId, role: 'member' },
+  { confirm: passkeyConfirm(passkey) },
 );
+await client.apps.blobUpload({ app, body: bytes, contentType: 'image/png' });
 ```
 
-- `createApiClient(transport, { confirm?, operatorProof? })` builds one on any
-  `NodeTransport`; `confirm` answers every `412`, `operatorProof` every
+- **Groups**: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+  `client.deployments`, `client.consent`, `client.ops`, `client.public`.
+- **One argument object**: path parameters, query parameters and body fields
+  merged, all typed from the document. The body goes whole under `body` when it is
+  raw bytes (with an optional `contentType`) or when its field names would collide.
+  A route whose query parameter is named like a path parameter takes its query
+  under `query`.
+- **The answer** is the route's typed success payload (a `Blob` for a download).
+  A refusal is thrown as the typed `CalimeroError` (`NotFound`, `ConfirmRequired`, ...).
+- **Challenges**: the second argument `{ confirm?, operatorProof?, signal? }`
+  answers this call's `412 CONFIRM_REQUIRED` (`passkeyConfirm(passkey)`) or
   `428 OPERATOR_SIGNATURE_REQUIRED` (the operator key's signature over the
-  statement's `message`, sent again as `operatorProof`). A request's own
-  `middleware: [stepUp(...)]` or `[operatorSignature(...)]` answers first.
-- `transportFetch(transport)` is the `fetch` it runs on: the request's path,
-  query and body go through the transport (sealed, with the credential); the two
-  routes served in the clear (`/attestation`, `/health`) go unsealed. Calls and
-  views (`/apps/{app}/intents`, `/views`) are retried on `503` as D70 says, a call
-  gets an idempotency key when it has none (`idempotencyKeys`), and its confirmed
-  retry goes out once.
-- A refusal is the result's `error`; `unwrap(result)` throws it as the typed
-  `CalimeroError` instead. A transport failure rejects.
-- Streams (`events`, `presenceStream`) stay hand-written on the runtime
-  (`client.transport.events(path)`).
+  statement). The client's own `new CalimeroClient(options, { confirm, operatorProof })`
+  answers every call that gives none.
+- **Calls and views** retry a `503` as D70 says, and a call without an
+  `idempotencyKey` gets one, which its retries and its confirmed retry share.
+- **Streams** (`events`, `presenceStream`) stay hand-written on the runtime.
+- `createRoutes(createApiClient(transport, { confirm, operatorProof }))` builds
+  the same groups on any `NodeTransport`.
+
+`client.api` is the **low-level** escape hatch: the raw `openapi-fetch`
+client the methods run on (`client.api.GET('/orgs/{org}', { params: { path: {
+org } } })` answers `{ data, error, response }`). Its `fetch` is
+`transportFetch(transport)`: the path, query and body go through the transport
+(sealed, with the credential), and the two routes served in the clear
+(`/attestation`, `/health`) go unsealed. `stepUp(...)` and
+`operatorSignature(...)` are its middleware; `unwrap(result)` throws a refusal.
+Apps should not write against it.
 
 The **hand-written methods** of `CalimeroClient` (`createOrg`, `call`, ...) are
-now thin calls onto `client.api`, kept, `@deprecated`, until the apps have moved
-to the generated client. The ceremonies (`signUp`, `signIn`, `addPasskey`,
+now thin calls onto the generated methods, kept, `@deprecated` (each names its
+replacement), until the apps have moved. The ceremonies (`signUp`, `signIn`, `addPasskey`,
 account and organization recovery, `openConsentPage`, ...) stay as flows.
 
 The runtime's own surface toward routes is still one interface, for a route
@@ -199,9 +213,9 @@ across both imports).
 
 `openapi/core-openapi.json` is vendored from core at the commit `openapi/SOURCE`
 names. `scripts/refresh-openapi.sh [<core ref>]` (`pnpm refresh:openapi`)
-fetches it again, records the commit and regenerates `src/generated/api.ts`;
-`pnpm check:api` fails when the generated types are not those of the vendored
-document.
+fetches it again, records the commit and regenerates `src/generated/`;
+`pnpm check:api` fails when the generated types or methods are not those of the
+vendored document.
 
 ## Development
 

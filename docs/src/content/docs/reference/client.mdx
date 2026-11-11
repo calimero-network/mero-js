@@ -211,35 +211,35 @@ sealed channel with the client's credential and map a refusal to a typed error.
 `postConfirmed(path, body, passkey)` and `deleteConfirmed(path, passkey, body?)`
 answer a `412 CONFIRM_REQUIRED`.
 
-## The generated client
+## The generated methods
 
-`client.api` is every route of the node, typed from core's OpenAPI document
-(`openapi/core-openapi.json`, generated into `src/generated/api.ts`) and run by
-`openapi-fetch` over the client's transport, so it shares the client's session.
-Each method answers `{ data, error, response }`, both typed per route;
-`unwrap(result)` throws the `error` as its typed `CalimeroError`.
+Every route of the node is a method, generated from core's OpenAPI document
+(`openapi/core-openapi.json`, by `pnpm gen:api` into `src/generated/`), in a
+group per tag: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`. Each takes
+one typed argument object (path parameters, query and body fields merged; a raw
+body under `body`, with `contentType`) and answers the route's typed payload; a
+refusal is thrown as its typed `CalimeroError`.
 
 ```ts
-import { passkeyConfirm, stepUp, unwrap } from '@calimero-network/mero-js';
+import { passkeyConfirm } from '@calimero-network/mero-js';
 
-const { data } = await client.api.GET('/orgs/{org}', { params: { path: { org } } });
-await unwrap(
-  client.api.POST('/orgs/{org}/members', {
-    params: { path: { org } },
-    body: { account, role: 'member' },
-    middleware: [stepUp(passkeyConfirm(passkey))], // answers the 412 CONFIRM_REQUIRED
-  }),
-);
+const org = await client.orgs.get({ org: orgId });
+await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: passkeyConfirm(passkey) });
 ```
 
-`createApiClient(transport, { confirm, operatorProof })` builds one on any
-`NodeTransport`: `confirm` answers every `412 CONFIRM_REQUIRED`, `operatorProof`
-every `428 OPERATOR_SIGNATURE_REQUIRED` (the operator key's signature over the
-statement, sent again as `operatorProof`); `operatorSignature(...)` does the same
-for one request. Calls and views are retried on `503` (D70), and a call without
-an idempotency key gets one. The route methods above are thin calls onto
-`client.api`, deprecated until the apps have moved to it; the event streams stay
-on the transport.
+The second argument, `{ confirm, operatorProof, signal }`, answers this call's
+`412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
+`new CalimeroClient(options, { confirm, operatorProof })` answers every call that
+gives none. Calls and views are retried on `503` (D70), and a call without an
+idempotency key gets one. The route methods above are thin calls onto these,
+deprecated until the apps have moved; the event streams stay on the transport.
+`createRoutes(createApiClient(transport))` builds the groups on any
+`NodeTransport`.
+
+`client.api` is the low-level `openapi-fetch` client they run on (`{ data,
+error, response }`, with `stepUp` / `operatorSignature` middleware and `unwrap`),
+kept as an escape hatch.
 
 ## The runtime
 
