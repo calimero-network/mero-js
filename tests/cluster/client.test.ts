@@ -459,7 +459,7 @@ describe('Calimero 1.0 cluster', () => {
     if (set instanceof CalimeroError && (set.status === 404 || set.status === 405) && !(set instanceof NotFound)) {
       return ctx.skip();
     }
-    expect(set).toBeUndefined();
+    expect(set).toEqual({});
     await bob.orgs.inviteRedeem({ token: await (await alice.orgs.inviteCreate({ org, role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(alicePk) })).token });
     const bobId = (await bob.auth.me()).accountId as string;
     expect([...((await alice.orgs.get({ org })).allApps ?? [])].sort()).toEqual([bobId, carolId].sort());
