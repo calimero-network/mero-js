@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download a released Calimero 1.0 merod for linux-x86_64 into ./merod, with the
 # release's kv-store test fixture as ./kv_store.wasm, for the cluster tests
-# (`pnpm test:cloud-v2` with MEROD_BINARY and KV_STORE_WASM).
+# (`pnpm test:cluster` with MEROD_BINARY and KV_STORE_WASM).
 #
 # Only releases of one major line are considered (MEROD_LINE, default 1): the
 # 0.x releases are v1 nodes, which the 1.0 client cannot talk to, and a future

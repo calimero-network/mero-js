@@ -1,9 +1,9 @@
 // Compiled by tsconfig.consumer.json as an external NodeNext consumer of the built
 // dist/. The @ts-expect-error lines fail if unresolvable specifiers widen the API to any.
 import { CalimeroClient, ConfirmRequired, browserPasskey } from '@calimero-network/mero-js';
-import type { CalimeroClientOptions, CalimeroSession, CloudPolicy, UpgradeRun } from '@calimero-network/mero-js';
+import type { CalimeroClientOptions, CalimeroSession, NodePolicy, UpgradeRun } from '@calimero-network/mero-js';
 
-const policy: CloudPolicy = { release: { minReleaseVersion: '2.3.109' } };
+const policy: NodePolicy = { release: { minReleaseVersion: '2.3.109' } };
 const options: CalimeroClientOptions = { baseUrl: 'https://node.example', policy };
 
 export const client = new CalimeroClient(options);
@@ -13,7 +13,7 @@ export const passkey = browserPasskey();
 new CalimeroClient({ policy });
 
 // @ts-expect-error minReleaseVersion is a string
-export const badPolicy: CloudPolicy = { release: { minReleaseVersion: 2 } };
+export const badPolicy: NodePolicy = { release: { minReleaseVersion: 2 } };
 
 export const accountOf = (s: CalimeroSession): string => s.accountId;
 
@@ -42,25 +42,14 @@ export const badMethod = (): Promise<Response> => transport.request('FETCH', 'ap
 
 export const stepUp: RequestOptions = { body: {}, passkey, retry: 'once' };
 
-// The generated route layer: typed paths, bodies and answers.
-import { createApiClient, passkeyConfirm, stepUp as confirmWith, unwrap } from '@calimero-network/mero-js';
-import type { ApiClient } from '@calimero-network/mero-js';
+// The generated methods on a transport of your own.
+import { createRouteClient, createRoutes, passkeyConfirm } from '@calimero-network/mero-js';
+import type { NodeEvent, Routes } from '@calimero-network/mero-js';
 
-export const api: ApiClient = client.api;
-export const ownApi: ApiClient = createApiClient(client.transport, { confirm: passkeyConfirm(passkey) });
-export const me = async (): Promise<string> => (await unwrap(api.GET('/auth/me'))).accountId;
-export const invite = (org: string) =>
-  api.POST('/orgs/{org}/invites', {
-    params: { path: { org } },
-    body: { role: 'member' },
-    middleware: [confirmWith(passkeyConfirm(passkey))],
-  });
-
-// @ts-expect-error not a route of the node
-export const noRoute = () => api.GET('/no/such/route');
-
-// @ts-expect-error a view's method is a string
-export const badView = () => api.POST('/apps/{app}/views', { params: { path: { app: 'a' } }, body: { method: 1 } });
+export const ownRoutes: Routes = createRoutes(createRouteClient(client.transport, { confirm: passkeyConfirm(passkey) }));
+export const me = async (): Promise<string> => (await ownRoutes.auth.me()).accountId;
+export const kindOf = (event: NodeEvent): string => event.kind;
+export const ownPolicy: NodePolicy = policy;
 
 // The generated methods: one typed argument object, the typed payload.
 export const orgName = async (org: string): Promise<string> => (await client.orgs.get({ org })).name;

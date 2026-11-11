@@ -275,7 +275,7 @@ export interface SignedReleaseVerifierOptions extends Omit<TrustSignedReleaseOpt
  * The node's choice of release is the one thing taken from it, and it is
  * bounded: only a genuinely signed release at or above `minReleaseVersion`
  * passes, and the quote must then be of exactly that release's image. Pass it
- * as `CloudPolicy.verifyQuote` to choose where the release comes from yourself.
+ * as `NodePolicy.verifyQuote` to choose where the release comes from yourself.
  */
 export function createSignedReleaseVerifier(options: SignedReleaseVerifierOptions): QuoteVerifier {
   releaseVersion(options.minReleaseVersion, 'minReleaseVersion');

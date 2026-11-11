@@ -30,7 +30,6 @@
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.0",
-    "@semantic-release/exec": "^7.0.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^9.2.6",
     "@semantic-release/npm": "^12.0.1",
@@ -41,7 +40,6 @@
     "conventional-changelog-conventionalcommits": "^9.3.1",
     "esbuild": "^0.28.1",
     "eslint": "^8.57.0",
-    "jsdom": "^29.1.1",
     "openapi-typescript": "7.13.0",
     "rimraf": "^3.0.0",
     "semantic-release": "^24.2.9",
@@ -62,7 +60,8 @@
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
     "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer",
-    "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts",
+    "test:cluster": "vitest run --config vitest.cluster.config.ts",
+    "test:cloud-v2": "pnpm test:cluster",
     "gen:api": "openapi-typescript openapi/core-openapi.json -o src/generated/api.ts && node scripts/gen-methods.mjs",
     "check:api": "pnpm gen:api && git diff --exit-code -- src/generated",
     "refresh:openapi": "scripts/refresh-openapi.sh"

@@ -9,11 +9,11 @@
 // Streams left out: GET /apps/{app}/events, GET /apps/{app}/presence/stream.
 
 import type { operations } from './api.js';
-import type { ApiClient } from '../api/client.js';
-import { route, type MethodOptions, type RawBody } from '../api/operation.js';
+import type { RouteClient } from '../routes/route-client.js';
+import { route, type MethodOptions, type RawBody } from '../routes/method.js';
 
 /** The generated methods, by group, sending through `api`. */
-export function createRoutes(api: ApiClient) {
+export function createRoutes(api: RouteClient) {
   return {
     apps: {
       /**
