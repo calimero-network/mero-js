@@ -459,7 +459,7 @@ export interface paths {
         put?: never;
         /**
          * Move an app to another organization
-         * @description Its data where it is; its files, runs and quotas go to the target, `org` or app-team access becomes the target's app team of its package. `bringMembers` adds the source's members who reach it, capped at `member`.
+         * @description Its data where it is; its files, runs and quotas go to the target, `org` or app-team access becomes the target's app team of its package. `bringMembers` adds the source's members who reach it, capped at `member`. `from` is the organization it left, `null` for an app of the caller's own; `added` the accounts brought; `revokedInvites` how many invites to its old team were withdrawn.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -501,7 +501,9 @@ export interface paths {
         };
         /**
          * Who is present
-         * @description **Who:** whoever the app's access admits (a public app: anyone).
+         * @description One entry per present device (a session's passkey, or an API key): its account, device and state (hex).
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
          */
         get: operations["presence_get"];
         put?: never;
@@ -1299,7 +1301,7 @@ export interface paths {
         };
         /**
          * The account's live sessions
-         * @description Latest active first, at most 256.
+         * @description Latest active first, at most 256. `openedAt` (Unix seconds) is `null` for a session opened before the node kept it.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend).
          */
@@ -1431,7 +1433,9 @@ export interface paths {
         };
         /**
          * The deployers
-         * @description **Who:** an account holder (a passkey session not bound to an app's frontend).
+         * @description The operator, or the cluster's owner: the deployments and deployers governance, the owner (`null` until named), and every grant (`until` RFC 3339 and `untilSecs`, `null` for none; `grantedAt` RFC 3339; `deployer` `null` for a key it cannot read).
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend).
          */
         get: operations["deployer_list"];
         put?: never;
@@ -1485,7 +1489,7 @@ export interface paths {
         put?: never;
         /**
          * Create a deployment
-         * @description A named set of releases an owner (an account or organization) offers for others to instantiate.
+         * @description A named set of releases an owner (an account or organization) offers for others to instantiate. Answers its id, the record as made (no apps yet) and its frontend host (`null` on a node with no apps domain).
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -1571,7 +1575,9 @@ export interface paths {
         };
         /**
          * The organizations a deployment serves
-         * @description **Who:** signed in (a session or an API key).
+         * @description For its managers: each organization with instances from it, its name (`null` when unknown), member counts (`activeMembers30d`: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization are only counted (`outsideOrgs`). Never who the members are.
+         *
+         *     **Who:** signed in (a session or an API key).
          */
         get: operations["deployment_orgs"];
         put?: never;
@@ -2127,7 +2133,7 @@ export interface paths {
         };
         /**
          * Compute pools
-         * @description The pools and the runs each takes.
+         * @description The pools by name (absent: none set, one legacy pool), and each pool's capacity: how many runs its job nodes take at once.
          *
          *     **Who:** the ops token.
          */
@@ -2231,7 +2237,7 @@ export interface paths {
         };
         /**
          * Custom domains to serve
-         * @description Every served origin a package's manager registered, by the package's label, never its name.
+         * @description Every served origin a package's manager registered, by the package's label, never its name; `addedAt` is RFC 3339.
          *
          *     **Who:** the ops token.
          */
@@ -2507,7 +2513,7 @@ export interface paths {
         };
         /**
          * The organization's invites
-         * @description Their keys and terms, never a token.
+         * @description Their keys and terms, never a token: `expiresAt` Unix seconds; `createdBy` and `createdAt` are `null` on an invite from before they were kept.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -3180,10 +3186,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A signing key's organization
-         * @description The organization a package signing key (`did:key`) is bound to, if any.
+         * Whether a signing key is bound
+         * @description Whether a package signing key (`did:key`) is bound to an organization on this cluster (`bound`, never which), and its binding generation (`0`: never bound).
          *
-         *     **Who:** anyone.
+         *     **Who:** signed in (a session or an API key).
          */
         get: operations["publisher_binding"];
         put?: never;
@@ -3203,7 +3209,7 @@ export interface paths {
         };
         /**
          * The cluster's releases
-         * @description The mero-tee releases the cluster's nodes run and the deadlines set on them.
+         * @description The cluster's governance and the deadlines set on mero-tee releases, oldest release first: after `after` (RFC 3339; `afterSecs` Unix seconds) a scope that has not approved that release (or a newer one) starts no new work.
          *
          *     **Who:** anyone.
          */
@@ -3581,10 +3587,7 @@ export interface components {
             };
             approvedReleases: string[];
             outboundApprovals: {
-                [key: string]: {
-                    prefixes: string[];
-                    reviewed: string[];
-                };
+                [key: string]: components["schemas"]["OutboundApproval"];
             };
             metadata: unknown;
             memberMetadata: {
@@ -3683,6 +3686,148 @@ export interface components {
             reason: string;
             /** Format: int64 */
             atMs: number;
+        };
+        /** @description Who decides what on this cluster: release approvals, app upgrades and outbound approvals (`owner`: each app's owner; `operator`: the operator), and, left out at their defaults, `deployments` (`open`), `deployers` (`operator`) and `signUp` (`open`). */
+        Governance: {
+            /** @enum {string} */
+            releases: "owner" | "operator";
+            /** @enum {string} */
+            appUpgrades: "owner" | "operator";
+            /** @enum {string} */
+            outbound: "owner" | "operator";
+            /** @enum {string} */
+            deployments?: "granted" | "open";
+            /** @enum {string} */
+            deployers?: "owner" | "operator";
+            /** @enum {string} */
+            signUp?: "invite" | "closed" | "open";
+        };
+        /** @description What an owner approved for one publisher's apps to call out to: the approved URL prefixes, and every prefix it was shown. */
+        OutboundApproval: {
+            prefixes: string[];
+            reviewed: string[];
+        };
+        /** @description The scope whose approvals cover an app: its organization, or its owner's account (never named). */
+        AppScope: {
+            /** @enum {string} */
+            kind: "org";
+            org: string;
+        } | {
+            /** @enum {string} */
+            kind: "account";
+        };
+        /** @description A mero-tee release the cluster's nodes run: how many run it, and whether the scope approved it (`true` where nothing was ever recorded). */
+        ClusterRelease: {
+            release: string;
+            /** Format: int64 */
+            nodes: number;
+            approved: boolean;
+        };
+        /** @description A bundle by its digest, with the release it came from where the reader may see it. */
+        BundleRelease: {
+            bundle: string;
+            package?: string;
+            version?: string;
+        };
+        /** @description An app's last upgrade as a report shows it. `actor`, `error`, `run` and `apiKey` are shown to the app's people, never to the operator. */
+        ReportUpgrade: {
+            from: components["schemas"]["BundleRelease"];
+            to: components["schemas"]["BundleRelease"];
+            /** Format: int64 */
+            at: number;
+            ok: boolean;
+            /** @enum {string} */
+            actorKind: "owner" | "member" | "operator";
+            actor?: string;
+            error?: unknown;
+            run?: string;
+            apiKey?: string;
+        };
+        /** @description One app in a release report (`GET /auth/apps`, `GET /orgs/{org}/apps`, `GET /ops/apps`): its bundle and release (`package`, `null` where the reader may not see it), the publisher's key and bound organization, who holds its upgrades and release approvals, its last upgrade, the releases approved to hold it (`null`: unrestricted), each replica's release, and `lastWriteAt` (Unix seconds, `null` when unknown). `name`, `team`, `availableVersions` (newer releases, oldest first), `latestReachable` and `latestBlocked` (the newest release and why an upgrade would not take it) are for the app's people, never the operator. */
+        ReportApp: {
+            app: string;
+            /** Format: int64 */
+            group: number;
+            scope: components["schemas"]["AppScope"];
+            bundle: string;
+            package: {
+                package: string;
+                version: string;
+                service?: string | null;
+            } | null;
+            publisher: {
+                signer: string;
+                org: string | null;
+            } | null;
+            /** @enum {string} */
+            upgradesHeldBy: "operator" | "owner" | "publisher";
+            /** @enum {string} */
+            releasesApprovedBy: "operator" | "publisher" | "owner";
+            lastUpgrade: components["schemas"]["ReportUpgrade"] | null;
+            approvedReleases: string[] | null;
+            replicas: {
+                /** Format: int64 */
+                node: number;
+                release: string | null;
+                approved: boolean;
+            }[];
+            /** Format: int64 */
+            lastWriteAt: number | null;
+            name?: string;
+            team?: string;
+            availableVersions?: string[];
+            latestReachable?: string | null;
+            latestBlocked?: {
+                version: string;
+                /** @enum {string} */
+                reason: "authority" | "runtime";
+                message: string;
+                minRuntimeVersion?: string;
+                nodes?: {
+                    /** Format: int64 */
+                    node: number;
+                    runtime: string | {
+                        before: string;
+                    } | null;
+                }[];
+            };
+        };
+        /** @description A deployment as the directory records it: the release it offers by app name (`addedAt` Unix seconds), who created it and when (Unix seconds). */
+        DeploymentRecord: {
+            id: string;
+            name: string;
+            owner: components["schemas"]["Deployer"];
+            apps: {
+                [key: string]: {
+                    package: string;
+                    version: string;
+                    addedBy: string;
+                    /** Format: int64 */
+                    addedAt: number;
+                };
+            };
+            createdBy: string;
+            /** Format: int64 */
+            createdAt: number;
+        };
+        /** @description A grant to install where deployments are granted: until when (Unix seconds; absent: it does not end), when and by whom it was granted. */
+        DeployerGrant: {
+            /** Format: int64 */
+            until?: number;
+            /** Format: int64 */
+            grantedAt: number;
+            grantedBy: string;
+        };
+        /** @description A cluster sign-up invite, never its token: uses left, when it expires (`expiresAt` RFC 3339, `expiresAtSecs` Unix seconds), who made it and when (RFC 3339). */
+        SignUpInvite: {
+            inviteKey: string;
+            /** Format: int64 */
+            uses: number;
+            expiresAt: string;
+            /** Format: int64 */
+            expiresAtSecs: number;
+            createdBy: string;
+            createdAt: string;
         };
         /** @description What an operator decision that names nothing in its body may carry: none at first, the operator's proof after the `428`. */
         ProofOnly: {
@@ -4081,7 +4226,15 @@ export interface operations {
                 content: {
                     "application/json": {
                         appId: string;
-                        replicas: unknown[];
+                        replicas: ({
+                            /** Format: int64 */
+                            node: number;
+                            attestation: components["schemas"]["AttestationDoc"];
+                        } | {
+                            /** Format: int64 */
+                            node: number;
+                            error: string;
+                        })[];
                     };
                 };
             };
@@ -5365,12 +5518,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         appId: string;
-                        from: string;
+                        from: string | null;
                         org: string;
                         access: components["schemas"]["Access"];
                         created: boolean;
-                        added: unknown;
-                        revokedInvites: unknown;
+                        added: string[];
+                        /** Format: int64 */
+                        revokedInvites: number;
                     };
                 };
             };
@@ -5517,7 +5671,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        present: unknown[];
+                        present: {
+                            account: string;
+                            device: string;
+                            state: string | null;
+                        }[];
                     };
                 };
             };
@@ -6792,11 +6950,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        scope: unknown;
-                        governance: unknown;
-                        approvedReleases: unknown;
-                        clusterReleases: unknown;
-                        apps: unknown[];
+                        scope: components["schemas"]["AppScope"];
+                        governance: components["schemas"]["Governance"];
+                        approvedReleases: string[] | null;
+                        clusterReleases: components["schemas"]["ClusterRelease"][];
+                        apps: components["schemas"]["ReportApp"][];
                         next: string | null;
                     };
                 };
@@ -6953,10 +7111,19 @@ export interface operations {
                         passkeyId: string | null;
                         app?: string | null;
                         origin?: string | null;
-                        approvedReleases: unknown;
-                        outboundApprovals: unknown;
-                        recoveryCode?: unknown;
-                        recoveryPending?: unknown;
+                        approvedReleases: string[];
+                        outboundApprovals: {
+                            [key: string]: components["schemas"]["OutboundApproval"];
+                        };
+                        recoveryCode?: boolean;
+                        recoveryPending?: {
+                            accountId: string;
+                            credentialId: string;
+                            /** Format: int64 */
+                            startedAt: number;
+                            /** Format: int64 */
+                            readyAt: number;
+                        } | null;
                     };
                 };
             };
@@ -8072,7 +8239,7 @@ export interface operations {
                             app: string | null;
                             origin: string | null;
                             /** Format: int64 */
-                            openedAt: number;
+                            openedAt: number | null;
                             /** Format: int64 */
                             lastActiveAt: number;
                             current: boolean;
@@ -8189,8 +8356,6 @@ export interface operations {
                         developerFuelToday?: string;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         developerWritesToday?: string;
-                    } & {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -8491,7 +8656,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        /** @enum {string} */
+                        deployments: "open" | "granted";
+                        /** @enum {string} */
+                        deployers: "operator" | "owner";
+                        owner: components["schemas"]["Deployer"] | null;
+                        grants: {
+                            key: string;
+                            deployer: components["schemas"]["Deployer"] | null;
+                            until: string | null;
+                            /** Format: int64 */
+                            untilSecs: number | null;
+                            grantedAt: string;
+                            grantedBy: string;
+                        }[];
                     };
                 };
             };
@@ -8551,7 +8729,7 @@ export interface operations {
                     "application/json": {
                         key: string;
                         deployer: components["schemas"]["Deployer"];
-                        grant: unknown;
+                        grant: components["schemas"]["DeployerGrant"];
                     };
                 };
             };
@@ -8740,9 +8918,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        id: string;
+                        deployment: components["schemas"]["DeploymentRecord"];
                         host: string | null;
-                    } & {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -9118,7 +9296,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        deployment: string;
+                        orgs: {
+                            orgId: string;
+                            name: string | null;
+                            /** Format: int64 */
+                            memberCount: number;
+                            /** Format: int64 */
+                            activeMembers30d: number;
+                            /** Format: int64 */
+                            instances: number;
+                            apps: {
+                                app: string;
+                                version: string;
+                            }[];
+                            firstCreatedAt: string;
+                        }[];
+                        /** Format: int64 */
+                        outsideOrgs: number;
                     };
                 };
             };
@@ -9191,8 +9386,6 @@ export interface operations {
                 content: {
                     "application/json": {
                         org: string;
-                    } & {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -9245,8 +9438,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         fresh: boolean;
-                        governance: unknown;
-                        apps: unknown[];
+                        governance: components["schemas"]["Governance"];
+                        apps: components["schemas"]["ReportApp"][];
                         next: string | null;
                     };
                 };
@@ -9730,7 +9923,7 @@ export interface operations {
                     "application/json": {
                         key: string;
                         deployer: components["schemas"]["Deployer"];
-                        grant: unknown;
+                        grant: components["schemas"]["DeployerGrant"];
                     };
                 };
             };
@@ -10204,10 +10397,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         fresh: boolean;
-                        governance: unknown;
+                        governance: components["schemas"]["Governance"];
                         orgs: {
                             org: string;
-                            approvedReleases: unknown;
+                            approvedReleases: string[] | null;
                         }[];
                         next: string | null;
                     };
@@ -10375,7 +10568,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        packages: unknown[];
+                        packages: components["schemas"]["Package"][];
                     };
                 };
             };
@@ -10422,8 +10615,10 @@ export interface operations {
                     "application/json": {
                         package: string;
                         version: string;
-                    } & {
-                        [key: string]: unknown;
+                        signerId: string;
+                        services: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -10481,8 +10676,10 @@ export interface operations {
                     "application/json": {
                         package: string;
                         version: string;
-                    } & {
-                        [key: string]: unknown;
+                        signerId: string;
+                        services: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -10659,7 +10856,17 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        pools: {
+                            [key: string]: {
+                                /** Format: int64 */
+                                runsPerNode: number;
+                                /** Format: int64 */
+                                maxMemoryMib: number;
+                            };
+                        };
+                        capacity: {
+                            [key: string]: number;
+                        };
                     };
                 };
             };
@@ -10788,8 +10995,6 @@ export interface operations {
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         maxFuelPerDeveloperPerDay: string;
                         orgs: unknown;
-                    } & {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -10825,8 +11030,6 @@ export interface operations {
                 "application/json": {
                     org?: string;
                     operatorProof?: components["schemas"]["OperatorProof"];
-                } & {
-                    [key: string]: unknown;
                 };
             };
         };
@@ -11073,8 +11276,7 @@ export interface operations {
                             origin: string;
                             host: string;
                             label: string;
-                            /** Format: int64 */
-                            addedAt: number;
+                            addedAt: string;
                         }[];
                     };
                 };
@@ -11170,7 +11372,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        signUp: {
+                            policy: components["schemas"]["SignUp"];
+                            orgInvites: boolean;
+                            signUpInvites: boolean;
+                            inviteRequired: boolean;
+                        };
+                        /** @enum {string} */
+                        runBy: "owner" | "operator";
+                        invites: components["schemas"]["SignUpInvite"][];
                     };
                 };
             };
@@ -11219,9 +11429,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SignUpInvite"];
                 };
             };
             /** @description `BAD_REQUEST`: the request is malformed */
@@ -11388,7 +11596,7 @@ export interface operations {
                     "application/json": {
                         node: unknown;
                         system: unknown;
-                        governance: unknown;
+                        governance: components["schemas"]["Governance"];
                         groups: unknown;
                         nodes: unknown;
                         apps: unknown;
@@ -11716,7 +11924,18 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         mode: "legacy" | "standalone" | "shared";
-                        appTeams: unknown[];
+                        appTeams: {
+                            package: string;
+                            teamId: string;
+                            name: string;
+                            join: components["schemas"]["TeamJoin"];
+                            /** Format: int64 */
+                            memberCount: number;
+                            /** Format: int64 */
+                            defaultCapabilities: number | null;
+                            member: boolean;
+                            manages: boolean;
+                        }[];
                     };
                 };
             };
@@ -11781,7 +12000,19 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        /** @enum {string} */
+                        mode: "legacy" | "standalone" | "shared";
+                        teams: {
+                            package: string;
+                            teamId: string;
+                            created: boolean;
+                            apps: string[];
+                            /** Format: int64 */
+                            added: number;
+                            join: components["schemas"]["TeamJoin"] | null;
+                            /** Format: int64 */
+                            dropped: number;
+                        }[];
                     };
                 };
             };
@@ -11862,11 +12093,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        scope: unknown;
-                        governance: unknown;
-                        approvedReleases: unknown;
-                        clusterReleases: unknown;
-                        apps: unknown[];
+                        scope: components["schemas"]["AppScope"];
+                        governance: components["schemas"]["Governance"];
+                        approvedReleases: string[] | null;
+                        clusterReleases: components["schemas"]["ClusterRelease"][];
+                        apps: components["schemas"]["ReportApp"][];
                         next: string | null;
                     };
                 };
@@ -11995,7 +12226,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        invites: {
+                            inviteKey: string;
+                            role: components["schemas"]["OrgRole"];
+                            teams: string[];
+                            /** Format: int64 */
+                            usesLeft: number;
+                            /** Format: int64 */
+                            expiresAt: number;
+                            expired: boolean;
+                            createdBy: string | null;
+                            /** Format: int64 */
+                            createdAt: number | null;
+                            allApps: boolean;
+                        }[];
                     };
                 };
             };
@@ -12233,10 +12477,10 @@ export interface operations {
                         orgId: string;
                         members: {
                             account: string;
-                            name: string;
+                            name: string | null;
                             role: components["schemas"]["OrgRole"];
-                            teams: unknown;
-                            passkeys: unknown;
+                            teams: string[];
+                            passkeys: number | "3+";
                             recoveryCode: boolean;
                             lastActiveDay: string | null;
                             /** Format: int64 */
@@ -14156,7 +14400,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         package: string;
-                        origins: unknown[];
+                        origins: {
+                            package: string;
+                            origin: string;
+                            rpId: string;
+                            addedBy: string;
+                            addedAt: string;
+                            served: boolean;
+                        }[];
                     };
                 };
             };
@@ -14411,8 +14662,10 @@ export interface operations {
                     "application/json": {
                         package: string;
                         version: string;
-                    } & {
-                        [key: string]: unknown;
+                        signerId: string;
+                        services: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -14488,8 +14741,10 @@ export interface operations {
                     "application/json": {
                         package: string;
                         version: string;
-                    } & {
-                        [key: string]: unknown;
+                        signerId: string;
+                        services: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -14697,8 +14952,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        signerId: string;
+                        cluster: string;
+                        /** Format: int64 */
+                        generation: number;
+                        bound: boolean;
                     };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14719,7 +14996,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        governance: components["schemas"]["Governance"];
+                        deadlines: {
+                            version: string;
+                            after: string;
+                            /** Format: int64 */
+                            afterSecs: number;
+                        }[];
                     };
                 };
             };
@@ -14841,7 +15124,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        signUp: {
+                            policy: components["schemas"]["SignUp"];
+                            orgInvites: boolean;
+                            signUpInvites: boolean;
+                            inviteRequired: boolean;
+                        };
+                        /** @enum {string} */
+                        runBy: "owner" | "operator";
+                        invites: components["schemas"]["SignUpInvite"][];
                     };
                 };
             };
@@ -14901,8 +15192,14 @@ export interface operations {
                 content: {
                     "application/json": {
                         token: string;
-                    } & {
-                        [key: string]: unknown;
+                        inviteKey: string;
+                        /** Format: int64 */
+                        uses: number;
+                        expiresAt: string;
+                        /** Format: int64 */
+                        expiresAtSecs: number;
+                        createdBy: string;
+                        createdAt: string;
                     };
                 };
             };
