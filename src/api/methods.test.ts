@@ -228,8 +228,8 @@ describe('generated methods: what the document marks', () => {
   });
 
   it('sends a presence state as hex, and null to retract', async () => {
-    await client().apps.presencePublish({ app: 'a-1', seq: 1, state: presenceState(new Uint8Array([1, 255])) as string });
-    await client().apps.presencePublish({ app: 'a-1', seq: 2, state: presenceState(null) as string });
+    await client().apps.presencePublish({ app: 'a-1', seq: 1, state: presenceState(new Uint8Array([1, 255])) });
+    await client().apps.presencePublish({ app: 'a-1', seq: 2, state: presenceState(null) });
     expect(node.requests.map((r) => r.body)).toEqual([
       { seq: 1, state: '01ff' },
       { seq: 2, state: null },

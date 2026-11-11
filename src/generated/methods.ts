@@ -92,11 +92,12 @@ export function createRoutes(api: ApiClient) {
        * Call a method.
        *
        * `POST /apps/{app}/intents` (`intents`). **Who:** whoever the app's access admits (a public app: anyone).
+       * Answers `412 CONFIRM_REQUIRED` first when the method is a `confirm` method of the app's ABI: give `confirm` (here or on the client); the passkey must verify the user `required`.
        * Retried on `503` (D70), with its `idempotencyKey` (one is made when none is given).
        * A `421 WRONG_NODE` moves the client to the next node of the cluster.
        */
       call: (args: operations['intents']['parameters']['path'] & operations['intents']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['intents']['responses'][200]['content']['application/json']> =>
-        route(api, {"method":"POST","path":"/apps/{app}/intents","pathParams":["app"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['intents']['responses'][200]['content']['application/json']>,
+        route(api, {"method":"POST","path":"/apps/{app}/intents","pathParams":["app"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['intents']['responses'][200]['content']['application/json']>,
       /**
        * Create an app instance.
        *
@@ -165,11 +166,12 @@ export function createRoutes(api: ApiClient) {
        * Call a method by its path.
        *
        * `POST /apps/{app}/methods/{method}` (`app_method`). **Who:** whoever the app's access admits (a public app: anyone).
+       * Answers `412 CONFIRM_REQUIRED` first when the method is a `confirm` method of the app's ABI: give `confirm` (here or on the client); the passkey must verify the user `required`.
        * Retried on `503` (D70), with its `idempotencyKey` (one is made when none is given).
        * A `421 WRONG_NODE` moves the client to the next node of the cluster.
        */
       method: (args: operations['app_method']['parameters']['path'] & operations['app_method']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['app_method']['responses'][200]['content']['application/json']> =>
-        route(api, {"method":"POST","path":"/apps/{app}/methods/{method}","pathParams":["app","method"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_method']['responses'][200]['content']['application/json']>,
+        route(api, {"method":"POST","path":"/apps/{app}/methods/{method}","pathParams":["app","method"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_method']['responses'][200]['content']['application/json']>,
       /**
        * Move an app to another organization.
        *
