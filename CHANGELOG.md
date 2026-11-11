@@ -1,3 +1,5 @@
+## [31.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.0...mero-js-v31.0.1) (2026-11-11)
+
 ## [31.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v30.1.0...mero-js-v31.0.0) (2026-11-11)
 
 ### ⚠ BREAKING CHANGES
