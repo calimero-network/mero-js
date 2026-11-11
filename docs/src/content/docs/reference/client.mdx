@@ -231,8 +231,8 @@ await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: 
 The second argument, `{ confirm, operatorProof, signal }`, answers this call's
 `412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
 `new CalimeroClient(options, { confirm, operatorProof })` answers every call that
-gives none. Calls and views are retried on `503` (D70), and a call without an
-idempotency key gets one. The route methods above are thin calls onto these,
+gives none. Routes the document marks retry-safe are retried on `503` (D70), and
+one that requires an idempotency key gets one. The route methods above are thin calls onto these,
 deprecated until the apps have moved; the event streams stay on the transport.
 `createRoutes(createApiClient(transport))` builds the groups on any
 `NodeTransport`.

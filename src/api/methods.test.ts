@@ -13,7 +13,9 @@ import {
   ConfirmRequired,
   NotFound,
   NodeTransport,
+  UnavailableError,
   createApiClient,
+  presenceState,
   createRoutes,
   passkeyConfirm,
   type PasskeyProvider,
@@ -169,6 +171,69 @@ describe('generated methods: refusals and challenges', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(client().auth.me({}, { signal: controller.signal })).rejects.toThrow();
+  });
+});
+
+describe('generated methods: what the document marks', () => {
+  const unavailable = { status: 503, json: { status: 503, error: 'UNAVAILABLE', message: 'electing' } };
+
+  it('retries a route marked x-calimero-retry-safe, with the idempotency key it requires', async () => {
+    let n = 0;
+    node.answer = () => (++n < 3 ? unavailable : { status: 200, json: { index: 1, result: 2, events: [], receipt: {} } });
+    const { result } = await client().apps.method({ app: 'a-1', method: 'get', args: {} });
+    expect(result).toBe(2);
+    expect(sent()).toEqual(Array(3).fill(['POST', '/apps/a-1/methods/get']));
+    const keys = node.requests.map((r) => r.body.idempotencyKey);
+    expect(keys[0]).toMatch(/^node:c-/);
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('sends a route not marked retry-safe once', async () => {
+    node.answer = () => unavailable;
+    await expect(client().orgs.create({ name: 'Acme' })).rejects.toBeInstanceOf(UnavailableError);
+    expect(node.requests).toHaveLength(1);
+  });
+
+  it("asks the passkey for the route's own user verification (a sign-up's: preferred)", async () => {
+    const asked: unknown[] = [];
+    const pk: PasskeyProvider = {
+      ...passkey,
+      get: async (_c, _r, _a, options) => {
+        asked.push(options?.userVerification);
+        return ASSERTION;
+      },
+    };
+    confirming({ accountId: 'acc-1', sessionToken: 't', expiresAt: 1, refreshToken: 'r' });
+    await client().auth.registerFinish(
+      { challengeId: 'r-1', registration: { attestationObject: 'ao', clientDataJson: 'cd' } },
+      { confirm: passkeyConfirm(pk) },
+    );
+    confirming({});
+    await client().orgs.delete({ org: 'o-1' }, { confirm: passkeyConfirm(pk) });
+    expect(asked).toEqual(['preferred', 'required']);
+  });
+
+  it('moves to the next node on a 421 WRONG_NODE', async () => {
+    const other = new StandInCloudNode();
+    await other.start();
+    try {
+      node.answer = () => ({ status: 421, json: { status: 421, error: 'WRONG_NODE', message: 'use another node' } });
+      other.answer = () => ({ status: 200, json: { accountId: 'acc-1' } });
+      const c = new CalimeroClient({ baseUrl: node.url, nodes: [other.url], policy: { allowMock: true } });
+      expect(await c.auth.me()).toEqual({ accountId: 'acc-1' });
+      expect(c.nodeUrl).toBe(other.url);
+    } finally {
+      await other.stop();
+    }
+  });
+
+  it('sends a presence state as hex, and null to retract', async () => {
+    await client().apps.presencePublish({ app: 'a-1', seq: 1, state: presenceState(new Uint8Array([1, 255])) as string });
+    await client().apps.presencePublish({ app: 'a-1', seq: 2, state: presenceState(null) as string });
+    expect(node.requests.map((r) => r.body)).toEqual([
+      { seq: 1, state: '01ff' },
+      { seq: 2, state: null },
+    ]);
   });
 });
 

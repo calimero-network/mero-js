@@ -28,7 +28,7 @@ import { DEFAULT_DIRECTORY } from './directory.js';
 import { CalimeroError, LoginRequired, OriginNotRegistered, WrongRecoveryCode } from './errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
 import { createApiClient, type ApiClient, type ApiClientOptions } from '../api/client.js';
-import type { CallOptions } from '../api/operation.js';
+import type { MethodOptions } from '../api/operation.js';
 import { createRoutes, type Routes } from '../generated/methods.js';
 import { passkeyConfirm, type PasskeyConfirmOptions } from '../api/step-up.js';
 import type { components } from '../generated/api.js';
@@ -815,6 +815,15 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * A presence state as `POST /apps/{app}/presence` takes it: the bytes as
+ * lower-case hex, or `null`, which retracts this device's entry
+ * (`client.apps.presencePublish({ app, seq, state: presenceState(bytes) })`).
+ */
+export function presenceState(state: Uint8Array | null): string | null {
+  return state === null ? null : toHex(state);
+}
+
 export { DEFAULT_RETRY, retryDelayMs };
 export type { CloudRetryOptions };
 
@@ -975,7 +984,7 @@ export class CalimeroClient {
   }
 
   /** The options that answer a `412 CONFIRM_REQUIRED` with `passkey`, when one is given. */
-  private confirmWith(passkey: PasskeyProvider | undefined, options: PasskeyConfirmOptions = {}): CallOptions | undefined {
+  private confirmWith(passkey: PasskeyProvider | undefined, options: PasskeyConfirmOptions = {}): MethodOptions | undefined {
     return passkey ? { confirm: passkeyConfirm(passkey, options) } : undefined;
   }
 
@@ -1072,8 +1081,10 @@ export class CalimeroClient {
     // verified (core `api.rs`: `rp(node)`, `require_uv: false`), as it made
     // the passkey with `preferred`: asking `required` here would refuse a
     // security key without a PIN after it has made the passkey, leaving a
-    // passkey with no account.
-    const session = await this.as<CalimeroSession>(this.auth.registerFinish({ challengeId: begin.challengeId, registration, ...invite }, this.confirmWith(passkey, { userVerification: 'preferred', signal })));
+    // passkey with no account. The document says so
+    // (`x-calimero-user-verification: preferred`), and the generated method
+    // asks the passkey for it.
+    const session = await this.as<CalimeroSession>(this.auth.registerFinish({ challengeId: begin.challengeId, registration, ...invite }, this.confirmWith(passkey, { signal })));
     this.useSession(session);
     return session;
   }
@@ -1306,9 +1317,9 @@ export class CalimeroClient {
    */
   async startAccountRecovery(code: string, passkey: PasskeyProvider): Promise<AccountRecovery> {
     try {
-      const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.recoveryBegin({ code }));
+      const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.accountRecoveryBegin({ code }));
       const registration = await passkey.create(begin.options);
-      return await this.as<AccountRecovery>(this.auth.recoveryStart({ challengeId: begin.challengeId, code, registration }));
+      return await this.as<AccountRecovery>(this.auth.accountRecoveryStart({ challengeId: begin.challengeId, code, registration }));
     } catch (error) {
       if (error instanceof LoginRequired) throw new WrongRecoveryCode(error.message.replace(/^401 UNAUTHENTICATED: /, ''), error.details);
       throw error;
@@ -1320,10 +1331,10 @@ export class CalimeroClient {
    * `passkey` (one the account already has). The code stays spent: make a
    * new one.
    *
-   * @deprecated Use `client.auth.recoveryCancel({}, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.auth.accountRecoveryCancel({}, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async cancelAccountRecovery(passkey: PasskeyProvider): Promise<void> {
-    await this.as(this.auth.recoveryCancel({}, this.confirmWith(passkey)));
+    await this.as(this.auth.accountRecoveryCancel({}, this.confirmWith(passkey)));
   }
 
   /**
@@ -1335,7 +1346,7 @@ export class CalimeroClient {
    * {@link RecoveryNotReady}, with no recovery under way {@link NotFound}.
    */
   async finishAccountRecovery(passkey: PasskeyProvider, accountId?: string): Promise<CalimeroSession> {
-    const session = await this.as<CalimeroSession>(this.auth.recoveryFinish({ ...accountId ? { accountId } : {} }, this.confirmWith(passkey)));
+    const session = await this.as<CalimeroSession>(this.auth.accountRecoveryFinish({ ...accountId ? { accountId } : {} }, this.confirmWith(passkey)));
     this.useSession(session);
     return session;
   }
@@ -1714,13 +1725,21 @@ export class CalimeroClient {
     options: {
       org?: string;
       access?: Record<string, unknown>;
+      /**
+       * @deprecated The node ignores it (a method that needs a passkey says so
+       * in the app's ABI); it is no longer sent.
+       */
       confirmMethods?: string[];
       /** Arguments for the app's `init`. A failed init rejects with code `INIT_FAILED`. */
       initArgs?: unknown;
     } = {},
   ): Promise<string> {
     const target = typeof bundle === 'string' ? { bundle } : bundle;
-    const { appId } = await this.as<{ appId: string }>(this.apps.create({ name, ...target, ...options, access: options.access as Access | undefined }));
+    // `confirmMethods` is not sent: the node ignores it.
+    const { confirmMethods: _ignored, ...rest } = options;
+    const { appId } = await this.as<{ appId: string }>(
+      this.apps.create({ name, ...target, ...rest, access: rest.access as Access | undefined }),
+    );
     return appId;
   }
 
@@ -1761,8 +1780,7 @@ export class CalimeroClient {
    * @deprecated Use `client.apps.view({ app, method, args, consistency: 'stale', minIndex })`; this wrapper goes once the apps have moved.
    */
   view(app: string, method: string, args: unknown = {}, options: { stale?: boolean; minIndex?: number } = {}): Promise<ViewResult> {
-    // `strong` is what the node reads for any value but `stale`; the document names only `stale`.
-    const consistency = (options.stale ? 'stale' : 'strong') as 'stale';
+    const consistency = options.stale ? 'stale' : 'strong';
     return this.as(this.apps.view({ app, method, args, consistency, minIndex: options.minIndex ?? 0 }));
   }
 
@@ -1778,10 +1796,10 @@ export class CalimeroClient {
    * to retract it. The newest `seq` wins; send the same `seq` and state again
    * as a heartbeat, since an entry not refreshed within 7 s is gone.
    *
-   * @deprecated Use `client.apps.presencePublish({ app, seq, state: state === null ? null : toHex(state) })`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.apps.presencePublish({ app, seq, state: presenceState(state) })`; this wrapper goes once the apps have moved.
    */
   async publishPresence(app: string, seq: number, state: Uint8Array | null): Promise<void> {
-    await this.as(this.apps.presencePublish({ app, seq, state: state === null ? null : toHex(state) }));
+    await this.as(this.apps.presencePublish({ app, seq, state: presenceState(state) }));
   }
 
   /**
@@ -1991,7 +2009,7 @@ export class CalimeroClient {
    * session opened on an app's frontend: an app asks its user with
    * {@link requestConsent} instead.
    *
-   * @deprecated Use `client.auth.releaseApproval({ version, approved }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.auth.accountReleaseApproval({ version, approved }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async approveRelease(
     org: string | null,
@@ -2002,7 +2020,7 @@ export class CalimeroClient {
     const options = this.confirmWith(passkey);
     return this.as(
       org === null
-        ? this.auth.releaseApproval({ version, approved }, options)
+        ? this.auth.accountReleaseApproval({ version, approved }, options)
         : this.orgs.releaseApproval({ org, version, approved }, options),
     );
   }
@@ -2015,7 +2033,7 @@ export class CalimeroClient {
    * with `passkey`. Refused (`403`) to a session opened on an app's frontend:
    * an app asks with {@link requestConsent} (`kind: 'outbound'`) instead.
    *
-   * @deprecated Use `client.auth.outboundApproval({ package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.outboundApproval({ org, package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.auth.accountOutboundApproval({ package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.outboundApproval({ org, package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async approveOutbound(
     org: string | null,
@@ -2026,7 +2044,7 @@ export class CalimeroClient {
     const body = { package: pkg, prefixes: options.prefixes ?? 'manifest', replace: options.replace ?? false };
     const confirm = this.confirmWith(passkey);
     return this.as(
-      org === null ? this.auth.outboundApproval(body, confirm) : this.orgs.outboundApproval({ org, ...body }, confirm),
+      org === null ? this.auth.accountOutboundApproval(body, confirm) : this.orgs.outboundApproval({ org, ...body }, confirm),
     );
   }
 
@@ -2040,13 +2058,13 @@ export class CalimeroClient {
    * nodes run and whether each is approved, and per app its release, newer
    * releases it may move to, last upgrade and replicas.
    *
-   * @deprecated Use `client.auth.apps({ after, limit })` or `client.orgs.apps({ org, after, limit })`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.auth.accountApps({ after, limit })` or `client.orgs.apps({ org, after, limit })`; this wrapper goes once the apps have moved.
    */
   appsReport(org: string | null, page: PageOptions = {}): Promise<AppsReport> {
     const query = pageParams(page);
     return this.as(
       org === null
-        ? this.auth.apps({ ...query })
+        ? this.auth.accountApps({ ...query })
         : this.orgs.apps({ org, ...query }),
     );
   }
@@ -2097,7 +2115,7 @@ export class CalimeroClient {
    * @deprecated Use `client.consent.pageCreate({ body: request })`; this wrapper goes once the apps have moved.
    */
   requestConsent(request: ConsentRequest): Promise<ConsentStarted> {
-    return this.as(this.consent.pageCreate({ body: request as unknown as string }));
+    return this.as(this.consent.pageCreate({ body: request }));
   }
 
   /**
@@ -2231,10 +2249,10 @@ export class CalimeroClient {
    * cluster's log holds, with its package's label and no package name or
    * account. Operator token.
    *
-   * @deprecated Use `client.ops.originsOpsServed()`; this wrapper goes once the apps have moved.
+   * @deprecated Use `client.ops.served()`; this wrapper goes once the apps have moved.
    */
   opsServedOrigins(): Promise<ServedOrigins> {
-    return this.as(this.ops.originsOpsServed());
+    return this.as(this.ops.served());
   }
 
   /**

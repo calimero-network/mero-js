@@ -14,7 +14,7 @@ import { unwrap } from './client.js';
 import { operatorSignature, stepUp, type ConfirmCallback, type OperatorProofCallback } from './step-up.js';
 
 /** What a generated method takes beside its arguments. */
-export interface CallOptions {
+export interface MethodOptions {
   /**
    * Answers this request's `412 CONFIRM_REQUIRED` (say,
    * `passkeyConfirm(passkey)`), before the client's own `confirm`.
@@ -55,6 +55,12 @@ export interface RouteShape {
   media?: string;
   /** How the answer is read. */
   reply: 'json' | 'bytes' | 'text';
+  /** The route answers `412 CONFIRM_REQUIRED` first (`x-calimero-step-up`). */
+  stepUp?: boolean;
+  /** The user verification its step-up asks the passkey for (`x-calimero-user-verification`). */
+  userVerification?: 'required' | 'preferred' | 'discouraged';
+  /** The route answers `428 OPERATOR_SIGNATURE_REQUIRED` first (`x-calimero-operator`). */
+  operator?: boolean;
 }
 
 /** Send one generated route: split `args`, send it, answer its payload or throw its refusal. */
@@ -62,7 +68,7 @@ export async function route(
   api: ApiClient,
   shape: RouteShape,
   args: Record<string, unknown> | undefined,
-  options: CallOptions = {},
+  options: MethodOptions = {},
 ): Promise<unknown> {
   const given = args ?? {};
   const path: Record<string, unknown> = {};
@@ -91,7 +97,15 @@ export async function route(
   if (shape.reply === 'bytes') init.parseAs = 'blob';
   else if (shape.reply === 'text') init.parseAs = 'text';
   const middleware: Middleware[] = [];
-  if (options.confirm) middleware.push(stepUp(options.confirm));
+  if (options.confirm) {
+    const confirm = options.confirm;
+    // The route's own user verification, where the node's challenge names none
+    // (a sign-up's confirmation takes `preferred`, every other step-up `required`).
+    const answer: ConfirmCallback = shape.userVerification
+      ? (challenge, context) => confirm({ userVerification: shape.userVerification, ...challenge }, context)
+      : confirm;
+    middleware.push(stepUp(answer));
+  }
   if (options.operatorProof) middleware.push(operatorSignature(options.operatorProof));
   if (middleware.length) init.middleware = middleware;
   if (options.signal) init.signal = options.signal;

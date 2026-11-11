@@ -23,7 +23,7 @@ export type {
   PasskeyConfirmOptions,
 } from './step-up.js';
 export { route } from './operation.js';
-export type { CallOptions, RawBody, RouteShape } from './operation.js';
+export type { MethodOptions, RawBody, RouteShape } from './operation.js';
 export { createRoutes } from '../generated/methods.js';
 export type {
   AppsRoutes,

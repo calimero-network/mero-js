@@ -6,7 +6,8 @@
  * - its `fetch` is {@link transportFetch}: every request goes through a
  *   {@link NodeTransport}, so it is sealed to an attested node, carries the
  *   transport's credential (refreshed on a `401`), moves on past a
- *   `421 WRONG_NODE`, and a call or a view retries a `503` (D70); the two
+ *   `421 WRONG_NODE`, and a route the document marks retry-safe retries a
+ *   `503` (D70); the two
  *   routes a node serves in the clear (`/attestation`, `/health`) go
  *   unsealed, without the credential;
  * - the `412 CONFIRM_REQUIRED` step-up and the `428
@@ -27,6 +28,7 @@ import type { paths } from '../generated/api.js';
 import { errorFrom, type CalimeroError } from '../cloud-v2/errors.js';
 import { newIdempotencyKey, type HttpMethod, type NodeTransport, type QueryValue } from '../runtime/transport.js';
 import { operatorSignature, stepUp, type ConfirmCallback, type OperatorProofCallback } from './step-up.js';
+import { RETRY_SAFE_ROUTES } from '../generated/methods.js';
 
 /** The typed client of every route of a Calimero node. */
 export type ApiClient = Client<paths, 'application/json'>;
@@ -65,8 +67,19 @@ export interface ApiClientOptions {
   operatorProof?: OperatorProofCallback;
 }
 
-/** The routes a `503` is retried on (D70): a call and a view, each carrying its idempotency key or reading. */
-const RETRIED = /^apps\/[^/]+\/(intents|views)$/;
+/**
+ * The routes a `503` is retried on (D70): those the document marks
+ * `x-calimero-retry-safe` (a call, a view, a method by its path), each
+ * carrying its idempotency key or reading. As path patterns, without the
+ * leading `/`.
+ */
+const RETRIED = RETRY_SAFE_ROUTES.map((route) => ({
+  method: route.method,
+  pattern: new RegExp(`^${route.path.replace(/^\//, '').replace(/\{[^}]+\}/g, '[^/]+')}$`),
+}));
+
+/** The route templates that must carry an `idempotencyKey` to be retried. */
+const NEEDS_KEY = new Set(RETRY_SAFE_ROUTES.filter((r) => r.requires === 'idempotencyKey').map((r) => `${r.method} ${r.path}`));
 
 /**
  * A `fetch` that sends `openapi-fetch`'s request through `transport`: the
@@ -92,7 +105,7 @@ export function transportFetch(transport: ApiTransport): (request: Request) => P
     const bytes = method === 'GET' ? undefined : new Uint8Array(await request.arrayBuffer());
     const body = bytes && bytes.length > 0 ? bytes : undefined;
     let retry: boolean | 'once' = false;
-    if (method === 'POST' && RETRIED.test(path)) {
+    if (RETRIED.some((route) => route.method === method && route.pattern.test(path))) {
       const json = body ? (JSON.parse(new TextDecoder().decode(body)) as { confirm?: unknown }) : {};
       retry = json.confirm === undefined ? true : 'once';
     }
@@ -106,13 +119,14 @@ export function transportFetch(transport: ApiTransport): (request: Request) => P
 }
 
 /**
- * Gives a call (`POST /apps/{app}/intents`) without an `idempotencyKey` one,
- * made before it is first sent, so its D70 retries and its step-up's
+ * Gives a request to a route whose retries require an `idempotencyKey`
+ * (`x-calimero-retry-requires`: a call, a method by its path) one when it has
+ * none, made before it is first sent, so its D70 retries and its step-up's
  * confirmed retry carry the same key.
  */
 export const idempotencyKeys: Middleware = {
   async onRequest({ request, schemaPath }) {
-    if (request.method !== 'POST' || schemaPath !== '/apps/{app}/intents') return undefined;
+    if (!NEEDS_KEY.has(`${request.method} ${schemaPath}`)) return undefined;
     const text = await request.clone().text();
     const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
     if (body.idempotencyKey !== undefined) return undefined;

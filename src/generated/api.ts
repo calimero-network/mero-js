@@ -111,7 +111,9 @@ export interface paths {
         };
         /**
          * Every replica's receipt-key attestation
-         * @description **Who:** whoever the app's access admits (a public app: anyone).
+         * @description Each replica's `/attestation?purpose=receipts` for `nonce`. It reads the query `/attestation` does, but only `nonce`: `app`, `appHash` and `purpose` are ignored here.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
          */
         get: operations["app_attestation"];
         put?: never;
@@ -424,6 +426,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/apps/{app}/methods/{method}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Call a method by its path
+         * @description The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
+         */
+        post: operations["app_method"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/apps/{app}/move": {
         parameters: {
             query?: never;
@@ -440,6 +464,28 @@ export interface paths {
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
         post: operations["app_move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An app's OpenAPI document
+         * @description Generated from the ABI of the bundle the app runs, under the access `/abi` has: one `POST /apps/{app}/methods/{method}` per method, with its arguments, result and errors.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
+         */
+        get: operations["app_openapi"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -633,7 +679,7 @@ export interface paths {
         put?: never;
         /**
          * Read with a view method
-         * @description Read on a caught-up replica, or (`consistency: "stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`).
+         * @description Read on a caught-up replica (`consistency: "strong"`, the default; any value but `"stale"` reads as it), or (`"stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`).
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -675,7 +721,7 @@ export interface paths {
         };
         /**
          * The node's attestation
-         * @description In the clear. A TDX quote binding the node's transport key (or, with `purpose=receipts`, its receipt key and the governance; with `purpose=kms`, what it verified of its KMS) to `nonce`; `app`/`appHash` bind an app's bundle hash. A client checks it before it seals anything to the key.
+         * @description In the clear. A TDX quote binding the node's transport key (or, with `purpose=receipts`, its receipt key and the governance; with `purpose=kms`, what it verified of its KMS; with `purpose=orchestrator`, the cluster identity this replica holds) to `nonce`; `app`/`appHash` bind an app's bundle hash. A client checks it before it seals anything to the key.
          *
          *     **Who:** anyone.
          */
@@ -1539,7 +1585,7 @@ export interface paths {
         };
         /**
          * Node health
-         * @description In the clear. The node's id, the system group's leader, its release and the cluster's rollback epoch.
+         * @description In the clear. The node's id, the system group's leader, its release, the newest cluster version it supports (`clusterVersion`) and the cluster's rollback epoch.
          *
          *     **Who:** anyone.
          */
@@ -1633,7 +1679,7 @@ export interface paths {
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
-        post: operations["ops_restore_ops_restore"];
+        post: operations["ops_restore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1673,7 +1719,7 @@ export interface paths {
         put?: never;
         /**
          * Snapshot the apps this node leads
-         * @description Into `--backup-dir`.
+         * @description Into `--backup-dir`. With `all=true`, every group this node holds, leader or not: what a node of a cluster that lost a majority still has, to found the cluster again from (`merod --bootstrap --restore-from`).
          *
          *     **Who:** the ops token.
          */
@@ -1889,7 +1935,7 @@ export interface paths {
          * A node's receipt key
          * @description **Who:** the ops token.
          */
-        get: operations["ops_account_proof_ops_receipt_key"];
+        get: operations["ops_receipt_key"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2053,7 +2099,7 @@ export interface paths {
         };
         /**
          * Where every app's replicas are
-         * @description Ids and counts only, read after a read index (`fresh`: this node caught up with the system leader); `release` is a node's attested release.
+         * @description Ids and counts only, read after a read index (`fresh`: this node caught up with the system leader); `release` is a node's attested release; `clusterVersion` is the logged cluster version (`null` until the system leader logs one).
          *
          *     **Who:** the ops token.
          */
@@ -2183,7 +2229,7 @@ export interface paths {
          *
          *     **Who:** the ops token.
          */
-        get: operations["ops_origins_ops_served"];
+        get: operations["ops_served"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3380,6 +3426,7 @@ export interface components {
             receiptKey?: string;
             governance?: unknown;
             kms?: unknown;
+            clusterIdentity?: string;
         };
         /** @description An organization-wide upgrade run: the apps it targets, those done, and why each failed one failed. */
         UpgradeRun: {
@@ -3463,6 +3510,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_create: {
@@ -3540,7 +3599,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `RELEASE_DEADLINE` */
+            /** @description `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3548,7 +3607,19 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
-                        error?: "RELEASE_DEADLINE";
+                        error?: "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -3634,6 +3705,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_delete: {
@@ -3683,6 +3766,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_abi: {
@@ -3717,6 +3812,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -3772,6 +3879,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_attestation: {
@@ -3814,6 +3933,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     blob_list: {
@@ -3851,6 +3982,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -3924,6 +4067,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `QUOTA_EXCEEDED` */
             429: {
                 headers: {
@@ -3952,13 +4107,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK: the blob, with its MIME type. */
+            /** @description OK: the blob: a component app's under the MIME type it was stored with, otherwise `application/octet-stream`. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": string;
+                    "*/*": string;
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -3982,6 +4137,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4058,6 +4225,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     blob_info: {
@@ -4118,6 +4297,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_SUPPORTED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4182,6 +4373,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     events: {
@@ -4215,6 +4418,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4280,6 +4495,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4352,6 +4579,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `QUOTA_EXCEEDED` */
             429: {
                 headers: {
@@ -4421,6 +4660,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `QUOTA_EXCEEDED` */
             429: {
                 headers: {
@@ -4474,6 +4725,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     upload_abort: {
@@ -4508,6 +4771,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4549,6 +4824,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4607,6 +4894,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     file_info: {
@@ -4656,6 +4955,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -4771,6 +5082,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `APP_ERROR`; `TRAP` */
             422: {
                 headers: {
@@ -4859,6 +5182,193 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
+        };
+    };
+    app_method: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                method: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    args?: unknown;
+                    idempotencyKey?: string;
+                    confirm?: components["schemas"]["Confirm"];
+                    /** @enum {string} */
+                    consistency?: "strong" | "stale";
+                    minIndex?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        index: number;
+                        result: unknown;
+                        events?: {
+                            kind: string;
+                            data: unknown;
+                        }[];
+                        receipt: components["schemas"]["Receipt"];
+                    };
+                };
+            };
+            /** @description `RESERVED_METHOD` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "RESERVED_METHOD";
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `RELEASE_DEADLINE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "RELEASE_DEADLINE";
+                    };
+                };
+            };
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "CONFIRM_REQUIRED";
+                        details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `ARGS_TOO_LARGE` */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "ARGS_TOO_LARGE";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
+            /** @description `APP_ERROR`; `TRAP` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "APP_ERROR" | "TRAP";
+                    };
+                };
+            };
+            /** @description `QUOTA_EXCEEDED` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "QUOTA_EXCEEDED";
+                    };
+                };
+            };
+            /** @description `NOT_CAUGHT_UP`; `UNAVAILABLE`: the cluster cannot answer now */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "NOT_CAUGHT_UP" | "UNAVAILABLE";
+                    };
+                };
+            };
         };
     };
     app_move: {
@@ -4933,6 +5443,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -4943,6 +5465,102 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
+        };
+    };
+    app_openapi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `UNSUPPORTED_ENGINE` */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "UNSUPPORTED_ENGINE";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
+            /** @description `BAD_ABI` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "BAD_ABI";
                     };
                 };
             };
@@ -4979,6 +5597,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5047,6 +5677,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     presence_stream: {
@@ -5078,6 +5720,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5144,6 +5798,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_run: {
@@ -5193,6 +5859,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_storage: {
@@ -5230,6 +5908,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5311,6 +6001,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     app_upgrade: {
@@ -5385,7 +6087,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `CONFLICT`: the state does not allow it now; `RELEASE_DEADLINE` */
+            /** @description `CONFLICT`: the state does not allow it now; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5393,7 +6095,7 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
-                        error?: "CONFLICT" | "RELEASE_DEADLINE";
+                        error?: "CONFLICT" | "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
                     };
                 };
             };
@@ -5407,6 +6109,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5485,6 +6199,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     views: {
@@ -5501,8 +6227,8 @@ export interface operations {
                 "application/json": {
                     method: string;
                     args?: unknown;
-                    /** @constant */
-                    consistency?: "stale";
+                    /** @enum {string} */
+                    consistency?: "strong" | "stale";
                     minIndex?: number;
                 };
             };
@@ -5530,6 +6256,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5606,6 +6344,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
             503: {
                 headers: {
@@ -5626,7 +6376,7 @@ export interface operations {
                 nonce: string;
                 app?: string;
                 appHash?: string;
-                purpose?: "receipts" | "kms";
+                purpose?: "receipts" | "kms" | "orchestrator";
             };
             header?: never;
             path?: never;
@@ -5732,6 +6482,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     activity_list: {
@@ -5789,6 +6551,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     alias_list: {
@@ -5822,6 +6596,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5871,6 +6657,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -5926,6 +6724,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     alias_delete: {
@@ -5957,6 +6767,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6003,6 +6825,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6091,6 +6925,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6196,6 +7042,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     account_apps: {
@@ -6235,6 +7093,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6282,6 +7152,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     logout_all: {
@@ -6323,6 +7205,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6391,6 +7285,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6469,6 +7375,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6562,6 +7480,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "PASSKEY_UNKNOWN_HERE";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6698,6 +7628,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     passkey_add_begin: {
@@ -6742,6 +7684,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6824,6 +7778,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     passkey_label: {
@@ -6873,6 +7839,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -6954,6 +7932,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     recovery_create: {
@@ -7029,6 +8019,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -7108,6 +8110,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     account_recovery_begin: {
@@ -7134,6 +8148,18 @@ export interface operations {
                     "application/json": {
                         challengeId: string;
                         options: unknown;
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -7225,6 +8251,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     account_recovery_finish: {
@@ -7298,6 +8336,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -7408,6 +8458,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
             503: {
                 headers: {
@@ -7497,6 +8559,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     sessions_list: {
@@ -7548,6 +8622,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -7609,6 +8695,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     usage: {
@@ -7647,6 +8745,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -7725,6 +8835,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `QUOTA_EXCEEDED` */
             429: {
                 headers: {
@@ -7746,10 +8868,39 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description `{ kind: "release", scope, subject: { version, withdraw? }, returnTo }`, `{ kind: "upgrade", subject: { app, toVersion }, returnTo }` or `{ kind: "outbound", scope, subject: { package?, prefixes? }, returnTo }`; `scope` is `"account"` or `{ "org": id }` */
         requestBody: {
             content: {
-                "application/json": string;
+                "application/json": {
+                    /** @constant */
+                    kind: "release";
+                    scope: "account" | {
+                        org: string;
+                    };
+                    subject: {
+                        version: string;
+                        withdraw?: boolean;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @constant */
+                    kind: "upgrade";
+                    subject: {
+                        app: string;
+                        toVersion: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @constant */
+                    kind: "outbound";
+                    scope: "account" | {
+                        org: string;
+                    };
+                    subject: {
+                        package?: string;
+                        prefixes?: string[];
+                    };
+                    returnTo: string;
+                };
             };
         };
         responses: {
@@ -7815,6 +8966,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     consent_page_result: {
@@ -7875,6 +9038,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
             503: {
                 headers: {
@@ -7930,6 +9105,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -8015,6 +9202,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     deployer_revoke: {
@@ -8095,6 +9294,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     deployment_list: {
@@ -8126,6 +9337,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -8208,6 +9431,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     deployment_get: {
@@ -8253,6 +9488,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -8333,6 +9580,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -8431,6 +9690,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     deployment_withdraw: {
@@ -8522,6 +9793,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     deployment_orgs: {
@@ -8558,6 +9841,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     health: {
@@ -8580,6 +9875,7 @@ export interface operations {
                         node: number;
                         systemLeader: number | null;
                         release: unknown;
+                        clusterVersion: string;
                         rollbackEpoch?: number | null;
                     };
                 };
@@ -8631,6 +9927,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -8754,7 +10062,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `MOVE_IN_PROGRESS` */
+            /** @description `MOVE_IN_PROGRESS`; `RUNTIME_TOO_OLD` */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8762,7 +10070,7 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
-                        error?: "MOVE_IN_PROGRESS";
+                        error?: "MOVE_IN_PROGRESS" | "RUNTIME_TOO_OLD";
                     };
                 };
             };
@@ -8793,7 +10101,7 @@ export interface operations {
             };
         };
     };
-    ops_restore_ops_restore: {
+    ops_restore: {
         parameters: {
             query?: never;
             header?: never;
@@ -8973,7 +10281,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `NOT_INSTALLED`; `RELEASE_DEADLINE` */
+            /** @description `NOT_INSTALLED`; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8981,7 +10289,7 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
-                        error?: "NOT_INSTALLED" | "RELEASE_DEADLINE";
+                        error?: "NOT_INSTALLED" | "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
                     };
                 };
             };
@@ -9014,7 +10322,9 @@ export interface operations {
     };
     ops_backup: {
         parameters: {
-            query?: never;
+            query?: {
+                all?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9696,7 +11006,7 @@ export interface operations {
             };
         };
     };
-    ops_account_proof_ops_receipt_key: {
+    ops_receipt_key: {
         parameters: {
             query?: never;
             header?: never;
@@ -10249,9 +11559,11 @@ export interface operations {
                         nodes: {
                             id: number;
                             zone: string;
+                            role: unknown;
                             release: string | null;
                             apps: number;
                         }[];
+                        clusterVersion: string | null;
                     };
                 };
             };
@@ -10753,7 +12065,7 @@ export interface operations {
             };
         };
     };
-    ops_origins_ops_served: {
+    ops_served: {
         parameters: {
             query?: never;
             header?: never;
@@ -11232,6 +12544,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `QUOTA_EXCEEDED` */
             429: {
                 headers: {
@@ -11296,6 +12620,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11377,6 +12713,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     org_all_apps: {
@@ -11455,6 +12803,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -11465,6 +12825,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11514,6 +12886,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11591,6 +12975,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -11601,6 +12997,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11657,6 +13065,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11740,6 +13160,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     invite_list: {
@@ -11797,6 +13229,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11871,6 +13315,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -11881,6 +13337,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -11975,6 +13443,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     org_members: {
@@ -12059,6 +13539,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     org_set_member: {
@@ -12135,6 +13627,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12217,6 +13721,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     member_metadata: {
@@ -12255,6 +13771,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12328,6 +13856,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -12338,6 +13878,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12407,6 +13959,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -12417,6 +13981,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12457,6 +14033,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12540,6 +14128,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `FEATURE_NOT_ACTIVE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "FEATURE_NOT_ACTIVE";
+                    };
+                };
+            };
             /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
             412: {
                 headers: {
@@ -12550,6 +14150,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12630,6 +14242,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12722,6 +14346,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12820,6 +14456,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     recovery_set: {
@@ -12895,6 +14543,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -12985,6 +14645,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13093,6 +14765,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     recovery_start: {
@@ -13158,6 +14842,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "RECOVERY_PENDING";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13240,6 +14936,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     team_create: {
@@ -13296,6 +15004,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     team_get: {
@@ -13342,6 +15062,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13398,6 +15130,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13495,6 +15239,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     team_set_member: {
@@ -13577,6 +15333,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     team_remove_member: {
@@ -13654,6 +15422,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13740,6 +15520,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     org_upgrade_status: {
@@ -13784,6 +15576,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -13879,6 +15683,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
             /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
             428: {
                 headers: {
@@ -13957,6 +15773,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     origins_list: {
@@ -13991,6 +15819,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14071,6 +15911,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14176,6 +16028,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     package_list: {
@@ -14207,6 +16071,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "UNAUTHENTICATED";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14288,6 +16164,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     package_install: {
@@ -14356,6 +16244,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     package_get: {
@@ -14401,6 +16301,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "NOT_FOUND";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14450,6 +16362,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     package_version_uninstall: {
@@ -14494,6 +16418,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14647,6 +16583,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     sign_up_invite_list: {
@@ -14690,6 +16638,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"] & {
                         /** @enum {unknown} */
                         error?: "FORBIDDEN";
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };
@@ -14774,6 +16734,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
+                    };
+                };
+            };
         };
     };
     sign_up_invite_revoke: {
@@ -14849,6 +16821,18 @@ export interface operations {
                         /** @enum {unknown} */
                         error?: "CONFIRM_REQUIRED";
                         details?: components["schemas"]["ConfirmRequired"];
+                    };
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        /** @enum {unknown} */
+                        error?: "WRONG_NODE";
                     };
                 };
             };

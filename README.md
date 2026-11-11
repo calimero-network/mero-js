@@ -170,8 +170,13 @@ await client.apps.blobUpload({ app, body: bytes, contentType: 'image/png' });
   `428 OPERATOR_SIGNATURE_REQUIRED` (the operator key's signature over the
   statement). The client's own `new CalimeroClient(options, { confirm, operatorProof })`
   answers every call that gives none.
-- **Calls and views** retry a `503` as D70 says, and a call without an
-  `idempotencyKey` gets one, which its retries and its confirmed retry share.
+- **Retries**: a route the document marks `x-calimero-retry-safe` (a call, a
+  view, a method by its path) is sent again on a `503` as D70 says; one whose
+  retries require an `idempotencyKey` gets one when it has none, which its retries
+  and its confirmed retry share. A `421 WRONG_NODE` moves to the next node.
+- **Step-ups** ask the passkey for the route's own user verification
+  (`x-calimero-user-verification`: `preferred` for the sign-up's confirmation,
+  `required` elsewhere).
 - **Streams** (`events`, `presenceStream`) stay hand-written on the runtime.
 - `createRoutes(createApiClient(transport, { confirm, operatorProof }))` builds
   the same groups on any `NodeTransport`.

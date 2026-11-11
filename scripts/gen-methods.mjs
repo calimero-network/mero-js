@@ -14,37 +14,23 @@ const input = process.argv[2] ?? `${root}openapi/core-openapi.json`;
 const output = process.argv[3] ?? `${root}src/generated/methods.ts`;
 const doc = JSON.parse(readFileSync(input, 'utf8'));
 
-// A group's property name on the client, where the tag is no identifier a
-// person would type.
-const GROUP_NAMES = {
-  Accounts: 'auth',
-  Organizations: 'orgs',
-  'Sign-up and deployments': 'deployments',
-};
-// The operationId prefix a group's methods drop, where it only repeats the group.
-const GROUP_PREFIXES = {
-  apps: ['app'],
-  auth: ['account'],
-  orgs: ['org'],
-  packages: ['package'],
-  deployments: ['deployment'],
-  consent: ['consent'],
-  ops: ['ops'],
-};
 // Operations whose id names the route rather than what a caller does.
 const RENAMES = { intents: 'call', views: 'view' };
 
 const camel = (words) => words.map((w, i) => (i === 0 ? w : w[0].toUpperCase() + w.slice(1))).join('');
+/** The operation's group: the document's `x-calimero-group`, else its tag, else its first path segment. */
 const groupOf = (op, path) => {
+  if (op['x-calimero-group']) return op['x-calimero-group'];
   const tag = op.tags?.[0];
-  if (tag) return GROUP_NAMES[tag] ?? camel(tag.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  if (tag) return camel(tag.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
   return camel(path.split('/').filter(Boolean)[0].split(/[^a-zA-Z0-9]+/));
 };
+/** The operationId in camelCase, without a first word that only repeats the group (`org_get` in `orgs`: `get`). */
 const nameOf = (group, id) => {
   if (RENAMES[id]) return RENAMES[id];
   let words = id.split('_');
-  const prefixes = GROUP_PREFIXES[group] ?? [];
-  if (words.length > 1 && prefixes.includes(words[0])) words = words.slice(1);
+  const repeats = new Set([group, group.replace(/s$/, '')]);
+  if (words.length > 1 && repeats.has(words[0])) words = words.slice(1);
   return camel(words);
 };
 
@@ -72,6 +58,7 @@ const comment = (text) =>
     .join('\n');
 
 const groups = new Map();
+const retrySafe = [];
 const skipped = [];
 for (const [path, item] of Object.entries(doc.paths)) {
   for (const [verb, op] of Object.entries(item)) {
@@ -111,7 +98,8 @@ for (const [path, item] of Object.entries(doc.paths)) {
       media = Object.keys(rb.content)[0];
       const schema = rb.content[media].schema;
       const bodyType = optionalBody ? `NonNullable<${O}['requestBody']>['content']['${media}']` : `${O}['requestBody']['content']['${media}']`;
-      if (media !== 'application/json') {
+      // Bytes (`format: binary`, or any media type but JSON) go as they are.
+      if (media !== 'application/json' || deref(schema).format === 'binary') {
         body = 'raw';
         parts.push(`RawBody`);
         required = true;
@@ -129,7 +117,13 @@ for (const [path, item] of Object.entries(doc.paths)) {
         }
       }
     }
-    const reply = replyMedia === 'application/octet-stream' ? 'bytes' : replyMedia === 'text/plain' ? 'text' : 'json';
+    const replySchema = deref(ok[replyMedia]?.schema);
+    const reply =
+      replySchema.format === 'binary' || replyMedia === 'application/octet-stream'
+        ? 'bytes'
+        : replyMedia === 'text/plain'
+          ? 'text'
+          : 'json';
     const answer =
       reply === 'bytes' ? 'Blob' : reply === 'text' ? 'string' : `${O}['responses'][200]['content']['application/json']`;
     const args = parts.length ? parts.join(' & ') : 'Record<string, never>';
@@ -143,10 +137,28 @@ for (const [path, item] of Object.entries(doc.paths)) {
       optionalBody,
       ...(body === 'raw' ? { media } : {}),
       reply,
+      ...(op['x-calimero-step-up'] ? { stepUp: true } : {}),
+      ...(op['x-calimero-user-verification'] ? { userVerification: op['x-calimero-user-verification'] } : {}),
+      ...(op['x-calimero-operator'] ? { operator: true } : {}),
     };
+    if (op['x-calimero-retry-safe']) {
+      retrySafe.push({ method: shape.method, path, ...(op['x-calimero-retry-requires'] ? { requires: op['x-calimero-retry-requires'] } : {}) });
+    }
     const extras = [];
-    if (op.responses['412']) extras.push('Answers `412 CONFIRM_REQUIRED` first: give `confirm` (here or on the client).');
-    if (op.responses['428']) extras.push('Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).');
+    if (op['x-calimero-step-up']) {
+      extras.push(
+        `Answers \`412 CONFIRM_REQUIRED\` first: give \`confirm\` (here or on the client); the passkey must verify the user \`${op['x-calimero-user-verification'] ?? 'required'}\`.`,
+      );
+    }
+    if (op['x-calimero-operator']) extras.push('Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).');
+    if (op['x-calimero-retry-safe']) {
+      extras.push(
+        `Retried on \`503\` (D70)${op['x-calimero-retry-requires'] ? `, with its \`${op['x-calimero-retry-requires']}\` (one is made when none is given)` : ''}.`,
+      );
+    }
+    if (op.responses['421']?.description?.includes('WRONG_NODE')) {
+      extras.push('A `421 WRONG_NODE` moves the client to the next node of the cluster.');
+    }
     const doc_ = [`${op.summary ?? id}.`.replace(/\.\.$/, '.'), '', `\`${shape.method} ${path}\` (\`${id}\`). **Who:** ${op['x-calimero-who']}.`];
     if (extras.length) doc_.push(...extras);
     const list = groups.get(group) ?? [];
@@ -168,7 +180,7 @@ out.push(`// Generated by scripts/gen-methods.mjs from openapi/core-openapi.json
 
 import type { operations } from './api.js';
 import type { ApiClient } from '../api/client.js';
-import { route, type CallOptions, type RawBody } from '../api/operation.js';
+import { route, type MethodOptions, type RawBody } from '../api/operation.js';
 `);
 const groupNames = [...groups.keys()].sort();
 out.push('/** The generated methods, by group, sending through `api`. */');
@@ -182,7 +194,7 @@ for (const group of groupNames) {
     out.push('       */');
     const param = m.required ? `args: ${m.args}` : `args: ${m.args} = {}`;
     out.push(
-      `      ${m.name}: (${param}, options?: CallOptions): Promise<${m.answer}> =>`,
+      `      ${m.name}: (${param}, options?: MethodOptions): Promise<${m.answer}> =>`,
       `        route(api, ${JSON.stringify(m.shape)}, args as unknown as Record<string, unknown>, options) as Promise<${m.answer}>,`,
     );
   }
@@ -190,6 +202,12 @@ for (const group of groupNames) {
 }
 out.push('  };');
 out.push('}');
+out.push('');
+out.push('/**');
+out.push(" * The routes the document marks `x-calimero-retry-safe`: the transport sends them again on a `503`");
+out.push(" * (D70), and one that `requires` an `idempotencyKey` is given one before it is first sent.");
+out.push(' */');
+out.push(`export const RETRY_SAFE_ROUTES: ReadonlyArray<{ method: string; path: string; requires?: string }> = ${JSON.stringify(retrySafe)};`);
 out.push('');
 out.push('/** Every generated group. */');
 out.push('export type Routes = ReturnType<typeof createRoutes>;');
