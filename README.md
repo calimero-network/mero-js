@@ -11,6 +11,8 @@ byte-compatible with core's `calimero-sealed` and `calimero-client`.
 > (`MeroJs`, the admin and auth API clients, JSON-RPC, contexts and namespaces)
 > is in 26.x. See [Migrating from v1](https://calimero-network.github.io/mero-js/reference/migrating-from-v1/).
 
+> **Before committing, titling a pull request, or releasing**, read [RELEASING.md](RELEASING.md): the PR title is the release commit, and the rules are shared by every Calimero repository that ships releases.
+
 ## Documentation
 
 **<https://calimero-network.github.io/mero-js/>**: quickstart, guides, and the
