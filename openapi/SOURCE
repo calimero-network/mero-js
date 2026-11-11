@@ -1,0 +1,7 @@
+# The node API document src/generated/api.ts is generated from
+# (`pnpm gen:api`), vendored from calimero-network/core.
+# Refresh it with `scripts/refresh-openapi.sh [<core ref>]`.
+repository=calimero-network/core
+path=docs/public/openapi.json
+ref=docs/openapi
+commit=5639a7ede34d91f7ed8727d8dfcdacd0b62575ce
