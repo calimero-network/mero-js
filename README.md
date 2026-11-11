@@ -125,6 +125,41 @@ The pieces it is built from are exported too: the sealed transport
 the client for mero-tee's private agent gate (`attestAgent`, `provisionAgent`,
 `releaseAgent`).
 
+## The runtime and the route layer
+
+The client is two layers. The **runtime** (`@calimero-network/mero-js/runtime`,
+`src/runtime/`) is everything that is not a route: the node's attestation, the
+sealed channel, the credential and the session's refresh on a `401`, moving on
+`421 WRONG_NODE`, D70 retries and failover, the `412 CONFIRM_REQUIRED` passkey
+step-up, error mapping and server-sent events. Its whole surface toward routes is
+one interface:
+
+```ts
+interface Transport {
+  request(method: HttpMethod, path: string, options?: RequestOptions): Promise<Response>; // 2xx, body unread
+  json<T>(method: HttpMethod, path: string, options?: RequestOptions): Promise<T>;
+  events(path: string, options?: { query?; signal? }): AsyncGenerator<CloudEvent>;
+}
+// RequestOptions: { query?, body? (JSON) | bytes? + contentType?, passkey? (answers a 412),
+//                   userVerification?, retry?: true | 'once' (D70), signal?, promptSignal? }
+```
+
+A refusal is thrown as its typed `CalimeroError`. `NodeTransport` implements it;
+`routePath('apps/{app}/blobs/{id}', { app, id })` fills a path with encoded
+segments. The **route layer**, `CalimeroClient`, is the hand-written methods on
+top; `client.transport` is its runtime, so a route layer of your own (one
+generated from the node's OpenAPI document, say) shares the client's session:
+
+```ts
+import { routePath } from '@calimero-network/mero-js/runtime';
+
+const app = await client.transport.json('GET', routePath('apps/{app}', { app: appId }));
+await client.transport.json('DELETE', routePath('orgs/{org}', { org }), { body: {}, passkey });
+```
+
+The `/runtime` entry re-exports the package's own bundle, so its error classes are
+the ones `CalimeroClient` throws (`instanceof` holds across both imports).
+
 ## Development
 
 ```bash
