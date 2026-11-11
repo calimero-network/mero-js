@@ -150,8 +150,7 @@ describe('Calimero 1.0 cluster', () => {
     const up = await alice.apps.upgrade({ app, version: '1.0.1' }, { confirm: passkeyConfirm(alicePk) });
     expect(up.status).toBe('ok');
     expect((await alice.apps.view({ app, method: 'get', args: { key: 'a' } })).result).toBe('1');
-    // The document leaves a package's versions untyped (core #4937).
-    const info = (await alice.packages.get({ package: 'com.mero-js.kv' })) as { latest?: string; versions: Array<{ version: string }> };
+    const info = await alice.packages.get({ package: 'com.mero-js.kv' });
     expect(info.latest).toBe('1.0.1');
     expect(info.versions.map((v) => v.version)).toEqual(['1.0.0', '1.0.1']);
 
@@ -160,7 +159,7 @@ describe('Calimero 1.0 cluster', () => {
     await alice.apps.delete({ app });
     await expect(alice.apps.get({ app })).rejects.toMatchObject({ status: 404 });
     await alice.packages.uninstall({ package: 'com.mero-js.kv' });
-    expect((await alice.packages.list()).packages.map((p) => (p as { package: string }).package)).not.toContain('com.mero-js.kv');
+    expect((await alice.packages.list()).packages.map((p) => p.package)).not.toContain('com.mero-js.kv');
   });
 
   it('covers the rest of the API: passkeys, API keys, access, orgs and teams', async () => {
@@ -182,10 +181,10 @@ describe('Calimero 1.0 cluster', () => {
 
     await expect(alice.auth.apikeyCreate({ label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
     const { keyId } = await alice.auth.apikeyCreate({ label: 'ci' }, { confirm: passkeyConfirm(pk) });
-    expect((await (await alice.auth.apikeyList()).keys).map((k) => (k as { keyId: string }).keyId)).toContain(keyId);
+    expect((await (await alice.auth.apikeyList()).keys).map((k) => k.keyId)).toContain(keyId);
     // A node from before answers the revocation at once; this one asks for the passkey (412) first.
     await alice.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(pk) });
-    expect((await (await alice.auth.apikeyList()).keys).map((k) => (k as { keyId: string }).keyId)).not.toContain(keyId);
+    expect((await (await alice.auth.apikeyList()).keys).map((k) => k.keyId)).not.toContain(keyId);
 
     const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
     const app = await (await alice.apps.create({ name: 'shared', bundle })).appId;
@@ -295,7 +294,7 @@ describe('Calimero 1.0 cluster', () => {
     const { key: apiKey, keyId } = await tab.auth.apikeyCreate({ label: 'console', apps: [app], readOnly: true }, { confirm: passkeyConfirm(pk) });
     expect(apiKey).toBeTruthy();
     await tab.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(pk) });
-    expect((await (await tab.auth.apikeyList()).keys).map((k) => (k as { keyId: string }).keyId)).not.toContain(keyId);
+    expect((await (await tab.auth.apikeyList()).keys).map((k) => k.keyId)).not.toContain(keyId);
     const token = await (await tab.orgs.inviteCreate({ org, role: 'member' }, { confirm: passkeyConfirm(pk) })).token;
     await bob.orgs.inviteRedeem({ token });
     expect(bobId).toBeTruthy();
@@ -463,7 +462,7 @@ describe('Calimero 1.0 cluster', () => {
     expect(set).toBeUndefined();
     await bob.orgs.inviteRedeem({ token: await (await alice.orgs.inviteCreate({ org, role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(alicePk) })).token });
     const bobId = (await bob.auth.me()).accountId as string;
-    expect([...(((await alice.orgs.get({ org })).allApps as string[] | undefined) ?? [])].sort()).toEqual([bobId, carolId].sort());
+    expect([...((await alice.orgs.get({ org })).allApps ?? [])].sort()).toEqual([bobId, carolId].sort());
     // A member below admin gives nobody every app, and mints no such invite.
     await expect(carol.orgs.allApps({ org, account: carolId, allApps: false }, { confirm: passkeyConfirm(carolPk) })).rejects.toMatchObject({ status: 403 });
     await expect(carol.orgs.inviteCreate({ org, role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(carolPk) })).rejects.toMatchObject({ status: 403 });

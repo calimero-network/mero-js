@@ -16,6 +16,7 @@
  */
 
 import { compareReleaseVersions } from '../sealed/release.js';
+import type { ApiAnswer } from '../api/types.js';
 
 // ---------------------------------------------------------------- governance
 
@@ -318,21 +319,7 @@ export type ConsentRequest =
     };
 
 /** The node's answer to a consent request: send the person to `url`. */
-export interface ConsentStarted {
-  requestId: string;
-  /** The consent page, on the node's own origin. */
-  url: string;
-  /** Unix seconds; a request lives 10 minutes. */
-  expiresAt: number;
-  /**
-   * The confirmation code the consent page shows, `XXX-XXX`
-   * ({@link confirmationCode} of `requestId`). Show it to the person before
-   * sending them to `url`: the page they land on should show the same code,
-   * which tells them it is the page their request opened. Not a secret.
-   * Nodes older than the code leave it out.
-   */
-  code?: string;
-}
+export type ConsentStarted = ApiAnswer<'consent_page_create'>;
 
 /** How {@link CalimeroClient.openConsentPage} sends the person to the page. */
 export interface OpenConsentOptions {
@@ -369,13 +356,7 @@ export async function confirmationCode(requestId: string): Promise<string> {
 export type ConsentStatus = 'pending' | 'approved' | 'declined';
 
 /** `GET /consent/{id}/result`. */
-export interface ConsentResult {
-  requestId: string;
-  kind: ConsentRequest['kind'];
-  status: ConsentStatus;
-  /** Unix seconds, once decided. */
-  decidedAt: number | null;
-}
+export type ConsentResult = ApiAnswer<'consent_page_result'>;
 
 /**
  * What the consent page put on `returnTo` when it sent the person back, or

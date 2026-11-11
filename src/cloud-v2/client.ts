@@ -46,6 +46,7 @@ import {
   type ReleaseRules,
   type ReportedApp,
 } from './approvals.js';
+import type { ApiAnswer, ApiSchema } from '../api/types.js';
 
 export {
   AppError,
@@ -77,16 +78,9 @@ export type { Committed, SignUpRefusal } from './errors.js';
 
 export type { CalimeroSession, CloudEvent };
 
-export interface CallResult {
-  index: number;
-  result: unknown;
-  events: Array<{ kind: string; data: unknown }>;
-}
+export type CallResult = ApiAnswer<'intents'>;
 
-export interface ViewResult {
-  index: number;
-  result: unknown;
-}
+export type ViewResult = ApiAnswer<'views'>;
 
 /** What installing a package release answers. */
 export interface PackageInstalled {
@@ -134,44 +128,16 @@ export interface MoveAppResult {
   revokedInvites: number;
 }
 
-export interface AppInfo {
-  appId: string;
-  name: string;
-  owner: string;
-  org: string | null;
-  bundle: string;
-  package: string | null;
-  version: string | null;
-  /** The deployment it was created from, if any. */
-  deployment?: string | null;
-}
+export type AppInfo = ApiSchema<'AppEntry'>;
 
 /**
  * An organization-wide upgrade run, as `upgradeOrg`, `upgradeRun` and
  * `retryUpgradeRun` answer it (core's `UpgradeRun`).
  */
-export interface UpgradeRun {
-  runId: string;
-  package: string;
-  version: string;
-  team?: string;
-  cascade: boolean;
-  /** The account that started it, or `operator`. */
-  by: string;
-  startedAt: number;
-  apps: string[];
-  done: string[];
-  /** App id -> why its upgrade failed. */
-  failed: Record<string, unknown>;
-  finished: boolean;
-}
+export type UpgradeRun = ApiSchema<'UpgradeRun'>;
 
 /** One of an app's blobs: `blobId` base58 (what apps print), `id` hex. */
-export interface BlobInfo {
-  blobId: string;
-  id: string;
-  size: number;
-}
+export type BlobInfo = ApiAnswer<'blob_info'>;
 
 /** One device present in an app (`publishPresence`); `state` hex, `null` once retracted. */
 export interface PresenceEntry {
@@ -196,24 +162,7 @@ export interface OrgUpgradeTarget {
  * signing keys it publishes, and whether a passed release deadline has
  * stopped new work on its own set.
  */
-export interface OrgInfo extends Record<string, unknown> {
-  /** Accounts holding `APPROVE_RELEASES` there (owner and admins included). */
-  releaseApprovers: string[];
-  /** The signer ids (`did:key`) bound to it as publisher. */
-  publishes: string[];
-  /** `null` unless a deadline stopped new work: approve `release` (or newer) to lift it. */
-  newWorkStopped: { release: string; after: string } | null;
-  /** The recovery key and any recovery under way; absent while the organization has none. */
-  recovery?: OrgRecovery;
-  /** How it holds its apps ({@link OrgMode}); absent from nodes before app teams. */
-  mode?: OrgMode;
-  /**
-   * The members (those the caller sees) who get every app added from now on
-   * ({@link CalimeroClient.setAllApps}); absent while there are none, and
-   * from nodes before core's `feat/org-all-apps`.
-   */
-  allApps?: string[];
-}
+export type OrgInfo = ApiSchema<'Org'>;
 
 /**
  * How an organization holds its apps, derived from its app teams (core
@@ -332,25 +281,7 @@ export interface TeamMemberInfo {
 }
 
 /** `GET /orgs/{org}/teams/{team}` ({@link CalimeroClient.getTeam}). */
-export interface TeamInfo extends Record<string, unknown> {
-  teamId: string;
-  name: string;
-  parent: string | null;
-  join: 'everyone' | 'invite';
-  metadata: unknown;
-  /** The package it is the app team of (`metadata.app.package` on a top-level team), else `null`. */
-  package?: string | null;
-  /** Capability bits everyone in the team holds there on top of their own; `null` when unset. */
-  defaultCapabilities?: number | null;
-  members: TeamMemberInfo[];
-  /** The child teams the caller sees. */
-  children: string[];
-  apps: Array<{ appId: string; name: string; contextId: string }>;
-  /** The caller's direct row's role, if any. */
-  myRole: 'lead' | 'member' | 'readOnly' | null;
-  /** Whether the caller is in the team. */
-  member: boolean;
-}
+export type TeamInfo = ApiSchema<'TeamView'>;
 
 /** An organization's recovery key (core `Org::recovery`). */
 export interface OrgRecovery {
@@ -376,22 +307,10 @@ export interface BlobContent {
 }
 
 /** One xcall that was never delivered (core's `DeadLetter`). */
-export interface DeadLetter {
-  seq: number;
-  /** The target app. */
-  app: string;
-  method: string;
-  reason: string;
-  /** The log entry's timestamp it was dead-lettered at (ms since the epoch). */
-  atMs: number;
-}
+export type DeadLetter = ApiSchema<'DeadLetter'>;
 
 /** `GET /apps/{app}/xcalls`: a component app's outbox and its dead letters, newest last. */
-export interface AppXcalls {
-  /** Messages waiting in the outbox. */
-  pending: number;
-  deadLetters: DeadLetter[];
-}
+export type AppXcalls = ApiAnswer<'app_xcalls'>;
 
 /**
  * An account or an organization, as a deployer, a deployment's owner or the
@@ -438,27 +357,13 @@ export interface DeploymentOffer {
 }
 
 /** A deployment as its managers read it (`GET /deployments`). */
-export interface DeploymentInfo {
-  id: string;
-  name: string;
-  owner: Deployer;
-  apps: DeploymentOffer[];
-  createdBy: string;
-  /** RFC 3339. */
-  createdAt: string;
-}
+export type DeploymentInfo = ApiSchema<'Deployment'>;
 
 /**
  * `GET /deployments/{id}`, public: what a frontend and the customer's consent
  * show. Never its managers, members or customers.
  */
-export interface PublicDeployment {
-  id: string;
-  name: string;
-  /** The owner's kind and name (`null` if it is gone). */
-  owner: { kind: 'account' | 'org'; name: string | null };
-  apps: Array<{ app: string; package: string; version: string }>;
-}
+export type PublicDeployment = ApiAnswer<'deployment_get'>;
 
 /** `GET /deployments/{id}/orgs`: the organizations with instances created from a deployment. */
 export interface DeploymentOrgs {
@@ -636,25 +541,7 @@ export interface AccountSession {
  * {@link CalimeroClient.listActivity} lists it (core #4901). Every key is
  * present; the ones its `kind` does not have are `null`.
  */
-export interface AccountActivity {
-  /** When (Unix seconds). */
-  at: number;
-  /** The passkey (credential id) that did it; it may since have been removed. */
-  passkey: string;
-  /**
-   * `signIn`: a sign-up, a sign-in or an account recovery's finish (a refresh
-   * is none). `approval`: a change the passkey approved with a step-up.
-   */
-  kind: 'signIn' | 'approval';
-  /** A sign-in's package, whose frontend opened the session; `null` on the cluster's own origin. */
-  app: string | null;
-  /** A sign-in's registered origin; `null` on the cluster's own origin. */
-  origin: string | null;
-  /** An approval's method, e.g. `__add_passkey`, `__create_api_key`, `__upgrade`. */
-  method: string | null;
-  /** What an approval's method acted on: an app id, `org:<id>`, `account:<id>`, ... */
-  subject: string | null;
-}
+export type AccountActivity = ApiAnswer<'activity_list'>['activity'][number];
 
 /** A recovery of an account under way (core #4844, `docs/specs/account-recovery.md`). */
 export interface AccountRecovery {
@@ -785,16 +672,7 @@ export interface SignUpOptions extends SignInOptions {
  * policy, read without a session), so a page can say "invite only" before
  * any passkey prompt.
  */
-export interface SignUpPolicy {
-  /** `open` (anyone), `invite` (an organization or sign-up invite), `closed` (a sign-up invite only). */
-  policy: 'open' | 'invite' | 'closed';
-  /** Whether an organization invite lets a new person sign up (and join it). */
-  orgInvites: boolean;
-  /** Whether a cluster sign-up invite does (always). */
-  signUpInvites: boolean;
-  /** Whether a sign-up without an invite is refused. */
-  inviteRequired: boolean;
-}
+export type SignUpPolicy = ApiAnswer<'sign_up_public'>;
 
 /** {@link PageOptions} as a generated route's query, checked as {@link pageQuery} checks them. */
 function pageParams(page: PageOptions): { after?: string; limit?: number } {
@@ -1011,7 +889,7 @@ export class CalimeroClient {
     // passkey with no account. The document says so
     // (`x-calimero-user-verification: preferred`), and the generated method
     // asks the passkey for it.
-    const session = await this.as<CalimeroSession>(this.auth.registerFinish({ challengeId: begin.challengeId, registration, ...invite }, this.confirmWith(passkey, { signal })));
+    const session = await this.auth.registerFinish({ challengeId: begin.challengeId, registration, ...invite }, this.confirmWith(passkey, { signal }));
     this.useSession(session);
     return session;
   }
@@ -1035,7 +913,7 @@ export class CalimeroClient {
     const assertion = await (options.signal
       ? passkey.get(challenge, rpId, undefined, { signal: options.signal })
       : passkey.get(challenge, rpId));
-    const session = await this.as<CalimeroSession>(this.auth.loginFinish({ challengeId: begin.challengeId, assertion }));
+    const session = await this.auth.loginFinish({ challengeId: begin.challengeId, assertion });
     this.useSession(session);
     return session;
   }
@@ -1119,7 +997,7 @@ export class CalimeroClient {
   async addPasskey(passkey: PasskeyProvider, approver: PasskeyProvider): Promise<string> {
     const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.passkeyAddBegin());
     const registration = await passkey.create(begin.options);
-    const { credentialId } = await this.as<{ credentialId: string }>(this.auth.passkeyAddFinish({ challengeId: begin.challengeId, registration }, this.confirmWith(approver)));
+    const { credentialId } = await this.auth.passkeyAddFinish({ challengeId: begin.challengeId, registration }, this.confirmWith(approver));
     return credentialId;
   }
 
@@ -1143,7 +1021,7 @@ export class CalimeroClient {
     try {
       const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.accountRecoveryBegin({ code }));
       const registration = await passkey.create(begin.options);
-      return await this.as<AccountRecovery>(this.auth.accountRecoveryStart({ challengeId: begin.challengeId, code, registration }));
+      return await this.auth.accountRecoveryStart({ challengeId: begin.challengeId, code, registration });
     } catch (error) {
       if (error instanceof LoginRequired) throw new WrongRecoveryCode(error.message.replace(/^401 UNAUTHENTICATED: /, ''), error.details);
       throw error;
@@ -1159,7 +1037,7 @@ export class CalimeroClient {
    * {@link RecoveryNotReady}, with no recovery under way {@link NotFound}.
    */
   async finishAccountRecovery(passkey: PasskeyProvider, accountId?: string): Promise<CalimeroSession> {
-    const session = await this.as<CalimeroSession>(this.auth.accountRecoveryFinish({ ...accountId ? { accountId } : {} }, this.confirmWith(passkey)));
+    const session = await this.auth.accountRecoveryFinish({ ...accountId ? { accountId } : {} }, this.confirmWith(passkey));
     this.useSession(session);
     return session;
   }
@@ -1213,7 +1091,7 @@ export class CalimeroClient {
     const account = (await this.auth.me()).accountId as string;
     const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)));
     const signature = await signRecovery(seed, org, account, nonce);
-    return this.as(this.orgs.recoveryStart({ org, nonce, signature }));
+    return this.orgs.recoveryStart({ org, nonce, signature });
   }
 
   // ---------------------------------------------------------------- approvals
@@ -1269,7 +1147,7 @@ export class CalimeroClient {
         if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
         w.location.assign(url);
       });
-    const started = await this.as<ConsentStarted>(this.consent.pageCreate({ body: request }));
+    const started = await this.consent.pageCreate({ body: request });
     if (started.code !== undefined) {
       const expected = await confirmationCode(started.requestId);
       if (started.code !== expected) {
@@ -1296,7 +1174,7 @@ export class CalimeroClient {
   ): Promise<ConsentResult> {
     const interval = options.intervalMs ?? 2000;
     for (;;) {
-      const result = await this.as<ConsentResult>(this.consent.pageResult({ request: requestId }));
+      const result = await this.consent.pageResult({ request: requestId });
       if (result.status !== 'pending') return result;
       if (options.signal?.aborted) return result;
       if (options.expiresAt !== undefined && Date.now() / 1000 >= options.expiresAt) return result;

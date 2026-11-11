@@ -196,7 +196,7 @@ describe('packageOrigins.add served (a custom domain)', () => {
   it('list answers served on each origin', async () => {
     const { package: _p, ...listed } = SERVED;
     node.answer = () => ({ status: 200, json: { package: PKG, origins: [{ ...ORIGIN, served: false }, listed] } });
-    // The document leaves an origin untyped (core #4937).
+    // `GET /package-origins/{package}` does not type its origins yet (core #4937).
     const origins = (await client().packages.originsList({ package: PKG })).origins as Array<{ served?: boolean }>;
     expect(origins.map((o) => o.served)).toEqual([false, true]);
   });

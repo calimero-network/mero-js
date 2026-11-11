@@ -23,6 +23,7 @@ export type {
   PasskeyConfirmOptions,
 } from './step-up.js';
 export { route } from './operation.js';
+export type { ApiAnswer, ApiSchema } from './types.js';
 export type { MethodOptions, RawBody, RouteShape } from './operation.js';
 export { createRoutes } from '../generated/methods.js';
 export type {

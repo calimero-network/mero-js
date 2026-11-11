@@ -35,14 +35,10 @@ import {
 } from '../cloud-v2/errors.js';
 import { b64url, type PasskeyProvider, type PasskeyUserVerification } from '../cloud-v2/passkey.js';
 import { passkeyConfirm, type ConfirmChallenge } from '../api/step-up.js';
+import type { ApiSchema } from '../api/types.js';
 
 /** A signed-in session: what sign-up, sign-in and a refresh answer. */
-export interface CalimeroSession {
-  accountId: string;
-  sessionToken: string;
-  expiresAt: number;
-  refreshToken: string;
-}
+export type CalimeroSession = ApiSchema<'Session'>;
 
 /** One server-sent event: `data` parsed as JSON when it is. */
 export interface CloudEvent {
