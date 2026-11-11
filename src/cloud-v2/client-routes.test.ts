@@ -12,6 +12,7 @@ import {
   CalimeroClient,
   ConfirmCancelled,
   ConfirmRequired,
+  FeatureNotActive,
   LoginRequired,
   NotFound,
   ORG_CAPABILITIES,
@@ -824,6 +825,15 @@ describe('the rest of the node API', () => {
     // A node from before the route.
     node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
     await expect(c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) })).rejects.toMatchObject({ status: 404 });
+    // A cluster still rolling from a release before moves: refused before the step-up.
+    const details = { feature: 'moveApp', needs: '1.0.0-rc.15', active: '1.0.0-rc.14' };
+    node.answer = () => ({ status: 409, json: { error: 'FEATURE_NOT_ACTIVE', message: 'moveApp needs cluster version 1.0.0-rc.15', details } });
+    const refused = await c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(FeatureNotActive);
+    expect(refused).toMatchObject({ status: 409, code: 'FEATURE_NOT_ACTIVE', ...details });
+    // Before every node said which version it supports, `active` is null.
+    node.answer = () => ({ status: 409, json: { error: 'FEATURE_NOT_ACTIVE', message: '', details: { ...details, active: null } } });
+    await expect(c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) })).rejects.toMatchObject({ active: '' });
   });
 
   it("lists an organization's members' lockout risk for its admins (core #4902)", async () => {

@@ -285,6 +285,28 @@ export class ClusterNotUpgraded extends CalimeroError {
 }
 
 /**
+ * `409 FEATURE_NOT_ACTIVE`: the command (or a field of it) needs a cluster
+ * version not every node of the cluster supports yet, during a rollout from
+ * an older release; nothing was done. `feature` names it, `needs` is the core
+ * release it needs and `active` the cluster's version now (`''` when not every
+ * node said which it supports). It works once the old nodes leave the cluster:
+ * retry then, or tell the user the feature is not available yet.
+ */
+export class FeatureNotActive extends CalimeroError {
+  readonly feature: string;
+  readonly needs: string;
+  readonly active: string;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'FEATURE_NOT_ACTIVE', message, details);
+    this.name = 'FeatureNotActive';
+    this.feature = typeof details.feature === 'string' ? details.feature : '';
+    this.needs = typeof details.needs === 'string' ? details.needs : '';
+    this.active = typeof details.active === 'string' ? details.active : '';
+  }
+}
+
+/**
  * `409 RECOVERY_NOT_READY`: a recovery (an account's or an organization's)
  * may finish only once its 72-hour delay has passed. `readyAt` is when it may
  * (Unix seconds), when the node said.
@@ -482,6 +504,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new NotServing(message, details);
     case '409 CLUSTER_NOT_UPGRADED':
       return new ClusterNotUpgraded(message, details);
+    case '409 FEATURE_NOT_ACTIVE':
+      return new FeatureNotActive(message, details);
     case '429 QUOTA_EXCEEDED':
       return new QuotaExceeded(message, details);
     case '409 RECOVERY_NOT_READY':
