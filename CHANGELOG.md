@@ -1,3 +1,13 @@
+## [30.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.17.0...mero-js-v30.0.0) (2026-11-11)
+
+### ⚠ BREAKING CHANGES
+
+* **client:** remove the deprecated route wrappers (30.0) (#359)
+
+### Features
+
+* **client:** remove the deprecated route wrappers (30.0) ([#359](https://github.com/calimero-network/mero-js/issues/359)) ([ad2a152](https://github.com/calimero-network/mero-js/commit/ad2a152cffeb760d5b6ea821b5b1a8ec634df16a))
+
 ## [29.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.16.0...mero-js-v29.17.0) (2026-11-11)
 
 ### Features
