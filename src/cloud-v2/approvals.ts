@@ -116,33 +116,7 @@ export interface LatestBlocked {
 }
 
 /** One app in a report. `name`, `team`, `availableVersions`, `latestReachable` and `latestBlocked` are in members' and accounts' reports only. */
-export interface ReportedApp {
-  app: string;
-  group: number;
-  scope: ReportScope;
-  /** `hex(SHA-256)` of the WASM it runs. */
-  bundle: string;
-  package: ReportedRelease | null;
-  /** The package's pinned signer (`did:key`). */
-  publisher: { signer: string } | null;
-  upgradesHeldBy: Authority;
-  lastUpgrade: LastUpgrade | null;
-  /** The releases approved to hold this app (its publisher's set, or its scope's); `null`: unrestricted. */
-  approvedReleases: string[] | null;
-  replicas: ReportedReplica[];
-  name?: string;
-  team?: string;
-  /** Newer releases of its package it may be upgraded to, oldest first (at most 16, the newest). */
-  availableVersions?: string[];
-  /**
-   * The newest of every newer release it may see that an upgrade would take
-   * now, which may be older than all of `availableVersions`; `null` when none
-   * would. Absent from a node before core 1.0.0-rc.16.
-   */
-  latestReachable?: string | null;
-  /** Present when the newest release it may see is not `latestReachable`: which, and why. */
-  latestBlocked?: LatestBlocked;
-}
+export type ReportedApp = ApiAnswer<'org_apps'>['apps'][number];
 
 /** A mero-tee release the cluster's nodes run, with how many and whether the scope approved it. */
 export interface ClusterRelease {
@@ -152,33 +126,13 @@ export interface ClusterRelease {
 }
 
 /** `GET /auth/apps` or `GET /orgs/{org}/apps`: one page. */
-export interface AppsReport {
-  scope: ReportScope;
-  governance: Governance;
-  /** The scope's own approved set, newest last; `null`: none ever recorded (unrestricted). */
-  approvedReleases: string[] | null;
-  clusterReleases: ClusterRelease[];
-  apps: ReportedApp[];
-  /** Pass as `after` for the next page; `null` on the last. */
-  next: string | null;
-}
+export type AppsReport = ApiAnswer<'org_apps'>;
 
 /** `GET /ops/apps`: one page, for the operator. */
-export interface OpsAppsReport {
-  /** This node had caught up with the system leader. */
-  fresh: boolean;
-  governance: Governance;
-  apps: ReportedApp[];
-  next: string | null;
-}
+export type OpsAppsReport = ApiAnswer<'ops_apps'>;
 
 /** `GET /ops/orgs`: one page, for the operator. */
-export interface OpsOrgsReport {
-  fresh: boolean;
-  governance: Governance;
-  orgs: Array<{ org: string; approvedReleases: string[] | null }>;
-  next: string | null;
-}
+export type OpsOrgsReport = ApiAnswer<'ops_orgs'>;
 
 /** A page of a report: entries after the id `after`, at most `limit` (1 to {@link MAX_REPORT_PAGE}). */
 export interface PageOptions {
@@ -215,11 +169,7 @@ export interface ReleaseDeadline {
 }
 
 /** `GET /releases`: the cluster's release rules, public inside the sealed channel. */
-export interface ReleaseRules {
-  governance: Governance;
-  /** Oldest release first. */
-  deadlines: ReleaseDeadline[];
-}
+export type ReleaseRules = ApiAnswer<'releases_public'>;
 
 /** Semver order (core's `compare_versions`); text order for versions that are not semver. */
 export function compareVersions(a: string, b: string): number {
@@ -256,14 +206,7 @@ export function stalledBy(
 // ---------------------------------------------------------------- publishers
 
 /** `GET /publishers/{signerId}`: what a key signs to bind it here next. */
-export interface PublisherBindingInfo {
-  signerId: string;
-  /** The cluster's name, as the binding message names it. */
-  cluster: string;
-  /** How many bindings the key has had here: a signature binds once. */
-  generation: number;
-  bound: boolean;
-}
+export type PublisherBindingInfo = ApiAnswer<'publisher_binding'>;
 
 /**
  * The text a package signing key signs to bind it to `org` as its publisher

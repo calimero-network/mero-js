@@ -510,7 +510,7 @@ describe('Calimero 1.0 cluster', () => {
     await expect(alice.packages.originsAdd({ package: pkg, origin: site })).rejects.toBeInstanceOf(ConfirmRequired);
     const added = await alice.packages.originsAdd({ package: pkg, origin: site }, { confirm: passkeyConfirm(alicePk) });
     expect(added).toMatchObject({ package: pkg, origin: site, rpId: 'chat.mero-js.test' });
-    expect((await (await alice.packages.originsList({ package: pkg })).origins).map((o) => (o as { origin: string }).origin)).toEqual([site]);
+    expect((await (await alice.packages.originsList({ package: pkg })).origins).map((o) => o.origin)).toEqual([site]);
     await expect(alice.packages.originsAdd({ package: pkg, origin: 'not an origin' }, { confirm: passkeyConfirm(alicePk) })).rejects.toBeInstanceOf(BadOrigin);
 
     // A person signs up on the developer's site: the passkey is that site's,

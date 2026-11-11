@@ -43,7 +43,6 @@ import {
   type OpenConsentOptions,
   type PageOptions,
   type PendingApprovals,
-  type ReleaseRules,
   type ReportedApp,
 } from './approvals.js';
 import type { ApiAnswer, ApiSchema } from '../api/types.js';
@@ -83,50 +82,14 @@ export type CallResult = ApiAnswer<'intents'>;
 export type ViewResult = ApiAnswer<'views'>;
 
 /** What installing a package release answers. */
-export interface PackageInstalled {
-  package: string;
-  version: string;
-  signerId: string;
-  /** Service name (`''` for a single-service bundle) -> the bundle hash it runs as. */
-  services: Record<string, string>;
-}
+export type PackageInstalled = ApiAnswer<'package_install'>;
 
 /** An installed package and its releases. */
-export interface PackageInfo {
-  package: string;
-  signerId: string;
-  owner: string;
-  latest: string | null;
-  versions: Array<{
-    version: string;
-    mpk: string;
-    size: number;
-    source: 'registry' | 'upload';
-    services: Record<string, string>;
-    metadata: unknown;
-    outbound: string[];
-    installedBy: string;
-    installedAt: number;
-  }>;
-}
+export type PackageInfo = ApiSchema<'Package'>;
 
 /** One app instance as `listApps` answers it. */
 /** What {@link CalimeroClient.moveApp} answers. */
-export interface MoveAppResult {
-  appId: string;
-  /** The organization it left; `null` for a personal app. */
-  from: string | null;
-  /** The organization it is in now. */
-  org: string;
-  /** Its access there: `{ kind: 'team', team }` on the target's app team, or as it was. */
-  access: Record<string, unknown>;
-  /** Whether the target's app team of its package was made for it. */
-  created: boolean;
-  /** The accounts that joined the target with it (`bringMembers`). */
-  added: string[];
-  /** The source's invites into the team it left that were revoked. */
-  revokedInvites: number;
-}
+export type MoveAppResult = ApiAnswer<'app_move'>;
 
 export type AppInfo = ApiSchema<'AppEntry'>;
 
@@ -140,11 +103,7 @@ export type UpgradeRun = ApiSchema<'UpgradeRun'>;
 export type BlobInfo = ApiAnswer<'blob_info'>;
 
 /** One device present in an app (`publishPresence`); `state` hex, `null` once retracted. */
-export interface PresenceEntry {
-  account: string;
-  device: string;
-  state: string | null;
-}
+export type PresenceEntry = ApiAnswer<'presence_get'>['present'][number];
 
 /** What an organization-wide upgrade targets. */
 export interface OrgUpgradeTarget {
@@ -191,10 +150,7 @@ export interface AppTeam {
 }
 
 /** `GET /orgs/{org}/app-teams`: the organization's mode and its app teams. A guest sees only the app teams they are in. */
-export interface AppTeams {
-  mode: OrgMode;
-  appTeams: AppTeam[];
-}
+export type AppTeams = ApiAnswer<'app_team_list'>;
 
 /** One package to give an app team ({@link CalimeroClient.scopeApps}, core `ScopeApp`). */
 export interface ScopeApp {
@@ -231,46 +187,13 @@ export interface ScopeAppsOptions {
 }
 
 /** One package's app team after {@link CalimeroClient.scopeApps}. */
-export interface ScopedAppTeam {
-  package: string;
-  teamId: string;
-  /** Whether the team was made now (`false`: it existed already). */
-  created: boolean;
-  /** The instances moved onto it. */
-  apps: string[];
-  /** How many rows were added for people who reached those instances (or kept on a close). */
-  added: number;
-  /** The team's `join` after the step (absent from nodes before per-app close). */
-  join?: 'everyone' | 'invite';
-  /** How many people lost the app in this step (a close with `keep`; absent from nodes before per-app close). */
-  dropped?: number;
-}
+export type ScopedAppTeam = ApiAnswer<'app_teams_scope'>['teams'][number];
 
 /** `POST /orgs/{org}/app-teams`: the organization's mode after, and each package's team. */
-export interface ScopeAppsResult {
-  mode: OrgMode;
-  teams: ScopedAppTeam[];
-}
+export type ScopeAppsResult = ApiAnswer<'app_teams_scope'>;
 
 /** A pending organization invite, as `GET /orgs/{org}/invites` lists it (never its token). */
-export interface OrgInvite {
-  /** The invite's key, which {@link CalimeroClient.revokeInvite} takes. */
-  inviteKey: string;
-  role: 'guest' | 'member' | 'admin';
-  /** The teams it adds its holder to. */
-  teams: string[];
-  usesLeft: number;
-  /** Unix seconds. */
-  expiresAt: number;
-  /** Listed until revoked, even past `expiresAt`. */
-  expired: boolean;
-  /** The account that made it; `null` for invites made before core recorded it. */
-  createdBy: string | null;
-  /** Unix seconds; `null` for invites made before core recorded it. */
-  createdAt: number | null;
-  /** Whoever redeems it also gets every app added later; absent from nodes before core's `feat/org-all-apps`. */
-  allApps?: boolean;
-}
+export type OrgInvite = ApiAnswer<'invite_list'>['invites'][number];
 
 /** One direct row of a team ({@link TeamInfo}). */
 export interface TeamMemberInfo {
@@ -336,14 +259,7 @@ export interface DeployerGrant {
 }
 
 /** `GET /deployers`: who may install apps on the cluster, and who grants it. */
-export interface DeployersInfo {
-  /** `open` (any account) or `granted` (deployers only); absent on a default cluster. */
-  deployments?: 'open' | 'granted';
-  /** Who grants deployers: `operator` (its key) or `owner` (the cluster's owner, with a passkey). */
-  deployers?: 'operator' | 'owner';
-  owner: Deployer | null;
-  grants: DeployerGrant[];
-}
+export type DeployersInfo = ApiAnswer<'deployer_list'>;
 
 /** One app a deployment offers, as its managers read it. */
 export interface DeploymentOffer {
@@ -366,24 +282,7 @@ export type DeploymentInfo = ApiSchema<'Deployment'>;
 export type PublicDeployment = ApiAnswer<'deployment_get'>;
 
 /** `GET /deployments/{id}/orgs`: the organizations with instances created from a deployment. */
-export interface DeploymentOrgs {
-  deployment: string;
-  orgs: Array<{
-    orgId: string;
-    name: string | null;
-    instances: number;
-    /** Which of the deployment's apps they run, at which release. */
-    apps: Array<{ app: string; version: string }>;
-    /** RFC 3339: when its first instance from the deployment was created. */
-    firstCreatedAt: string;
-    /** How many members it has (counts only, never who; core #4902). Absent from an older node. */
-    memberCount?: number;
-    /** How many of them signed in or used a session in the last 30 days (core #4902). Absent from an older node. */
-    activeMembers30d?: number;
-  }>;
-  /** Instances outside any organization, counted only. */
-  outsideOrgs: number;
-}
+export type DeploymentOrgs = ApiAnswer<'deployment_orgs'>;
 
 /**
  * A package frontend's `/.well-known/calimero.json`: the package, its
@@ -478,63 +377,13 @@ export interface MeOrg {
 }
 
 /** `GET /auth/me`: who the credential is. */
-export interface MeInfo extends Record<string, unknown> {
-  accountId?: string;
-  name?: string;
-  /** The account's passkeys. */
-  passkeys?: MePasskey[];
-  /** The organizations the account is in, with its role in each. */
-  orgs?: MeOrg[];
-  /** `session` or `apiKey`. */
-  via?: string;
-  /**
-   * The passkey (credential id) this session was opened with; `null` for an
-   * API key.
-   */
-  passkeyId?: string | null;
-  /**
-   * The package the session is bound to: opened on an app's frontend or on
-   * an origin its manager registered ({@link CalimeroClient.packageOrigins}).
-   * `null` (or absent, on an older node) for an unbound session.
-   */
-  app?: string | null;
-  /** The web origin the session was opened on, when the node recorded one. */
-  origin?: string | null;
-  /** Whether the account holds a recovery code ({@link CalimeroClient.createRecoveryCode}); never the code. */
-  recoveryCode?: boolean;
-  /**
-   * A recovery of this account under way: someone holding its recovery code
-   * started it with a new passkey. Warn on every device; a passkey the
-   * account has cancels it ({@link CalimeroClient.cancelAccountRecovery})
-   * until `readyAt`.
-   */
-  recoveryPending?: AccountRecovery | null;
-}
+export type MeInfo = ApiAnswer<'me'>;
 
 /**
  * One of the account's live sessions, as {@link CalimeroClient.listSessions}
  * lists it (core #4894).
  */
-export interface AccountSession {
-  /** The session's id, which {@link CalimeroClient.revokeSession} takes. */
-  session: string;
-  /** The passkey (credential id) it was opened with. */
-  passkey: string | null;
-  /** The package it is bound to; `null` on the cluster's own origin. */
-  app: string | null;
-  /** The registered origin it was opened on; `null` on the cluster's own origin. */
-  origin: string | null;
-  /** When it opened (Unix seconds); `null` when opened before the node kept it. */
-  openedAt: number | null;
-  /**
-   * When its refresh token was last exchanged (Unix seconds). A token younger
-   * than an hour refreshes without a write and a session token lives 15
-   * minutes, so the session may have been used up to about 1 h 15 min later.
-   */
-  lastActiveAt: number;
-  /** Whether it is the caller's own session. */
-  current: boolean;
-}
+export type AccountSession = ApiAnswer<'sessions_list'>['sessions'][number];
 
 /**
  * One thing one of the account's passkeys did, as
@@ -555,21 +404,7 @@ export interface AccountRecovery {
 }
 
 /** One web origin registered for a package (`GET /package-origins/{package}`). */
-export interface PackageOrigin {
-  /** `scheme://host[:port]`. */
-  origin: string;
-  /** The WebAuthn relying-party id passkeys made there are bound to. */
-  rpId: string;
-  /** The account that registered it. */
-  addedBy: string;
-  addedAt: string | number;
-  /**
-   * The cluster serves the package's frontend on this origin too (a custom
-   * domain, from its signed bundle). Absent (`false`) from a node that
-   * predates served origins.
-   */
-  served?: boolean;
-}
+export type PackageOrigin = ApiAnswer<'origins_list'>['origins'][number];
 
 /** What registering an origin answers. */
 export interface PackageOriginAdded extends PackageOrigin {
@@ -623,22 +458,10 @@ export interface PackageOrigins {
 }
 
 /** One served origin (custom domain) of the cluster, as `GET /ops/served-origins` lists it. */
-export interface ServedOrigin {
-  /** `https://host`. */
-  origin: string;
-  /** The origin's host, the name a certificate and a route are for. */
-  host: string;
-  /** The package's app-host label (`{label}.{apps domain}`); the listing names no package. */
-  label: string;
-  addedAt: string;
-}
+export type ServedOrigin = ApiAnswer<'ops_served'>['origins'][number];
 
 /** `GET /ops/served-origins`: every served origin the cluster's log holds. Operator token. */
-export interface ServedOrigins {
-  /** This node had caught up with the system leader. */
-  fresh: boolean;
-  origins: ServedOrigin[];
-}
+export type ServedOrigins = ApiAnswer<'ops_served'>;
 
 /**
  * Where a sign-up or sign-in says it runs. By default the page's origin
@@ -1099,7 +922,7 @@ export class CalimeroClient {
   /** The report of a scope's apps (`GET /orgs/{org}/apps`, or with `org` `null` the account's own, `GET /auth/apps`), every page, with the apps of all of them in `apps`. */
   async appsReportAll(org: string | null): Promise<AppsReport> {
     const report = (page: PageOptions = {}) =>
-      this.as<AppsReport>(org === null ? this.auth.accountApps(pageParams(page)) : this.orgs.apps({ org, ...pageParams(page) }));
+      org === null ? this.auth.accountApps(pageParams(page)) : this.orgs.apps({ org, ...pageParams(page) });
     const first = await report();
     const apps: ReportedApp[] = [...first.apps];
     let next = first.next;
@@ -1120,7 +943,7 @@ export class CalimeroClient {
    * `releaseConsent`, `upgradeConsent`).
    */
   async pendingApprovals(org: string | null = null): Promise<PendingApprovals> {
-    const [report, rules] = await Promise.all([this.appsReportAll(org), this.as<ReleaseRules>(this.public.releasesPublic())]);
+    const [report, rules] = await Promise.all([this.appsReportAll(org), this.public.releasesPublic()]);
     return pendingApprovalsFrom(report, rules);
   }
 

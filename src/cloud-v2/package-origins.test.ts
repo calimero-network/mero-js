@@ -71,7 +71,14 @@ const stepUp = (json: unknown, then?: () => Reply) => {
 };
 const confirm = { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) };
 
-const ORIGIN: PackageOrigin = { origin: SITE, rpId: 'chat.example.com', addedBy: 'acc-1', addedAt: '2026-11-01T00:00:00Z' };
+const ORIGIN: PackageOrigin = {
+  package: PKG,
+  origin: SITE,
+  rpId: 'chat.example.com',
+  addedBy: 'acc-1',
+  addedAt: '2026-11-01T00:00:00Z',
+  served: false,
+};
 
 describe('packageOrigins.list', () => {
   it('reads GET /package-origins/{package} and answers its origins', async () => {
@@ -196,8 +203,7 @@ describe('packageOrigins.add served (a custom domain)', () => {
   it('list answers served on each origin', async () => {
     const { package: _p, ...listed } = SERVED;
     node.answer = () => ({ status: 200, json: { package: PKG, origins: [{ ...ORIGIN, served: false }, listed] } });
-    // `GET /package-origins/{package}` does not type its origins yet (core #4937).
-    const origins = (await client().packages.originsList({ package: PKG })).origins as Array<{ served?: boolean }>;
+    const { origins } = await client().packages.originsList({ package: PKG });
     expect(origins.map((o) => o.served)).toEqual([false, true]);
   });
 });
