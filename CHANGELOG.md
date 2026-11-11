@@ -1,3 +1,9 @@
+## [30.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v30.0.0...mero-js-v30.1.0) (2026-11-11)
+
+### Features
+
+* **cloud-v2:** type 409 FEATURE_NOT_ACTIVE as FeatureNotActive ([#354](https://github.com/calimero-network/mero-js/issues/354)) ([90fa7b8](https://github.com/calimero-network/mero-js/commit/90fa7b84e5ab5dc008728e5a9c121ab619b93383))
+
 ## [30.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.17.0...mero-js-v30.0.0) (2026-11-11)
 
 ### ⚠ BREAKING CHANGES
