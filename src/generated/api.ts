@@ -141,7 +141,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a blob
-         * @description A plain blob (`sealed=true` is refused: sealed files go through `/files`).
+         * @description A plain blob, stored with the request's `Content-Type` (default `application/octet-stream`), which a component app's download answers with. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -395,7 +395,7 @@ export interface paths {
          * Call a method
          * @description A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`.
          *
-         *     **Who:** whoever the app's access admits (a public app: anyone).
+         *     **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
         post: operations["intents"];
         delete?: never;
@@ -439,7 +439,7 @@ export interface paths {
          * Call a method by its path
          * @description The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`.
          *
-         *     **Who:** whoever the app's access admits (a public app: anyone).
+         *     **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
         post: operations["app_method"];
         delete?: never;
@@ -507,7 +507,7 @@ export interface paths {
         put?: never;
         /**
          * Publish presence
-         * @description The caller's presence state, in sequence; not logged.
+         * @description The caller's presence state (hex), in sequence; not logged. A `null` (or absent) `state` retracts it.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -699,7 +699,7 @@ export interface paths {
         };
         /**
          * An app's cross-app calls
-         * @description The owner or an organization admin: calls waiting for delivery and dead letters.
+         * @description The owner or an organization admin: how many calls wait in its outbox for delivery (`pending`, a count), and its dead letters, oldest first (`atMs`: the entry time it was dead-lettered at, Unix milliseconds).
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -1409,7 +1409,9 @@ export interface paths {
         };
         /**
          * What became of a consent request
-         * @description **Who:** a passkey session (an API key is refused).
+         * @description `decidedAt` (Unix seconds) is `null` while it is pending.
+         *
+         *     **Who:** a passkey session (an API key is refused).
          */
         get: operations["consent_page_result"];
         put?: never;
@@ -1475,7 +1477,9 @@ export interface paths {
         };
         /**
          * Deployments
-         * @description **Who:** signed in (a session or an API key).
+         * @description The deployments the caller manages.
+         *
+         *     **Who:** signed in (a session or an API key).
          */
         get: operations["deployment_list"];
         put?: never;
@@ -1501,7 +1505,9 @@ export interface paths {
         };
         /**
          * One deployment
-         * @description **Who:** signed in (a session or an API key).
+         * @description As anyone may read it: its name, its owner's kind and name (`null` when unknown), and the releases it offers; never its managers or customers.
+         *
+         *     **Who:** signed in (a session or an API key).
          */
         get: operations["deployment_get"];
         put?: never;
@@ -1653,7 +1659,7 @@ export interface paths {
         put?: never;
         /**
          * Move an app's replicas
-         * @description Signed over `<app> / __set_replicas / { replicas }` (sorted); at least `min(3, nodes)` registered nodes, each on a release the app's owner approved. The set it already has answers `unchanged: true`.
+         * @description Signed over `<app> / __set_replicas / { replicas }` (sorted); at least `min(3, nodes)` registered nodes, each on a release the app's owner approved. The set it already has answers `unchanged: true`. `status` is the app group's Raft status when the move finished (as the leader saw it).
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
@@ -2379,7 +2385,7 @@ export interface paths {
         };
         /**
          * One organization
-         * @description Its members, teams (those the caller reaches or manages) and metadata.
+         * @description As the directory records it, with only the teams the caller reaches or manages and the people they see; and its `mode` (from its app teams), the accounts that may approve its releases (`releaseApprovers`), the keys it publishes under (`publishes`), and `newWorkStopped`: the release whose passed deadline stops new work in it (`after`, RFC 3339), `null` when none does. Those four are absent from a node older than they are (1.0.0-rc.1 sends none of them).
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -2549,7 +2555,7 @@ export interface paths {
         };
         /**
          * Members' lockout risk
-         * @description `detail=security`, the owner or an admin: each member's passkeys (`1`, `2` or `"3+"`), recovery code, last active UTC day and sessions. `403` below admin, `404` outside the organization.
+         * @description `detail=security` (the only listing: without it, or with another value, `400 BAD_REQUEST`), the owner or an admin: each member's passkeys (`1`, `2` or `"3+"`), recovery code, last active UTC day and sessions. `403` below admin, `404` outside the organization.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend).
          */
@@ -2757,7 +2763,7 @@ export interface paths {
         put?: never;
         /**
          * Set the organization's recovery key
-         * @description Set, rotate or (`null`) remove it; the owner; cancels a recovery under way. `412` first.
+         * @description Set or rotate it (`publicKey`: base64url Ed25519 public key), or remove it (`publicKey: null`; an absent `publicKey` removes it too); the owner; cancels a recovery under way. `412` first.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -2893,7 +2899,7 @@ export interface paths {
         put?: never;
         /**
          * Update a team
-         * @description Rename, open or restrict, move under another parent (`parent: null`: to the top), or set its metadata.
+         * @description Rename, open or restrict, move under another parent, or set its metadata. `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -3288,6 +3294,7 @@ export interface components {
     schemas: {
         /** @description An error answer. */
         Error: {
+            /** Format: int64 */
             status: number;
             error: string;
             message: string;
@@ -3301,6 +3308,7 @@ export interface components {
         /** @description `details` of a `412 CONFIRM_REQUIRED`: the WebAuthn challenge to sign with a passkey of the account. */
         ConfirmRequired: {
             challengeId: string;
+            /** @description base64url (RFC 4648 section 5) without padding */
             challenge: string;
             rpId: string;
             allowCredentials: string[];
@@ -3335,6 +3343,7 @@ export interface components {
         Session: {
             accountId: string;
             sessionToken: string;
+            /** Format: int64 */
             expiresAt: number;
             refreshToken: string;
         };
@@ -3344,6 +3353,7 @@ export interface components {
         };
         /** @description An entry an app's log applied: its index, how it ended and the app's error, if any. */
         Applied: {
+            /** Format: int64 */
             index: number;
             status: string;
             error: unknown;
@@ -3351,28 +3361,30 @@ export interface components {
         /** @description The answering node's signature (receipt key, hex) over `(app, index, SHA-256(JCS(result)), node)`. */
         Receipt: {
             app: string;
+            /** Format: int64 */
             index: number;
             resultHash: string;
+            /** Format: int64 */
             node: number;
             key: string;
             signature: string;
         };
         /** @description Who may reach an app at all. */
         Access: {
-            /** @constant */
+            /** @enum {string} */
             kind: "owner";
         } | {
-            /** @constant */
+            /** @enum {string} */
             kind: "org";
         } | {
-            /** @constant */
+            /** @enum {string} */
             kind: "public";
         } | {
-            /** @constant */
+            /** @enum {string} */
             kind: "accounts";
             accounts: string[];
         } | {
-            /** @constant */
+            /** @enum {string} */
             kind: "team";
             team: string;
         };
@@ -3421,6 +3433,7 @@ export interface components {
             nonce: string;
             release: components["schemas"]["Release"];
             cluster: string;
+            /** Format: int64 */
             node: number;
             mock: boolean;
             receiptKey?: string;
@@ -3436,6 +3449,7 @@ export interface components {
             team?: string;
             cascade: boolean;
             by: string;
+            /** Format: int64 */
             startedAt: number;
             apps: string[];
             done: string[];
@@ -3444,27 +3458,239 @@ export interface components {
             };
             finished: boolean;
         };
-        /** @description An app instance (a context) as the directory records it. */
+        /** @description An app instance (a context) as the directory records it. `executor` is absent for an SDK 0.12 app (wasmer), which this node lists but does not run; `release` is the package release it runs, absent for a record from before or a raw upload; `restore` is a restore from a backup under way. */
         App: {
             appId: string;
             name: string;
+            /** Format: int64 */
             group: number;
             bundle: string;
             owner: string;
             org: string | null;
             access: components["schemas"]["Access"];
             confirmMethods: string[];
+            /** @enum {string} */
+            executor?: "component" | "wasmer";
             replicas: number[];
+            /** Format: int64 */
             createdAt: number;
             initArgs: unknown;
             computeBundle?: string;
             metadata: unknown;
-            lastUpgrade?: unknown;
-            release?: unknown;
+            lastUpgrade?: components["schemas"]["Upgrade"];
+            deployment?: string;
+            release?: components["schemas"]["PackageRef"];
+            restore?: {
+                /** Format: int64 */
+                seed?: number;
+                source?: {
+                    name: string;
+                    sha256: string;
+                    /** Format: int64 */
+                    index: number;
+                };
+            };
+        };
+        /** @description An app as `GET /apps` lists it: `package` and `version` name the release its bundle came from (`null` for a raw upload), `deployment` the deployment it was created from (`null` for none; absent from an older node, as 1.0.0-rc.1). */
+        AppEntry: {
+            appId: string;
+            name: string;
+            owner: string;
+            org: string | null;
+            bundle: string;
+            package: string | null;
+            version: string | null;
+            deployment?: string | null;
+        };
+        /** @description One service of one package release: `service` is absent for a single-service bundle, `compute` (absent: false) marks the service's compute component. */
+        PackageRef: {
+            package: string;
+            version: string;
+            service?: string;
+            compute?: boolean;
+        };
+        /** @description The last upgrade tried on an app, done or failed: `from` and `to` are bundle hashes, `by` the account (or `operator`), `run` the organization-wide run it was part of, `apiKey` the upgrade key that made it. */
+        Upgrade: {
+            from: string;
+            to: string;
+            /** Format: int64 */
+            at: number;
+            by: string;
+            ok: boolean;
+            error?: unknown;
+            run?: string;
+            apiKey?: string;
+            fromRelease?: components["schemas"]["PackageRef"];
+            toRelease?: components["schemas"]["PackageRef"];
+        };
+        /** @description A package and the releases of it the caller may see, oldest first; `latest` is the newest of those. */
+        Package: {
+            package: string;
+            signerId: string;
+            owner: string;
+            latest: string;
+            versions: {
+                version: string;
+                mpk: string;
+                /** Format: int64 */
+                size: number;
+                /** @enum {string} */
+                source: "registry" | "upload";
+                services: {
+                    [key: string]: string;
+                };
+                metadata: unknown;
+                outbound: string[];
+                installedBy: string;
+                /** Format: int64 */
+                installedAt: number;
+            }[];
+        };
+        /** @description An API key as the account's list shows it (never its secret): `apps` and `methods` are `null` for every one; `upgrades` makes it an upgrade key. */
+        ApiKey: {
+            keyId: string;
+            account: string;
+            label: string;
+            apps: string[] | null;
+            methods: string[] | null;
+            readOnly: boolean;
+            allowConfirm: boolean;
+            /** Format: int64 */
+            expiresAt: number;
+            upgrades?: {
+                app: string;
+                package: string;
+                signer: string;
+                proofKey: string;
+            };
+        };
+        /** @description An organization as `GET /orgs/{org}` answers it. `members` maps each account to its role, `capabilities` and `defaultCapabilities` are capability bits, `outboundApprovals` is keyed by package signer, `upgradeRuns` by run id; `recovery` is absent when the organization set no recovery key, `allApps` when no member gets every app added later. */
+        Org: {
+            orgId: string;
+            name: string;
+            members: {
+                [key: string]: components["schemas"]["OrgRole"];
+            };
+            teams: {
+                [key: string]: components["schemas"]["Team"];
+            };
+            /** Format: int64 */
+            defaultCapabilities: number;
+            capabilities: {
+                [key: string]: number;
+            };
+            approvedReleases: string[];
+            outboundApprovals: {
+                [key: string]: {
+                    prefixes: string[];
+                    reviewed: string[];
+                };
+            };
+            metadata: unknown;
+            memberMetadata: {
+                [key: string]: unknown;
+            };
+            upgradeRuns: {
+                [key: string]: components["schemas"]["UpgradeRun"];
+            };
+            recovery?: {
+                publicKey: string;
+                /** Format: int64 */
+                setAt: number;
+                pending: {
+                    account: string;
+                    /** Format: int64 */
+                    startedAt: number;
+                    /** Format: int64 */
+                    readyAt: number;
+                } | null;
+            };
+            allApps?: string[];
+            /** @enum {string} */
+            mode?: "legacy" | "standalone" | "shared";
+            releaseApprovers?: string[];
+            publishes?: string[];
+            newWorkStopped?: {
+                release: string;
+                after: string;
+            } | null;
+        };
+        /** @description A team as its organization records it: `members` maps each direct row to whether it is a lead; `capabilities` are capability bits per row; `defaultCapabilities` is absent when unset. */
+        Team: {
+            teamId: string;
+            name: string;
+            parent: string | null;
+            join: components["schemas"]["TeamJoin"];
+            members: {
+                [key: string]: boolean;
+            };
+            readOnly: string[];
+            capabilities: {
+                [key: string]: number;
+            };
+            metadata: unknown;
+            removed: string[];
+            /** Format: int64 */
+            defaultCapabilities?: number;
+        };
+        /** @description A team as `GET /orgs/{org}/teams/{team}` answers it: each member's row, the child teams the caller sees, its apps, and the caller's own row (`myRole`, `null` for none) and membership (`member`). `package` names the package of an app team; it and `defaultCapabilities` are absent from an older node (1.0.0-rc.1 sends neither). */
+        TeamView: {
+            teamId: string;
+            name: string;
+            parent: string | null;
+            join: components["schemas"]["TeamJoin"];
+            metadata: unknown;
+            package?: string | null;
+            /** Format: int64 */
+            defaultCapabilities?: number | null;
+            members: {
+                account: string;
+                role: components["schemas"]["TeamRole"];
+                /** Format: int64 */
+                capabilities: number;
+            }[];
+            children: string[];
+            apps: {
+                appId: string;
+                name: string;
+                contextId: string;
+            }[];
+            myRole: components["schemas"]["TeamRole"] | null;
+            member: boolean;
+        };
+        /** @description A deployment as its managers list it. `host` is its frontend host, `null` on a node with no apps domain; times are RFC 3339. */
+        Deployment: {
+            id: string;
+            host: string | null;
+            name: string;
+            owner: components["schemas"]["Deployer"];
+            apps: {
+                app: string;
+                package: string;
+                version: string;
+                addedBy: string;
+                addedAt: string;
+            }[];
+            createdBy: string;
+            createdAt: string;
+        };
+        /** @description A cross-app call that was never delivered: its sequence number, the target app and method, why, and when (`atMs`, Unix milliseconds). */
+        DeadLetter: {
+            /** Format: int64 */
+            seq: number;
+            app: string;
+            method: string;
+            reason: string;
+            /** Format: int64 */
+            atMs: number;
         };
         /** @description What an operator decision that names nothing in its body may carry: none at first, the operator's proof after the `428`. */
         ProofOnly: {
             operatorProof?: components["schemas"]["OperatorProof"];
+        };
+        /** @description The body of a step-up that names nothing else: none (or `{}`) at first, the passkey assertion after the `412`. */
+        ConfirmOnly: {
+            confirm?: components["schemas"]["Confirm"];
         };
     };
     responses: never;
@@ -3494,7 +3720,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        apps: components["schemas"]["App"][];
+                        apps: components["schemas"]["AppEntry"][];
                     };
                 };
             };
@@ -3504,10 +3730,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3516,10 +3739,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3557,6 +3777,7 @@ export interface operations {
                     "application/json": {
                         appId: string;
                         contextId: string;
+                        /** Format: int64 */
                         group: number;
                         replicas: number[];
                         compute?: unknown;
@@ -3569,10 +3790,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "AMBIGUOUS_COMPUTE" | "BAD_REQUEST" | "NOT_OFFERED" | "NO_SUCH_SERVICE" | "VERSION_REQUIRED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -3581,10 +3799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -3593,10 +3808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
@@ -3605,10 +3817,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3617,10 +3826,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `INIT_FAILED` */
@@ -3629,10 +3835,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "INIT_FAILED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -3641,10 +3844,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -3653,10 +3853,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3687,10 +3884,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -3699,10 +3893,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3711,10 +3902,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3748,10 +3936,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -3760,10 +3945,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3772,10 +3954,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3809,10 +3988,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3821,10 +3997,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3861,10 +4034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -3873,10 +4043,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3885,10 +4052,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3927,10 +4091,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3939,10 +4100,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3968,6 +4126,7 @@ export interface operations {
                         blobs: {
                             blobId: string;
                             id: string;
+                            /** Format: int64 */
                             size: number;
                         }[];
                     };
@@ -3979,10 +4138,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -3991,10 +4147,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4010,10 +4163,10 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description the blob */
+        /** @description the blob, of any media type */
         requestBody: {
             content: {
-                "application/octet-stream": string;
+                "*/*": string;
             };
         };
         responses: {
@@ -4026,7 +4179,9 @@ export interface operations {
                     "application/json": {
                         blobId: string;
                         id: string;
+                        /** Format: int64 */
                         size: number;
+                        /** Format: int64 */
                         index: number;
                     };
                 };
@@ -4037,10 +4192,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "USE_FILES_API";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -4049,10 +4201,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -4061,10 +4210,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4073,10 +4219,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -4085,10 +4228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4122,10 +4262,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -4134,10 +4271,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4146,10 +4280,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -4158,10 +4289,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4185,6 +4313,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                     };
                 };
@@ -4195,10 +4324,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -4207,10 +4333,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -4219,10 +4342,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4231,10 +4351,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4260,6 +4377,7 @@ export interface operations {
                     "application/json": {
                         blobId: string;
                         id: string;
+                        /** Format: int64 */
                         size: number;
                     };
                 };
@@ -4270,10 +4388,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -4282,10 +4397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_SUPPORTED` */
@@ -4294,10 +4406,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_SUPPORTED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4306,10 +4415,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4333,6 +4439,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                     };
                 };
@@ -4343,10 +4450,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -4355,10 +4459,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -4367,10 +4468,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4379,10 +4477,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4415,10 +4510,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4427,10 +4519,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RATE_LIMITED`: a node's limit on open streams or ceremonies */
@@ -4439,10 +4528,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RATE_LIMITED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -4451,10 +4537,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4480,6 +4563,7 @@ export interface operations {
                         files: {
                             blobId: string;
                             id: string;
+                            /** Format: int64 */
                             size: number;
                             sha256: string;
                         }[];
@@ -4492,10 +4576,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4504,10 +4585,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4537,8 +4615,10 @@ export interface operations {
                     "application/json": {
                         blobId: string;
                         id: string;
+                        /** Format: int64 */
                         size: number;
                         sha256: string;
+                        /** Format: int64 */
                         index: number;
                     };
                 };
@@ -4549,10 +4629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -4561,10 +4638,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -4573,10 +4647,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4585,10 +4656,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -4597,10 +4665,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4617,6 +4682,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** Format: int64 */
                     size: number;
                 };
             };
@@ -4630,8 +4696,11 @@ export interface operations {
                 content: {
                     "application/json": {
                         uploadId: string;
+                        /** Format: int64 */
                         partBytes: number;
+                        /** Format: int64 */
                         parts: number;
+                        /** Format: int64 */
                         expiresAt: number;
                     };
                 };
@@ -4642,10 +4711,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -4654,10 +4720,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4666,10 +4729,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -4678,10 +4738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4706,9 +4763,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         uploadId: string;
+                        /** Format: int64 */
                         partBytes: number;
+                        /** Format: int64 */
                         parts: number;
+                        /** Format: int64 */
                         expiresAt: number;
+                        /** Format: int64 */
                         next: number;
                     };
                 };
@@ -4719,10 +4780,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4731,10 +4789,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4768,10 +4823,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4780,10 +4832,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4809,8 +4858,10 @@ export interface operations {
                     "application/json": {
                         blobId: string;
                         id: string;
+                        /** Format: int64 */
                         size: number;
                         sha256: string;
+                        /** Format: int64 */
                         index: number;
                     };
                 };
@@ -4821,10 +4872,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4833,10 +4881,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4866,6 +4911,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         next: number;
                     };
                 };
@@ -4876,10 +4922,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_PART" | "BAD_REQUEST";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -4888,10 +4931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4900,10 +4940,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4929,6 +4966,7 @@ export interface operations {
                     "application/json": {
                         blobId: string;
                         id: string;
+                        /** Format: int64 */
                         size: number;
                         sha256: string;
                     };
@@ -4940,10 +4978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -4952,10 +4987,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -4964,10 +4996,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4999,6 +5028,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                         result: unknown;
                         events: {
@@ -5009,16 +5039,22 @@ export interface operations {
                     };
                 };
             };
+            /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
             401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -5027,10 +5063,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -5039,10 +5072,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RELEASE_DEADLINE` */
@@ -5051,23 +5081,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RELEASE_DEADLINE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `ARGS_TOO_LARGE` */
@@ -5076,10 +5099,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "ARGS_TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5088,10 +5108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `APP_ERROR`; `TRAP` */
@@ -5100,10 +5117,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "APP_ERROR" | "TRAP";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -5112,10 +5126,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -5124,10 +5135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5164,10 +5172,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -5176,10 +5181,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5188,10 +5190,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5214,6 +5213,7 @@ export interface operations {
                     confirm?: components["schemas"]["Confirm"];
                     /** @enum {string} */
                     consistency?: "strong" | "stale";
+                    /** Format: int64 */
                     minIndex?: number;
                 };
             };
@@ -5226,6 +5226,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                         result: unknown;
                         events?: {
@@ -5236,16 +5237,13 @@ export interface operations {
                     };
                 };
             };
-            /** @description `RESERVED_METHOD` */
+            /** @description `EXPIRED_CHALLENGE`; `RESERVED_METHOD`; `UNKNOWN_CHALLENGE` */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RESERVED_METHOD";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5254,10 +5252,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -5266,10 +5261,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -5278,10 +5270,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RELEASE_DEADLINE` */
@@ -5290,23 +5279,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RELEASE_DEADLINE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `ARGS_TOO_LARGE` */
@@ -5315,10 +5297,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "ARGS_TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5327,10 +5306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `APP_ERROR`; `TRAP` */
@@ -5339,10 +5315,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "APP_ERROR" | "TRAP";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -5351,10 +5324,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_CAUGHT_UP`; `UNAVAILABLE`: the cluster cannot answer now */
@@ -5363,10 +5333,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_CAUGHT_UP" | "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5413,10 +5380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5425,10 +5389,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -5437,10 +5398,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -5449,23 +5407,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5474,10 +5425,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5510,10 +5458,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -5522,10 +5467,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNSUPPORTED_ENGINE` */
@@ -5534,10 +5476,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNSUPPORTED_ENGINE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5546,10 +5485,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_ABI` */
@@ -5558,10 +5494,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_ABI";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5594,10 +5527,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5606,10 +5536,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5626,8 +5553,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** Format: int64 */
                     seq: number;
-                    state?: string;
+                    state?: string | null;
                 };
             };
         };
@@ -5647,10 +5575,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_STATE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5659,10 +5584,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -5671,10 +5593,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5683,10 +5602,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5717,10 +5633,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5729,10 +5642,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5768,10 +5678,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_LIMIT";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5780,10 +5687,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -5792,10 +5696,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5804,10 +5705,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5841,10 +5739,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -5853,10 +5748,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5865,10 +5757,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5891,11 +5780,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         keys: number;
+                        /** Format: int64 */
                         bytes: number;
+                        /** Format: int64 */
                         blobs: number;
+                        /** Format: int64 */
                         blobBytes: number;
-                        lastWriteAt: number | null;
+                        /** Format: int64 */
+                        lastWriteAt?: number | null;
                     };
                 };
             };
@@ -5905,10 +5799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -5917,10 +5808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5958,10 +5846,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5970,10 +5855,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -5982,23 +5864,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6007,10 +5882,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6044,6 +5916,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                         status: string;
                         error: unknown;
@@ -6057,10 +5930,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "AMBIGUOUS_COMPUTE" | "BAD_BUNDLE" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "VERSION_REQUIRED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -6069,10 +5939,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6081,10 +5948,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `CONFLICT`: the state does not allow it now; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
@@ -6093,23 +5957,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFLICT" | "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6118,10 +5975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UPGRADE_FAILED` */
@@ -6130,10 +5984,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UPGRADE_FAILED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6181,10 +6032,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6193,10 +6041,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6205,10 +6050,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6229,6 +6071,7 @@ export interface operations {
                     args?: unknown;
                     /** @enum {string} */
                     consistency?: "strong" | "stale";
+                    /** Format: int64 */
                     minIndex?: number;
                 };
             };
@@ -6241,6 +6084,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                         result: unknown;
                         receipt: components["schemas"]["Receipt"];
@@ -6253,10 +6097,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6265,10 +6106,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `APP_ERROR`; `TRAP` */
@@ -6277,10 +6115,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "APP_ERROR" | "TRAP";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_CAUGHT_UP` */
@@ -6289,10 +6124,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_CAUGHT_UP";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6315,8 +6147,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        pending: unknown[];
-                        deadLetters: unknown[];
+                        /** Format: int64 */
+                        pending: number;
+                        deadLetters: components["schemas"]["DeadLetter"][];
                     };
                 };
             };
@@ -6326,10 +6159,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6338,10 +6168,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6350,10 +6177,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -6362,10 +6186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6399,10 +6220,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_HASH" | "BAD_NONCE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -6411,10 +6229,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6452,10 +6267,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_AUDIENCE" | "BAD_NONCE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -6464,10 +6276,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6476,10 +6285,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6488,10 +6294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6515,6 +6318,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         activity: {
+                            /** Format: int64 */
                             at: number;
                             passkey: string;
                             /** @enum {string} */
@@ -6533,10 +6337,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6545,10 +6346,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6557,10 +6355,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6593,10 +6388,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6605,10 +6397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6642,10 +6431,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -6654,10 +6440,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6666,10 +6449,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6706,10 +6486,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -6718,10 +6495,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6730,10 +6504,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6764,10 +6535,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6776,10 +6544,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6800,7 +6565,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        keys: unknown[];
+                        keys: components["schemas"]["ApiKey"][];
                     };
                 };
             };
@@ -6810,10 +6575,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6822,10 +6584,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6834,10 +6593,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6857,6 +6613,7 @@ export interface operations {
                     methods?: string[];
                     readOnly?: boolean;
                     allowConfirm?: boolean;
+                    /** Format: int64 */
                     ttlSecs?: number;
                     upgrades?: {
                         app: string;
@@ -6885,10 +6642,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_UPGRADE_KEY" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -6897,10 +6651,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -6909,23 +6660,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -6934,10 +6678,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -6946,10 +6687,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -6966,9 +6704,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -6987,10 +6723,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -6999,10 +6732,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7011,10 +6741,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -7023,23 +6750,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7048,10 +6768,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7090,10 +6807,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7102,10 +6816,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7134,10 +6845,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7146,10 +6854,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7158,10 +6863,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7190,10 +6892,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7202,10 +6901,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7214,10 +6910,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7242,10 +6935,13 @@ export interface operations {
                         name: string;
                         passkeys: {
                             id: string;
+                            /** Format: int64 */
                             signCount: number;
                             label: string | null;
-                            addedAt: number | null;
-                            lastSignInAt: number | null;
+                            /** Format: int64 */
+                            addedAt?: number | null;
+                            /** Format: int64 */
+                            lastSignInAt?: number | null;
                         }[];
                         orgs: {
                             orgId: string;
@@ -7255,12 +6951,12 @@ export interface operations {
                         /** @enum {string} */
                         via: "session" | "apiKey";
                         passkeyId: string | null;
-                        app: string | null;
-                        origin: string | null;
+                        app?: string | null;
+                        origin?: string | null;
                         approvedReleases: unknown;
                         outboundApprovals: unknown;
-                        recoveryCode: unknown;
-                        recoveryPending: unknown;
+                        recoveryCode?: unknown;
+                        recoveryPending?: unknown;
                     };
                 };
             };
@@ -7270,10 +6966,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -7282,10 +6975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7294,10 +6984,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7335,10 +7022,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -7347,10 +7031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7359,23 +7040,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7384,10 +7058,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7426,10 +7097,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RATE_LIMITED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7465,10 +7133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `PASSKEY_UNKNOWN_HERE` */
@@ -7477,10 +7142,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "PASSKEY_UNKNOWN_HERE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7489,10 +7151,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7532,10 +7191,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "SIGN_UP_REFUSED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RATE_LIMITED`: a node's limit on open streams or ceremonies */
@@ -7544,10 +7200,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RATE_LIMITED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7585,10 +7238,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REGISTRATION" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `PASSKEY_UNKNOWN_HERE` */
@@ -7597,10 +7247,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "PASSKEY_UNKNOWN_HERE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `SIGN_UP_REFUSED` */
@@ -7609,23 +7256,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "SIGN_UP_REFUSED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7634,10 +7274,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7669,10 +7306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7681,10 +7315,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7693,10 +7324,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7735,10 +7363,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REGISTRATION" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -7747,10 +7372,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7759,23 +7381,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7784,10 +7399,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7824,10 +7436,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7836,10 +7445,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7848,10 +7454,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7868,9 +7471,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -7889,10 +7490,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -7901,10 +7499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -7913,23 +7508,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -7938,10 +7526,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -7956,9 +7541,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -7979,10 +7562,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -7991,10 +7571,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8003,23 +7580,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8028,10 +7598,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8046,9 +7613,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -8067,10 +7632,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8079,10 +7641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8091,23 +7650,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8116,10 +7668,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8157,10 +7706,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RATE_LIMITED`: a node's limit on open streams or ceremonies */
@@ -8169,10 +7715,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RATE_LIMITED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8187,9 +7730,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -8208,10 +7749,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8220,10 +7758,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8232,23 +7767,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8257,10 +7785,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8296,10 +7821,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8308,10 +7830,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RECOVERY_NOT_READY` */
@@ -8320,23 +7839,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RECOVERY_NOT_READY";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8345,10 +7857,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8379,7 +7888,9 @@ export interface operations {
                     "application/json": {
                         accountId: string;
                         credentialId: string;
+                        /** Format: int64 */
                         startedAt: number;
+                        /** Format: int64 */
                         readyAt: number;
                     };
                 };
@@ -8390,10 +7901,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REGISTRATION" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8402,10 +7910,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RECOVERY_PENDING` */
@@ -8414,10 +7919,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RECOVERY_PENDING";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8452,10 +7954,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8464,10 +7963,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -8476,10 +7972,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8516,10 +8009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8528,10 +8018,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8540,23 +8027,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8565,10 +8045,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8594,7 +8071,9 @@ export interface operations {
                             passkey: string | null;
                             app: string | null;
                             origin: string | null;
+                            /** Format: int64 */
                             openedAt: number;
+                            /** Format: int64 */
                             lastActiveAt: number;
                             current: boolean;
                         }[];
@@ -8607,10 +8086,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8619,10 +8095,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8631,10 +8104,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8665,10 +8135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8677,10 +8144,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -8689,10 +8153,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8701,10 +8162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8728,9 +8186,9 @@ export interface operations {
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         bundleBytes: string;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                        developerFuelToday: string;
+                        developerFuelToday?: string;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                        developerWritesToday: string;
+                        developerWritesToday?: string;
                     } & {
                         [key: string]: unknown;
                     };
@@ -8742,10 +8200,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8754,10 +8209,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8793,10 +8245,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_BUNDLE" | "UNSUPPORTED_BUNDLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8805,10 +8254,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8817,10 +8263,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -8829,10 +8272,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8841,10 +8281,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -8853,10 +8290,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8871,7 +8305,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @constant */
+                    /** @enum {string} */
                     kind: "release";
                     scope: "account" | {
                         org: string;
@@ -8882,7 +8316,7 @@ export interface operations {
                     };
                     returnTo: string;
                 } | {
-                    /** @constant */
+                    /** @enum {string} */
                     kind: "upgrade";
                     subject: {
                         app: string;
@@ -8890,7 +8324,7 @@ export interface operations {
                     };
                     returnTo: string;
                 } | {
-                    /** @constant */
+                    /** @enum {string} */
                     kind: "outbound";
                     scope: "account" | {
                         org: string;
@@ -8914,6 +8348,7 @@ export interface operations {
                         requestId: string;
                         url: string;
                         code: string;
+                        /** Format: int64 */
                         expiresAt: number;
                     };
                 };
@@ -8924,10 +8359,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REQUEST";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -8936,10 +8368,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -8948,10 +8377,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -8960,10 +8386,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -8972,10 +8395,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8998,7 +8418,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        requestId: string;
+                        /** @enum {string} */
+                        kind: "release" | "upgrade" | "outbound";
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "declined";
+                        /** Format: int64 */
+                        decidedAt: number | null;
                     };
                 };
             };
@@ -9008,10 +8434,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9020,10 +8443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -9032,10 +8452,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9044,10 +8461,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
@@ -9056,10 +8470,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAVAILABLE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9090,10 +8501,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9102,10 +8510,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9114,10 +8519,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9159,10 +8561,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9171,10 +8570,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9183,23 +8579,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9208,10 +8597,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9228,9 +8614,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -9251,10 +8635,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9263,10 +8644,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9275,23 +8653,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9300,10 +8671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9324,7 +8692,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        deployments: unknown[];
+                        deployments: components["schemas"]["Deployment"][];
                     };
                 };
             };
@@ -9334,10 +8702,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9346,10 +8711,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9378,6 +8740,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        host: string | null;
+                    } & {
                         [key: string]: unknown;
                     };
                 };
@@ -9388,10 +8752,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9400,10 +8761,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9412,23 +8770,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9437,10 +8788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9463,7 +8811,19 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        id: string;
+                        host: string | null;
+                        name: string;
+                        owner: {
+                            /** @enum {string} */
+                            kind: "account" | "org";
+                            name: string | null;
+                        };
+                        apps: {
+                            app: string;
+                            package: string;
+                            version: string;
+                        }[];
                     };
                 };
             };
@@ -9473,10 +8833,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -9485,10 +8842,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9497,10 +8851,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9517,9 +8868,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -9540,10 +8889,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9552,10 +8898,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9564,23 +8907,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9589,10 +8925,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9635,10 +8968,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9647,10 +8977,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9659,10 +8986,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -9671,23 +8995,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9696,10 +9013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9717,9 +9031,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -9738,10 +9050,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -9750,10 +9059,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9762,10 +9068,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -9774,23 +9077,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9799,10 +9095,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9835,10 +9128,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9847,10 +9137,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9872,10 +9159,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         ok: boolean;
+                        /** Format: int64 */
                         node: number;
+                        /** Format: int64 */
                         systemLeader: number | null;
                         release: unknown;
                         clusterVersion: string;
+                        /** Format: int64 */
                         rollbackEpoch?: number | null;
                     };
                 };
@@ -9912,10 +9202,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9924,10 +9211,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -9936,10 +9220,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -9976,10 +9257,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -9988,10 +9266,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10021,7 +9296,21 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        status: string;
+                        status: {
+                            /** Format: int64 */
+                            group: number;
+                            /** Format: int64 */
+                            leader: number | null;
+                            is_leader: boolean;
+                            /** Format: int64 */
+                            term: number;
+                            /** Format: int64 */
+                            last_log: number | null;
+                            /** Format: int64 */
+                            applied: number;
+                            voters: number[];
+                            learners: number[];
+                        };
                         unchanged: boolean;
                     };
                 };
@@ -10032,10 +9321,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "DUPLICATE_REPLICA" | "JOB_NODE" | "TOO_FEW" | "UNKNOWN_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10044,10 +9330,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10056,10 +9339,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `MOVE_IN_PROGRESS`; `RUNTIME_TOO_OLD` */
@@ -10068,10 +9348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "MOVE_IN_PROGRESS" | "RUNTIME_TOO_OLD";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl` */
@@ -10080,23 +9357,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_LEADER";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10127,7 +9397,9 @@ export interface operations {
                 content: {
                     "application/json": {
                         app: string;
+                        /** Format: int64 */
                         group: number;
+                        /** Format: int64 */
                         rows: number;
                         backup: unknown;
                         status: string;
@@ -10140,10 +9412,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_BACKUP" | "NOT_A_REPLICA_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10152,10 +9421,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10164,10 +9430,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BACKUP_NOT_FOUND` */
@@ -10176,10 +9439,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BACKUP_NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BACKUP_FROM_NEWER_RELEASE`; `BUNDLE_GONE`; `MOVE_IN_PROGRESS`; `NO_BACKUP_DIR`; `UNKNOWN_BACKUP_FORMAT`; `UPGRADE_PENDING` */
@@ -10188,23 +9448,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BACKUP_FROM_NEWER_RELEASE" | "BUNDLE_GONE" | "MOVE_IN_PROGRESS" | "NO_BACKUP_DIR" | "UNKNOWN_BACKUP_FORMAT" | "UPGRADE_PENDING";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10238,6 +9491,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         index: number;
                         status: string;
                         error: unknown;
@@ -10251,10 +9505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "AMBIGUOUS_COMPUTE" | "BAD_REQUEST";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10263,10 +9514,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10275,10 +9523,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_INSTALLED`; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
@@ -10287,10 +9532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_INSTALLED" | "RELEASE_DEADLINE" | "RUNTIME_TOO_OLD";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UPGRADE_FAILED` */
@@ -10299,23 +9541,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UPGRADE_FAILED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10348,10 +9583,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10360,10 +9592,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10395,10 +9624,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10407,10 +9633,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10448,10 +9671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10460,10 +9680,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `CONFLICT`: the state does not allow it now */
@@ -10472,23 +9689,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFLICT";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10530,10 +9740,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10542,23 +9749,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10575,9 +9775,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -10598,10 +9796,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10610,23 +9805,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10643,9 +9831,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -10666,10 +9852,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10678,23 +9861,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10709,9 +9885,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -10732,10 +9906,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10744,10 +9915,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `CONFLICT`: the state does not allow it now */
@@ -10756,23 +9924,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFLICT";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10801,10 +9962,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10813,10 +9971,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10831,6 +9986,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** Format: int64 */
                     id: number;
                     addr: string;
                     zone?: string;
@@ -10857,10 +10013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_ADDRESS" | "BAD_POOL" | "NODE_HOLDS_CLUSTER" | "POOL_FOR_JOB_NODES";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10869,10 +10022,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10881,10 +10031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `ADDRESS_TAKEN` */
@@ -10893,23 +10040,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "ADDRESS_TAKEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -10926,9 +10066,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -10949,10 +10087,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "LAST_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10961,10 +10096,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -10973,10 +10105,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl` */
@@ -10985,23 +10114,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_LEADER";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11024,9 +10146,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         node: number;
                         key: string;
                         release: string;
+                        /** Format: int64 */
                         attestedAt: number;
                     };
                 };
@@ -11037,10 +10161,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11049,10 +10170,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -11061,10 +10179,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11104,10 +10219,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11116,10 +10228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11162,10 +10271,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11174,10 +10280,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -11186,23 +10289,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11240,10 +10336,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11252,23 +10345,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11299,10 +10385,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11311,10 +10394,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11353,10 +10433,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_BUNDLE" | "BAD_PACKAGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11365,10 +10442,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11377,10 +10451,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11421,10 +10492,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11433,10 +10501,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11467,10 +10532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11479,10 +10541,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11514,10 +10573,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11526,10 +10582,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11553,14 +10606,17 @@ export interface operations {
                         fresh: boolean;
                         apps: {
                             app: string;
+                            /** Format: int64 */
                             group: number;
                             replicas: number[];
                         }[];
                         nodes: {
+                            /** Format: int64 */
                             id: number;
                             zone: string;
                             role: unknown;
                             release: string | null;
+                            /** Format: int64 */
                             apps: number;
                         }[];
                         clusterVersion: string | null;
@@ -11573,10 +10629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11585,10 +10638,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11619,10 +10669,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11631,10 +10678,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11651,7 +10695,9 @@ export interface operations {
                 "application/json": {
                     pools: {
                         [key: string]: {
+                            /** Format: int64 */
                             runsPerNode: number;
+                            /** Format: int64 */
                             maxMemoryMib: number;
                         };
                     };
@@ -11675,10 +10721,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11687,10 +10730,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `POOL_IN_USE`; `UPGRADE_PENDING` */
@@ -11699,23 +10739,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "POOL_IN_USE" | "UPGRADE_PENDING";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11736,13 +10769,21 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         maxAppsPerAccount: number;
+                        /** Format: int64 */
                         maxBundleBytesPerAccount: number;
+                        /** Format: int64 */
                         maxApiKeysPerAccount: number;
+                        /** Format: int64 */
                         maxOrgsPerAccount: number;
+                        /** Format: int64 */
                         maxAccounts: number;
+                        /** Format: int64 */
                         maxFileBytesPerOrg: number;
+                        /** Format: int64 */
                         maxConcurrentRunsPerOrg: number;
+                        /** Format: int64 */
                         computeFuelPerOrg: number;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         maxFuelPerDeveloperPerDay: string;
@@ -11758,10 +10799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11770,10 +10808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11811,10 +10846,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REQUEST" | "UNKNOWN_QUOTA";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11823,10 +10855,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11835,10 +10864,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UPGRADE_PENDING` */
@@ -11847,23 +10873,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UPGRADE_PENDING";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11900,10 +10919,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11912,23 +10928,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11966,10 +10975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -11978,23 +10984,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12011,9 +11010,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -12032,10 +11029,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12044,23 +11038,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12086,6 +11073,7 @@ export interface operations {
                             origin: string;
                             host: string;
                             label: string;
+                            /** Format: int64 */
                             addedAt: number;
                         }[];
                     };
@@ -12097,10 +11085,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12109,10 +11094,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12149,10 +11131,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12161,23 +11140,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12208,10 +11180,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12220,10 +11189,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12239,6 +11205,7 @@ export interface operations {
             content: {
                 "application/json": {
                     token: string;
+                    /** Format: int64 */
                     uses?: number;
                     expiresAt: string;
                     operatorProof?: components["schemas"]["OperatorProof"];
@@ -12263,10 +11230,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REQUEST";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -12275,10 +11239,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12287,23 +11248,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12320,9 +11274,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -12341,10 +11293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12353,23 +11302,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12386,9 +11328,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["ProofOnly"];
             };
         };
         responses: {
@@ -12407,10 +11347,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12419,23 +11356,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12473,10 +11403,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12485,10 +11412,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12526,10 +11450,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12538,10 +11459,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -12550,10 +11468,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -12562,10 +11477,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12587,16 +11499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        orgId: string;
-                        name: string;
-                        owner: string;
-                        members: unknown;
-                        teams: unknown;
-                        metadata: unknown;
-                    } & {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Org"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -12605,10 +11508,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -12617,10 +11517,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -12629,10 +11526,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12649,9 +11543,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -12670,10 +11562,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -12682,10 +11571,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12694,23 +11580,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -12719,10 +11598,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12761,10 +11637,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -12773,10 +11646,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12785,10 +11655,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -12797,10 +11664,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -12809,23 +11673,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -12834,10 +11691,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12860,7 +11714,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        mode: unknown;
+                        /** @enum {string} */
+                        mode: "legacy" | "standalone" | "shared";
                         appTeams: unknown[];
                     };
                 };
@@ -12871,10 +11726,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -12883,10 +11735,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -12895,10 +11744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -12945,10 +11791,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "TOO_MANY_PACKAGES" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -12957,10 +11800,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -12969,10 +11809,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -12981,23 +11818,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13006,10 +11836,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13050,10 +11877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -13062,10 +11886,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13074,10 +11895,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13096,6 +11914,7 @@ export interface operations {
                 "application/json": {
                     account?: string;
                     team?: string;
+                    /** Format: int64 */
                     capabilities: number;
                     confirm?: components["schemas"]["Confirm"];
                 };
@@ -13117,10 +11936,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13129,10 +11945,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13141,23 +11954,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13166,10 +11972,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13202,10 +12005,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13214,10 +12014,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -13226,10 +12023,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13238,10 +12032,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13260,7 +12051,9 @@ export interface operations {
                 "application/json": {
                     role: components["schemas"]["OrgRole"];
                     teams?: string[];
+                    /** Format: int64 */
                     ttlSecs?: number;
+                    /** Format: int64 */
                     uses?: number;
                     allApps?: boolean;
                     confirm?: components["schemas"]["Confirm"];
@@ -13285,10 +12078,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13297,10 +12087,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13309,10 +12096,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -13321,23 +12105,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13346,10 +12123,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13367,9 +12141,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -13388,10 +12160,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13400,10 +12169,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13412,10 +12178,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -13424,23 +12187,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13449,10 +12205,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13486,6 +12239,7 @@ export interface operations {
                             passkeys: unknown;
                             recoveryCode: boolean;
                             lastActiveDay: string | null;
+                            /** Format: int64 */
                             sessions: number;
                         }[];
                     };
@@ -13497,10 +12251,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REQUEST";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13509,10 +12260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13521,10 +12269,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -13533,10 +12278,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13545,10 +12287,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13587,10 +12326,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13599,10 +12335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13611,23 +12344,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13636,10 +12362,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13657,9 +12380,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -13678,10 +12399,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13690,10 +12408,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13702,23 +12417,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13727,10 +12435,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13768,10 +12473,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13780,10 +12482,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13804,6 +12503,7 @@ export interface operations {
                     teams: {
                         team: string;
                         role?: components["schemas"]["TeamRole"];
+                        /** Format: int64 */
                         capabilities?: number;
                     }[];
                     confirm?: components["schemas"]["Confirm"];
@@ -13826,10 +12526,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_TEAMS" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13838,10 +12535,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13850,10 +12544,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -13862,23 +12553,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13887,10 +12571,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -13929,10 +12610,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_TEAMS" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -13941,10 +12619,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -13953,10 +12628,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -13965,23 +12637,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -13990,10 +12655,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14030,10 +12692,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14042,10 +12701,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14086,10 +12742,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14098,10 +12751,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14110,10 +12760,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -14122,10 +12769,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FEATURE_NOT_ACTIVE` */
@@ -14134,23 +12778,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FEATURE_NOT_ACTIVE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14159,10 +12796,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14202,10 +12836,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14214,10 +12845,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14226,23 +12854,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14251,10 +12872,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14294,10 +12912,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14306,10 +12921,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14318,10 +12930,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -14330,23 +12939,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14355,10 +12957,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14401,10 +13000,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14413,10 +13009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14425,10 +13018,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -14437,23 +13027,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14462,10 +13045,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14503,10 +13083,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_RECOVERY_KEY" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14515,10 +13092,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14527,23 +13101,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14552,10 +13119,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14572,9 +13136,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -14593,10 +13155,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14605,10 +13164,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14617,10 +13173,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -14629,23 +13182,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14654,10 +13200,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14674,9 +13217,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -14698,10 +13239,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14710,10 +13248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14722,10 +13257,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -14734,10 +13266,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RECOVERY_NOT_READY` */
@@ -14746,23 +13275,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RECOVERY_NOT_READY";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14771,10 +13293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14804,7 +13323,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
                         startedAt: number;
+                        /** Format: int64 */
                         readyAt: number;
                     };
                 };
@@ -14815,10 +13336,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only); `WRONG_RECOVERY_KEY` */
@@ -14827,10 +13345,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN" | "WRONG_RECOVERY_KEY";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `RECOVERY_PENDING` */
@@ -14839,10 +13354,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "RECOVERY_PENDING";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14851,10 +13363,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14893,10 +13402,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14905,10 +13411,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14917,23 +13420,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -14942,10 +13438,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -14986,10 +13479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -14998,10 +13488,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15010,10 +13497,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15036,9 +13520,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TeamView"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15047,10 +13529,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -15059,10 +13538,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15071,10 +13547,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15115,10 +13588,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15127,10 +13597,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15139,10 +13606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15160,9 +13624,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -15184,10 +13646,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15196,10 +13655,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15208,10 +13664,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -15220,23 +13673,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15245,10 +13691,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15269,6 +13712,7 @@ export interface operations {
                     account: string;
                     lead?: boolean;
                     role?: components["schemas"]["TeamRole"];
+                    /** Format: int64 */
                     capabilities?: number;
                     confirm?: components["schemas"]["Confirm"];
                 };
@@ -15290,10 +13734,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15302,10 +13743,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15314,23 +13752,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15339,10 +13770,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15361,9 +13789,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -15382,10 +13808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15394,10 +13817,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15406,23 +13826,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15431,10 +13844,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15477,10 +13887,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15489,10 +13896,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15501,23 +13905,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15526,10 +13923,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15561,10 +13955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -15573,10 +13964,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15585,10 +13973,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15628,10 +14013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15640,10 +14022,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15652,10 +14031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_OPERATOR_SIGNATURE" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -15664,23 +14040,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15689,23 +14058,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "OPERATOR_SIGNATURE_REQUIRED";
-                        details?: components["schemas"]["OperatorSignatureRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15743,10 +14105,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15755,10 +14114,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -15767,10 +14123,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15779,10 +14132,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15816,10 +14166,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15828,10 +14175,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15871,10 +14215,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_RP_ID" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15883,10 +14224,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15895,23 +14233,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -15920,10 +14251,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `QUOTA_EXCEEDED` */
@@ -15932,10 +14260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "QUOTA_EXCEEDED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15973,10 +14298,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15985,10 +14307,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -15997,10 +14316,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -16009,23 +14325,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16034,10 +14343,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16058,7 +14364,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        packages: unknown[];
+                        packages: components["schemas"]["Package"][];
                     };
                 };
             };
@@ -16068,10 +14374,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16080,10 +14383,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16122,10 +14422,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_BUNDLE" | "BAD_PACKAGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16134,10 +14431,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `DEPLOY_NOT_GRANTED`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only); `UPLOADS_DISABLED` */
@@ -16146,10 +14440,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "DEPLOY_NOT_GRANTED" | "FORBIDDEN" | "UPLOADS_DISABLED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `TOO_LARGE` */
@@ -16158,10 +14449,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "TOO_LARGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16170,10 +14458,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16214,10 +14499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_PACKAGE" | "NO_REGISTRY";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16226,10 +14508,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `DEPLOY_NOT_GRANTED`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16238,10 +14517,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "DEPLOY_NOT_GRANTED" | "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16250,10 +14526,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16275,9 +14548,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Package"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16286,10 +14557,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
@@ -16298,10 +14566,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "NOT_FOUND";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16310,10 +14575,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16344,10 +14606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16356,10 +14615,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16368,10 +14624,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16403,10 +14656,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16415,10 +14665,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16427,10 +14674,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16540,10 +14784,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16552,10 +14793,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16564,23 +14802,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16589,10 +14820,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16623,10 +14851,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16635,10 +14860,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16647,10 +14869,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16665,7 +14884,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** Format: int64 */
                     uses?: number;
+                    /** Format: int64 */
                     ttlSecs?: number;
                     confirm?: components["schemas"]["Confirm"];
                 };
@@ -16691,10 +14912,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "BAD_REQUEST" | "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE" | "WRONG_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16703,10 +14921,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16715,23 +14930,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16740,10 +14948,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -16760,9 +14965,7 @@ export interface operations {
         /** @description May be absent. */
         requestBody?: {
             content: {
-                "application/json": {
-                    confirm?: components["schemas"]["Confirm"];
-                };
+                "application/json": components["schemas"]["ConfirmOnly"];
             };
         };
         responses: {
@@ -16781,10 +14984,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "EXPIRED_CHALLENGE" | "UNKNOWN_CHALLENGE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -16793,10 +14993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "UNAUTHENTICATED";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
@@ -16805,23 +15002,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "FORBIDDEN";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "CONFIRM_REQUIRED";
-                        details?: components["schemas"]["ConfirmRequired"];
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
@@ -16830,10 +15020,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"] & {
-                        /** @enum {unknown} */
-                        error?: "WRONG_NODE";
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

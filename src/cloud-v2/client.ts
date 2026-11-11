@@ -970,11 +970,11 @@ export class CalimeroClient {
     // Callable while the deprecated `packages()` and `deployments()` remain.
     this.packages = Object.assign(async () => {
       const { packages } = await routes.packages.list();
-      return packages as unknown as PackageInfo[];
+      return packages;
     }, routes.packages);
     this.deployments = Object.assign(async () => {
       const { deployments } = await routes.deployments.list();
-      return deployments as unknown as DeploymentInfo[];
+      return deployments;
     }, routes.deployments);
   }
 

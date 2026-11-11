@@ -135,7 +135,8 @@ for (const [path, item] of Object.entries(doc.paths)) {
       ...(queryWhole ? { queryWhole } : {}),
       body,
       optionalBody,
-      ...(body === 'raw' ? { media } : {}),
+      // A wildcard (`*/*`: any type the caller names) sends bytes as octet-stream by default.
+      ...(body === 'raw' ? { media: media.includes('*') ? 'application/octet-stream' : media } : {}),
       reply,
       ...(op['x-calimero-step-up'] ? { stepUp: true } : {}),
       ...(op['x-calimero-user-verification'] ? { userVerification: op['x-calimero-user-verification'] } : {}),
@@ -147,7 +148,7 @@ for (const [path, item] of Object.entries(doc.paths)) {
     const extras = [];
     if (op['x-calimero-step-up']) {
       extras.push(
-        `Answers \`412 CONFIRM_REQUIRED\` first: give \`confirm\` (here or on the client); the passkey must verify the user \`${op['x-calimero-user-verification'] ?? 'required'}\`.`,
+        `Answers \`412 CONFIRM_REQUIRED\` first${op['x-calimero-step-up-when'] ? ` when ${op['x-calimero-step-up-when']}` : ''}: give \`confirm\` (here or on the client); the passkey must verify the user \`${op['x-calimero-user-verification'] ?? 'required'}\`.`,
       );
     }
     if (op['x-calimero-operator']) extras.push('Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).');
