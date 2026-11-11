@@ -1454,9 +1454,10 @@ export function createRoutes(api: ApiClient) {
       health: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['health']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/health","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['health']['responses'][200]['content']['application/json']>,
       /**
-       * A signing key's organization.
+       * Whether a signing key is bound.
        *
-       * `GET /publishers/{signer}` (`publisher_binding`). **Who:** anyone.
+       * `GET /publishers/{signer}` (`publisher_binding`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
        */
       publisherBinding: (args: operations['publisher_binding']['parameters']['path'], options?: MethodOptions): Promise<operations['publisher_binding']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/publishers/{signer}","pathParams":["signer"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['publisher_binding']['responses'][200]['content']['application/json']>,
