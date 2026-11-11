@@ -3,14 +3,18 @@
 # into openapi/core-openapi.json, records the commit in openapi/SOURCE, and
 # regenerates src/generated/api.ts from it.
 #
-#   scripts/refresh-openapi.sh            # the ref openapi/SOURCE names
-#   scripts/refresh-openapi.sh master     # a branch, tag or commit of core
+#   scripts/refresh-openapi.sh                    # the ref openapi/SOURCE names
+#   scripts/refresh-openapi.sh master             # a branch, tag or commit of core
+#   scripts/refresh-openapi.sh <sha> master       # that commit, recorded as on master
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 repo="calimero-network/core"
 path="docs/public/openapi.json"
 ref="${1:-$(sed -n 's/^ref=//p' "$root/openapi/SOURCE")}"
+# The ref openapi/SOURCE records: the one given, else the one fetched (a
+# commit sent by core's sync names the branch it was taken from this way).
+recorded="${2:-$ref}"
 
 if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
   commit="$ref"
@@ -32,9 +36,9 @@ cat > "$root/openapi/SOURCE" <<SOURCE
 # Refresh it with \`scripts/refresh-openapi.sh [<core ref>]\`.
 repository=$repo
 path=$path
-ref=$ref
+ref=$recorded
 commit=$commit
 SOURCE
 
 cd "$root" && pnpm gen:api
-echo "openapi/core-openapi.json: $repo@$commit ($ref)"
+echo "openapi/core-openapi.json: $repo@$commit ($recorded)"
