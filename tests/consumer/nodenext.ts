@@ -41,3 +41,23 @@ export const getApp = (app: string): Promise<{ appId: string }> => transport.jso
 export const badMethod = (): Promise<Response> => transport.request('FETCH', 'apps');
 
 export const stepUp: RequestOptions = { body: {}, passkey, retry: 'once' };
+
+// The generated route layer: typed paths, bodies and answers.
+import { createApiClient, passkeyConfirm, stepUp as confirmWith, unwrap } from '@calimero-network/mero-js';
+import type { ApiClient } from '@calimero-network/mero-js';
+
+export const api: ApiClient = client.api;
+export const ownApi: ApiClient = createApiClient(client.transport, { confirm: passkeyConfirm(passkey) });
+export const me = async (): Promise<string> => (await unwrap(api.GET('/auth/me'))).accountId;
+export const invite = (org: string) =>
+  api.POST('/orgs/{org}/invites', {
+    params: { path: { org } },
+    body: { role: 'member' },
+    middleware: [confirmWith(passkeyConfirm(passkey))],
+  });
+
+// @ts-expect-error not a route of the node
+export const noRoute = () => api.GET('/no/such/route');
+
+// @ts-expect-error a view's method is a string
+export const badView = () => api.POST('/apps/{app}/views', { params: { path: { app: 'a' } }, body: { method: 1 } });

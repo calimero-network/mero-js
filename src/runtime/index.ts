@@ -5,9 +5,9 @@
 // attested, sealed channel with the credential held now; the runtime handles
 // attestation, sealing, the session and its refresh, `421 WRONG_NODE` moves,
 // D70 retries, the `412 CONFIRM_REQUIRED` passkey step-up, error mapping and
-// server-sent events. `CalimeroClient` (the package root) is the hand-written
-// route layer on top; `client.transport` is its runtime, which a generated
-// route layer can share.
+// server-sent events. The route layer on top is generated from core's OpenAPI
+// document (`createApiClient`, `client.api`, in the package root) and sends
+// through `NodeTransport.exchange`; `client.transport` is its runtime.
 
 export {
   DEFAULT_RETRY,
