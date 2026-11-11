@@ -1,3 +1,13 @@
+## [31.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v30.1.0...mero-js-v31.0.0) (2026-11-11)
+
+### ⚠ BREAKING CHANGES
+
+* lay the client out as runtime, routes and client, and drop the cloud-v2 leftovers (#362)
+
+### Code Refactoring
+
+* lay the client out as runtime, routes and client, and drop the cloud-v2 leftovers ([#362](https://github.com/calimero-network/mero-js/issues/362)) ([899552f](https://github.com/calimero-network/mero-js/commit/899552f0aa75bc660ee72c82d8bf7cab7fa6a322))
+
 ## [30.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v30.0.0...mero-js-v30.1.0) (2026-11-11)
 
 ### Features
