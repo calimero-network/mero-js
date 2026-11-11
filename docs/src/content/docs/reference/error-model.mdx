@@ -40,7 +40,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 import { AppError, CalimeroError, UnavailableError } from '@calimero-network/mero-js';
 
 try {
-  await client.call(app, 'book', { slot }, `book-${slot}`);
+  await client.apps.call({ app, method: 'book', args: { slot }, idempotencyKey: `book-${slot}` });
 } catch (e) {
   if (e instanceof AppError && e.appCode === 'Taken') showTaken(e.fields);
   else if (e instanceof UnavailableError && e.committed === 'unknown') retryLaterWithSameKey();

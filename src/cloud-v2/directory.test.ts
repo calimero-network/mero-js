@@ -16,6 +16,7 @@ import {
   UnavailableError,
   type CalimeroConnectOptions,
 } from './index.js';
+import { passkeyConfirm } from '../api/step-up.js';
 
 const a = new StandInCloudNode();
 const b = new StandInCloudNode();
@@ -178,7 +179,7 @@ describe('CalimeroClient.connect: the node directory', () => {
     a.answer = () => ok({ index: 1, result: 'v', events: [] });
     const { client } = connect(() => listing([{ url: a.url, weight: 1 }]), { policy: {} });
     // A stand-in sends a mock quote, which a policy without `allowMock` refuses.
-    const error = await failure((await client).view('app-1', 'get', {}));
+    const error = await failure((await client).apps.view({ app: 'app-1', method: 'get', args: {} }));
     expect(error).toBeDefined();
     expect(error).not.toBeInstanceOf(UnavailableError);
     expect(a.requests).toHaveLength(0);
@@ -193,7 +194,7 @@ describe('failover: a node that stays unavailable', () => {
     a.answer = unavailable;
     b.answer = () => ok({ index: 9, result: 'b1', events: [] });
     const client = cluster(a.url, b.url);
-    const answer = await client.call('app-1', 'book', { roomId: 'r1' });
+    const answer = await client.apps.call({ app: 'app-1', method: 'book', args: { roomId: 'r1' } });
     expect(answer.result).toBe('b1');
     expect(intents(a)).toHaveLength(3);
     expect(intents(b)).toHaveLength(1);
@@ -206,7 +207,7 @@ describe('failover: a node that stays unavailable', () => {
     let attempts = 0;
     a.answer = dropped;
     b.answer = () => (++attempts <= 2 ? unavailable() : ok({ index: 2, result: 'v', events: [] }));
-    const answer = await cluster(a.url, b.url).call('app-1', 'book', {}, 'caller-key');
+    const answer = await cluster(a.url, b.url).apps.call({ app: 'app-1', method: 'book', args: {}, idempotencyKey: 'caller-key' });
     expect(answer.result).toBe('v');
     expect(intents(a)).toHaveLength(3);
     expect(intents(b).map((r) => r.body.idempotencyKey)).toEqual(['caller-key', 'caller-key', 'caller-key']);
@@ -215,7 +216,7 @@ describe('failover: a node that stays unavailable', () => {
   it('a view fails over too', async () => {
     a.answer = unavailable;
     b.answer = () => ok({ index: 1, result: [] });
-    expect((await cluster(a.url, b.url).view('app-1', 'list')).result).toEqual([]);
+    expect((await cluster(a.url, b.url).apps.view({ app: 'app-1', method: 'list' })).result).toEqual([]);
   });
 
   it('tries every node once, then is the last UnavailableError', async () => {
@@ -223,7 +224,7 @@ describe('failover: a node that stays unavailable', () => {
     b.answer = dropped;
     c.answer = unavailable;
     const client = cluster(a.url, b.url, c.url);
-    const error = await failure(client.call('app-1', 'book', {}));
+    const error = await failure(client.apps.call({ app: 'app-1', method: 'book', args: {} }));
     expect(error).toBeInstanceOf(UnavailableError);
     expect(error).toMatchObject({ code: 'UNAVAILABLE' });
     expect([intents(a).length, intents(b).length, intents(c).length]).toEqual([3, 3, 3]);
@@ -232,7 +233,7 @@ describe('failover: a node that stays unavailable', () => {
   it('with a single node, a 503 is retried there only, then UnavailableError', async () => {
     a.answer = unavailable;
     const client = cluster(a.url);
-    expect(await failure(client.call('app-1', 'book', {}))).toBeInstanceOf(UnavailableError);
+    expect(await failure(client.apps.call({ app: 'app-1', method: 'book', args: {} }))).toBeInstanceOf(UnavailableError);
     expect(intents(a)).toHaveLength(3);
     expect(client.nodeUrl).toBe(a.url);
   });
@@ -241,7 +242,7 @@ describe('failover: a node that stays unavailable', () => {
     a.answer = unavailable;
     b.answer = () => ok({ index: 1, result: 'v', events: [] });
     const client = cluster(a.url, b.url, c.url);
-    const answers = await Promise.all([client.call('app-1', 'x'), client.call('app-1', 'y')]);
+    const answers = await Promise.all([client.apps.call({ app: 'app-1', method: 'x' }), client.apps.call({ app: 'app-1', method: 'y' })]);
     expect(answers.map((x) => x.result)).toEqual(['v', 'v']);
     expect(client.nodeUrl).toBe(b.url);
     expect(intents(c)).toHaveLength(0);
@@ -256,7 +257,7 @@ describe('failover: a node that stays unavailable', () => {
       create: async () => ({ attestationObject: '', clientDataJson: '' }),
       get: async () => ({ credentialId: 'cred', authenticatorData: 'ad', clientDataJson: 'cd', signature: 'sig' }),
     };
-    const error = await failure(cluster(a.url, b.url).callConfirmed('app-1', 'adminRelease', {}, passkey));
+    const error = await failure(cluster(a.url, b.url).apps.call({ app: 'app-1', method: 'adminRelease', args: {} }, { confirm: passkeyConfirm(passkey) }));
     expect(error).toBeInstanceOf(UnavailableError);
     expect(intents(a)).toHaveLength(2);
     expect(b.requests).toHaveLength(0);
@@ -279,7 +280,7 @@ describe('a client made by connect keeps its node list fresh', () => {
       { url: c.url, weight: 1 },
       { url: b.url, weight: 1 },
     ]);
-    await cloud.call('app-1', 'book', {});
+    await cloud.apps.call({ app: 'app-1', method: 'book', args: {} });
     expect(cloud.nodeUrl).toBe(b.url);
     await vi.waitFor(() => expect(cloud.nodes).toEqual([b.url, c.url]));
     expect(asked).toHaveLength(2);
@@ -299,9 +300,9 @@ describe('a client made by connect keeps its node list fresh', () => {
         : 500,
     );
     const cloud = await client;
-    await cloud.call('app-1', 'book', {});
+    await cloud.apps.call({ app: 'app-1', method: 'book', args: {} });
     await vi.waitFor(() => expect(asked).toHaveLength(2));
-    await cloud.call('app-1', 'book', {});
+    await cloud.apps.call({ app: 'app-1', method: 'book', args: {} });
     expect(cloud.nodes).toEqual([a.url, b.url]);
     expect(cloud.nodeUrl).toBe(b.url);
   });
@@ -318,10 +319,10 @@ describe('a client made by connect keeps its node list fresh', () => {
       { url: b.url, weight: 1 },
     ]);
     vi.setSystemTime(1_000_000 + 29_000);
-    await cloud.view('app-1', 'get');
+    await cloud.apps.view({ app: 'app-1', method: 'get' });
     expect(asked).toHaveLength(1);
     vi.setSystemTime(1_000_000 + 31_000);
-    await cloud.view('app-1', 'get');
+    await cloud.apps.view({ app: 'app-1', method: 'get' });
     await vi.waitFor(() => expect(cloud.nodes).toEqual([b.url, c.url]));
     expect(asked).toHaveLength(2);
   });
@@ -337,7 +338,7 @@ describe('a client made by connect keeps its node list fresh', () => {
       fetch: directory.fetch,
       retry: { retries: 0 },
     });
-    await client.call('app-1', 'book', {});
+    await client.apps.call({ app: 'app-1', method: 'book', args: {} });
     expect(directory.asked).toHaveLength(0);
     expect(client.nodes).toEqual([a.url, b.url]);
   });

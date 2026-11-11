@@ -176,7 +176,7 @@ describe('a route layer of its own shares the client', () => {
     const client = new CalimeroClient(t);
     expect(client.transport).toBe(t);
     client.useApiKey('key-2');
-    await client.get('auth/me');
+    await client.auth.me();
     expect(header(0, 'authorization')).toBe('Bearer key-2');
   });
 });

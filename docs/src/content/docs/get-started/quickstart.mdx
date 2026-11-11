@@ -70,11 +70,11 @@ ceremony: `localhost` and `http://localhost:3000` by default.
 An app instance runs a signed package release, on its own replicated log.
 
 ```ts
-await client.installPackage('com.calimero.kv-store', '1.0.0'); // from the cluster's registry
-const app = await client.createApp('notes', { package: 'com.calimero.kv-store', version: '1.0.0' });
+await client.packages.install({ package: 'com.calimero.kv-store', version: '1.0.0' }); // from the cluster's registry
+const app = await (await client.apps.create({ name: 'notes', package: 'com.calimero.kv-store', version: '1.0.0' })).appId;
 
-await client.call(app, 'set', { key: 'a', value: '1' });
-const { result } = await client.view(app, 'get', { key: 'a' }); // '1'
+await client.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
+const { result } = await client.apps.view({ app, method: 'get', args: { key: 'a' } }); // '1'
 
 for await (const event of client.events(app)) {
   console.log(event.kind, event.data);

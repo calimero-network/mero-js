@@ -13,6 +13,8 @@ import {
 import { KV_STORE_WASM, startCluster, type LocalCluster } from './cluster.js';
 import { publisher, signedMpk, variant } from './mpk.js';
 import { SoftPasskey } from './soft-passkey.js';
+import { passkeyConfirm } from '../../src/api/step-up.js';
+import { presenceState } from '../../src/cloud-v2/client.js';
 
 const ORIGIN = 'http://localhost:3000';
 let cluster: LocalCluster;
@@ -34,12 +36,12 @@ afterAll(() => cluster?.stop());
 
 describe('Calimero 1.0 cluster', () => {
   it('refuses a mock quote unless allowed', async () => {
-    await expect(client(0, false).post('auth/passkey/login/begin')).rejects.toThrow(/mock quote refused/);
+    await expect(client(0, false).auth.loginBegin()).rejects.toThrow(/mock quote refused/);
   });
 
   it('signs up, deploys kv-store and calls it through the sealed channel', async () => {
     const [alice, pk] = await person(0, 'alice');
-    const me = await alice.me();
+    const me = await alice.auth.me();
     expect(me.via).toBe('session');
 
     // The same passkey signs in on another node.
@@ -47,17 +49,17 @@ describe('Calimero 1.0 cluster', () => {
     const s = await again.signIn(pk);
     expect(s.accountId).toBe(me.accountId);
 
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('kv', bundle, { confirmMethods: ['clear'] });
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'kv', bundle })).appId;
 
-    const r = await alice.call(app, 'set', { key: 'a', value: '1' }, 'k1');
+    const r = await alice.apps.call({ app, method: 'set', args: { key: 'a', value: '1' }, idempotencyKey: 'k1' });
     expect(r.index).toBeGreaterThan(0);
     expect(r.events).toHaveLength(1);
-    const replay = await alice.call(app, 'set', { key: 'a', value: 'other' }, 'k1');
+    const replay = await alice.apps.call({ app, method: 'set', args: { key: 'a', value: 'other' }, idempotencyKey: 'k1' });
     expect(replay.index).toBe(r.index);
 
-    expect((await again.view(app, 'get', { key: 'a' })).result).toBe('1');
-    expect((await again.view(app, 'get', { key: 'a' }, { stale: true, minIndex: r.index })).result).toBe('1');
+    expect((await again.apps.view({ app, method: 'get', args: { key: 'a' } })).result).toBe('1');
+    expect((await again.apps.view({ app, method: 'get', args: { key: 'a' }, consistency: { stale: true, minIndex: r.index }.stale ? 'stale' : undefined, minIndex: { stale: true, minIndex: r.index }.minIndex })).result).toBe('1');
 
     // Events replay from the start.
     const ac = new AbortController();
@@ -66,20 +68,20 @@ describe('Calimero 1.0 cluster', () => {
     expect(first.value?.kind).toBeTruthy();
 
     // A confirm method needs a fresh passkey assertion over the exact call.
-    await expect(alice.call(app, 'clear', {})).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    await alice.callConfirmed(app, 'clear', {}, pk);
-    expect((await alice.view(app, 'len', {})).result).toBe(0);
+    await expect(alice.apps.call({ app, method: 'clear', args: {} })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.apps.call({ app, method: 'clear', args: {} }, { confirm: passkeyConfirm(pk) });
+    expect((await alice.apps.view({ app, method: 'len', args: {} })).result).toBe(0);
 
     // Others cannot reach an owner-only app.
     const [bob] = await person(2, 'bob');
-    await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(bob.apps.call({ app, method: 'set', args: { key: 'x', value: 'y' } })).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // A read-only API key reads, never writes.
-    const { key } = await alice.createApiKey({ readOnly: true, apps: [app] }, pk);
+    const { key } = await alice.auth.apikeyCreate({ readOnly: true, apps: [app] }, { confirm: passkeyConfirm(pk) });
     const agent = client(2);
     agent.useApiKey(key);
-    await agent.view(app, 'len', {});
-    const denied = await agent.call(app, 'set', { key: 'x', value: 'y' }).catch((e) => e);
+    await agent.apps.view({ app, method: 'len', args: {} });
+    const denied = await agent.apps.call({ app, method: 'set', args: { key: 'x', value: 'y' } }).catch((e) => e);
     expect(denied).toBeInstanceOf(CalimeroError);
     expect((denied as CalimeroError).code).toBe('FORBIDDEN');
 
@@ -91,30 +93,30 @@ describe('Calimero 1.0 cluster', () => {
   it('organizations gate apps and removal cuts access off', async () => {
     const [alice, alicePk] = await person(0, 'alice-org');
     const [bob] = await person(1, 'bob-org');
-    const bobId = (await bob.me()).accountId as string;
-    const org = await alice.createOrg('Acme');
-    const team = await alice.createTeam(org, 'eng', 'invite');
-    const token = await alice.invite(org, 'member', alicePk, [team]);
-    await bob.redeemInvite(token);
+    const bobId = (await bob.auth.me()).accountId as string;
+    const org = await (await alice.orgs.create({ name: 'Acme' })).orgId;
+    const team = await (await alice.orgs.teamCreate({ org, name: 'eng', join: 'invite' })).teamId;
+    const token = await (await alice.orgs.inviteCreate({ org, role: 'member', teams: [team] }, { confirm: passkeyConfirm(alicePk) })).token;
+    await bob.orgs.inviteRedeem({ token });
 
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('team-kv', bundle, { org });
-    await bob.call(app, 'set', { key: 'from', value: 'bob' });
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'team-kv', bundle, org })).appId;
+    await bob.apps.call({ app, method: 'set', args: { key: 'from', value: 'bob' } });
 
     // Removing a member is approved with a passkey; without one the node asks for it.
-    await expect(alice.delete(`orgs/${org}/members/${bobId}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    await alice.removeMember(org, bobId, alicePk);
+    await expect(alice.orgs.removeMember({ org, account: bobId })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.orgs.removeMember({ org, account: bobId }, { confirm: passkeyConfirm(alicePk) });
     await new Promise((r) => setTimeout(r, 300));
-    await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(bob.apps.call({ app, method: 'set', args: { key: 'x', value: 'y' } })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('stores an app\'s blobs and serves them only to that app', async () => {
     const [alice] = await person(0, 'alice-blobs');
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('files', bundle);
-    const other = await alice.createApp('other', bundle);
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'files', bundle })).appId;
+    const other = await (await alice.apps.create({ name: 'other', bundle })).appId;
     const data = new TextEncoder().encode('%PDF-1.7 '.repeat(500));
-    const up = await alice.uploadBlob(app, data);
+    const up = await alice.apps.blobUpload({ app, body: data });
     expect(up.size).toBe(data.length);
     expect(await alice.downloadBlob(app, up.blobId)).toEqual(data);
     expect(await alice.downloadBlob(app, up.id)).toEqual(data);
@@ -127,43 +129,43 @@ describe('Calimero 1.0 cluster', () => {
     const key = publisher();
 
     // An archive with no signature is refused.
-    await expect(alice.uploadPackage(new Uint8Array([1, 2, 3]))).rejects.toMatchObject({ code: 'BAD_PACKAGE' });
+    await expect(alice.packages.upload({ body: new Uint8Array([1, 2, 3]), contentType: 'application/octet-stream' })).rejects.toMatchObject({ code: 'BAD_PACKAGE' });
 
     // Its own bytes: other tests' apps run kv-store uploaded raw, and a bundle is
     // its hash, so 1.0.0 would count as running there and could not be removed.
-    const installed = await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.0', variant(kv, 'v100'), key));
+    const installed = await alice.packages.upload({ body: signedMpk('com.mero-js.kv', '1.0.0', variant(kv, 'v100'), key), contentType: 'application/octet-stream' });
     expect(installed).toMatchObject({ package: 'com.mero-js.kv', version: '1.0.0', signerId: key.signerId });
     // Another key cannot release the same package.
-    await expect(alice.uploadPackage(signedMpk('com.mero-js.kv', '1.1.0', kv, publisher()))).rejects.toMatchObject({
+    await expect(alice.packages.upload({ body: signedMpk('com.mero-js.kv', '1.1.0', kv, publisher()), contentType: 'application/octet-stream' })).rejects.toMatchObject({
       status: 403,
     });
 
-    const app = await alice.createApp('pkg-kv', { package: 'com.mero-js.kv', version: '1.0.0' });
-    await alice.call(app, 'set', { key: 'a', value: '1' });
-    expect((await alice.listApps({ package: 'com.mero-js.kv' }))[0]).toMatchObject({ appId: app, version: '1.0.0' });
+    const app = await (await alice.apps.create({ name: 'pkg-kv', package: 'com.mero-js.kv', version: '1.0.0' })).appId;
+    await alice.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
+    expect((await (await alice.apps.list({ package: 'com.mero-js.kv' })).apps)[0]).toMatchObject({ appId: app, version: '1.0.0' });
 
-    await alice.uploadPackage(signedMpk('com.mero-js.kv', '1.0.1', variant(kv, 'v101'), key));
+    await alice.packages.upload({ body: signedMpk('com.mero-js.kv', '1.0.1', variant(kv, 'v101'), key), contentType: 'application/octet-stream' });
     // The owner approves an upgrade with their passkey.
-    await expect(alice.upgradeApp(app, { version: '1.0.1' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    const up = await alice.upgradeApp(app, { version: '1.0.1' }, alicePk);
+    await expect(alice.apps.upgrade({ app, version: '1.0.1' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    const up = await alice.apps.upgrade({ app, version: '1.0.1' }, { confirm: passkeyConfirm(alicePk) });
     expect(up.status).toBe('ok');
-    expect((await alice.view(app, 'get', { key: 'a' })).result).toBe('1');
-    const info = await alice.package('com.mero-js.kv');
+    expect((await alice.apps.view({ app, method: 'get', args: { key: 'a' } })).result).toBe('1');
+    const info = await alice.packages.get({ package: 'com.mero-js.kv' });
     expect(info.latest).toBe('1.0.1');
     expect(info.versions.map((v) => v.version)).toEqual(['1.0.0', '1.0.1']);
 
-    await expect(alice.uninstallPackage('com.mero-js.kv', '1.0.1')).rejects.toThrow(/still runs/);
-    await alice.uninstallPackage('com.mero-js.kv', '1.0.0');
-    await alice.deleteApp(app);
-    await expect(alice.getApp(app)).rejects.toMatchObject({ status: 404 });
-    await alice.uninstallPackage('com.mero-js.kv');
-    expect((await alice.packages()).map((p) => p.package)).not.toContain('com.mero-js.kv');
+    await expect(alice.packages.versionUninstall({ package: 'com.mero-js.kv', version: '1.0.1' })).rejects.toThrow(/still runs/);
+    await alice.packages.versionUninstall({ package: 'com.mero-js.kv', version: '1.0.0' });
+    await alice.apps.delete({ app });
+    await expect(alice.apps.get({ app })).rejects.toMatchObject({ status: 404 });
+    await alice.packages.uninstall({ package: 'com.mero-js.kv' });
+    expect((await alice.packages.list()).packages.map((p) => p.package)).not.toContain('com.mero-js.kv');
   });
 
   it('covers the rest of the API: passkeys, API keys, access, orgs and teams', async () => {
     const [alice, pk] = await person(0, 'alice-api');
     const [bob] = await person(1, 'bob-api');
-    const bobId = (await bob.me()).accountId as string;
+    const bobId = (await bob.auth.me()).accountId as string;
 
     // A second passkey is another device, approved by the one the account has; it can be removed again.
     const second = new SoftPasskey('localhost', ORIGIN);
@@ -172,135 +174,135 @@ describe('Calimero 1.0 cluster', () => {
     const cred = await alice.addPasskey(second, pk);
     const viaSecond = client(2);
     await viaSecond.signIn(second);
-    expect((await viaSecond.me()).accountId).toBe((await alice.me()).accountId);
-    await expect(alice.delete(`auth/passkeys/${cred}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    await alice.removePasskey(cred, pk);
+    expect((await viaSecond.auth.me()).accountId).toBe((await alice.auth.me()).accountId);
+    await expect(alice.auth.passkeyRemove({ cred })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.auth.passkeyRemove({ cred }, { confirm: passkeyConfirm(pk) });
     await expect(client(2).signIn(second)).rejects.toBeInstanceOf(CalimeroError);
 
-    await expect(alice.post('auth/apikeys', { label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    const { keyId } = await alice.createApiKey({ label: 'ci' }, pk);
-    expect((await alice.listApiKeys()).map((k) => k.keyId)).toContain(keyId);
+    await expect(alice.auth.apikeyCreate({ label: 'ci' })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    const { keyId } = await alice.auth.apikeyCreate({ label: 'ci' }, { confirm: passkeyConfirm(pk) });
+    expect((await (await alice.auth.apikeyList()).keys).map((k) => k.keyId)).toContain(keyId);
     // A node from before answers the revocation at once; this one asks for the passkey (412) first.
-    await alice.revokeApiKey(keyId, pk);
-    expect((await alice.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
+    await alice.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(pk) });
+    expect((await (await alice.auth.apikeyList()).keys).map((k) => k.keyId)).not.toContain(keyId);
 
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('shared', bundle);
-    await expect(bob.call(app, 'set', { key: 'x', value: 'y' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await alice.setAccess(app, { kind: 'accounts', accounts: [bobId] });
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'shared', bundle })).appId;
+    await expect(bob.apps.call({ app, method: 'set', args: { key: 'x', value: 'y' } })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await alice.apps.access({ app, access: { kind: 'accounts', accounts: [bobId] } });
     await new Promise((r) => setTimeout(r, 300));
-    await bob.call(app, 'set', { key: 'x', value: 'y' });
+    await bob.apps.call({ app, method: 'set', args: { key: 'x', value: 'y' } });
 
-    const org = await alice.createOrg('Initech');
-    await alice.setMember(org, bobId, 'member', pk);
-    const team = await alice.createTeam(org, 'ops', 'invite');
-    await alice.setTeamMember(org, team, bobId, pk, { role: 'readOnly' });
-    expect(await alice.getTeam(org, team)).toMatchObject({ teamId: team });
-    await alice.updateTeam(org, team, { name: 'platform', metadata: { colour: 'blue' } });
-    expect(await alice.getTeam(org, team)).toMatchObject({ name: 'platform' });
-    await alice.setCapabilities(org, 0, pk, { account: bobId });
-    await alice.removeTeamMember(org, team, bobId, pk);
+    const org = await (await alice.orgs.create({ name: 'Initech' })).orgId;
+    await alice.orgs.setMember({ org, account: bobId, role: 'member' }, { confirm: passkeyConfirm(pk) });
+    const team = await (await alice.orgs.teamCreate({ org, name: 'ops', join: 'invite' })).teamId;
+    await alice.orgs.teamSetMember({ org, team, account: bobId, role: 'readOnly' }, { confirm: passkeyConfirm(pk) });
+    expect(await alice.orgs.teamGet({ org, team })).toMatchObject({ teamId: team });
+    await alice.orgs.teamUpdate({ org, team, name: 'platform', metadata: { colour: 'blue' } });
+    expect(await alice.orgs.teamGet({ org, team })).toMatchObject({ name: 'platform' });
+    await alice.orgs.capabilities({ org, capabilities: 0, account: bobId }, { confirm: passkeyConfirm(pk) });
+    await alice.orgs.teamRemoveMember({ org, team, account: bobId }, { confirm: passkeyConfirm(pk) });
     // `ops` holds no apps: it goes without a passkey.
-    await alice.deleteTeam(org, team);
-    await expect(alice.getTeam(org, team)).rejects.toMatchObject({ status: 404 });
+    await alice.orgs.teamDelete({ org, team });
+    await expect(alice.orgs.teamGet({ org, team })).rejects.toMatchObject({ status: 404 });
     // A team whose sub-team holds an app goes with alice's passkey, and the node's ask names the app
     // (core#4891). A node from before deletes it at once, so the 412 is checked only where it is asked.
-    const eng = await alice.createTeam(org, 'eng', 'invite');
-    const backend = await alice.createTeam(org, 'backend', 'invite', eng);
-    const teamApp = await alice.createApp('eng-kv', bundle, { org, access: { kind: 'team', team: backend } });
-    const asked = await alice.deleteTeam(org, eng).then(() => undefined, (e: unknown) => e);
+    const eng = await (await alice.orgs.teamCreate({ org, name: 'eng', join: 'invite' })).teamId;
+    const backend = await (await alice.orgs.teamCreate({ org, name: 'backend', join: 'invite', parent: eng })).teamId;
+    const teamApp = await (await alice.apps.create({ name: 'eng-kv', bundle, org, access: { kind: 'team', team: backend } })).appId;
+    const asked = await alice.orgs.teamDelete({ org, team: eng }).then(() => undefined, (e: unknown) => e);
     if (asked !== undefined) {
       expect(asked).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: { apps: [teamApp] } });
-      expect(await alice.getApp(teamApp)).toBeTruthy();
-      await alice.deleteTeam(org, eng, pk);
+      expect(await alice.apps.get({ app: teamApp })).toBeTruthy();
+      await alice.orgs.teamDelete({ org, team: eng }, { confirm: passkeyConfirm(pk) });
     }
     await new Promise((r) => setTimeout(r, 300));
-    await expect(alice.getTeam(org, eng)).rejects.toMatchObject({ status: 404 });
-    await expect(alice.getApp(teamApp)).rejects.toMatchObject({ status: 404 });
-    const token = await alice.invite(org, 'guest', pk, [], { ttlSecs: 60, uses: 1 });
+    await expect(alice.orgs.teamGet({ org, team: eng })).rejects.toMatchObject({ status: 404 });
+    await expect(alice.apps.get({ app: teamApp })).rejects.toMatchObject({ status: 404 });
+    const token = await (await alice.orgs.inviteCreate({ org, role: 'guest', teams: [], ttlSecs: 60, uses: 1 }, { confirm: passkeyConfirm(pk) })).token;
     expect(token).toBeTruthy();
-    expect(await alice.getOrg(org)).toMatchObject({ orgId: org });
+    expect(await alice.orgs.get({ org })).toMatchObject({ orgId: org });
   });
 
   it('sets aliases, deletes an org with the owner\'s passkey and signs out everywhere', async () => {
     const [alice, pk] = await person(0, 'alice-aliases');
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('kv-alias', bundle);
-    await alice.setAlias('notes', app);
-    expect(await alice.aliases()).toEqual({ notes: app });
-    await alice.deleteAlias('notes');
-    expect(await alice.aliases()).toEqual({});
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'kv-alias', bundle })).appId;
+    await alice.auth.aliasSet({ alias: 'notes', app });
+    expect(await (await alice.auth.aliasList()).aliases).toEqual({ notes: app });
+    await alice.auth.aliasDelete({ alias: 'notes' });
+    expect(await (await alice.auth.aliasList()).aliases).toEqual({});
 
-    const org = await alice.createOrg('doomed');
-    await expect(alice.delete(`orgs/${org}`)).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
-    await alice.deleteOrg(org, pk);
-    await expect(alice.getOrg(org)).rejects.toMatchObject({ status: 404 });
+    const org = await (await alice.orgs.create({ name: 'doomed' })).orgId;
+    await expect(alice.orgs.delete({ org })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await alice.orgs.delete({ org }, { confirm: passkeyConfirm(pk) });
+    await expect(alice.orgs.get({ org })).rejects.toMatchObject({ status: 404 });
 
     const laptop = client(1);
     await laptop.signIn(pk);
     await alice.signOutEverywhere();
-    await expect(laptop.me()).rejects.toMatchObject({ status: 401 });
+    await expect(laptop.auth.me()).rejects.toMatchObject({ status: 401 });
   });
 
   it("runs the console's passkey actions: org upgrade runs, outbound and release approvals", async () => {
     const [alice, pk] = await person(0, 'alice-console');
     const [bob] = await person(1, 'bob-console');
-    const bobId = (await bob.me()).accountId as string;
+    const bobId = (await bob.auth.me()).accountId as string;
     // Signed in again elsewhere, as the console does with a fresh tab.
     const tab = client(2);
-    expect((await tab.signIn(pk)).accountId).toBe((await alice.me()).accountId);
+    expect((await tab.signIn(pk)).accountId).toBe((await alice.auth.me()).accountId);
 
-    const org = await tab.createOrg('Console Co');
+    const org = await (await tab.orgs.create({ name: 'Console Co' })).orgId;
     const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
     const key = publisher();
-    await tab.uploadPackage(signedMpk('com.mero-js.console', '1.0.0', variant(kv, 'c100'), key));
-    await tab.uploadPackage(signedMpk('com.mero-js.console', '1.0.1', variant(kv, 'c101'), key));
+    await tab.packages.upload({ body: signedMpk('com.mero-js.console', '1.0.0', variant(kv, 'c100'), key), contentType: 'application/octet-stream' });
+    await tab.packages.upload({ body: signedMpk('com.mero-js.console', '1.0.1', variant(kv, 'c101'), key), contentType: 'application/octet-stream' });
     // A dev cluster has no registry: the install reaches the node and is refused there.
-    await expect(tab.installPackage('com.mero-js.console', '1.0.1')).rejects.toMatchObject({ code: 'NO_REGISTRY' });
+    await expect(tab.packages.install({ package: 'com.mero-js.console', version: '1.0.1' })).rejects.toMatchObject({ code: 'NO_REGISTRY' });
 
-    const app = await tab.createApp('console-kv', { package: 'com.mero-js.console', version: '1.0.0' }, { org });
-    await tab.call(app, 'set', { key: 'a', value: '1' });
+    const app = await (await tab.apps.create({ name: 'console-kv', package: 'com.mero-js.console', version: '1.0.0', org })).appId;
+    await tab.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
 
     // One passkey approval for the whole run, then follow it.
-    await expect(tab.post(`orgs/${org}/upgrade`, { package: 'com.mero-js.console', version: '1.0.1' })).rejects.toMatchObject({
+    await expect(tab.orgs.upgrade({ org, package: 'com.mero-js.console', version: '1.0.1' })).rejects.toMatchObject({
       code: 'CONFIRM_REQUIRED',
     });
-    let run = await tab.upgradeOrg(org, { package: 'com.mero-js.console', version: '1.0.1' }, pk);
+    let run = await tab.orgs.upgrade({ org, package: 'com.mero-js.console', version: '1.0.1' }, { confirm: passkeyConfirm(pk) });
     expect(run).toMatchObject({ package: 'com.mero-js.console', version: '1.0.1', apps: [app] });
     for (let i = 0; i < 50 && !run.finished; i++) {
       await new Promise((r) => setTimeout(r, 200));
-      run = await tab.upgradeRun(org, run.runId);
+      run = await tab.orgs.upgradeStatus({ org, run: run.runId });
     }
     expect(run).toMatchObject({ finished: true, done: [app], failed: {} });
-    expect((await tab.listApps({ package: 'com.mero-js.console' }))[0]).toMatchObject({ appId: app, version: '1.0.1' });
-    expect((await tab.view(app, 'get', { key: 'a' })).result).toBe('1');
+    expect((await (await tab.apps.list({ package: 'com.mero-js.console' })).apps)[0]).toMatchObject({ appId: app, version: '1.0.1' });
+    expect((await tab.apps.view({ app, method: 'get', args: { key: 'a' } })).result).toBe('1');
     // Nothing failed, so a retry has nothing to run.
-    const retried = await tab.retryUpgradeRun(org, run.runId, pk);
+    const retried = await tab.orgs.upgradeRetry({ org, run: run.runId }, { confirm: passkeyConfirm(pk) });
     expect(retried.apps).toEqual([]);
     expect(retried.runId).not.toBe(run.runId);
 
     // Outbound: the release declares no prefixes; approving and revoking them is the owner's.
-    await tab.approveOutbound(org, 'com.mero-js.console', pk);
-    await tab.approveOutbound(org, 'com.mero-js.console', pk, { prefixes: [], replace: true });
-    await tab.approveOutbound(null, 'com.mero-js.console', pk);
+    await tab.orgs.outboundApproval({ org, package: 'com.mero-js.console' }, { confirm: passkeyConfirm(pk) });
+    await tab.orgs.outboundApproval({ org, package: 'com.mero-js.console', prefixes: [], replace: true }, { confirm: passkeyConfirm(pk) });
+    await tab.auth.accountOutboundApproval({ package: 'com.mero-js.console' }, { confirm: passkeyConfirm(pk) });
 
     // Releases: approve one for the org and for the account, then withdraw it.
-    await tab.approveRelease(org, '2.3.200', pk);
-    await tab.approveRelease(null, '2.3.200', pk);
-    await tab.approveRelease(null, '2.3.200', pk, false);
+    await tab.orgs.releaseApproval({ org, version: '2.3.200', approved: true }, { confirm: passkeyConfirm(pk) });
+    await tab.auth.accountReleaseApproval({ version: '2.3.200', approved: true }, { confirm: passkeyConfirm(pk) });
+    await tab.auth.accountReleaseApproval({ version: '2.3.200', approved: false }, { confirm: passkeyConfirm(pk) });
 
-    const { key: apiKey, keyId } = await tab.createApiKey({ label: 'console', apps: [app], readOnly: true }, pk);
+    const { key: apiKey, keyId } = await tab.auth.apikeyCreate({ label: 'console', apps: [app], readOnly: true }, { confirm: passkeyConfirm(pk) });
     expect(apiKey).toBeTruthy();
-    await tab.revokeApiKey(keyId, pk);
-    expect((await tab.listApiKeys()).map((k) => k.keyId)).not.toContain(keyId);
-    const token = await tab.invite(org, 'member', pk);
-    await bob.redeemInvite(token);
+    await tab.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(pk) });
+    expect((await (await tab.auth.apikeyList()).keys).map((k) => k.keyId)).not.toContain(keyId);
+    const token = await (await tab.orgs.inviteCreate({ org, role: 'member' }, { confirm: passkeyConfirm(pk) })).token;
+    await bob.orgs.inviteRedeem({ token });
     expect(bobId).toBeTruthy();
   });
 
   it("dates the account's passkeys, lists its sessions and ends one, on a node that has them (core #4894)", async () => {
     const [laptop, pk] = await person(0, 'alice-sessions');
-    const me = await laptop.me();
+    const me = await laptop.auth.me();
     const mine = me.passkeys?.find((p) => p.id === me.passkeyId);
     expect(mine).toBeTruthy();
     const phone = client(1);
@@ -308,7 +310,7 @@ describe('Calimero 1.0 cluster', () => {
 
     let sessions;
     try {
-      sessions = await laptop.listSessions();
+      sessions = await (await laptop.auth.sessionsList()).sessions;
     } catch (error) {
       // merod 1.0.0-rc.14 and earlier: no `/auth/sessions`, no passkey times.
       if (!(error instanceof CalimeroError && error.status === 404)) throw error;
@@ -327,25 +329,25 @@ describe('Calimero 1.0 cluster', () => {
       expect(s.app).toBeNull();
       expect(s.lastActiveAt).toEqual(expect.any(Number));
     }
-    expect((await phone.listSessions()).find((s) => s.current)?.session).toBe(other?.session);
+    expect((await (await phone.auth.sessionsList()).sessions).find((s) => s.current)?.session).toBe(other?.session);
 
     // The laptop ends the phone's session: the phone must sign in again.
-    await laptop.revokeSession(other?.session as string);
-    await expect(phone.me()).rejects.toBeInstanceOf(LoginRequired);
-    expect((await laptop.listSessions()).map((s) => s.session)).toEqual([own?.session]);
-    await expect(laptop.revokeSession(other?.session as string)).rejects.toBeInstanceOf(NotFound);
-    expect((await laptop.me()).accountId).toBe(me.accountId);
+    await laptop.auth.sessionRevoke({ session: other?.session as string });
+    await expect(phone.auth.me()).rejects.toBeInstanceOf(LoginRequired);
+    expect((await (await laptop.auth.sessionsList()).sessions).map((s) => s.session)).toEqual([own?.session]);
+    await expect(laptop.auth.sessionRevoke({ session: other?.session as string })).rejects.toBeInstanceOf(NotFound);
+    expect((await laptop.auth.me()).accountId).toBe(me.accountId);
   });
 
   it("shows an organization's admins their members' lockout risk, on a node that has it (core #4902)", async () => {
     const [alice, alicePk] = await person(0, 'alice-security');
     const [bob] = await person(1, 'bob-security');
-    const org = await alice.createOrg('Lockout Co');
-    await bob.redeemInvite(await alice.invite(org, 'member', alicePk));
-    const bobId = (await bob.me()).accountId as string;
+    const org = await (await alice.orgs.create({ name: 'Lockout Co' })).orgId;
+    await bob.orgs.inviteRedeem({ token: await (await alice.orgs.inviteCreate({ org, role: 'member' }, { confirm: passkeyConfirm(alicePk) })).token });
+    const bobId = (await bob.auth.me()).accountId as string;
     let members;
     try {
-      members = await alice.orgMembersSecurity(org);
+      members = await (await alice.orgs.members({ org, detail: 'security' })).members;
     } catch (error) {
       // merod before core #4902: no `GET /orgs/{org}/members` (a bare `404`).
       if (!(error instanceof CalimeroError && (error.status === 404 || error.status === 405)) || error instanceof NotFound) {
@@ -363,17 +365,17 @@ describe('Calimero 1.0 cluster', () => {
       );
     }
     // A member is refused; removed, bob is gone from the listing.
-    await expect(bob.orgMembersSecurity(org)).rejects.toMatchObject({ status: 403 });
-    await alice.removeMember(org, bobId, alicePk);
-    expect((await alice.orgMembersSecurity(org)).map((m) => m.account)).not.toContain(bobId);
+    await expect(bob.orgs.members({ org, detail: 'security' })).rejects.toMatchObject({ status: 403 });
+    await alice.orgs.removeMember({ org, account: bobId }, { confirm: passkeyConfirm(alicePk) });
+    expect((await (await alice.orgs.members({ org, detail: 'security' })).members).map((m) => m.account)).not.toContain(bobId);
   });
 
   it("lists the account's sign-ins and approvals, on a node that has them (core #4901)", async () => {
     const [laptop, pk] = await person(0, 'alice-activity');
-    const me = await laptop.me();
+    const me = await laptop.auth.me();
     let activity;
     try {
-      activity = await laptop.listActivity();
+      activity = await (await laptop.auth.activityList({})).activity;
     } catch (error) {
       // merod before core #4901: no `/auth/activity` (a bare `404`).
       if (!(error instanceof CalimeroError && error.status === 404) || error instanceof NotFound) throw error;
@@ -384,18 +386,18 @@ describe('Calimero 1.0 cluster', () => {
     ]);
     const signedUp = activity[0]?.at as number;
 
-    await laptop.createApiKey({ label: 'ci' }, pk);
-    activity = await laptop.listActivity();
+    await laptop.auth.apikeyCreate({ label: 'ci' }, { confirm: passkeyConfirm(pk) });
+    activity = await (await laptop.auth.activityList({})).activity;
     expect(activity.map((a) => [a.kind, a.method, a.passkey])).toEqual([
       ['approval', '__create_api_key', me.passkeyId],
       ['signIn', null, me.passkeyId],
     ]);
     // `after` keeps only what came later.
-    expect((await laptop.listActivity(signedUp)).every((a) => a.at > signedUp)).toBe(true);
+    expect((await (await laptop.auth.activityList({ after: signedUp })).activity).every((a) => a.at > signedUp)).toBe(true);
 
     // Each account reads only its own.
     const [bob] = await person(1, 'bob-activity');
-    const bobs = await bob.listActivity();
+    const bobs = await (await bob.auth.activityList({})).activity;
     expect(bobs).toHaveLength(1);
     expect(bobs[0]?.passkey).not.toBe(me.passkeyId);
   });
@@ -403,45 +405,45 @@ describe('Calimero 1.0 cluster', () => {
   it("covers the rest of 1.0's routes: metadata, usage, blobs, presence, transfer", async () => {
     const [alice, pk] = await person(0, 'alice-rest');
     const [bob] = await person(1, 'bob-rest');
-    const bobId = (await bob.me()).accountId as string;
-    const me = await alice.me();
+    const bobId = (await bob.auth.me()).accountId as string;
+    const me = await alice.auth.me();
 
-    await alice.labelPasskey(me.passkeyId as string, 'laptop');
-    expect(await alice.usage()).toBeTruthy();
-    const doc = await alice.attestation();
+    await alice.auth.passkeyLabel({ cred: me.passkeyId as string, label: 'laptop' });
+    expect(await alice.auth.usage()).toBeTruthy();
+    const doc = await alice.public.attestation({ nonce: '00'.repeat(32) });
     expect(doc.mock).toBe(true);
 
-    const org = await alice.createOrg('Rest Co');
-    await alice.setMember(org, bobId, 'member', pk);
-    await alice.setOrgMetadata(org, { colour: 'teal' });
-    await bob.setMemberMetadata(org, bobId, { title: 'engineer' });
-    await alice.setMemberMetadata(org, bobId, null);
+    const org = await (await alice.orgs.create({ name: 'Rest Co' })).orgId;
+    await alice.orgs.setMember({ org, account: bobId, role: 'member' }, { confirm: passkeyConfirm(pk) });
+    await alice.orgs.metadata({ org, metadata: { colour: 'teal' } });
+    await bob.orgs.memberMetadata({ org, account: bobId, metadata: { title: 'engineer' } });
+    await alice.orgs.memberMetadata({ org, account: bobId, metadata: null });
 
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('rest-kv', bundle, { org });
-    await alice.setAlias('rest', app);
-    expect(await alice.alias('rest')).toBe(app);
-    await alice.setAppMetadata(app, { icon: 'k' });
-    await alice.call(app, 'set', { key: 'a', value: '1' });
-    expect(await alice.appStorage(app)).toHaveProperty('keys');
-    expect(await alice.appAbi(app)).toHaveProperty('bundle');
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'rest-kv', bundle, org })).appId;
+    await alice.auth.aliasSet({ alias: 'rest', app });
+    expect(await (await alice.auth.aliasGet({ alias: 'rest' })).appId).toBe(app);
+    await alice.apps.metadata({ app, metadata: { icon: 'k' } });
+    await alice.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
+    expect(await alice.apps.storage({ app })).toHaveProperty('keys');
+    expect(await alice.apps.abi({ app })).toHaveProperty('bundle');
 
-    const up = await alice.uploadBlob(app, new TextEncoder().encode('hello blob'));
-    expect((await alice.listBlobs(app)).map((b) => b.id)).toContain(up.id);
-    expect(await alice.blobInfo(app, up.blobId)).toMatchObject({ id: up.id, size: 10 });
-    await alice.deleteBlob(app, up.blobId);
-    await expect(alice.blobInfo(app, up.blobId)).rejects.toMatchObject({ status: 404 });
+    const up = await alice.apps.blobUpload({ app, body: new TextEncoder().encode('hello blob') });
+    expect((await (await alice.apps.blobList({ app })).blobs).map((b) => b.id)).toContain(up.id);
+    expect(await alice.apps.blobInfo({ app, id: up.blobId })).toMatchObject({ id: up.id, size: 10 });
+    await alice.apps.blobDelete({ app, id: up.blobId });
+    await expect(alice.apps.blobInfo({ app, id: up.blobId })).rejects.toMatchObject({ status: 404 });
 
-    await alice.publishPresence(app, 1, new Uint8Array([1, 2, 3]));
-    expect(await alice.presence(app)).toContainEqual(expect.objectContaining({ state: '010203' }));
+    await alice.apps.presencePublish({ app, seq: 1, state: presenceState(new Uint8Array([1, 2, 3])) });
+    expect(await (await alice.apps.presenceGet({ app })).present).toContainEqual(expect.objectContaining({ state: '010203' }));
     const ac = new AbortController();
     const first = await alice.presenceStream(app, ac.signal).next();
     ac.abort();
     expect(first.value?.kind).toBe('snapshot');
-    await alice.publishPresence(app, 2, null);
+    await alice.apps.presencePublish({ app, seq: 2, state: presenceState(null) });
 
-    await alice.transferApp(app, bobId, pk);
-    expect(await bob.getApp(app)).toMatchObject({ owner: bobId });
+    await alice.apps.transfer({ app, to: bobId }, { confirm: passkeyConfirm(pk) });
+    expect(await bob.apps.get({ app })).toMatchObject({ owner: bobId });
   });
 
   // Core's `feat/org-all-apps`: a node without the route answers 404, and the
@@ -450,22 +452,22 @@ describe('Calimero 1.0 cluster', () => {
     const [alice, alicePk] = await person(0, 'alice-allapps');
     const [bob] = await person(1, 'bob-allapps');
     const [carol, carolPk] = await person(2, 'carol-allapps');
-    const org = await alice.createOrg('All Apps Co');
-    await carol.redeemInvite(await alice.invite(org, 'member', alicePk));
-    const carolId = (await carol.me()).accountId as string;
-    const set = await alice.setAllApps(org, carolId, true, alicePk).catch((e: unknown) => e);
+    const org = await (await alice.orgs.create({ name: 'All Apps Co' })).orgId;
+    await carol.orgs.inviteRedeem({ token: await (await alice.orgs.inviteCreate({ org, role: 'member' }, { confirm: passkeyConfirm(alicePk) })).token });
+    const carolId = (await carol.auth.me()).accountId as string;
+    const set = await alice.orgs.allApps({ org, account: carolId, allApps: true }, { confirm: passkeyConfirm(alicePk) }).catch((e: unknown) => e);
     if (set instanceof CalimeroError && (set.status === 404 || set.status === 405) && !(set instanceof NotFound)) {
       return ctx.skip();
     }
     expect(set).toBeUndefined();
-    await bob.redeemInvite(await alice.invite(org, 'member', alicePk, [], { allApps: true }));
-    const bobId = (await bob.me()).accountId as string;
-    expect([...((await alice.getOrg(org)).allApps ?? [])].sort()).toEqual([bobId, carolId].sort());
+    await bob.orgs.inviteRedeem({ token: await (await alice.orgs.inviteCreate({ org, role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(alicePk) })).token });
+    const bobId = (await bob.auth.me()).accountId as string;
+    expect([...((await alice.orgs.get({ org })).allApps ?? [])].sort()).toEqual([bobId, carolId].sort());
     // A member below admin gives nobody every app, and mints no such invite.
-    await expect(carol.setAllApps(org, carolId, false, carolPk)).rejects.toMatchObject({ status: 403 });
-    await expect(carol.invite(org, 'member', carolPk, [], { allApps: true })).rejects.toMatchObject({ status: 403 });
-    await alice.setAllApps(org, carolId, false, alicePk);
-    expect((await alice.getOrg(org)).allApps).toEqual([bobId]);
+    await expect(carol.orgs.allApps({ org, account: carolId, allApps: false }, { confirm: passkeyConfirm(carolPk) })).rejects.toMatchObject({ status: 403 });
+    await expect(carol.orgs.inviteCreate({ org, role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(carolPk) })).rejects.toMatchObject({ status: 403 });
+    await alice.orgs.allApps({ org, account: carolId, allApps: false }, { confirm: passkeyConfirm(alicePk) });
+    expect((await alice.orgs.get({ org })).allApps).toEqual([bobId]);
   });
 
   // Core's `feat/move-app-to-org`: a node without the route answers the move
@@ -473,20 +475,20 @@ describe('Calimero 1.0 cluster', () => {
   it('moves an app with its people into another organization, its data kept', async (ctx) => {
     const [alice, pk] = await person(0, 'alice-move');
     const [bob] = await person(1, 'bob-move');
-    const bobId = (await bob.me()).accountId as string;
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const src = await alice.createOrg('move-src');
-    const dst = await alice.createOrg('move-dst');
-    await alice.setMember(src, bobId, 'member', pk);
-    const app = await alice.createApp('moving', bundle, { org: src });
-    await alice.call(app, 'set', { key: 'a', value: '1' });
-    const moved = await alice.moveApp(app, dst, { bringMembers: true }, pk).catch((e: unknown) => e);
+    const bobId = (await bob.auth.me()).accountId as string;
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const src = await (await alice.orgs.create({ name: 'move-src' })).orgId;
+    const dst = await (await alice.orgs.create({ name: 'move-dst' })).orgId;
+    await alice.orgs.setMember({ org: src, account: bobId, role: 'member' }, { confirm: passkeyConfirm(pk) });
+    const app = await (await alice.apps.create({ name: 'moving', bundle, org: src })).appId;
+    await alice.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
+    const moved = await alice.apps.move({ app, toOrg: dst, bringMembers: true }, { confirm: passkeyConfirm(pk) }).catch((e: unknown) => e);
     if (moved instanceof CalimeroError && (moved.status === 404 || moved.status === 405)) return ctx.skip();
     expect(moved).toMatchObject({ appId: app, from: src, org: dst, added: [bobId], access: { kind: 'org' } });
-    expect(await alice.getApp(app)).toMatchObject({ org: dst });
-    expect((await bob.view(app, 'get', { key: 'a' })).result).toBe('1');
+    expect(await alice.apps.get({ app })).toMatchObject({ org: dst });
+    expect((await bob.apps.view({ app, method: 'get', args: { key: 'a' } })).result).toBe('1');
     // Back again, now without a passkey: the node asks for one.
-    await expect(alice.moveApp(app, src)).rejects.toBeInstanceOf(ConfirmRequired);
+    await expect(alice.apps.move({ app, toOrg: src })).rejects.toBeInstanceOf(ConfirmRequired);
   });
 
   // Core's `claude/package-origins`: a node without the routes answers the
@@ -495,25 +497,28 @@ describe('Calimero 1.0 cluster', () => {
     const [alice, alicePk] = await person(0, 'alice-origins');
     const pkg = 'com.mero-js.origins';
     const kv = new Uint8Array(readFileSync(KV_STORE_WASM));
-    await alice.uploadPackage(signedMpk(pkg, '1.0.0', variant(kv, 'origins'), publisher()));
-    const listed = await alice.packageOrigins.list(pkg).catch((e: unknown) => e);
+    await alice.packages.upload({ body: signedMpk(pkg, '1.0.0', variant(kv, 'origins'), publisher()), contentType: 'application/octet-stream' });
+    const listed = await alice.packages
+      .originsList({ package: pkg })
+      .then((r) => r.origins)
+      .catch((e: unknown) => e);
     if (listed instanceof CalimeroError && (listed.status === 404 || listed.status === 405)) return ctx.skip();
     expect(listed).toEqual([]);
 
     const site = 'https://chat.mero-js.test';
     // Adding one is a step-up; without a passkey the node asks for it.
-    await expect(alice.packageOrigins.add(pkg, site)).rejects.toBeInstanceOf(ConfirmRequired);
-    const added = await alice.packageOrigins.add(pkg, site, alicePk);
+    await expect(alice.packages.originsAdd({ package: pkg, origin: site })).rejects.toBeInstanceOf(ConfirmRequired);
+    const added = await alice.packages.originsAdd({ package: pkg, origin: site }, { confirm: passkeyConfirm(alicePk) });
     expect(added).toMatchObject({ package: pkg, origin: site, rpId: 'chat.mero-js.test' });
-    expect((await alice.packageOrigins.list(pkg)).map((o) => o.origin)).toEqual([site]);
-    await expect(alice.packageOrigins.add(pkg, 'not an origin', alicePk)).rejects.toBeInstanceOf(BadOrigin);
+    expect((await (await alice.packages.originsList({ package: pkg })).origins).map((o) => o.origin)).toEqual([site]);
+    await expect(alice.packages.originsAdd({ package: pkg, origin: 'not an origin' }, { confirm: passkeyConfirm(alicePk) })).rejects.toBeInstanceOf(BadOrigin);
 
     // A person signs up on the developer's site: the passkey is that site's,
     // the session bound to the package.
     const carol = client(1);
     const carolPk = new SoftPasskey('chat.mero-js.test', site);
     await carol.signUp(carolPk, 'carol', { origin: site });
-    const me = await carol.me();
+    const me = await carol.auth.me();
     expect(me.origin).toBe(site);
     expect(me.app).toBeTruthy();
     const again = client(2);
@@ -529,31 +534,31 @@ describe('Calimero 1.0 cluster', () => {
     expect((stranger as OriginNotRegistered).origin).toBe('https://stranger.mero-js.test');
 
     // Removing the origin ends the sessions opened there.
-    expect(await alice.packageOrigins.remove(pkg, site, alicePk)).toMatchObject({ package: pkg, origin: site, removed: true });
+    expect(await alice.packages.originsRemove({ package: pkg, origin: site }, { confirm: passkeyConfirm(alicePk) })).toMatchObject({ package: pkg, origin: site, removed: true });
     await new Promise((r) => setTimeout(r, 300));
-    await expect(carol.me()).rejects.toBeInstanceOf(LoginRequired);
-    await expect(alice.packageOrigins.remove(pkg, site, alicePk)).rejects.toBeInstanceOf(NotFound);
-    expect(await alice.packageOrigins.list(pkg)).toEqual([]);
+    await expect(carol.auth.me()).rejects.toBeInstanceOf(LoginRequired);
+    await expect(alice.packages.originsRemove({ package: pkg, origin: site }, { confirm: passkeyConfirm(alicePk) })).rejects.toBeInstanceOf(NotFound);
+    expect(await (await alice.packages.originsList({ package: pkg })).origins).toEqual([]);
   });
 
   it('keeps serving after a node dies', async () => {
     const [alice, pk] = await person(1, 'alice-failover');
-    const bundle = await alice.uploadBundle(new Uint8Array(readFileSync(KV_STORE_WASM)));
-    const app = await alice.createApp('kv-ha', bundle);
-    await alice.call(app, 'set', { key: 'k', value: 'v' });
+    const bundle = await (await alice.packages.bundlePut({ body: new Uint8Array(readFileSync(KV_STORE_WASM)), contentType: 'application/wasm' })).hash;
+    const app = await (await alice.apps.create({ name: 'kv-ha', bundle })).appId;
+    await alice.apps.call({ app, method: 'set', args: { key: 'k', value: 'v' } });
     cluster.stop(0);
     const other = client(2);
     await other.signIn(pk);
     let ok = false;
     for (let i = 0; i < 40 && !ok; i++) {
       try {
-        await other.call(app, 'set', { key: 'k2', value: 'v2' }, 'after-failover');
+        await other.apps.call({ app, method: 'set', args: { key: 'k2', value: 'v2' }, idempotencyKey: 'after-failover' });
         ok = true;
       } catch {
         await new Promise((r) => setTimeout(r, 250));
       }
     }
     expect(ok).toBe(true);
-    expect((await other.view(app, 'get', { key: 'k' })).result).toBe('v');
+    expect((await other.apps.view({ app, method: 'get', args: { key: 'k' } })).result).toBe('v');
   });
 });

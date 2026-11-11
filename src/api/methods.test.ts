@@ -248,12 +248,11 @@ describe('createRoutes', () => {
     expect(Object.keys(routes).sort()).toEqual(['apps', 'auth', 'consent', 'deployments', 'ops', 'orgs', 'packages', 'public']);
   });
 
-  it("keeps the client's deprecated packages() and deployments() callable beside their groups", async () => {
+  it('lists packages and deployments through their groups', async () => {
     node.answer = (head) =>
       head.path === '/packages' ? { status: 200, json: { packages: [{ package: 'p' }] } } : { status: 200, json: { deployments: [] } };
     const c = client();
-    expect(await c.packages()).toEqual([{ package: 'p' }]);
     expect(await c.packages.list()).toEqual({ packages: [{ package: 'p' }] });
-    expect(await c.deployments()).toEqual([]);
+    expect(await c.deployments.list()).toEqual({ deployments: [] });
   });
 });
