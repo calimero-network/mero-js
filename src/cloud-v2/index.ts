@@ -21,6 +21,7 @@ export {
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
+  RuntimeTooOld,
   SignUpRefused,
   TrapError,
   UnavailableError,
@@ -138,6 +139,7 @@ export type {
   OpenConsentOptions,
   Governance,
   LastUpgrade,
+  LatestBlocked,
   OpsAppsReport,
   OpsOrgsReport,
   PageOptions,
@@ -153,6 +155,7 @@ export type {
   ReportedBundle,
   ReportedRelease,
   ReportedReplica,
+  RuntimeShortNode,
   UpgradeAuthority,
 } from './approvals.js';
 export { DEFAULT_ORG_CAPABILITIES, ORG_CAPABILITIES, orgCapabilities } from './capabilities.js';

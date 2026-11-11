@@ -93,7 +93,28 @@ export interface ReportedReplica {
   approved: boolean;
 }
 
-/** One app in a report. `name`, `team` and `availableVersions` are in members' and accounts' reports only. */
+/** A replica's node whose runtime is older than a release needs, and what it runs: the version, or `{ before }` for a node on a release from before nodes named their runtime. */
+export interface RuntimeShortNode {
+  node: number;
+  runtime: string | { before: string } | null;
+}
+
+/**
+ * Why an app cannot move to the newest release it may see (core's
+ * `latestBlocked`): `runtime`, a replica's node runs an older runtime than
+ * the release's `minRuntimeVersion` (the upgrade would be refused `409
+ * RUNTIME_TOO_OLD`); `authority`, the app's owner upgrades it and the
+ * release would give its upgrades to the publisher.
+ */
+export interface LatestBlocked {
+  version: string;
+  reason: 'runtime' | 'authority';
+  message: string;
+  minRuntimeVersion?: string;
+  nodes?: RuntimeShortNode[];
+}
+
+/** One app in a report. `name`, `team`, `availableVersions`, `latestReachable` and `latestBlocked` are in members' and accounts' reports only. */
 export interface ReportedApp {
   app: string;
   group: number;
@@ -112,6 +133,14 @@ export interface ReportedApp {
   team?: string;
   /** Newer releases of its package it may be upgraded to, oldest first (at most 16, the newest). */
   availableVersions?: string[];
+  /**
+   * The newest of every newer release it may see that an upgrade would take
+   * now, which may be older than all of `availableVersions`; `null` when none
+   * would. Absent from a node before core 1.0.0-rc.16.
+   */
+  latestReachable?: string | null;
+  /** Present when the newest release it may see is not `latestReachable`: which, and why. */
+  latestBlocked?: LatestBlocked;
 }
 
 /** A mero-tee release the cluster's nodes run, with how many and whether the scope approved it. */
@@ -395,8 +424,16 @@ export interface PendingUpgrade {
   name: string | null;
   package: string;
   from: string;
-  /** The newest it may move to. */
+  /**
+   * The newest it can move to now (the report's `latestReachable`); when
+   * none can be (`reachable: false`), or from a node that does not say, the
+   * newest it may see.
+   */
   to: string;
+  /** Whether an upgrade to `to` would be taken now; `false`: `blocked` says why none is. */
+  reachable: boolean;
+  /** Why the newest release it may see is not reachable, when it is not. */
+  blocked: LatestBlocked | null;
   /** Every newer release it may move to, oldest first. */
   available: string[];
   /** Whether owners hold app upgrades on this cluster; the node checks the package's own `upgrades` when asked. */
@@ -439,12 +476,16 @@ export function pendingApprovalsFrom(report: AppsReport, rules: ReleaseRules, no
   for (const a of report.apps) {
     const available = a.availableVersions ?? [];
     if (a.package === null || available.length === 0) continue;
+    const latest = available[available.length - 1];
+    const reachable = a.latestReachable === undefined ? latest : a.latestReachable;
     upgrades.push({
       app: a.app,
       name: a.name ?? null,
       package: a.package.package,
       from: a.package.version,
-      to: available[available.length - 1],
+      to: reachable ?? latest,
+      reachable: reachable !== null,
+      blocked: a.latestBlocked ?? null,
       available,
       actionable: upgradesActionable,
     });

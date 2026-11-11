@@ -174,6 +174,26 @@ export class ReleaseDeadlineError extends CalimeroError {
 }
 
 /**
+ * `409 RUNTIME_TOO_OLD`: a node that would run the app (one of its replicas
+ * for an upgrade, a node it would be placed on or moved to) runs an older
+ * runtime than the release's signed `minRuntimeVersion`. Nothing ran. The
+ * app's report names the newest release it can reach (`latestReachable`).
+ */
+export class RuntimeTooOld extends CalimeroError {
+  /** The runtime the release needs. */
+  readonly minRuntimeVersion: string;
+  /** Each node that falls short, and what it runs (`{ before }`: older than that). */
+  readonly nodes: { node: number; runtime: string | { before: string } | null }[];
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(409, 'RUNTIME_TOO_OLD', message, details);
+    this.name = 'RuntimeTooOld';
+    this.minRuntimeVersion = typeof details.minRuntimeVersion === 'string' ? details.minRuntimeVersion : '';
+    this.nodes = Array.isArray(details.nodes) ? (details.nodes as RuntimeTooOld['nodes']) : [];
+  }
+}
+
+/**
  * `409 CONSENT_STALE`: what a consent page showed (the app's bundle, the
  * target release, the release's measurements) changed before the person
  * approved. Nothing was approved; ask for a new consent request so they see
@@ -447,6 +467,8 @@ export function errorFrom(status: number, body: unknown, retryAfterHeader?: stri
       return new IdempotencyMismatch(message, details);
     case '409 RELEASE_DEADLINE':
       return new ReleaseDeadlineError(message, details);
+    case '409 RUNTIME_TOO_OLD':
+      return new RuntimeTooOld(message, details);
     case '409 CONSENT_STALE':
       return new ConsentStale(message, details);
     case '403 ORIGIN_NOT_REGISTERED':
