@@ -231,9 +231,9 @@ removed or changed (`scripts/openapi-sync-summary.mjs`); a removed or renamed
 one needs a major release.
 
 It opens that pull request with a GitHub App's token, so the pull request's CI
-runs: `vars.GH_APP_ID` / `secrets.GH_APP_PRIVATE_KEY` where this repository sets
-them, else the organization's shared `vars.ACTIONS_APP_ID` /
-`secrets.ACTIONS_APP_PRIVATE_KEY`. The app must be installed on this repository
+runs: the organization's shared `vars.ACTIONS_APP_ID` /
+`secrets.ACTIONS_APP_PRIVATE_KEY`, which must be shared with this repository. The
+app must be installed on this repository
 with contents and pull-requests write.
 
 ## Development
