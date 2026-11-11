@@ -17,16 +17,24 @@ import {
   newIdempotencyKey,
   refusal,
   retryDelayMs,
+  routePath,
   type CalimeroSession,
   type CloudEvent,
   type CloudRetryOptions,
   type HttpMethod,
-  type RequestOptions,
 } from '../runtime/transport.js';
 import { type AttestationDoc, type CloudPolicy } from './attestation.js';
 import { DEFAULT_DIRECTORY } from './directory.js';
 import { CalimeroError, LoginRequired, OriginNotRegistered, WrongRecoveryCode } from './errors.js';
-import { b64url, fromB64url, type PasskeyProvider, type PasskeyUserVerification } from './passkey.js';
+import { b64url, fromB64url, type PasskeyProvider } from './passkey.js';
+import { createApiClient, type ApiClient, type ApiClientOptions } from '../api/client.js';
+import type { MethodOptions } from '../api/operation.js';
+import { createRoutes, type Routes } from '../generated/methods.js';
+import { passkeyConfirm, type PasskeyConfirmOptions } from '../api/step-up.js';
+import type { components } from '../generated/api.js';
+
+/** Who may reach an app, as the node's document types it. */
+type Access = components['schemas']['Access'];
 import { signRecovery } from './recovery.js';
 import {
   confirmationCode,
@@ -796,14 +804,24 @@ export interface SignUpPolicy {
   inviteRequired: boolean;
 }
 
-/** One URL path segment, so an id cannot reach another route. */
-function seg(value: string): string {
-  return encodeURIComponent(value);
+/** {@link PageOptions} as a generated route's query, checked as {@link pageQuery} checks them. */
+function pageParams(page: PageOptions): { after?: string; limit?: number } {
+  pageQuery(page);
+  return { after: page.after, limit: page.limit };
 }
 
 /** Bytes as lower-case hex. */
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A presence state as `POST /apps/{app}/presence` takes it: the bytes as
+ * lower-case hex, or `null`, which retracts this device's entry
+ * (`client.apps.presencePublish({ app, seq, state: presenceState(bytes) })`).
+ */
+export function presenceState(state: Uint8Array | null): string | null {
+  return state === null ? null : toHex(state);
 }
 
 export { DEFAULT_RETRY, retryDelayMs };
@@ -857,6 +875,69 @@ export class CalimeroClient {
   readonly transport: NodeTransport;
 
   /**
+   * Low level: the raw `openapi-fetch` client of the node's routes, typed
+   * from core's OpenAPI document and sent through {@link transport} (its
+   * session is this client's). It answers `{ data, error, response }` and
+   * takes openapi-fetch's `params` / `body` / `middleware` shapes. Write
+   * against the generated methods ({@link apps}, {@link orgs}, ...) instead;
+   * this stays as an escape hatch (a request header, a response header, a
+   * route the generated methods leave out).
+   */
+  readonly api: ApiClient;
+
+  /**
+   * The node's routes as methods, generated from core's OpenAPI document
+   * (`src/generated/methods.ts`), one group per tag. Each takes one argument
+   * object (path parameters, query and body fields merged) and answers the
+   * route's payload; a refusal is thrown as the typed {@link CalimeroError}.
+   * A step-up or an operator signature is answered by the client's `confirm`
+   * / `operatorProof`, or the call's own (`{ confirm: passkeyConfirm(passkey) }`).
+   *
+   * `client.apps.call({ app, method, args })`, `client.orgs.get({ org })`,
+   * `client.orgs.inviteCreate({ org, role }, { confirm })`.
+   */
+  readonly apps: Routes['apps'];
+  /** Account, session, passkey and API-key routes: `client.auth.me()`. See {@link apps}. */
+  readonly auth: Routes['auth'];
+  /** The consent page's routes. See {@link apps}. */
+  readonly consent: Routes['consent'];
+  /** Operator routes (the ops token). See {@link apps}. */
+  readonly ops: Routes['ops'];
+  /** Organization, member, team and invite routes. See {@link apps}. */
+  readonly orgs: Routes['orgs'];
+  /** Routes anyone may read: attestation, health, releases, publisher bindings. See {@link apps}. */
+  readonly public: Routes['public'];
+  /**
+   * Package routes (`client.packages.install({ package, version })`). See {@link apps}.
+   *
+   * Calling it (`client.packages()`) is the deprecated listing; use
+   * `(await client.packages.list()).packages`.
+   */
+  readonly packages: Routes['packages'] & {
+    /**
+     * Installed packages and their versions.
+     *
+     * @deprecated Use `(await client.packages.list()).packages`; this wrapper goes once the apps have moved.
+     */
+    (): Promise<PackageInfo[]>;
+  };
+  /**
+   * Deployment, deployer and sign-up routes (`client.deployments.create({ name, owner }, { confirm })`).
+   * See {@link apps}.
+   *
+   * Calling it (`client.deployments()`) is the deprecated listing; use
+   * `(await client.deployments.list()).deployments`.
+   */
+  readonly deployments: Routes['deployments'] & {
+    /**
+     * The deployments the caller manages: its account's, and its organizations' where it holds `MANAGE_APPLICATION`.
+     *
+     * @deprecated Use `(await client.deployments.list()).deployments`; this wrapper goes once the apps have moved.
+     */
+    (): Promise<DeploymentInfo[]>;
+  };
+
+  /**
    * A client for the Calimero Cloud cluster named `cluster`: its node list read
    * from the public node directory, those in `zone` first, each group in
    * weighted-random order. The directory only picks which nodes to try: each is
@@ -866,14 +947,45 @@ export class CalimeroClient {
    * The list is read again in the background after a failover, and at the
    * first request once the directory's `refreshAfterSeconds` has passed.
    */
-  static async connect(options: CalimeroConnectOptions): Promise<CalimeroClient> {
+  static async connect(options: CalimeroConnectOptions, api: ApiClientOptions = {}): Promise<CalimeroClient> {
     const transport = await directoryTransport({ ...options, directory: options.directory ?? DEFAULT_DIRECTORY });
-    return new CalimeroClient(transport);
+    return new CalimeroClient(transport, api);
   }
 
-  /** A client of the nodes `options` names, or one sending through an existing `transport`. */
-  constructor(options: CalimeroClientOptions | NodeTransport) {
+  /**
+   * A client of the nodes `options` names, or one sending through an existing
+   * `transport`. `api` answers the node's challenges for every request of
+   * {@link api} (a `428 OPERATOR_SIGNATURE_REQUIRED` with the operator key, say).
+   */
+  constructor(options: CalimeroClientOptions | NodeTransport, api: ApiClientOptions = {}) {
     this.transport = options instanceof NodeTransport ? options : new NodeTransport(options);
+    this.api = createApiClient(this.transport, api);
+    const routes = createRoutes(this.api);
+    this.apps = routes.apps;
+    this.auth = routes.auth;
+    this.consent = routes.consent;
+    this.ops = routes.ops;
+    this.orgs = routes.orgs;
+    this.public = routes.public;
+    // Callable while the deprecated `packages()` and `deployments()` remain.
+    this.packages = Object.assign(async () => {
+      const { packages } = await routes.packages.list();
+      return packages;
+    }, routes.packages);
+    this.deployments = Object.assign(async () => {
+      const { deployments } = await routes.deployments.list();
+      return deployments;
+    }, routes.deployments);
+  }
+
+  /** A generated method's answer, as the type this class has always answered. */
+  private as<T>(result: Promise<unknown>): Promise<T> {
+    return result as Promise<T>;
+  }
+
+  /** The options that answer a `412 CONFIRM_REQUIRED` with `passkey`, when one is given. */
+  private confirmWith(passkey: PasskeyProvider | undefined, options: PasskeyConfirmOptions = {}): MethodOptions | undefined {
+    return passkey ? { confirm: passkeyConfirm(passkey, options) } : undefined;
   }
 
   /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` or a failover moved the client on. */
@@ -899,24 +1011,43 @@ export class CalimeroClient {
     return this.transport.session;
   }
 
-  /** A JSON request, or a raw one when `raw` is given (as `contentType`, the transport's default when absent). */
-  private json<T>(method: HttpMethod, path: string, body?: unknown, raw?: Uint8Array, contentType?: string): Promise<T> {
-    const options: RequestOptions = raw ? { bytes: raw, ...(contentType === undefined ? {} : { contentType }) } : { body };
-    return this.transport.json<T>(method, path, options);
+  /** A JSON request through the transport, to an untyped path. */
+  private json<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+    return this.transport.json<T>(method, path, { body });
   }
 
+  /**
+   * `POST path` with a JSON body, through the transport.
+   *
+   * @deprecated An untyped path; use the generated method of the route (`client.orgs.get({ org })`, ...). Goes once the apps have moved.
+   */
   post<T = Record<string, unknown>>(path: string, body: unknown = {}): Promise<T> {
     return this.json<T>('POST', path, body);
   }
 
+  /**
+   * `GET path`, through the transport.
+   *
+   * @deprecated An untyped path; use the generated method of the route (`client.orgs.get({ org })`, ...). Goes once the apps have moved.
+   */
   get<T = Record<string, unknown>>(path: string): Promise<T> {
     return this.json<T>('GET', path);
   }
 
+  /**
+   * `PUT path` with a JSON body, through the transport.
+   *
+   * @deprecated An untyped path; use the generated method of the route (`client.orgs.get({ org })`, ...). Goes once the apps have moved.
+   */
   put<T = Record<string, unknown>>(path: string, body: unknown = {}): Promise<T> {
     return this.json<T>('PUT', path, body);
   }
 
+  /**
+   * `DELETE path`, with a JSON body when one is given, through the transport.
+   *
+   * @deprecated An untyped path; use the generated method of the route (`client.orgs.get({ org })`, ...). Goes once the apps have moved.
+   */
   delete<T = Record<string, unknown>>(path: string, body?: unknown): Promise<T> {
     return this.json<T>('DELETE', path, body);
   }
@@ -941,8 +1072,7 @@ export class CalimeroClient {
     const origin = this.pageOrigin(options);
     const invite = options.invite ? { invite: options.invite } : {};
     const begin = await this.begin<{ challengeId: string; options: Record<string, unknown> }>(
-      'auth/passkey/register/begin',
-      origin === undefined ? { name, ...invite } : { name, origin, ...invite },
+      this.auth.registerBegin({ ...origin === undefined ? { name, ...invite } : { name, origin, ...invite } }),
       origin,
     );
     const signal = options.signal;
@@ -951,22 +1081,21 @@ export class CalimeroClient {
     // verified (core `api.rs`: `rp(node)`, `require_uv: false`), as it made
     // the passkey with `preferred`: asking `required` here would refuse a
     // security key without a PIN after it has made the passkey, leaving a
-    // passkey with no account.
-    const session = await this.confirmed<CalimeroSession>(
-      'POST',
-      'auth/passkey/register/finish',
-      { challengeId: begin.challengeId, registration, ...invite },
-      passkey,
-      'preferred',
-      signal,
-    );
+    // passkey with no account. The document says so
+    // (`x-calimero-user-verification: preferred`), and the generated method
+    // asks the passkey for it.
+    const session = await this.auth.registerFinish({ challengeId: begin.challengeId, registration, ...invite }, this.confirmWith(passkey, { signal }));
     this.useSession(session);
     return session;
   }
 
-  /** Who may create an account on the cluster (`GET /sign-up`); needs no session. */
+  /**
+   * Who may create an account on the cluster (`GET /sign-up`); needs no session.
+   *
+   * @deprecated Use `client.deployments.signUpPublic()`; this wrapper goes once the apps have moved.
+   */
   signUpPolicy(): Promise<SignUpPolicy> {
-    return this.get('sign-up');
+    return this.deployments.signUpPublic();
   }
 
   /**
@@ -982,16 +1111,13 @@ export class CalimeroClient {
     const begin = await this.begin<{
       challengeId: string;
       options: { challenge: string; rpId?: string; rp?: { id?: string } };
-    }>('auth/passkey/login/begin', origin === undefined ? undefined : { origin }, origin);
+    }>(this.auth.loginBegin({ ...origin === undefined ? {} : { origin } }), origin);
     const rpId = begin.options.rpId ?? begin.options.rp?.id ?? '';
     const challenge = fromB64url(begin.options.challenge);
     const assertion = await (options.signal
       ? passkey.get(challenge, rpId, undefined, { signal: options.signal })
       : passkey.get(challenge, rpId));
-    const session = await this.post<CalimeroSession>('auth/passkey/login/finish', {
-      challengeId: begin.challengeId,
-      assertion,
-    });
+    const session = await this.auth.loginFinish({ challengeId: begin.challengeId, assertion });
     this.useSession(session);
     return session;
   }
@@ -1017,9 +1143,9 @@ export class CalimeroClient {
   }
 
   /** POST a ceremony's `begin`, naming the page's `origin` in an {@link OriginNotRegistered} the node leaves it out of. */
-  private async begin<T>(path: string, body: Record<string, unknown> | undefined, origin: string | undefined): Promise<T> {
+  private async begin<T>(result: Promise<unknown>, origin: string | undefined): Promise<T> {
     try {
-      return await this.post<T>(path, body);
+      return await this.as<T>(result);
     } catch (error) {
       if (error instanceof OriginNotRegistered && !error.origin && origin !== undefined) {
         throw new OriginNotRegistered(error.nodeMessage, { ...error.details, origin });
@@ -1046,7 +1172,7 @@ export class CalimeroClient {
    * one carries its token.
    */
   async signOut(): Promise<void> {
-    await this.signingOut('auth/logout');
+    await this.signingOut(this.auth.logout());
   }
 
   /**
@@ -1055,7 +1181,7 @@ export class CalimeroClient {
    * request fails, and the failure is thrown.
    */
   async signOutEverywhere(): Promise<void> {
-    await this.signingOut('auth/logout-all');
+    await this.signingOut(this.auth.logoutAll());
   }
 
   /**
@@ -1064,9 +1190,11 @@ export class CalimeroClient {
    * session on the cluster's origin only: an API key or a package-bound
    * session is refused (`403`). A node before core #4894 has no such route
    * ({@link NotFound}).
+   *
+   * @deprecated Use `client.auth.sessionsList()`; this wrapper goes once the apps have moved.
    */
   async listSessions(): Promise<AccountSession[]> {
-    const { sessions } = await this.get<{ sessions: AccountSession[] }>('auth/sessions');
+    const { sessions } = await this.auth.sessionsList();
     return sessions;
   }
 
@@ -1078,9 +1206,11 @@ export class CalimeroClient {
    * To end this client's own session ({@link AccountSession.current}) use
    * {@link signOut}, which also drops its tokens: ended here, they stay
    * held and the next request or refresh is {@link LoginRequired}.
+   *
+   * @deprecated Use `client.auth.sessionRevoke({ session })`; this wrapper goes once the apps have moved.
    */
   async revokeSession(session: string): Promise<void> {
-    await this.delete(`auth/sessions/${seg(session)}`);
+    await this.auth.sessionRevoke({ session });
   }
 
   /**
@@ -1090,24 +1220,29 @@ export class CalimeroClient {
    * and subject. `after` (Unix seconds) keeps only what came later. Gated as
    * {@link listSessions}: the account holder's own session on the cluster's
    * origin only. A node before core #4901 has no such route ({@link NotFound}).
+   *
+   * @deprecated Use `client.auth.activityList({ after })`; this wrapper goes once the apps have moved.
    */
   async listActivity(after?: number): Promise<AccountActivity[]> {
-    const query = after === undefined ? '' : `?after=${encodeURIComponent(String(after))}`;
-    const { activity } = await this.get<{ activity: AccountActivity[] }>(`auth/activity${query}`);
+    const { activity } = await this.as<{ activity: AccountActivity[] }>(this.auth.activityList({ after }));
     return activity;
   }
 
-  private async signingOut(path: string): Promise<void> {
+  private async signingOut(result: Promise<unknown>): Promise<void> {
     try {
-      await this.post(path);
+      await result;
     } finally {
       this.transport.signOut();
     }
   }
 
-  /** Who the credential is: the account, how it signed in, and the package (`app`) and `origin` a session is bound to. */
+  /**
+   * Who the credential is: the account, how it signed in, and the package (`app`) and `origin` a session is bound to.
+   *
+   * @deprecated Use `client.auth.me()`; this wrapper goes once the apps have moved.
+   */
   me(): Promise<MeInfo> {
-    return this.get('auth/me');
+    return this.auth.me();
   }
 
   /**
@@ -1117,24 +1252,28 @@ export class CalimeroClient {
    * which `approver` gives.
    */
   async addPasskey(passkey: PasskeyProvider, approver: PasskeyProvider): Promise<string> {
-    const begin = await this.post<{ challengeId: string; options: Record<string, unknown> }>('auth/passkeys/add/begin');
+    const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.passkeyAddBegin());
     const registration = await passkey.create(begin.options);
-    const { credentialId } = await this.postConfirmed<{ credentialId: string }>(
-      'auth/passkeys/add/finish',
-      { challengeId: begin.challengeId, registration },
-      approver,
-    );
+    const { credentialId } = await this.auth.passkeyAddFinish({ challengeId: begin.challengeId, registration }, this.confirmWith(approver));
     return credentialId;
   }
 
-  /** Remove one of the account's passkeys (not the last), approved with `passkey` (one it has). */
+  /**
+   * Remove one of the account's passkeys (not the last), approved with `passkey` (one it has).
+   *
+   * @deprecated Use `client.auth.passkeyRemove({ cred: credentialId }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async removePasskey(credentialId: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`auth/passkeys/${seg(credentialId)}`, passkey);
+    await this.auth.passkeyRemove({ cred: credentialId }, this.confirmWith(passkey));
   }
 
-  /** Name one of the account's passkeys (a device label); `''` clears the name. */
+  /**
+   * Name one of the account's passkeys (a device label); `''` clears the name.
+   *
+   * @deprecated Use `client.auth.passkeyLabel({ cred: credentialId, label })`; this wrapper goes once the apps have moved.
+   */
   async labelPasskey(credentialId: string, label: string): Promise<void> {
-    await this.post(`auth/passkeys/${seg(credentialId)}`, { label });
+    await this.auth.passkeyLabel({ cred: credentialId, label });
   }
 
   // ---------------------------------------------------------------- account recovery
@@ -1150,15 +1289,21 @@ export class CalimeroClient {
    * the person to keep offline; the node keeps only its public key. A passkey
    * session on the cluster's own origin only (never an API key or a
    * package-bound session).
+   *
+   * @deprecated Use `client.auth.recoveryCreate({}, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async createRecoveryCode(passkey: PasskeyProvider): Promise<string> {
-    const { code } = await this.postConfirmed<{ code: string }>('auth/recovery', {}, passkey);
+    const { code } = await this.auth.recoveryCreate({}, this.confirmWith(passkey));
     return code;
   }
 
-  /** Remove the account's recovery code, approved with `passkey`. */
+  /**
+   * Remove the account's recovery code, approved with `passkey`.
+   *
+   * @deprecated Use `client.auth.recoveryRemove({}, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async removeRecoveryCode(passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed('auth/recovery', passkey);
+    await this.auth.recoveryRemove({}, this.confirmWith(passkey));
   }
 
   /**
@@ -1172,9 +1317,9 @@ export class CalimeroClient {
    */
   async startAccountRecovery(code: string, passkey: PasskeyProvider): Promise<AccountRecovery> {
     try {
-      const begin = await this.post<{ challengeId: string; options: Record<string, unknown> }>('auth/recovery/begin', { code });
+      const begin = await this.as<{ challengeId: string; options: Record<string, unknown> }>(this.auth.accountRecoveryBegin({ code }));
       const registration = await passkey.create(begin.options);
-      return await this.post<AccountRecovery>('auth/recovery/start', { challengeId: begin.challengeId, code, registration });
+      return await this.auth.accountRecoveryStart({ challengeId: begin.challengeId, code, registration });
     } catch (error) {
       if (error instanceof LoginRequired) throw new WrongRecoveryCode(error.message.replace(/^401 UNAUTHENTICATED: /, ''), error.details);
       throw error;
@@ -1185,9 +1330,11 @@ export class CalimeroClient {
    * Cancel the recovery of the signed-in account under way, approved with
    * `passkey` (one the account already has). The code stays spent: make a
    * new one.
+   *
+   * @deprecated Use `client.auth.accountRecoveryCancel({}, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async cancelAccountRecovery(passkey: PasskeyProvider): Promise<void> {
-    await this.postConfirmed('auth/recovery/cancel', {}, passkey);
+    await this.auth.accountRecoveryCancel({}, this.confirmWith(passkey));
   }
 
   /**
@@ -1199,39 +1346,48 @@ export class CalimeroClient {
    * {@link RecoveryNotReady}, with no recovery under way {@link NotFound}.
    */
   async finishAccountRecovery(passkey: PasskeyProvider, accountId?: string): Promise<CalimeroSession> {
-    const session = await this.postConfirmed<CalimeroSession>(
-      'auth/recovery/finish',
-      accountId ? { accountId } : {},
-      passkey,
-    );
+    const session = await this.auth.accountRecoveryFinish({ ...accountId ? { accountId } : {} }, this.confirmWith(passkey));
     this.useSession(session);
     return session;
   }
 
-  /** What this account uses (apps, bundle bytes, API keys, owned orgs), with the cluster's quotas. */
+  /**
+   * What this account uses (apps, bundle bytes, API keys, owned orgs), with the cluster's quotas.
+   *
+   * @deprecated Use `client.auth.usage()`; this wrapper goes once the apps have moved.
+   */
   usage(): Promise<Record<string, unknown>> {
-    return this.get('auth/usage');
+    return this.auth.usage();
   }
 
   /**
    * The node's attestation document, unverified: for display only. Every
    * request this client sends is sealed to a key it verified itself first.
+   *
+   * @deprecated Use `client.public.attestation({ nonce })`; this wrapper goes once the apps have moved.
    */
   async attestation(): Promise<AttestationDoc> {
     const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
-    const response = await this.transport.unsealed('attestation', { query: { nonce } });
-    return (await response.json()) as AttestationDoc;
+    return this.public.attestation({ nonce });
   }
 
-  /** The account's API keys (never the keys themselves). */
+  /**
+   * The account's API keys (never the keys themselves).
+   *
+   * @deprecated Use `client.auth.apikeyList()`; this wrapper goes once the apps have moved.
+   */
   async listApiKeys(): Promise<Array<Record<string, unknown>>> {
-    const { keys } = await this.get<{ keys: Array<Record<string, unknown>> }>('auth/apikeys');
+    const { keys } = await this.auth.apikeyList();
     return keys;
   }
 
-  /** Revoke one of the account's API keys, approved with its `passkey` (`412 CONFIRM_REQUIRED`). */
+  /**
+   * Revoke one of the account's API keys, approved with its `passkey` (`412 CONFIRM_REQUIRED`).
+   *
+   * @deprecated Use `client.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async revokeApiKey(keyId: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`auth/apikeys/${seg(keyId)}`, passkey);
+    await this.auth.apikeyRevoke({ key: keyId }, this.confirmWith(passkey));
   }
 
   /**
@@ -1244,6 +1400,8 @@ export class CalimeroClient {
    * runs, by that package's pinned signer) with {@link upgradeApp} and no
    * passkey, and every other request with it is refused
    * `403 UPGRADE_KEY_ONLY`. It takes no other scope field.
+   *
+   * @deprecated Use `client.auth.apikeyCreate({ ...options }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   createApiKey(
     options: {
@@ -1257,14 +1415,18 @@ export class CalimeroClient {
     },
     passkey: PasskeyProvider,
   ): Promise<{ keyId: string; key: string }> {
-    return this.postConfirmed('auth/apikeys', { ...options }, passkey);
+    return this.auth.apikeyCreate({ ...options }, this.confirmWith(passkey));
   }
 
   // ---------------------------------------------------------------- apps
 
-  /** Upload a raw WASM bundle (development clusters only); answers its hash. */
+  /**
+   * Upload a raw WASM bundle (development clusters only); answers its hash.
+   *
+   * @deprecated Use `client.packages.bundlePut({ body: wasm, contentType: 'application/wasm' })`; this wrapper goes once the apps have moved.
+   */
   async uploadBundle(wasm: Uint8Array): Promise<string> {
-    const { hash } = await this.json<{ hash: string }>('POST', 'bundles', undefined, wasm);
+    const { hash } = await this.packages.bundlePut({ body: wasm, contentType: 'application/wasm' });
     return hash;
   }
 
@@ -1274,6 +1436,8 @@ export class CalimeroClient {
    * node refuses another with `400`) is sent as the upload's `Content-Type`:
    * a component app records it and serves downloads with it. A component
    * app holding as many blobs as it may answers `429 QUOTA_EXCEEDED`.
+   *
+   * @deprecated Use `client.apps.blobUpload({ app, body: data, contentType })`; this wrapper goes once the apps have moved.
    */
   uploadBlob(
     app: string,
@@ -1281,7 +1445,7 @@ export class CalimeroClient {
     contentType: string | { contentType?: string } = {},
   ): Promise<{ blobId: string; id: string; size: number }> {
     const mime = (typeof contentType === 'string' ? contentType : contentType.contentType) ?? 'application/octet-stream';
-    return this.json('POST', `apps/${seg(app)}/blobs`, undefined, data, mime);
+    return this.apps.blobUpload({ app, body: data, contentType: mime });
   }
 
   /** One of `app`'s blobs, by id (base58 or hex). */
@@ -1302,90 +1466,130 @@ export class CalimeroClient {
    * {@link downloadBlob} (or, with `grant`, {@link downloadBlobGranted}) with
    * the content type the node serves it as: the uploader's, for a component
    * app; `application/octet-stream` otherwise.
+   *
+   * @deprecated Use `client.apps.blobDownload({ app, id, grant }) (a Blob: bytes and type)`; this wrapper goes once the apps have moved.
    */
   async blobContent(app: string, id: string, options: { grant?: string } = {}): Promise<BlobContent> {
-    const response = await this.transport.request('GET', `apps/${seg(app)}/blobs/${seg(id)}`, {
-      query: { grant: options.grant },
-    });
+    const blob = await this.apps.blobDownload({ app, id, grant: options.grant });
     return {
-      data: new Uint8Array(await response.arrayBuffer()),
-      contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+      data: new Uint8Array(await blob.arrayBuffer()),
+      contentType: blob.type || 'application/octet-stream',
     };
   }
 
-  /** `app`'s blobs. */
+  /**
+   * `app`'s blobs.
+   *
+   * @deprecated Use `client.apps.blobList({ app })`; this wrapper goes once the apps have moved.
+   */
   async listBlobs(app: string): Promise<BlobInfo[]> {
-    const { blobs } = await this.get<{ blobs: BlobInfo[] }>(`apps/${seg(app)}/blobs`);
+    const { blobs } = await this.apps.blobList({ app });
     return blobs;
   }
 
-  /** One of `app`'s blobs' id and size; `NotFound` if the app has no such blob. */
+  /**
+   * One of `app`'s blobs' id and size; `NotFound` if the app has no such blob.
+   *
+   * @deprecated Use `client.apps.blobInfo({ app, id })`; this wrapper goes once the apps have moved.
+   */
   blobInfo(app: string, id: string): Promise<BlobInfo> {
-    return this.get(`apps/${seg(app)}/blobs/${seg(id)}/info`);
+    return this.apps.blobInfo({ app, id });
   }
 
-  /** Delete one of `app`'s blobs (its owner, or an admin of its organization). */
+  /**
+   * Delete one of `app`'s blobs (its owner, or an admin of its organization).
+   *
+   * @deprecated Use `client.apps.blobDelete({ app, id })`; this wrapper goes once the apps have moved.
+   */
   async deleteBlob(app: string, id: string): Promise<void> {
-    await this.delete(`apps/${seg(app)}/blobs/${seg(id)}`);
+    await this.apps.blobDelete({ app, id });
   }
 
   // ---------------------------------------------------------------- packages
 
-  /** Install a signed `.mpk` package file. */
+  /**
+   * Install a signed `.mpk` package file.
+   *
+   * @deprecated Use `client.packages.upload({ body: mpk, contentType: 'application/octet-stream' })`; this wrapper goes once the apps have moved.
+   */
   uploadPackage(mpk: Uint8Array): Promise<PackageInstalled> {
-    return this.json('POST', 'packages', undefined, mpk, 'application/octet-stream');
+    return this.packages.upload({ body: mpk, contentType: 'application/octet-stream' });
   }
 
-  /** Install `package@version` from the cluster's registry; every node that runs it verifies it. */
+  /**
+   * Install `package@version` from the cluster's registry; every node that runs it verifies it.
+   *
+   * @deprecated Use `client.packages.install({ package: pkg, version })`; this wrapper goes once the apps have moved.
+   */
   installPackage(pkg: string, version: string): Promise<PackageInstalled> {
-    return this.post('packages/install', { package: pkg, version });
+    return this.packages.install({ package: pkg, version });
   }
 
-  /** Installed packages and their versions. */
-  async packages(): Promise<PackageInfo[]> {
-    const { packages } = await this.get<{ packages: PackageInfo[] }>('packages');
-    return packages;
-  }
-
-  /** One installed package and its versions. */
+  /**
+   * One installed package and its versions.
+   *
+   * @deprecated Use `client.packages.get({ package: pkg })`; this wrapper goes once the apps have moved.
+   */
   package(pkg: string): Promise<PackageInfo> {
-    return this.get(`packages/${seg(pkg)}`);
+    return this.packages.get({ package: pkg });
   }
 
-  /** Uninstall one version, or the whole package. Refused while an app runs it. */
+  /**
+   * Uninstall one version, or the whole package. Refused while an app runs it.
+   *
+   * @deprecated Use `client.packages.uninstall({ package: pkg })` or `client.packages.versionUninstall({ package: pkg, version })`; this wrapper goes once the apps have moved.
+   */
   uninstallPackage(pkg: string, version?: string): Promise<Record<string, unknown>> {
-    return this.delete(version === undefined ? `packages/${seg(pkg)}` : `packages/${seg(pkg)}/${seg(version)}`);
+    return this.as(
+      version === undefined
+        ? this.packages.uninstall({ package: pkg })
+        : this.packages.versionUninstall({ package: pkg, version }),
+    );
   }
 
   // ---------------------------------------------------------------- app instances
 
-  /** Apps this caller reaches, optionally only those of one package or bundle. */
+  /**
+   * Apps this caller reaches, optionally only those of one package or bundle.
+   *
+   * @deprecated Use `(await client.apps.list({ package, bundle })).apps`; this wrapper goes once the apps have moved.
+   */
   async listApps(filter: { package?: string; bundle?: string } = {}): Promise<AppInfo[]> {
-    const q = new URLSearchParams();
-    if (filter.package) q.set('package', filter.package);
-    if (filter.bundle) q.set('bundle', filter.bundle);
-    const query = q.toString();
-    const { apps } = await this.get<{ apps: AppInfo[] }>(query ? `apps?${query}` : 'apps');
+    const query = { package: filter.package || undefined, bundle: filter.bundle || undefined };
+    const { apps } = await this.apps.list({ ...query });
     return apps;
   }
 
+  /** @deprecated Use `client.apps.get({ app })`; this wrapper goes once the apps have moved. */
   getApp(app: string): Promise<Record<string, unknown>> {
-    return this.get(`apps/${seg(app)}`);
+    return this.apps.get({ app });
   }
 
-  /** Delete an app instance (its owner, or an admin of its organization). */
+  /**
+   * Delete an app instance (its owner, or an admin of its organization).
+   *
+   * @deprecated Use `client.apps.delete({ app })`; this wrapper goes once the apps have moved.
+   */
   async deleteApp(app: string): Promise<void> {
-    await this.delete(`apps/${seg(app)}`);
+    await this.apps.delete({ app });
   }
 
-  /** Who may reach the app: `{ kind: 'owner' | 'org' | 'public' | 'accounts' | 'team', ... }`. */
+  /**
+   * Who may reach the app: `{ kind: 'owner' | 'org' | 'public' | 'accounts' | 'team', ... }`.
+   *
+   * @deprecated Use `client.apps.access({ app, access })`; this wrapper goes once the apps have moved.
+   */
   async setAccess(app: string, access: Record<string, unknown>): Promise<void> {
-    await this.post(`apps/${seg(app)}/access`, { access });
+    await this.apps.access({ app, access: access as Access });
   }
 
-  /** Set the app instance's metadata (its owner, or an admin of its organization); at most 16 KiB. */
+  /**
+   * Set the app instance's metadata (its owner, or an admin of its organization); at most 16 KiB.
+   *
+   * @deprecated Use `client.apps.metadata({ app, metadata })`; this wrapper goes once the apps have moved.
+   */
   async setAppMetadata(app: string, metadata: unknown): Promise<void> {
-    await this.post(`apps/${seg(app)}/metadata`, { metadata });
+    await this.apps.metadata({ app, metadata });
   }
 
   /**
@@ -1393,19 +1597,29 @@ export class CalimeroClient {
    * dead letters (never delivered), newest last. Its owner's or an org
    * admin's (`403` to anyone else); `409 NOT_SUPPORTED` for an app on the
    * wasmer runtime, whose xcalls are follow-ups.
+   *
+   * @deprecated Use `client.apps.xcalls({ app })`; this wrapper goes once the apps have moved.
    */
   appXcalls(app: string): Promise<AppXcalls> {
-    return this.get(`apps/${seg(app)}/xcalls`);
+    return this.apps.xcalls({ app });
   }
 
-  /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
+  /**
+   * What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`.
+   *
+   * @deprecated Use `client.apps.storage({ app })`; this wrapper goes once the apps have moved.
+   */
   appStorage(app: string): Promise<Record<string, unknown>> {
-    return this.get(`apps/${seg(app)}/storage`);
+    return this.apps.storage({ app });
   }
 
-  /** The ABI the app's bundle embeds: `{ bundle, abi }`. */
+  /**
+   * The ABI the app's bundle embeds: `{ bundle, abi }`.
+   *
+   * @deprecated Use `client.apps.abi({ app })`; this wrapper goes once the apps have moved.
+   */
   appAbi(app: string): Promise<Record<string, unknown>> {
-    return this.get(`apps/${seg(app)}/abi`);
+    return this.apps.abi({ app });
   }
 
   /**
@@ -1414,9 +1628,11 @@ export class CalimeroClient {
    * organization's app, its owner only while a member of the organization
    * (`member` or above), and the organization's admins (`admin`, `owner`)
    * too, so an organization can hand on an app whose owner left (core #4893).
+   *
+   * @deprecated Use `client.apps.transfer({ app, to }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async transferApp(app: string, to: string, passkey: PasskeyProvider): Promise<void> {
-    await this.postConfirmed(`apps/${seg(app)}/transfer`, { to }, passkey);
+    await this.apps.transfer({ app, to }, this.confirmWith(passkey));
   }
 
   /**
@@ -1429,6 +1645,8 @@ export class CalimeroClient {
    * `bringMembers` adds the people of its organization who reach it to the
    * target (capped at `member`). A node from before the route answers `404`
    * ({@link NotFound}): the feature is not there yet.
+   *
+   * @deprecated Use `client.apps.move({ app, toOrg, bringMembers }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   moveApp(
     app: string,
@@ -1436,9 +1654,8 @@ export class CalimeroClient {
     options: { bringMembers?: boolean } = {},
     passkey?: PasskeyProvider,
   ): Promise<MoveAppResult> {
-    const path = `apps/${seg(app)}/move`;
     const body = { toOrg, bringMembers: options.bringMembers ?? false };
-    return passkey ? this.postConfirmed(path, body, passkey) : this.post(path, body);
+    return this.apps.move({ app, ...body }, this.confirmWith(passkey));
   }
 
   /**
@@ -1454,14 +1671,15 @@ export class CalimeroClient {
    * a release deadline its approver has not met: {@link ReleaseDeadlineError}.
    * With an upgrade key ({@link createApiKey} `upgrades`) pass no passkey and
    * a `version` of the key's package: the key's own proof stands in for it.
+   *
+   * @deprecated Use `client.apps.upgrade({ app, ...target }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   upgradeApp(
     app: string,
     target: { version?: string; package?: string; service?: string; bundle?: string; migrate?: string },
     passkey?: PasskeyProvider,
   ): Promise<{ index: number; status: string; error: unknown }> {
-    const path = `apps/${seg(app)}/upgrade`;
-    return passkey ? this.postConfirmed(path, target, passkey) : this.post(path, target);
+    return this.apps.upgrade({ app, ...target }, this.confirmWith(passkey));
   }
 
   /**
@@ -1470,33 +1688,22 @@ export class CalimeroClient {
    * adding a member, ...): the same body again, with `confirm`. Without a
    * passkey (a caller in plain JavaScript passing none) the `412` reaches the
    * caller as {@link ConfirmRequired}, carrying the challenge.
+   *
+   * @deprecated Use `the route's generated method with { confirm: passkeyConfirm(passkey) } (client.orgs.delete({ org }, { confirm }))`; this wrapper goes once the apps have moved.
    */
   postConfirmed<T>(path: string, body: Record<string, unknown>, passkey: PasskeyProvider): Promise<T> {
-    return this.confirmed<T>('POST', path, body, passkey);
+    return this.transport.json<T>('POST', path, { body, passkey });
   }
 
   /**
    * {@link postConfirmed} for a DELETE (deleting an organization, removing a
    * member or a passkey): `body` (`{}` by default) goes as JSON, and the
    * confirmed retry carries `confirm` beside it.
+   *
+   * @deprecated Use `the route's generated method with { confirm: passkeyConfirm(passkey) } (client.orgs.delete({ org }, { confirm }))`; this wrapper goes once the apps have moved.
    */
   deleteConfirmed<T>(path: string, passkey: PasskeyProvider, body: Record<string, unknown> = {}): Promise<T> {
-    return this.confirmed<T>('DELETE', path, body, passkey);
-  }
-
-  /**
-   * `body` to `path`, answering a `412 CONFIRM_REQUIRED` with `passkey` when one
-   * is given; `signal` aborts only the passkey prompt.
-   */
-  private confirmed<T>(
-    method: 'POST' | 'DELETE',
-    path: string,
-    body: Record<string, unknown>,
-    passkey: PasskeyProvider | undefined,
-    userVerification?: PasskeyUserVerification,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    return this.transport.json<T>(method, path, { body, passkey, userVerification, promptSignal: signal });
+    return this.transport.json<T>('DELETE', path, { body, passkey });
   }
 
   /**
@@ -1509,6 +1716,8 @@ export class CalimeroClient {
    * releases with no `version` `400 VERSION_REQUIRED`, and an unknown
    * `service` `400 NO_SUCH_SERVICE`. A page opened through `/d/{deployment}/`
    * finds its deployment with {@link pageDeployment}.
+   *
+   * @deprecated Use `(await client.apps.create({ name, bundle, ...options })).appId`; this wrapper goes once the apps have moved.
    */
   async createApp(
     name: string,
@@ -1516,29 +1725,41 @@ export class CalimeroClient {
     options: {
       org?: string;
       access?: Record<string, unknown>;
+      /**
+       * @deprecated The node ignores it (a method that needs a passkey says so
+       * in the app's ABI); it is no longer sent.
+       */
       confirmMethods?: string[];
       /** Arguments for the app's `init`. A failed init rejects with code `INIT_FAILED`. */
       initArgs?: unknown;
     } = {},
   ): Promise<string> {
     const target = typeof bundle === 'string' ? { bundle } : bundle;
-    const { appId } = await this.post<{ appId: string }>('apps', { name, ...target, ...options });
+    // `confirmMethods` is not sent: the node ignores it.
+    const { confirmMethods: _ignored, ...rest } = options;
+    const { appId } = await this.as<{ appId: string }>(
+      this.apps.create({ name, ...target, ...rest, access: rest.access as Access | undefined }),
+    );
     return appId;
   }
 
   /**
    * Call a method. A retry with the same `idempotencyKey` is answered once.
    * Without one, the client makes one, so its own retries of a 503 share it.
+   *
+   * @deprecated Use `client.apps.call({ app, method, args, idempotencyKey })`; this wrapper goes once the apps have moved.
    */
   call(app: string, method: string, args: unknown = {}, idempotencyKey?: string): Promise<CallResult> {
     const key = idempotencyKey ?? newIdempotencyKey();
-    return this.transport.json('POST', `apps/${seg(app)}/intents`, { body: { method, args, idempotencyKey: key }, retry: true });
+    return this.apps.call({ app, method, args, idempotencyKey: key });
   }
 
   /**
    * Call a method that needs the account holder's approval: the node returns a
    * challenge over this exact call, which `passkey` signs. A declined prompt
    * rejects with {@link ConfirmCancelled}.
+   *
+   * @deprecated Use `client.apps.call({ app, method, args, idempotencyKey }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async callConfirmed(
     app: string,
@@ -1547,29 +1768,25 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     idempotencyKey?: string,
   ): Promise<CallResult> {
-    const path = `apps/${seg(app)}/intents`;
     const key = idempotencyKey ?? newIdempotencyKey();
     // The confirmed attempt goes out exactly once: its challenge is single-use,
     // so a resend would be refused on the challenge, not answered from the key.
-    return this.transport.json<CallResult>('POST', path, { body: { method, args, idempotencyKey: key }, passkey, retry: true });
+    return this.apps.call({ app, method, args, idempotencyKey: key }, this.confirmWith(passkey));
   }
 
-  /** Run a read-only method: strong by default, or stale from any replica. */
+  /**
+   * Run a read-only method: strong by default, or stale from any replica.
+   *
+   * @deprecated Use `client.apps.view({ app, method, args, consistency: 'stale', minIndex })`; this wrapper goes once the apps have moved.
+   */
   view(app: string, method: string, args: unknown = {}, options: { stale?: boolean; minIndex?: number } = {}): Promise<ViewResult> {
-    return this.transport.json('POST', `apps/${seg(app)}/views`, {
-      body: {
-        method,
-        args,
-        consistency: options.stale ? 'stale' : 'strong',
-        minIndex: options.minIndex ?? 0,
-      },
-      retry: true,
-    });
+    const consistency = options.stale ? 'stale' : 'strong';
+    return this.apps.view({ app, method, args, consistency, minIndex: options.minIndex ?? 0 });
   }
 
   /** Committed events from index `from`, then live, until `signal` aborts. */
   events(app: string, from = 0, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    return this.transport.events(`apps/${seg(app)}/events`, { query: { from }, signal });
+    return this.transport.events(routePath('apps/{app}/events', { app }), { query: { from }, signal });
   }
 
   // ---------------------------------------------------------------- presence
@@ -1578,14 +1795,20 @@ export class CalimeroClient {
    * Publish this device's presence in `app`: `state` (at most 4 KiB) or `null`
    * to retract it. The newest `seq` wins; send the same `seq` and state again
    * as a heartbeat, since an entry not refreshed within 7 s is gone.
+   *
+   * @deprecated Use `client.apps.presencePublish({ app, seq, state: presenceState(state) })`; this wrapper goes once the apps have moved.
    */
   async publishPresence(app: string, seq: number, state: Uint8Array | null): Promise<void> {
-    await this.post(`apps/${seg(app)}/presence`, { seq, state: state === null ? null : toHex(state) });
+    await this.apps.presencePublish({ app, seq, state: presenceState(state) });
   }
 
-  /** Who is present in `app` now. */
+  /**
+   * Who is present in `app` now.
+   *
+   * @deprecated Use `client.apps.presenceGet({ app })`; this wrapper goes once the apps have moved.
+   */
   async presence(app: string): Promise<PresenceEntry[]> {
-    const { present } = await this.get<{ present: PresenceEntry[] }>(`apps/${seg(app)}/presence`);
+    const { present } = await this.apps.presenceGet({ app });
     return present;
   }
 
@@ -1594,30 +1817,43 @@ export class CalimeroClient {
    * entries present), then a `presence` event (`data` one entry) per change.
    */
   presenceStream(app: string, signal?: AbortSignal): AsyncGenerator<CloudEvent> {
-    return this.transport.events(`apps/${seg(app)}/presence/stream`, { signal });
+    return this.transport.events(routePath('apps/{app}/presence/stream', { app }), { signal });
   }
 
   // ---------------------------------------------------------------- aliases
 
-  /** Name an app (its id or context id) for this account. */
+  /**
+   * Name an app (its id or context id) for this account.
+   *
+   * @deprecated Use `client.auth.aliasSet({ alias, app })`; this wrapper goes once the apps have moved.
+   */
   async setAlias(alias: string, app: string): Promise<void> {
-    await this.put(`auth/aliases/${seg(alias)}`, { app });
+    await this.auth.aliasSet({ alias, app });
   }
 
-  /** This account's aliases, alias → app id. */
+  /**
+   * This account's aliases, alias → app id.
+   *
+   * @deprecated Use `client.auth.aliasList()`; this wrapper goes once the apps have moved.
+   */
   async aliases(): Promise<Record<string, string>> {
-    const { aliases } = await this.get<{ aliases: Record<string, string> }>('auth/aliases');
+    const { aliases } = await this.auth.aliasList();
     return aliases;
   }
 
-  /** The app an alias names. */
+  /**
+   * The app an alias names.
+   *
+   * @deprecated Use `client.auth.aliasGet({ alias })`; this wrapper goes once the apps have moved.
+   */
   async alias(alias: string): Promise<string> {
-    const { appId } = await this.get<{ appId: string }>(`auth/aliases/${seg(alias)}`);
+    const { appId } = await this.auth.aliasGet({ alias });
     return appId;
   }
 
+  /** @deprecated Use `client.auth.aliasDelete({ alias })`; this wrapper goes once the apps have moved. */
   async deleteAlias(alias: string): Promise<void> {
-    await this.delete(`auth/aliases/${seg(alias)}`);
+    await this.auth.aliasDelete({ alias });
   }
 
   // ---------------------------------------------------------------- organizations
@@ -1626,11 +1862,12 @@ export class CalimeroClient {
    * Create an organization. `recoveryKey` (from {@link recoveryPublicKey}) lets
    * whoever holds its seed recover the organization if its owner loses every
    * passkey; keep the seed offline ({@link recoverySeedText}).
+   *
+   * @deprecated Use `(await client.orgs.create({ name, recoveryKey })).orgId`; this wrapper goes once the apps have moved.
    */
   async createOrg(name: string, options: { recoveryKey?: string } = {}): Promise<string> {
-    const body: Record<string, unknown> = { name };
-    if (options.recoveryKey !== undefined) body.recoveryKey = options.recoveryKey;
-    const { orgId } = await this.post<{ orgId: string }>('orgs', body);
+    const body = options.recoveryKey === undefined ? { name } : { name, recoveryKey: options.recoveryKey };
+    const { orgId } = await this.orgs.create({ ...body });
     return orgId;
   }
 
@@ -1639,9 +1876,11 @@ export class CalimeroClient {
    * (`null`) the organization's recovery key: its owner only, approved with
    * `passkey`. A recovery under way is cancelled, and the old seed's
    * signatures are refused from then on.
+   *
+   * @deprecated Use `client.orgs.recoverySet({ org, publicKey }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async setRecoveryKey(org: string, publicKey: string | null, passkey: PasskeyProvider): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/recovery`, { publicKey }, passkey);
+    await this.orgs.recoverySet({ org, publicKey }, this.confirmWith(passkey));
   }
 
   /**
@@ -1654,12 +1893,16 @@ export class CalimeroClient {
     const account = (await this.me()).accountId as string;
     const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)));
     const signature = await signRecovery(seed, org, account, nonce);
-    return this.post(`orgs/${seg(org)}/recovery/start`, { nonce, signature });
+    return this.orgs.recoveryStart({ org, nonce, signature });
   }
 
-  /** Cancel the recovery under way: the organization's owner, approved with `passkey`. */
+  /**
+   * Cancel the recovery under way: the organization's owner, approved with `passkey`.
+   *
+   * @deprecated Use `client.orgs.recoveryCancel({ org }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async cancelRecovery(org: string, passkey: PasskeyProvider): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/recovery/cancel`, {}, passkey);
+    await this.orgs.recoveryCancel({ org }, this.confirmWith(passkey));
   }
 
   /**
@@ -1667,14 +1910,20 @@ export class CalimeroClient {
    * (`409 RECOVERY_NOT_READY` before, with `readyAt`), approved with this
    * account's `passkey`. The account becomes the owner; the previous owner
    * leaves the organization.
+   *
+   * @deprecated Use `client.orgs.recoveryFinish({ org }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   finishRecovery(org: string, passkey: PasskeyProvider): Promise<{ org: string; previousOwners: string[] }> {
-    return this.postConfirmed(`orgs/${seg(org)}/recovery/finish`, {}, passkey);
+    return this.as(this.orgs.recoveryFinish({ org }, this.confirmWith(passkey)));
   }
 
-  /** The organization, with the teams this caller reaches or manages. */
+  /**
+   * The organization, with the teams this caller reaches or manages.
+   *
+   * @deprecated Use `client.orgs.get({ org })`; this wrapper goes once the apps have moved.
+   */
   getOrg(org: string): Promise<OrgInfo> {
-    return this.get(`orgs/${seg(org)}`);
+    return this.as(this.orgs.get({ org }));
   }
 
   /**
@@ -1685,30 +1934,40 @@ export class CalimeroClient {
    * organization gets {@link NotFound}; the admin's own session on the
    * cluster's origin only, never an API key or a package-bound session. A
    * node before core #4902 has no such route (a bare `404`).
+   *
+   * @deprecated Use `client.orgs.members({ org, detail: 'security' })`; this wrapper goes once the apps have moved.
    */
   async orgMembersSecurity(org: string): Promise<OrgMemberSecurity[]> {
-    const { members } = await this.get<{ members: OrgMemberSecurity[] }>(
-      `orgs/${seg(org)}/members?detail=security`,
-    );
+    const { members } = await this.as<{ members: OrgMemberSecurity[] }>(this.orgs.members({ org, detail: 'security' }));
     return members;
   }
 
   /**
    * Delete an organization with its teams, invites and apps (its owner only).
    * The node asks for the owner's passkey (`412 CONFIRM_REQUIRED`), which `passkey` gives.
+   *
+   * @deprecated Use `client.orgs.delete({ org }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async deleteOrg(org: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`orgs/${seg(org)}`, passkey);
+    await this.orgs.delete({ org }, this.confirmWith(passkey));
   }
 
-  /** Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB. */
+  /**
+   * Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB.
+   *
+   * @deprecated Use `client.orgs.metadata({ org, metadata })`; this wrapper goes once the apps have moved.
+   */
   async setOrgMetadata(org: string, metadata: unknown): Promise<void> {
-    await this.post(`orgs/${seg(org)}/metadata`, { metadata });
+    await this.orgs.metadata({ org, metadata });
   }
 
-  /** Set a member's metadata (theirs, or an admin's); `null` clears it. */
+  /**
+   * Set a member's metadata (theirs, or an admin's); `null` clears it.
+   *
+   * @deprecated Use `client.orgs.memberMetadata({ org, account, metadata })`; this wrapper goes once the apps have moved.
+   */
   async setMemberMetadata(org: string, account: string, metadata: unknown): Promise<void> {
-    await this.post(`orgs/${seg(org)}/members/${seg(account)}/metadata`, { metadata });
+    await this.orgs.memberMetadata({ org, account, metadata });
   }
 
   /**
@@ -1716,19 +1975,29 @@ export class CalimeroClient {
    * (optionally one team's, with `cascade` the teams below it). The org's owner,
    * or a holder of `MANAGE_APPLICATION`, approves the whole run with `passkey`.
    * Answers the run; {@link upgradeRun} follows it.
+   *
+   * @deprecated Use `client.orgs.upgrade({ org, ...target }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   upgradeOrg(org: string, target: OrgUpgradeTarget, passkey: PasskeyProvider): Promise<UpgradeRun> {
-    return this.postConfirmed(`orgs/${seg(org)}/upgrade`, { ...target }, passkey);
+    return this.orgs.upgrade({ org, ...target }, this.confirmWith(passkey));
   }
 
-  /** An organization-wide upgrade run: its apps, those done and those that failed. */
+  /**
+   * An organization-wide upgrade run: its apps, those done and those that failed.
+   *
+   * @deprecated Use `client.orgs.upgradeStatus({ org, run })`; this wrapper goes once the apps have moved.
+   */
   upgradeRun(org: string, run: string): Promise<UpgradeRun> {
-    return this.get(`orgs/${seg(org)}/upgrades/${seg(run)}`);
+    return this.orgs.upgradeStatus({ org, run });
   }
 
-  /** Run the apps that failed in `run` again, as a new run, approved with `passkey`. */
+  /**
+   * Run the apps that failed in `run` again, as a new run, approved with `passkey`.
+   *
+   * @deprecated Use `client.orgs.upgradeRetry({ org, run }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   retryUpgradeRun(org: string, run: string, passkey: PasskeyProvider): Promise<UpgradeRun> {
-    return this.postConfirmed(`orgs/${seg(org)}/upgrades/${seg(run)}/retry`, {}, passkey);
+    return this.orgs.upgradeRetry({ org, run }, this.confirmWith(passkey));
   }
 
   /**
@@ -1739,6 +2008,8 @@ export class CalimeroClient {
    * the node binds the release's measurements itself. Refused (`403`) to a
    * session opened on an app's frontend: an app asks its user with
    * {@link requestConsent} instead.
+   *
+   * @deprecated Use `client.auth.accountReleaseApproval({ version, approved }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async approveRelease(
     org: string | null,
@@ -1746,8 +2017,12 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     approved = true,
   ): Promise<Record<string, unknown>> {
-    const path = org === null ? 'auth/releases' : `orgs/${seg(org)}/releases`;
-    return this.postConfirmed(path, { version, approved }, passkey);
+    const options = this.confirmWith(passkey);
+    return this.as(
+      org === null
+        ? this.auth.accountReleaseApproval({ version, approved }, options)
+        : this.orgs.releaseApproval({ org, version, approved }, options),
+    );
   }
 
   /**
@@ -1757,6 +2032,8 @@ export class CalimeroClient {
    * `replace` sets exactly `prefixes`, which is how one is revoked. Approved
    * with `passkey`. Refused (`403`) to a session opened on an app's frontend:
    * an app asks with {@link requestConsent} (`kind: 'outbound'`) instead.
+   *
+   * @deprecated Use `client.auth.accountOutboundApproval({ package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.outboundApproval({ org, package: pkg, prefixes, replace }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async approveOutbound(
     org: string | null,
@@ -1764,11 +2041,10 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     options: { prefixes?: string[] | 'manifest'; replace?: boolean } = {},
   ): Promise<Record<string, unknown>> {
-    const path = org === null ? 'auth/outbound' : `orgs/${seg(org)}/outbound`;
-    return this.postConfirmed(
-      path,
-      { package: pkg, prefixes: options.prefixes ?? 'manifest', replace: options.replace ?? false },
-      passkey,
+    const body = { package: pkg, prefixes: options.prefixes ?? 'manifest', replace: options.replace ?? false };
+    const confirm = this.confirmWith(passkey);
+    return this.as(
+      org === null ? this.auth.accountOutboundApproval(body, confirm) : this.orgs.outboundApproval({ org, ...body }, confirm),
     );
   }
 
@@ -1781,10 +2057,16 @@ export class CalimeroClient {
    * The governance, the scope's approved releases, the releases the cluster's
    * nodes run and whether each is approved, and per app its release, newer
    * releases it may move to, last upgrade and replicas.
+   *
+   * @deprecated Use `client.auth.accountApps({ after, limit })` or `client.orgs.apps({ org, after, limit })`; this wrapper goes once the apps have moved.
    */
   appsReport(org: string | null, page: PageOptions = {}): Promise<AppsReport> {
-    const path = org === null ? 'auth/apps' : `orgs/${seg(org)}/apps`;
-    return this.get(`${path}${pageQuery(page)}`);
+    const query = pageParams(page);
+    return this.as(
+      org === null
+        ? this.auth.accountApps({ ...query })
+        : this.orgs.apps({ org, ...query }),
+    );
   }
 
   /** {@link appsReport}, every page, with the apps of all of them in `apps`. */
@@ -1800,9 +2082,13 @@ export class CalimeroClient {
     return { ...first, apps, next: null };
   }
 
-  /** `GET /releases`: the cluster's governance and every release deadline. Public. */
+  /**
+   * `GET /releases`: the cluster's governance and every release deadline. Public.
+   *
+   * @deprecated Use `client.public.releasesPublic()`; this wrapper goes once the apps have moved.
+   */
   releaseRules(): Promise<ReleaseRules> {
-    return this.get('releases');
+    return this.public.releasesPublic();
   }
 
   /**
@@ -1825,9 +2111,11 @@ export class CalimeroClient {
    * app's frontend is fine). Send the person to the answer's `url`; the page
    * sends them back to `returnTo?request_id=…&result=approved|declined`
    * (`consentReturn`), and {@link consentResult} confirms the decision.
+   *
+   * @deprecated Use `client.consent.pageCreate({ body: request })`; this wrapper goes once the apps have moved.
    */
   requestConsent(request: ConsentRequest): Promise<ConsentStarted> {
-    return this.post('consent/requests', request);
+    return this.consent.pageCreate({ body: request });
   }
 
   /**
@@ -1869,9 +2157,13 @@ export class CalimeroClient {
     return started;
   }
 
-  /** The decision on a consent request (any node answers, for the account that asked). */
+  /**
+   * The decision on a consent request (any node answers, for the account that asked).
+   *
+   * @deprecated Use `client.consent.pageResult({ request: requestId })`; this wrapper goes once the apps have moved.
+   */
   consentResult(requestId: string): Promise<ConsentResult> {
-    return this.get(`consent/${seg(requestId)}/result`);
+    return this.consent.pageResult({ request: requestId });
   }
 
   /**
@@ -1893,9 +2185,13 @@ export class CalimeroClient {
     }
   }
 
-  /** `GET /publishers/{signerId}`: the cluster name and binding generation a key signs to bind it next. */
+  /**
+   * `GET /publishers/{signerId}`: the cluster name and binding generation a key signs to bind it next.
+   *
+   * @deprecated Use `client.public.publisherBinding({ signer: signerId })`; this wrapper goes once the apps have moved.
+   */
   publisherBinding(signerId: string): Promise<PublisherBindingInfo> {
-    return this.get(`publishers/${seg(signerId)}`);
+    return this.public.publisherBinding({ signer: signerId });
   }
 
   /**
@@ -1904,9 +2200,11 @@ export class CalimeroClient {
    * package declares `upgrades: publisher`. `proof` is the key's signature
    * over `publisherBindingMessage(cluster, org, signerId, generation)`; a
    * member holding `APPROVE_RELEASES` sends it with `passkey`.
+   *
+   * @deprecated Use `client.orgs.publisher({ org, ...proof }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   bindPublisher(org: string, proof: PublisherProof, passkey: PasskeyProvider): Promise<Record<string, unknown>> {
-    return this.postConfirmed(`orgs/${seg(org)}/publishers`, { ...proof }, passkey);
+    return this.orgs.publisher({ org, ...proof }, this.confirmWith(passkey));
   }
 
   /**
@@ -1914,6 +2212,8 @@ export class CalimeroClient {
    * publisher`, whoever owns it, as its publisher `org` (a
    * `MANAGE_APPLICATION` holder there), with one passkey approval. Answers
    * the run, kept on the publisher.
+   *
+   * @deprecated Use `client.orgs.publisherUpgrade({ org, package: pkg, version, migrate }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   upgradePublished(
     org: string,
@@ -1921,61 +2221,83 @@ export class CalimeroClient {
     target: { version: string; migrate?: string },
     passkey: PasskeyProvider,
   ): Promise<UpgradeRun> {
-    return this.postConfirmed(`orgs/${seg(org)}/packages/${seg(pkg)}/upgrade`, { ...target }, passkey);
+    return this.orgs.publisherUpgrade({ org, package: pkg, ...target }, this.confirmWith(passkey));
   }
 
   // ---------------------------------------------------------------- operator
 
-  /** `GET /ops/apps`: what every app runs, without names or accounts. Operator token (`useApiKey`). */
+  /**
+   * `GET /ops/apps`: what every app runs, without names or accounts. Operator token (`useApiKey`).
+   *
+   * @deprecated Use `client.ops.apps({ after, limit })`; this wrapper goes once the apps have moved.
+   */
   opsApps(page: PageOptions = {}): Promise<OpsAppsReport> {
-    return this.get(`ops/apps${pageQuery(page)}`);
+    return this.as(this.ops.apps({ ...pageParams(page) }));
   }
 
-  /** `GET /ops/orgs`: each organization's approved releases. Operator token. */
+  /**
+   * `GET /ops/orgs`: each organization's approved releases. Operator token.
+   *
+   * @deprecated Use `client.ops.orgs({ after, limit })`; this wrapper goes once the apps have moved.
+   */
   opsOrgs(page: PageOptions = {}): Promise<OpsOrgsReport> {
-    return this.get(`ops/orgs${pageQuery(page)}`);
+    return this.ops.orgs({ ...pageParams(page) });
   }
 
   /**
    * `GET /ops/served-origins`: every served origin (custom domain) the
    * cluster's log holds, with its package's label and no package name or
    * account. Operator token.
+   *
+   * @deprecated Use `client.ops.served()`; this wrapper goes once the apps have moved.
    */
   opsServedOrigins(): Promise<ServedOrigins> {
-    return this.get('ops/served-origins');
+    return this.ops.served();
   }
 
   /**
    * Announce when work on images older than `version` ends: from `after` on,
    * a scope that has not approved it (or newer) starts no new work. Operator
    * token.
+   *
+   * @deprecated Use `client.ops.releaseDeadline({ version, after })`; this wrapper goes once the apps have moved.
    */
   async setReleaseDeadline(version: string, after: Date | string): Promise<void> {
     const at = typeof after === 'string' ? after : after.toISOString();
-    await this.post(`ops/releases/${seg(version)}/deadline`, { after: at });
+    await this.ops.releaseDeadline({ version, after: at });
   }
 
-  /** Lift a release's deadline. Operator token. */
+  /**
+   * Lift a release's deadline. Operator token.
+   *
+   * @deprecated Use `client.ops.releaseDeadlineLift({ version })`; this wrapper goes once the apps have moved.
+   */
   async liftReleaseDeadline(version: string): Promise<void> {
-    await this.delete(`ops/releases/${seg(version)}/deadline`);
+    await this.ops.releaseDeadlineLift({ version });
   }
 
-  /** Add a member, or change their role, approved with the caller's `passkey`. */
+  /**
+   * Add a member, or change their role, approved with the caller's `passkey`.
+   *
+   * @deprecated Use `client.orgs.setMember({ org, account, role }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async setMember(
     org: string,
     account: string,
     role: 'guest' | 'member' | 'admin' | 'owner',
     passkey: PasskeyProvider,
   ): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/members`, { account, role }, passkey);
+    await this.orgs.setMember({ org, account, role }, this.confirmWith(passkey));
   }
 
   /**
    * Remove a member, or leave (`account` the caller's own), approved with the
    * caller's `passkey`.
+   *
+   * @deprecated Use `client.orgs.removeMember({ org, account }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   removeMember(org: string, account: string, passkey: PasskeyProvider): Promise<Record<string, unknown>> {
-    return this.deleteConfirmed(`orgs/${seg(org)}/members/${seg(account)}`, passkey);
+    return this.orgs.removeMember({ org, account }, this.confirmWith(passkey));
   }
 
   /**
@@ -1983,6 +2305,8 @@ export class CalimeroClient {
    * for a member of one team (`account` and `team`), a team's default
    * (`team` alone, {@link setTeamDefaultCapabilities}), or the
    * organization's default (neither). Approved with the caller's `passkey`.
+   *
+   * @deprecated Use `client.orgs.capabilities({ org, capabilities, account, team }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async setCapabilities(
     org: string,
@@ -1990,7 +2314,7 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     at: { account?: string; team?: string } = {},
   ): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/capabilities`, { capabilities, ...at }, passkey);
+    await this.orgs.capabilities({ org, capabilities, ...at }, this.confirmWith(passkey));
   }
 
   /**
@@ -2003,9 +2327,11 @@ export class CalimeroClient {
    * `{ allApps: true }` gives it to whoever redeems the invite. A member
    * below admin is refused (`403`), someone outside gets {@link NotFound};
    * a node from before the route answers a bare `404`.
+   *
+   * @deprecated Use `client.orgs.allApps({ org, account, allApps }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async setAllApps(org: string, account: string, allApps: boolean, passkey: PasskeyProvider): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/all-apps`, { account, allApps }, passkey);
+    await this.orgs.allApps({ org, account, allApps }, this.confirmWith(passkey));
   }
 
   /**
@@ -2015,6 +2341,8 @@ export class CalimeroClient {
    * may invite others to this app". The team's managers, or whoever holds
    * `MANAGE_MEMBERS` on it; approved with the caller's `passkey`
    * (`__set_default_capabilities { team, capabilities }`).
+   *
+   * @deprecated Use `client.orgs.capabilities({ org, team, capabilities }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async setTeamDefaultCapabilities(
     org: string,
@@ -2022,11 +2350,12 @@ export class CalimeroClient {
     capabilities: number,
     passkey: PasskeyProvider,
   ): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/capabilities`, { team, capabilities }, passkey);
+    await this.orgs.capabilities({ org, team, capabilities }, this.confirmWith(passkey));
   }
 
+  /** @deprecated Use `client.orgs.teamCreate({ org, name, join, parent })`; this wrapper goes once the apps have moved. */
   async createTeam(org: string, name: string, join: 'everyone' | 'invite', parent?: string): Promise<string> {
-    const { teamId } = await this.post<{ teamId: string }>(`orgs/${seg(org)}/teams`, { name, join, parent });
+    const { teamId } = await this.orgs.teamCreate({ org, name, join, parent });
     return teamId;
   }
 
@@ -2034,21 +2363,25 @@ export class CalimeroClient {
    * A team the caller sees: its rows (each with its effective capabilities),
    * children, apps, the package it is the app team of and its default
    * capabilities.
+   *
+   * @deprecated Use `client.orgs.teamGet({ org, team })`; this wrapper goes once the apps have moved.
    */
   getTeam(org: string, team: string): Promise<TeamInfo> {
-    return this.get(`orgs/${seg(org)}/teams/${seg(team)}`);
+    return this.orgs.teamGet({ org, team });
   }
 
   /**
    * Rename, change who may join, set the app's metadata, or move the team:
    * `parent: null` moves it to the top, an absent `parent` leaves it.
+   *
+   * @deprecated Use `client.orgs.teamUpdate({ org, team, ...update })`; this wrapper goes once the apps have moved.
    */
   async updateTeam(
     org: string,
     team: string,
     update: { name?: string; join?: 'everyone' | 'invite'; parent?: string | null; metadata?: unknown },
   ): Promise<void> {
-    await this.post(`orgs/${seg(org)}/teams/${seg(team)}`, update);
+    await this.orgs.teamUpdate({ org, team, ...update });
   }
 
   /**
@@ -2058,15 +2391,18 @@ export class CalimeroClient {
    * approval names; an app added after it is refused), which `passkey` gives.
    * Without one that `412` reaches the caller as {@link ConfirmRequired}. A
    * team with no apps is deleted without a passkey.
+   *
+   * @deprecated Use `client.orgs.teamDelete({ org, team }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async deleteTeam(org: string, team: string, passkey?: PasskeyProvider): Promise<void> {
-    const path = `orgs/${seg(org)}/teams/${seg(team)}`;
-    await (passkey ? this.deleteConfirmed(path, passkey) : this.delete(path));
+    await this.orgs.teamDelete({ org, team }, this.confirmWith(passkey));
   }
 
   /**
    * Add a member to a team, or change their row: role, lead, capability bits.
    * Approved with the caller's `passkey`.
+   *
+   * @deprecated Use `client.orgs.teamSetMember({ org, team, account, role, lead, capabilities }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async setTeamMember(
     org: string,
@@ -2075,18 +2411,24 @@ export class CalimeroClient {
     passkey: PasskeyProvider,
     row: { role?: 'lead' | 'member' | 'readOnly'; lead?: boolean; capabilities?: number } = {},
   ): Promise<void> {
-    await this.postConfirmed(`orgs/${seg(org)}/teams/${seg(team)}/members`, { account, ...row }, passkey);
+    await this.orgs.teamSetMember({ org, team, account, ...row }, this.confirmWith(passkey));
   }
 
-  /** Remove a member from a team, approved with the caller's `passkey`. */
+  /**
+   * Remove a member from a team, approved with the caller's `passkey`.
+   *
+   * @deprecated Use `client.orgs.teamRemoveMember({ org, team, account }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async removeTeamMember(org: string, team: string, account: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}`, passkey);
+    await this.orgs.teamRemoveMember({ org, team, account }, this.confirmWith(passkey));
   }
 
   /**
    * Make an invite into `org` (and `teams`), approved with the caller's
    * `passkey`; answers its token, which {@link redeemInvite} takes (no
    * approval there).
+   *
+   * @deprecated Use `(await client.orgs.inviteCreate({ org, role, teams, ...options }, { confirm: passkeyConfirm(passkey) })).token`; this wrapper goes once the apps have moved.
    */
   async invite(
     org: string,
@@ -2095,16 +2437,13 @@ export class CalimeroClient {
     teams: string[] = [],
     options: { ttlSecs?: number; uses?: number; allApps?: boolean } = {},
   ): Promise<string> {
-    const { token } = await this.postConfirmed<{ token: string }>(
-      `orgs/${seg(org)}/invites`,
-      { role, teams, ...options },
-      passkey,
-    );
+    const { token } = await this.orgs.inviteCreate({ org, role, teams, ...options }, this.confirmWith(passkey));
     return token;
   }
 
+  /** @deprecated Use `client.orgs.inviteRedeem({ token })`; this wrapper goes once the apps have moved. */
   redeemInvite(token: string): Promise<Record<string, unknown>> {
-    return this.post(`invites/${seg(token)}/redeem`);
+    return this.orgs.inviteRedeem({ token });
   }
 
   /**
@@ -2112,9 +2451,11 @@ export class CalimeroClient {
    * every one for an owner or admin, their own, and those naming only teams
    * they manage. Expired ones are listed (`expired: true`) until revoked. A
    * caller outside the organization: {@link NotFound}.
+   *
+   * @deprecated Use `client.orgs.inviteList({ org })`; this wrapper goes once the apps have moved.
    */
   async listInvites(org: string): Promise<OrgInvite[]> {
-    const { invites } = await this.get<{ invites: OrgInvite[] }>(`orgs/${seg(org)}/invites`);
+    const { invites } = await this.as<{ invites: OrgInvite[] }>(this.orgs.inviteList({ org }));
     return invites;
   }
 
@@ -2122,9 +2463,11 @@ export class CalimeroClient {
    * Withdraw an invite by its key ({@link listInvites}), approved with the
    * caller's `passkey` (`__revoke_invite { inviteKey }`). One the caller may
    * not see: {@link NotFound}.
+   *
+   * @deprecated Use `client.orgs.inviteRevoke({ org, key: inviteKey }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async revokeInvite(org: string, inviteKey: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`orgs/${seg(org)}/invites/${seg(inviteKey)}`, passkey);
+    await this.orgs.inviteRevoke({ org, key: inviteKey }, this.confirmWith(passkey));
   }
 
   // ---------------------------------------------------------------- app teams
@@ -2133,9 +2476,11 @@ export class CalimeroClient {
    * The organization's mode and its app teams (one per package), for any
    * member; a guest sees only those they are in. A caller outside the
    * organization: {@link NotFound}.
+   *
+   * @deprecated Use `client.orgs.appTeamList({ org })`; this wrapper goes once the apps have moved.
    */
   listAppTeams(org: string): Promise<AppTeams> {
-    return this.get(`orgs/${seg(org)}/app-teams`);
+    return this.orgs.appTeamList({ org });
   }
 
   /**
@@ -2148,14 +2493,17 @@ export class CalimeroClient {
    * (`__scope_apps { apps, shared }`); a refusal is `400 REJECTED` with the
    * node's reason. For a fresh standalone install pass
    * `{ apps: [{ package, name, instances: [] }] }`.
+   *
+   * @deprecated Use `client.orgs.appTeamsScope({ org, apps, shared }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   scopeApps(org: string, passkey: PasskeyProvider, options: ScopeAppsOptions = {}): Promise<ScopeAppsResult> {
     // The node refuses unknown fields and reads an absent one as its default,
     // so only the fields given go.
-    const body: Record<string, unknown> = {};
-    if (options.apps !== undefined) body.apps = options.apps;
-    if (options.shared !== undefined) body.shared = options.shared;
-    return this.postConfirmed(`orgs/${seg(org)}/app-teams`, body, passkey);
+    const body = {
+      ...(options.apps === undefined ? {} : { apps: options.apps }),
+      ...(options.shared === undefined ? {} : { shared: options.shared }),
+    };
+    return this.orgs.appTeamsScope({ org, ...body }, this.confirmWith(passkey));
   }
 
   // ---------------------------------------------------------------- package origins
@@ -2164,27 +2512,32 @@ export class CalimeroClient {
    * The web origins `{package}`'s managers registered so a frontend they host
    * themselves can sign users in with passkeys ({@link PackageOrigins}).
    * Adding and removing one is approved with a passkey.
+   *
+   * @deprecated Use `client.packages.originsList({ package })`, `client.packages.originsAdd({ package,
+   * origin, rpId?, served? }, { confirm: passkeyConfirm(passkey) })` and `client.packages.originsRemove({
+   * package, origin }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   readonly packageOrigins: PackageOrigins = {
     list: async (pkg) => {
-      const { origins } = await this.get<{ origins: PackageOrigin[] }>(`package-origins/${seg(pkg)}`);
+      const { origins } = await this.packages.originsList({ package: pkg });
       return origins ?? [];
     },
     add: (pkg, origin, passkey, options = {}) =>
-      this.confirmed<PackageOriginAdded>(
-        'POST',
-        `package-origins/${seg(pkg)}`,
-        // Only the fields set: the node refuses unknown ones, and one that
-        // predates served origins takes a plain add unchanged.
-        {
-          origin,
-          ...(options.rpId === undefined ? {} : { rpId: options.rpId }),
-          ...(options.served ? { served: true } : {}),
-        },
-        passkey,
+      this.as<PackageOriginAdded>(
+        this.packages.originsAdd(
+          {
+            package: pkg,
+            // Only the fields set: the node refuses unknown ones, and one that
+            // predates served origins takes a plain add unchanged.
+            origin,
+            ...(options.rpId === undefined ? {} : { rpId: options.rpId }),
+            ...(options.served ? { served: true } : {}),
+          },
+          this.confirmWith(passkey),
+        ),
       ),
     remove: (pkg, origin, passkey) =>
-      this.confirmed<PackageOriginRemoved>('DELETE', `package-origins/${seg(pkg)}`, { origin }, passkey),
+      this.as<PackageOriginRemoved>(this.packages.originsRemove({ package: pkg, origin }, this.confirmWith(passkey))),
   };
 
   // ---------------------------------------------------------------- deployers
@@ -2195,6 +2548,8 @@ export class CalimeroClient {
    * the grant does not end). The cluster's owner grants it, approved with
    * `passkey`, where governance says `deployers: owner`; elsewhere the
    * operator grants with its key, and this is refused `403`.
+   *
+   * @deprecated Use `client.deployments.deployerGrant({ deployer, until }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   grantDeployer(
     deployer: Deployer,
@@ -2202,26 +2557,30 @@ export class CalimeroClient {
     options: { until?: Date | string } = {},
   ): Promise<{ key: string; deployer: Deployer; grant: Record<string, unknown> }> {
     const until = options.until instanceof Date ? options.until.toISOString() : options.until;
-    return this.postConfirmed('deployers', { deployer, ...(until === undefined ? {} : { until }) }, passkey);
+    return this.deployments.deployerGrant({ deployer, ...(until === undefined ? {} : { until }) }, this.confirmWith(passkey));
   }
 
   /**
    * Who may install apps on the cluster: its deployments rule, who grants
    * deployers, its owner and every grant. For the cluster's owner, or the
    * operator (its token, `useApiKey`).
+   *
+   * @deprecated Use `client.deployments.deployerList()`; this wrapper goes once the apps have moved.
    */
   deployers(): Promise<DeployersInfo> {
-    return this.get('deployers');
+    return this.deployments.deployerList();
   }
 
   /**
    * End a deployer's grant (`deployer`, or its key `account:{id}` /
    * `org:{id}`), as the cluster's owner, approved with `passkey`. Apps it
    * installed, and the apps running them, stay.
+   *
+   * @deprecated Use `client.deployments.deployerRevoke({ key }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async revokeDeployer(deployer: Deployer | string, passkey: PasskeyProvider): Promise<void> {
     const key = typeof deployer === 'string' ? deployer : deployerKey(deployer);
-    await this.deleteConfirmed(`deployers/${seg(key)}`, passkey);
+    await this.deployments.deployerRevoke({ key }, this.confirmWith(passkey));
   }
 
   // ---------------------------------------------------------------- deployments
@@ -2232,47 +2591,55 @@ export class CalimeroClient {
    * apps it offers, named `name` (1 to 64 characters, one line) for
    * customers. Approved with `passkey`; where deployments are `granted` the
    * caller needs a deployer grant. Answers the deployment's id.
+   *
+   * @deprecated Use `client.deployments.create({ name, owner }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async createDeployment(name: string, owner: Deployer, passkey: PasskeyProvider): Promise<string> {
-    const { id } = await this.postConfirmed<{ id: string }>('deployments', { name, owner }, passkey);
+    const { id } = await this.deployments.create({ name, owner }, this.confirmWith(passkey));
     return id;
   }
 
-  /** The deployments the caller manages: its account's, and its organizations' where it holds `MANAGE_APPLICATION`. */
-  async deployments(): Promise<DeploymentInfo[]> {
-    const { deployments } = await this.get<{ deployments: DeploymentInfo[] }>('deployments');
-    return deployments;
-  }
-
-  /** A deployment as anyone may read it: its name, its owner's kind and name, and the apps it offers. Public. */
+  /**
+   * A deployment as anyone may read it: its name, its owner's kind and name, and the apps it offers. Public.
+   *
+   * @deprecated Use `client.deployments.get({ id })`; this wrapper goes once the apps have moved.
+   */
   deployment(id: string): Promise<PublicDeployment> {
-    return this.get(`deployments/${seg(id)}`);
+    return this.deployments.get({ id });
   }
 
-  /** Delete a deployment that offers nothing and has no instances, approved with `passkey`. */
+  /**
+   * Delete a deployment that offers nothing and has no instances, approved with `passkey`.
+   *
+   * @deprecated Use `client.deployments.delete({ id }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
+   */
   async deleteDeployment(id: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`deployments/${seg(id)}`, passkey);
+    await this.deployments.delete({ id }, this.confirmWith(passkey));
   }
 
   /**
    * Offer `package@version` (installed, and seen by the caller) as `app`
    * (1 to 64 letters, digits, `.`, `_`, `-`) in deployment `id`, or move an
    * offered app to another release of its package. Approved with `passkey`.
+   *
+   * @deprecated Use `client.deployments.offer({ id, app, package, version }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   offerApp(
     id: string,
     offer: { app: string; package: string; version: string },
     passkey: PasskeyProvider,
   ): Promise<{ deployment: string; app: string; offer: Record<string, unknown> }> {
-    return this.postConfirmed(`deployments/${seg(id)}/apps`, { ...offer }, passkey);
+    return this.as(this.deployments.offer({ id, ...offer }, this.confirmWith(passkey)));
   }
 
   /**
    * Withdraw `app` from deployment `id`, approved with `passkey`; refused
    * while an instance created from the deployment still runs it.
+   *
+   * @deprecated Use `client.deployments.withdraw({ id, app }, { confirm: passkeyConfirm(passkey) })`; this wrapper goes once the apps have moved.
    */
   async withdrawApp(id: string, app: string, passkey: PasskeyProvider): Promise<void> {
-    await this.deleteConfirmed(`deployments/${seg(id)}/apps/${seg(app)}`, passkey);
+    await this.deployments.withdraw({ id, app }, this.confirmWith(passkey));
   }
 
   /**
@@ -2280,8 +2647,10 @@ export class CalimeroClient {
    * managers: each one's id, name, instance count, apps and releases, first
    * instance, and (core #4902) how many members it has and how many were
    * active in 30 days. Never who the members are, teams or app data.
+   *
+   * @deprecated Use `client.deployments.orgs({ id })`; this wrapper goes once the apps have moved.
    */
   deploymentOrgs(id: string): Promise<DeploymentOrgs> {
-    return this.get(`deployments/${seg(id)}/orgs`);
+    return this.deployments.orgs({ id });
   }
 }

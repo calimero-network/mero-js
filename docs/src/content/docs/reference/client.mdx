@@ -211,20 +211,50 @@ sealed channel with the client's credential and map a refusal to a typed error.
 `postConfirmed(path, body, passkey)` and `deleteConfirmed(path, passkey, body?)`
 answer a `412 CONFIRM_REQUIRED`.
 
+## The generated methods
+
+Every route of the node is a method, generated from core's OpenAPI document
+(`openapi/core-openapi.json`, by `pnpm gen:api` into `src/generated/`), in a
+group per tag: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`. Each takes
+one typed argument object (path parameters, query and body fields merged; a raw
+body under `body`, with `contentType`) and answers the route's typed payload; a
+refusal is thrown as its typed `CalimeroError`.
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });
+await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: passkeyConfirm(passkey) });
+```
+
+The second argument, `{ confirm, operatorProof, signal }`, answers this call's
+`412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
+`new CalimeroClient(options, { confirm, operatorProof })` answers every call that
+gives none. Routes the document marks retry-safe are retried on `503` (D70), and
+one that requires an idempotency key gets one. The route methods above are thin calls onto these,
+deprecated until the apps have moved; the event streams stay on the transport.
+`createRoutes(createApiClient(transport))` builds the groups on any
+`NodeTransport`.
+
+`client.api` is the low-level `openapi-fetch` client they run on (`{ data,
+error, response }`, with `stepUp` / `operatorSignature` middleware and `unwrap`),
+kept as an escape hatch.
+
 ## The runtime
 
-Every method above sends through `client.transport`, a `Transport` from
+Every request goes through `client.transport`, a `Transport` from
 `@calimero-network/mero-js/runtime`: attestation, the sealed channel, the
 session and its refresh, `421` moves, D70 retries, the `412` step-up, error
 mapping and server-sent events, behind `request(method, path, options)`,
-`json(method, path, options)` and `events(path, options)`. `options` takes
-`query`, a JSON `body` or raw `bytes` with `contentType`, a `passkey` that
-answers a `412 CONFIRM_REQUIRED`, `retry` (`true` for a call or a view, `'once'`
-for a confirmed attempt) and `signal`. A route this client has no method for, or
-a route layer generated from the node's OpenAPI document, sends through it and
-shares the client's session; `routePath('orgs/{org}', { org })` encodes the
-path's segments. `new CalimeroClient(transport)` builds a client on a
-`NodeTransport` made elsewhere.
+`json(method, path, options)` and `events(path, options)`; `exchange(method,
+path, options)` answers a refusal as the node's response, which is what the
+generated client sends through. `options` takes `query`, a JSON `body` or raw
+`bytes` with `contentType`, a `passkey` that answers a `412 CONFIRM_REQUIRED`,
+`retry` (`true` for a call or a view, `'once'` for a confirmed attempt) and
+`signal`. `routePath('orgs/{org}', { org })` encodes the path's segments.
+`new CalimeroClient(transport)` builds a client on a `NodeTransport` made
+elsewhere.
 
 ## Not covered
 

@@ -1,4 +1,4 @@
-export { CalimeroClient, deployerKey, frontendManifest, pageDeployment } from './client.js';
+export { CalimeroClient, deployerKey, frontendManifest, pageDeployment, presenceState } from './client.js';
 export { DEFAULT_DIRECTORY, DirectoryError } from './directory.js';
 export type { DirectoryFailure } from './directory.js';
 export {

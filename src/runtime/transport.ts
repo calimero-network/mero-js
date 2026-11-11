@@ -2,9 +2,9 @@
  * The runtime every route of a Calimero node is sent through: the part of
  * this client that is not a route.
  *
- * A route layer (the hand-written {@link CalimeroClient} today; one generated
- * from the node's OpenAPI document later) knows a method, a path and what the
- * route takes and answers. Everything else is here, behind one call,
+ * A route layer (the one generated from the node's OpenAPI document,
+ * `createApiClient` in `../api`, and the hand-written {@link CalimeroClient}
+ * methods on it) knows a method, a path and what the route takes and answers. Everything else is here, behind one call,
  * {@link Transport.request}:
  *
  * - the sealed channel to each node, opened only after the node's attestation
@@ -27,15 +27,14 @@ import { fetchAttestedKey, type CloudPolicy } from '../cloud-v2/attestation.js';
 import { orderNodes, readDirectory } from '../cloud-v2/directory.js';
 import {
   CalimeroError,
-  ConfirmCancelled,
-  ConfirmPromptBlocked,
   ConfirmRequired,
   LoginRequired,
   UnavailableError,
   WrongNode,
   errorFrom,
 } from '../cloud-v2/errors.js';
-import { b64url, fromB64url, type PasskeyProvider, type PasskeyUserVerification } from '../cloud-v2/passkey.js';
+import { b64url, type PasskeyProvider, type PasskeyUserVerification } from '../cloud-v2/passkey.js';
+import { passkeyConfirm, type ConfirmChallenge } from '../api/step-up.js';
 
 /** A signed-in session: what sign-up, sign-in and a refresh answer. */
 export interface CalimeroSession {
@@ -152,36 +151,6 @@ export interface DirectorySource {
   due: number;
   /** The re-read under way, if any. */
   reading?: Promise<void>;
-}
-
-/**
- * The user verification a confirmation asks the passkey for: what the node's
- * `412` details name, if it names one WebAuthn knows, else `fallback` (the
- * flow's own requirement: `required` for a step-up, which the node takes only
- * with the user verified; `preferred` for the sign-up confirmation, which it
- * takes with the user present).
- */
-function userVerificationOf(named: unknown, fallback: PasskeyUserVerification): PasskeyUserVerification {
-  return named === 'required' || named === 'preferred' || named === 'discouraged' ? named : fallback;
-}
-
-/**
- * What a failed confirmation prompt means to the caller. The browser or a
- * password manager refusing to show the prompt (the page not focused because
- * an extension's popup still holds focus, or another prompt still open) is
- * {@link ConfirmPromptBlocked}; the user dismissing it (`NotAllowedError`, or
- * `AbortError` when it was aborted) is {@link ConfirmCancelled}; anything
- * else is a real failure, passed through.
- */
-function promptFailure(error: unknown): unknown {
-  const e = error as { name?: unknown; message?: unknown } | null;
-  const name = e?.name;
-  const message = typeof e?.message === 'string' ? e.message : '';
-  if (name === 'InvalidStateError' || /not focused|already pending/i.test(message)) {
-    return new ConfirmPromptBlocked(error);
-  }
-  if (name === 'NotAllowedError' || name === 'AbortError') return new ConfirmCancelled(error);
-  return error;
 }
 
 /**
@@ -501,13 +470,24 @@ export class NodeTransport implements Transport {
    * ceremonies that mint a session ({@link ceremony}), never repeated here.
    */
   private async send(method: string, path: string, options: RequestOptions): Promise<Response> {
+    const response = await this.answer(method, path, options);
+    if (!response.ok) throw await refusal(response);
+    return response;
+  }
+
+  /**
+   * {@link send}'s answer, a refusal included: the response after the
+   * session's refresh and the move past a `421 WRONG_NODE`, whatever its
+   * status. The generated route layer reads a refusal itself.
+   */
+  private async answer(method: string, path: string, options: RequestOptions): Promise<Response> {
     let refreshed = false;
     let moved = false;
     for (;;) {
       const [token, at] = [this.auth, this.nodeUrl];
       const response = await this.once(method, path, options);
-      if (response.ok) return response;
-      const error = await refusal(response);
+      if (response.ok || (response.status !== 401 && response.status !== 421)) return response;
+      const error = await refusal(response.clone());
       if (error instanceof WrongNode && !moved) {
         moved = true;
         if (this.moveOn(at) && !ceremony(path)) continue;
@@ -516,7 +496,7 @@ export class NodeTransport implements Transport {
         await this.renew(token as string);
         continue;
       }
-      throw error;
+      return response;
     }
   }
 
@@ -557,19 +537,35 @@ export class NodeTransport implements Transport {
    * attempt, whose challenge is single-use).
    */
   private async retried<T>(method: string, path: string, options: RequestOptions, once: boolean): Promise<T> {
+    const response = await this.answerRetried(method, path, options, once);
+    if (!response.ok) throw await refusal(response);
+    const text = await response.text();
+    return (text ? JSON.parse(text) : {}) as T;
+  }
+
+  /**
+   * {@link retried}'s answer: the last response, a refusal included (a `503`
+   * whose retries ran out on every node too). A connection that failed on the
+   * last node rejects with {@link UnavailableError} (reason `network`).
+   */
+  private async answerRetried(method: string, path: string, options: RequestOptions, once: boolean): Promise<Response> {
     const retries = once ? 0 : this.retry.retries;
     const tried = new Set<string>();
     for (;;) {
       let unavailable: UnavailableError | undefined;
+      let last: Response | undefined;
       let node = this.nodeUrl;
       for (let attempt = 0; ; attempt++) {
         node = this.nodeUrl;
         tried.add(node);
         try {
-          return await this.read<T>(method, path, options);
+          const response = await this.answer(method, path, options);
+          if (response.status !== 503) return response;
+          last = response;
+          unavailable = (await refusal(response.clone())) as UnavailableError;
         } catch (error) {
-          if (error instanceof UnavailableError) unavailable = error;
-          else if (error instanceof TypeError && this.networkFailures.has(error)) {
+          if (error instanceof TypeError && this.networkFailures.has(error)) {
+            last = undefined;
             unavailable = new UnavailableError('NETWORK', `the node could not be reached: ${error.message}`, {}, undefined, error);
           } else throw error;
         }
@@ -577,8 +573,26 @@ export class NodeTransport implements Transport {
         const backoff = retryDelayMs(attempt, this.retry);
         await new Promise((resolve) => setTimeout(resolve, Math.max(backoff, (unavailable.retryAfter ?? 0) * 1000)));
       }
-      if (once || !this.failOver(node, tried)) throw unavailable;
+      if (once || !this.failOver(node, tried)) {
+        if (last) return last;
+        throw unavailable;
+      }
     }
+  }
+
+  /**
+   * One request to a route, answered whatever its status: the runtime's part
+   * (sealing, the session and its refresh, `421 WRONG_NODE`, and with
+   * `options.retry` the D70 retries and failover) and nothing of the route's.
+   * A refusal is the node's response, for the caller to read; a connection
+   * that failed rejects as `fetch` did (with `retry`, as
+   * {@link UnavailableError} once the retries ran out). The generated route
+   * layer (`createApiClient`) sends through this.
+   */
+  exchange(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<Response> {
+    const relativePath = relative(path);
+    if (!options.retry) return this.answer(method, relativePath, options);
+    return this.answerRetried(method, relativePath, options, options.retry === 'once');
   }
 
   /**
@@ -598,32 +612,16 @@ export class NodeTransport implements Transport {
    */
   private async confirmed<T>(method: string, path: string, options: RequestOptions): Promise<T> {
     const { passkey } = options;
-    const signal = options.promptSignal ?? options.signal;
     try {
       return await this.attempt<T>(method, path, options);
     } catch (error) {
       if (!(error instanceof ConfirmRequired) || !passkey) throw error;
-      const d = error.details as {
-        challengeId: string;
-        challenge: string;
-        rpId: string;
-        allowCredentials?: string[];
-        userVerification?: unknown;
-      };
-      let assertion: Awaited<ReturnType<PasskeyProvider['get']>>;
-      try {
-        // A step-up is taken only with the user verified (PIN or biometric);
-        // `preferred` lets a password manager skip it, and the node then
-        // refuses. Only the sign-up confirmation passes `preferred`. A
-        // requirement the node names itself wins.
-        assertion = await passkey.get(fromB64url(d.challenge), d.rpId, d.allowCredentials, {
-          userVerification: userVerificationOf(d.userVerification, options.userVerification ?? 'required'),
-          ...(signal ? { signal } : {}),
-        });
-      } catch (declined) {
-        throw promptFailure(declined);
-      }
-      const body = { ...(options.body as Record<string, unknown>), confirm: { challengeId: d.challengeId, assertion } };
+      const challenge = error.details as ConfirmChallenge;
+      const assertion = await passkeyConfirm(passkey, {
+        userVerification: options.userVerification,
+        signal: options.promptSignal ?? options.signal,
+      })(challenge, { request: new Request(`${this.nodeUrl}/${path}`, { method }) });
+      const body = { ...(options.body as Record<string, unknown>), confirm: { challengeId: challenge.challengeId, assertion } };
       return this.attempt<T>(method, path, { ...options, body });
     }
   }
@@ -647,9 +645,18 @@ export class NodeTransport implements Transport {
    * serves unsealed (`attestation`), and never with the credential.
    */
   async unsealed(path: string, options: Pick<RequestOptions, 'query'> = {}): Promise<Response> {
-    const response = await this.raw(`${this.nodeUrl}/${relative(path)}${queryString(options.query)}`);
+    const response = await this.inTheClear(path, options);
     if (!response.ok) throw await refusal(response);
     return response;
+  }
+
+  /**
+   * {@link unsealed}'s answer, a refusal included: `GET path` in the clear,
+   * without the credential, for the routes a node serves unsealed
+   * (`attestation`, `health`).
+   */
+  inTheClear(path: string, options: Pick<RequestOptions, 'query' | 'signal'> = {}): Promise<Response> {
+    return this.raw(`${this.nodeUrl}/${relative(path)}${queryString(options.query)}`, { signal: options.signal });
   }
 
   /**

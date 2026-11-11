@@ -24,7 +24,8 @@
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "dependencies": {
-    "@phala/dcap-qvl": "0.5.3"
+    "@phala/dcap-qvl": "0.5.3",
+    "openapi-fetch": "0.17.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
@@ -41,9 +42,10 @@
     "esbuild": "^0.28.1",
     "eslint": "^8.57.0",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "7.13.0",
     "rimraf": "^3.0.0",
     "semantic-release": "^24.2.9",
-    "typescript": "^4.9.5",
+    "typescript": "5.6.3",
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
   },
@@ -60,7 +62,10 @@
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
     "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer",
-    "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts"
+    "test:cloud-v2": "vitest run --config vitest.cloud-v2.config.ts",
+    "gen:api": "openapi-typescript openapi/core-openapi.json -o src/generated/api.ts && node scripts/gen-methods.mjs",
+    "check:api": "pnpm gen:api && git diff --exit-code -- src/generated",
+    "refresh:openapi": "scripts/refresh-openapi.sh"
   },
   "files": [
     "dist"

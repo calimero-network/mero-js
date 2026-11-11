@@ -97,6 +97,12 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 ## The API
 
+Every route of the node is a generated method (`client.orgs.get({ org })`,
+[below](#the-runtime-and-the-route-layer)). The methods listed here are the
+hand-written ones, which now call those; the single-route ones are deprecated and
+go once the apps have moved.
+
+
 - **Credentials**: `signUp` (with an `invite`, on a cluster that takes new accounts by invite; `signUpPolicy` reads which), `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `listSessions`, `revokeSession`, `listActivity`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
 - **Account recovery** (core #4844): `createRecoveryCode`, `removeRecoveryCode` (passkey-approved; the code is shown once), then signed out `startAccountRecovery(code, passkey)` and, 72 hours later, `finishAccountRecovery(passkey, accountId?)`; a passkey the account still has cancels in between (`cancelAccountRecovery`; `me()` shows `recoveryCode` and `recoveryPending`).
 - **Package origins**: `packageOrigins.list`, `packageOrigins.add`, `packageOrigins.remove`. A package's managers register the web origins of a frontend they host themselves (approved with a passkey); `signUp` and `signIn` on such a page send its origin, sign for that origin's relying-party id, and open a session bound to the package (`me()` answers its `app` and `origin`). An unregistered origin is refused with `OriginNotRegistered`. `packageOrigins.add(pkg, origin, passkey, { served: true })` registers a custom domain: the cluster also serves the package's frontend there from its signed bundle (`https://host`, no port; the passkey's consent names `served: true`); `list` answers `served` on each origin, and the extra refusals are `NotServing` (the cluster serves no frontends), `ClusterNotUpgraded` (a node is on an older release), `QuotaExceeded` (4 served per package, 64 per cluster) and `OriginTaken` (held with the other `served`).
@@ -108,7 +114,7 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 - **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.
 - **Approvals from an app**: `appsReport`, `releaseRules`, `pendingApprovals`, then `requestConsent` / `openConsentPage` to send the user to the node's consent page, and `consentResult`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 - **Operator** (ops token): `opsApps`, `opsOrgs`, `opsServedOrigins` (every custom domain the log holds, by package label), `setReleaseDeadline`, `liftReleaseDeadline`.
-- **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
+- **Any route**: its generated method (below). The untyped `get`, `post`, `put`, `delete`, `postConfirmed` and `deleteConfirmed` are deprecated.
 
 Refusals are typed (`LoginRequired`, `PasskeyUnknownHere`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`, `ConfirmPromptBlocked`,
 `ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `RuntimeTooOld`, `ConsentStale`, `AppError`, `TrapError`,
@@ -130,9 +136,67 @@ the client for mero-tee's private agent gate (`attestAgent`, `provisionAgent`,
 The client is two layers. The **runtime** (`@calimero-network/mero-js/runtime`,
 `src/runtime/`) is everything that is not a route: the node's attestation, the
 sealed channel, the credential and the session's refresh on a `401`, moving on
-`421 WRONG_NODE`, D70 retries and failover, the `412 CONFIRM_REQUIRED` passkey
-step-up, error mapping and server-sent events. Its whole surface toward routes is
-one interface:
+`421 WRONG_NODE`, D70 retries and failover, error mapping and server-sent
+events. The **route layer** is generated from core's OpenAPI document
+(`openapi/core-openapi.json`, the node's `docs/public/openapi.json`) by
+`pnpm gen:api`: `openapi-typescript` writes the types (`src/generated/api.ts`)
+and `scripts/gen-methods.mjs` one method per operation
+(`src/generated/methods.ts`), grouped by the operation's tag. `CalimeroClient`
+exposes the groups, which share `client.transport`'s session:
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });             // the typed payload
+const { result } = await client.apps.call({ app, method: 'set', args: { key: 'a' } });
+const { token } = await client.orgs.inviteCreate(               // a step-up (412)
+  { org: orgId, role: 'member' },
+  { confirm: passkeyConfirm(passkey) },
+);
+await client.apps.blobUpload({ app, body: bytes, contentType: 'image/png' });
+```
+
+- **Groups**: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+  `client.deployments`, `client.consent`, `client.ops`, `client.public`.
+- **One argument object**: path parameters, query parameters and body fields
+  merged, all typed from the document. The body goes whole under `body` when it is
+  raw bytes (with an optional `contentType`) or when its field names would collide.
+  A route whose query parameter is named like a path parameter takes its query
+  under `query`.
+- **The answer** is the route's typed success payload (a `Blob` for a download).
+  A refusal is thrown as the typed `CalimeroError` (`NotFound`, `ConfirmRequired`, ...).
+- **Challenges**: the second argument `{ confirm?, operatorProof?, signal? }`
+  answers this call's `412 CONFIRM_REQUIRED` (`passkeyConfirm(passkey)`) or
+  `428 OPERATOR_SIGNATURE_REQUIRED` (the operator key's signature over the
+  statement). The client's own `new CalimeroClient(options, { confirm, operatorProof })`
+  answers every call that gives none.
+- **Retries**: a route the document marks `x-calimero-retry-safe` (a call, a
+  view, a method by its path) is sent again on a `503` as D70 says; one whose
+  retries require an `idempotencyKey` gets one when it has none, which its retries
+  and its confirmed retry share. A `421 WRONG_NODE` moves to the next node.
+- **Step-ups** ask the passkey for the route's own user verification
+  (`x-calimero-user-verification`: `preferred` for the sign-up's confirmation,
+  `required` elsewhere).
+- **Streams** (`events`, `presenceStream`) stay hand-written on the runtime.
+- `createRoutes(createApiClient(transport, { confirm, operatorProof }))` builds
+  the same groups on any `NodeTransport`.
+
+`client.api` is the **low-level** escape hatch: the raw `openapi-fetch`
+client the methods run on (`client.api.GET('/orgs/{org}', { params: { path: {
+org } } })` answers `{ data, error, response }`). Its `fetch` is
+`transportFetch(transport)`: the path, query and body go through the transport
+(sealed, with the credential), and the two routes served in the clear
+(`/attestation`, `/health`) go unsealed. `stepUp(...)` and
+`operatorSignature(...)` are its middleware; `unwrap(result)` throws a refusal.
+Apps should not write against it.
+
+The **hand-written methods** of `CalimeroClient` (`createOrg`, `call`, ...) are
+now thin calls onto the generated methods, kept, `@deprecated` (each names its
+replacement), until the apps have moved. The ceremonies (`signUp`, `signIn`, `addPasskey`,
+account and organization recovery, `openConsentPage`, ...) stay as flows.
+
+The runtime's own surface toward routes is still one interface, for a route
+layer of your own:
 
 ```ts
 interface Transport {
@@ -144,21 +208,19 @@ interface Transport {
 //                   userVerification?, retry?: true | 'once' (D70), signal?, promptSignal? }
 ```
 
-A refusal is thrown as its typed `CalimeroError`. `NodeTransport` implements it;
-`routePath('apps/{app}/blobs/{id}', { app, id })` fills a path with encoded
-segments. The **route layer**, `CalimeroClient`, is the hand-written methods on
-top; `client.transport` is its runtime, so a route layer of your own (one
-generated from the node's OpenAPI document, say) shares the client's session:
+`NodeTransport` implements it, and `exchange(method, path, options)` answers a
+refusal as the node's response instead of throwing it (what the generated
+client sends through). The `/runtime` entry re-exports the package's own bundle,
+so its error classes are the ones `CalimeroClient` throws (`instanceof` holds
+across both imports).
 
-```ts
-import { routePath } from '@calimero-network/mero-js/runtime';
+### Refreshing the OpenAPI document
 
-const app = await client.transport.json('GET', routePath('apps/{app}', { app: appId }));
-await client.transport.json('DELETE', routePath('orgs/{org}', { org }), { body: {}, passkey });
-```
-
-The `/runtime` entry re-exports the package's own bundle, so its error classes are
-the ones `CalimeroClient` throws (`instanceof` holds across both imports).
+`openapi/core-openapi.json` is vendored from core at the commit `openapi/SOURCE`
+names. `scripts/refresh-openapi.sh [<core ref>]` (`pnpm refresh:openapi`)
+fetches it again, records the commit and regenerates `src/generated/`;
+`pnpm check:api` fails when the generated types or methods are not those of the
+vendored document.
 
 ## Development
 
