@@ -61,3 +61,18 @@ export const noRoute = () => api.GET('/no/such/route');
 
 // @ts-expect-error a view's method is a string
 export const badView = () => api.POST('/apps/{app}/views', { params: { path: { app: 'a' } }, body: { method: 1 } });
+
+// The generated methods: one typed argument object, the typed payload.
+export const orgName = async (org: string): Promise<string> => (await client.orgs.get({ org })).name;
+export const inviteToken = async (org: string): Promise<string> =>
+  (await client.orgs.inviteCreate({ org, role: 'member' }, { confirm: passkeyConfirm(passkey) })).token;
+export const called = (app: string) => client.apps.call({ app, method: 'set', args: { k: 'v' } });
+
+// @ts-expect-error a path parameter is required
+export const noOrg = () => client.orgs.get({});
+
+// @ts-expect-error not an argument of the route
+export const extraArg = () => client.orgs.get({ org: 'o', bogus: 1 });
+
+// @ts-expect-error an invite's role is one the node knows
+export const badRole = () => client.orgs.inviteCreate({ org: 'o', role: 'emperor' });
