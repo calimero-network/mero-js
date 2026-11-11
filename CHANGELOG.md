@@ -1,3 +1,9 @@
+## [29.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.16.0...mero-js-v29.17.0) (2026-11-11)
+
+### Features
+
+* **api:** a client generated from core's OpenAPI document, over the sealed transport ([#358](https://github.com/calimero-network/mero-js/issues/358)) ([3d949f6](https://github.com/calimero-network/mero-js/commit/3d949f679d79c9bdc5e6f06fac2cabf3a20384b6)), closes [#4937](https://github.com/calimero-network/mero-js/issues/4937) [#127](https://github.com/calimero-network/mero-js/issues/127) [#4937](https://github.com/calimero-network/mero-js/issues/4937)
+
 ## [29.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.15.0...mero-js-v29.16.0) (2026-11-11)
 
 ### Features
