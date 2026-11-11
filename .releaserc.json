@@ -41,7 +41,7 @@
           },
           {
             "type": "docs",
-            "release": "patch"
+            "release": null
           },
           {
             "type": "refactor",
