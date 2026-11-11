@@ -1,3 +1,9 @@
+## [29.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.15.0...mero-js-v29.16.0) (2026-11-11)
+
+### Features
+
+* **runtime:** split the transport runtime from the route methods ([#356](https://github.com/calimero-network/mero-js/issues/356)) ([ef12441](https://github.com/calimero-network/mero-js/commit/ef12441d16201670edde7f5ca82908c330590c37))
+
 ## [29.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.14.0...mero-js-v29.15.0) (2026-11-11)
 
 ### Features
