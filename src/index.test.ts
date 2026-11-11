@@ -43,10 +43,22 @@ describe('the package root', () => {
       'createQuoteVerifier',
       'createSignedReleaseVerifier',
       'trustSignedRelease',
+      'passkeyConfirm',
+      'presenceState',
+      'createRoutes',
+      'createRouteClient',
+      'DEFAULT_DIRECTORY',
+      'DEFAULT_ORG_CAPABILITIES',
     ]) {
       expect(root, name).toHaveProperty(name);
     }
     expect(typeof root.CalimeroClient).toBe('function');
+  });
+
+  it("keeps the route client's plumbing internal: write against the generated methods", () => {
+    for (const name of ['createApiClient', 'API_BASE_URL', 'transportFetch', 'unwrap', 'refusalOf', 'idempotencyKeys', 'stepUp', 'operatorSignature', 'route']) {
+      expect(root, name).not.toHaveProperty(name);
+    }
   });
 
   it('no longer carries the v1 client', () => {

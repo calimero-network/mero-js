@@ -7,8 +7,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { StandInCloudNode, type Reply } from '../../tests/cloud-v2/stand-in-node.js';
-import { CalimeroClient } from '../cloud-v2/client.js';
+import { StandInNode, type Reply } from '../../tests/support/stand-in-node.js';
+import { CalimeroClient } from '../client/calimero-client.js';
 import {
   CalimeroError,
   ConfirmRequired,
@@ -21,7 +21,7 @@ import {
   type Transport,
 } from './index.js';
 
-const node = new StandInCloudNode();
+const node = new StandInNode();
 beforeAll(() => node.start());
 afterAll(() => node.stop());
 beforeEach(() => {

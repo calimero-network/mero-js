@@ -42,12 +42,12 @@ jobs:
       - run: bash .github/scripts/tests/wait-for-npm.test.sh
       - run: pnpm lint
 
-  # The cluster suite (tests/cloud-v2) starts its own three `merod run --dev`
-  # nodes with 1.0's flags (tests/cloud-v2/cluster.ts), so this job only has to
+  # The cluster suite (tests/cluster) starts its own three `merod run --dev`
+  # nodes with 1.0's flags (tests/cluster/cluster.ts), so this job only has to
   # fetch a released 1.0 merod and the kv-store fixture built with it. Core's
   # e2e.yml (`clients`) runs the same suite against core's own tree.
-  e2e:
-    name: E2E (vs released merod 1.0)
+  cluster:
+    name: Cluster tests (vs released merod 1.0)
     runs-on: ubuntu-latest
     needs: build-and-test
     timeout-minutes: 15
@@ -75,7 +75,7 @@ jobs:
           NO_COLOR: '1'
         run: |
           set -o pipefail
-          pnpm test:cloud-v2 2>&1 | tee cluster.log
+          pnpm test:cluster 2>&1 | tee cluster.log
           # Guard against a vacuous green: the suite must have run, not skipped.
           grep -qE "Tests +[1-9][0-9]* passed" cluster.log \
             || { echo "::error::the cluster suite produced no passing tests"; exit 1; }

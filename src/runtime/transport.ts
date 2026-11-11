@@ -3,12 +3,12 @@
  * this client that is not a route.
  *
  * A route layer (the one generated from the node's OpenAPI document:
- * `createApiClient` and `createRoutes` in `../api`, which {@link CalimeroClient}
+ * `createRouteClient` and `createRoutes` in `../api`, which {@link CalimeroClient}
  * exposes) knows a method, a path and what the route takes and answers.
  * Everything else is here, behind one call, {@link Transport.request}:
  *
  * - the sealed channel to each node, opened only after the node's attestation
- *   passed the caller's policy (`../sealed`, `../cloud-v2/attestation`);
+ *   passed the caller's policy (`../sealed`, `./attestation`);
  * - the credential (an API key or a session), and the session's refresh when a
  *   node answers `401` to it;
  * - moving to another node of the cluster on `421 WRONG_NODE`, and failing
@@ -23,8 +23,8 @@
  */
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
-import { fetchAttestedKey, type CloudPolicy } from '../cloud-v2/attestation.js';
-import { orderNodes, readDirectory } from '../cloud-v2/directory.js';
+import { fetchAttestedKey, type NodePolicy } from './attestation.js';
+import { orderNodes, readDirectory } from './directory.js';
 import {
   CalimeroError,
   ConfirmRequired,
@@ -32,16 +32,16 @@ import {
   UnavailableError,
   WrongNode,
   errorFrom,
-} from '../cloud-v2/errors.js';
-import { b64url, type PasskeyProvider, type PasskeyUserVerification } from '../cloud-v2/passkey.js';
-import { passkeyConfirm, type ConfirmChallenge } from '../api/step-up.js';
-import type { ApiSchema } from '../api/types.js';
+} from './errors.js';
+import { b64url, type PasskeyProvider, type PasskeyUserVerification } from './passkey.js';
+import { passkeyConfirm, type ConfirmChallenge } from './passkey.js';
+import type { components } from '../generated/api.js';
 
 /** A signed-in session: what sign-up, sign-in and a refresh answer. */
-export type CalimeroSession = ApiSchema<'Session'>;
+export type CalimeroSession = components['schemas']['Session'];
 
 /** One server-sent event: `data` parsed as JSON when it is. */
-export interface CloudEvent {
+export interface NodeEvent {
   id: string;
   kind: string;
   data: unknown;
@@ -54,7 +54,7 @@ export interface CloudEvent {
  * client's: 6 retries, 200 ms doubling, at most 2 s (about 9 s in all, past a
  * leader election).
  */
-export interface CloudRetryOptions {
+export interface RetryOptions {
   /** Retries after the first attempt. Default 6. */
   retries?: number;
   /** The first backoff; each retry doubles it. Default 200 ms. */
@@ -120,7 +120,7 @@ export interface Transport {
   /** {@link request}'s JSON body (`{}` for an empty one). */
   json<T = Record<string, unknown>>(method: HttpMethod, path: string, options?: RequestOptions): Promise<T>;
   /** A server-sent event stream on `GET path`, until the stream ends or `signal` aborts. */
-  events(path: string, options?: Pick<RequestOptions, 'query' | 'signal'>): AsyncGenerator<CloudEvent>;
+  events(path: string, options?: Pick<RequestOptions, 'query' | 'signal'>): AsyncGenerator<NodeEvent>;
 }
 
 /** How {@link NodeTransport} reaches a cluster's nodes. */
@@ -130,11 +130,11 @@ export interface NodeTransportOptions {
   /** Other nodes of the same cluster, in the order to move to them. */
   nodes?: string[];
   /** What every node must attest to before anything is sent to it. */
-  policy: CloudPolicy;
+  policy: NodePolicy;
   /** Fetch that carries attestation and envelopes. Defaults to global `fetch`. */
   fetch?: typeof fetch;
   /** How calls and views retry a 503 or a failed connection. */
-  retry?: CloudRetryOptions;
+  retry?: RetryOptions;
 }
 
 /** Where a transport whose nodes came from the directory re-reads its node list. */
@@ -177,7 +177,7 @@ export async function refusal(response: Response): Promise<CalimeroError> {
 }
 
 /** Server-sent event frames from a response body: `{ id, kind, data }` each, `data` parsed as JSON when it is. */
-export async function* sseFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<CloudEvent> {
+export async function* sseFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<NodeEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -279,14 +279,14 @@ export class NodeTransport implements Transport {
   private at = 0;
   /** A sealed fetch per node, each attesting its own node on first use. */
   private readonly channels = new Map<string, typeof fetch>();
-  private readonly policy: CloudPolicy;
+  private readonly policy: NodePolicy;
   /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
   readonly raw: typeof fetch;
   private auth: string | undefined;
   private current: CalimeroSession | undefined;
   /** The refresh under way, which every request that needs one shares. */
   private refreshing: Promise<CalimeroSession> | undefined;
-  private readonly retry: Required<CloudRetryOptions>;
+  private readonly retry: Required<RetryOptions>;
   /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
   private readonly networkFailures = new WeakSet<object>();
   /** The directory the node list came from, if it came from one. */
@@ -583,7 +583,7 @@ export class NodeTransport implements Transport {
    * A refusal is the node's response, for the caller to read; a connection
    * that failed rejects as `fetch` did (with `retry`, as
    * {@link UnavailableError} once the retries ran out). The generated route
-   * layer (`createApiClient`) sends through this.
+   * layer (`createRouteClient`) sends through this.
    */
   exchange(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<Response> {
     const relativePath = relative(path);
@@ -630,7 +630,7 @@ export class NodeTransport implements Transport {
     return this.confirmed<T>(method, relative(path), options);
   }
 
-  async *events(path: string, options: Pick<RequestOptions, 'query' | 'signal'> = {}): AsyncGenerator<CloudEvent> {
+  async *events(path: string, options: Pick<RequestOptions, 'query' | 'signal'> = {}): AsyncGenerator<NodeEvent> {
     const response = await this.send('GET', relative(path), options);
     if (!response.body) throw new CalimeroError(response.status, 'EVENTS', 'the event stream has no body');
     yield* sseFrames(response.body);
@@ -701,11 +701,11 @@ export class NodeTransport implements Transport {
  */
 export async function directoryTransport(options: {
   cluster: string;
-  policy: CloudPolicy;
+  policy: NodePolicy;
   directory: string;
   zone?: string;
   fetch?: typeof fetch;
-  retry?: CloudRetryOptions;
+  retry?: RetryOptions;
   random?: () => number;
 }): Promise<NodeTransport> {
   const random = options.random ?? Math.random;

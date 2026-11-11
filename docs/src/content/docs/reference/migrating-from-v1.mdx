@@ -29,23 +29,23 @@ context → **app** (instance), application → signed **package**.
 | `sdk.auth` (`AuthApiClient`, mero-auth: username/password, SSO callback, JWT refresh) | `signUp` / `signIn` with a passkey, `refresh`, `createApiKey` |
 | `parseAuthCallback`, `buildAuthLoginUrl`, `MemoryTokenStore`, `LocalStorageTokenStore`, `TokenStore` | keep the `CalimeroSession` yourself and pass it to `useSession` |
 | `login`, `signLoginStatement`, `generateSessionKey`, `DelegatedSession` | passkey sessions and API keys |
-| `sdk.admin` (`AdminApiClient`): applications | `installPackage`, `uploadPackage`, `packages`, `uninstallPackage` |
-| `sdk.admin`: contexts, identities, join | `createApp`, `listApps`, `getApp`, `deleteApp`, `setAccess` |
-| `sdk.admin`: namespaces, groups, members, invitations | `createOrg`, `createTeam`, `setMember`, `setTeamMember`, `invite`, `redeemInvite` |
-| `sdk.admin`: group upgrades and their status | `upgradeOrg`, `upgradeRun`, `retryUpgradeRun` |
-| `sdk.admin`: blobs | `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob` |
-| `sdk.admin`: TEE admission policy, release admission | `approveRelease` (the owner's passkey) |
-| `sdk.rpc` (`RpcClient`, `RpcError`, `execute`) | `call`, `callConfirmed`, `view`; `AppError`, `TrapError` |
+| `sdk.admin` (`AdminApiClient`): applications | `client.packages.install`, `.upload`, `.list`, `.uninstall` |
+| `sdk.admin`: contexts, identities, join | `client.apps.create`, `.list`, `.get`, `.delete`, `.access` |
+| `sdk.admin`: namespaces, groups, members, invitations | `client.orgs.create`, `.teamCreate`, `.setMember`, `.teamSetMember`, `.inviteCreate`, `.inviteRedeem` |
+| `sdk.admin`: group upgrades and their status | `client.orgs.upgrade`, `.upgradeStatus`, `.upgradeRetry` |
+| `sdk.admin`: blobs | `client.apps.blobUpload`, `downloadBlob`, `client.apps.blobList`, `.blobInfo`, `.blobDelete` |
+| `sdk.admin`: TEE admission policy, release admission | `client.orgs.releaseApproval` (the owner's passkey) |
+| `sdk.rpc` (`RpcClient`, `RpcError`, `execute`) | `client.apps.call`, `client.apps.view`; `AppError`, `TrapError` |
 | `sdk.events` / `sdk.ws` (`SseClient`, `WsClient`) and their event types | `events(app)` (sealed SSE) |
-| `EphemeralClient`, `subscribePresence`, `jsonCodec` | `publishPresence`, `presence`, `presenceStream` |
+| `EphemeralClient`, `subscribePresence`, `jsonCodec` | `client.apps.presencePublish`, `client.apps.presenceGet`, `presenceStream` |
 | `CloudClient` (namespaces, relays, HA) | none: every app is replicated on the cluster |
 | account roots (`generateAccountRoot`, `accountRootFromPhrase`, `signAccountLink`, …), `resolveRoot` | the account is its passkeys |
-| device certificates and scopes (`signDeviceCert`, `signDeviceScope`, …) | each passkey is a device (`addPasskey`, `labelPasskey`) |
-| `signGroupInvitation`, `signMemberJoinOp`, owner ops (`transferOwnershipOp`, `teeAdmissionPolicyOp`, …) | `invite`; `setMember(org, account, 'owner', passkey)`; `approveRelease` |
+| device certificates and scopes (`signDeviceCert`, `signDeviceScope`, …) | each passkey is a device (`addPasskey`, `client.auth.passkeyLabel`) |
+| `signGroupInvitation`, `signMemberJoinOp`, owner ops (`transferOwnershipOp`, `teeAdmissionPolicyOp`, …) | `client.orgs.inviteCreate`; `client.orgs.setMember({ org, account, role: 'owner' }, { confirm })`; `client.orgs.releaseApproval` |
 | `signerFromSecret`, `signerFromCryptoKey` | none needed |
 | `CAPABILITIES`, `CAPABILITY_PRESETS`, `capMask`, `hasCap`, … | `ORG_CAPABILITIES`, `orgCapabilities` (same bit values, 1.0 names) |
 | `HTTPError`, `AuthRevokedError`, `classifyError` | `CalimeroError` and its subclasses |
-| `createBrowserHttpClient`, `createNodeHttpClient`, `withRetry`, … | `get` / `post` / `put` / `delete` on the client (sealed) |
+| `createBrowserHttpClient`, `createNodeHttpClient`, `withRetry`, … | the generated methods (`client.orgs.get({ org })`, …), sealed |
 | `discoverLocalNodes`, `probeNodeHealth`, `localNodeUrl` | `merod local` prints its node URLs |
 | `fetchAttestedTransportKey`, `createAttestedSealedFetch` (`/admin-api/tee/attest`) | `fetchAttestedKey(baseUrl, policy)` (`/attestation`) |
 | `createSignedReleaseSealedFetch`, `fetchNodeReleaseVersion`, `nodeReleaseVersionFromImage` (`/admin-api/tee/info`) | `CalimeroClient` with `policy.release` (the node names its release in its attestation) |

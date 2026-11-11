@@ -172,17 +172,10 @@ await client.apps.blobUpload({ app, body: bytes, contentType: 'image/png' });
   (`x-calimero-user-verification`: `preferred` for the sign-up's confirmation,
   `required` elsewhere).
 - **Streams** (`events`, `presenceStream`) stay hand-written on the runtime.
-- `createRoutes(createApiClient(transport, { confirm, operatorProof }))` builds
-  the same groups on any `NodeTransport`.
-
-`client.api` is the **low-level** escape hatch: the raw `openapi-fetch`
-client the methods run on (`client.api.GET('/orgs/{org}', { params: { path: {
-org } } })` answers `{ data, error, response }`). Its `fetch` is
-`transportFetch(transport)`: the path, query and body go through the transport
-(sealed, with the credential), and the two routes served in the clear
-(`/attestation`, `/health`) go unsealed. `stepUp(...)` and
-`operatorSignature(...)` are its middleware; `unwrap(result)` throws a refusal.
-Apps should not write against it.
+- `createRoutes(createRouteClient(transport, { confirm, operatorProof }))` builds
+  the same groups on any `NodeTransport`. The route client under them sends each
+  request through the transport (sealed, with the credential; `/attestation` and
+  `/health` in the clear); write against the groups, not against it.
 
 The single-route methods of 29.x (`createOrg`, `call`, ...) are gone; see
 [Upgrading from 29.x](#upgrading-from-29x). The ceremonies (`signUp`, `signIn`, `addPasskey`,
@@ -195,7 +188,7 @@ layer of your own:
 interface Transport {
   request(method: HttpMethod, path: string, options?: RequestOptions): Promise<Response>; // 2xx, body unread
   json<T>(method: HttpMethod, path: string, options?: RequestOptions): Promise<T>;
-  events(path: string, options?: { query?; signal? }): AsyncGenerator<CloudEvent>;
+  events(path: string, options?: { query?; signal? }): AsyncGenerator<NodeEvent>;
 }
 // RequestOptions: { query?, body? (JSON) | bytes? + contentType?, passkey? (answers a 412),
 //                   userVerification?, retry?: true | 'once' (D70), signal?, promptSignal? }
@@ -362,11 +355,11 @@ pnpm typecheck
 pnpm typecheck:consumer
 ```
 
-The cluster tests (`tests/cloud-v2`) start three `merod run --dev` nodes and
+The cluster tests (`tests/cluster`) start three `merod run --dev` nodes and
 run the client against them:
 
 ```bash
-MEROD_BINARY=/path/to/merod KV_STORE_WASM=/path/to/kv_store.wasm pnpm test:cloud-v2
+MEROD_BINARY=/path/to/merod KV_STORE_WASM=/path/to/kv_store.wasm pnpm test:cluster
 ```
 
 Without the variables they use `../core/target/debug/merod` and
