@@ -98,6 +98,6 @@ jobs:
     with:
       packages: "@calimero-network/mero-js=${{ needs.release.outputs.version }}"
       label: mero-js-${{ needs.release.outputs.version }}
-    # GH_APP_PRIVATE_KEY, which the called workflow uses to mint a
+    # ACTIONS_APP_PRIVATE_KEY, which the called workflow uses to mint a
     # per-repository installation token.
     secrets: inherit

@@ -32,7 +32,7 @@ describe('CalimeroClient refusals', () => {
     refusal.status = 413;
     refusal.code = 'too_large';
     const error = await client()
-      .uploadBlob('app', new Uint8Array(8))
+      .apps.blobUpload({ app: 'app', body: new Uint8Array(8) })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CalimeroError);
     expect((error as InstanceType<typeof CalimeroError>).status).toBe(413);
@@ -44,7 +44,7 @@ describe('CalimeroClient refusals', () => {
     refusal.status = 400;
     refusal.code = 'malformed';
     const error = await client()
-      .uploadBlob('app', new Uint8Array(8))
+      .apps.blobUpload({ app: 'app', body: new Uint8Array(8) })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SealedTransportError);
   });

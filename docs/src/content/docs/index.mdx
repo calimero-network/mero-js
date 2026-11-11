@@ -47,7 +47,7 @@ const client = new CalimeroClient({
   policy: { release: { minReleaseVersion: '2.3.109' } },
 });
 await client.signIn(browserPasskey());
-const { result } = await client.view(appId, 'get', { key: 'a' });
+const { result } = await client.apps.view({ app: appId, method: 'get', args: { key: 'a' } });
 ```
 
 Every request goes through the same three steps:

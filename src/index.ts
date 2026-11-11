@@ -1,12 +1,41 @@
 // Mero.js: the JavaScript client for Calimero 1.0, the confidential cloud.
 //
 // `CalimeroClient` verifies a node's TDX attestation, seals every request to
-// it, and signs people in with passkeys and machines with API keys. Everything
+// it, and signs people in with passkeys and machines with API keys; its `api`
+// is every route of the node, typed from core's OpenAPI document. Everything
 // below it is the pieces it is built from, exported for callers who need one
 // on its own.
 
 // The client, its errors and its types
 export * from './cloud-v2/index.js';
+
+// The node's routes as a typed client generated from core's OpenAPI document
+// (`client.api`, or `createApiClient(transport)`), with the step-up (`412`)
+// and operator-signature (`428`) middleware.
+export * from './api/index.js';
+
+// The runtime the client sends every route through (also its own entry point,
+// `@calimero-network/mero-js/runtime`): one `Transport.request` over the
+// attested, sealed channel, with the session, step-up and error mapping.
+export {
+  DEFAULT_RETRY,
+  NodeTransport,
+  directoryTransport,
+  newIdempotencyKey,
+  queryString,
+  refusal,
+  retryDelayMs,
+  routePath,
+  sseFrames,
+} from './runtime/transport.js';
+export type {
+  DirectorySource,
+  HttpMethod,
+  NodeTransportOptions,
+  QueryValue,
+  RequestOptions,
+  Transport,
+} from './runtime/transport.js';
 
 // Sealed transport: requests encrypted end to end to a TEE node's attested key,
 // and the checks that decide whether a quote is trusted.

@@ -28,6 +28,8 @@ import {
   type UpgradeRun,
 } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
+import { passkeyConfirm } from '../api/step-up.js';
+import { presenceState } from './client.js';
 
 const node = new StandInCloudNode();
 beforeAll(() => node.start());
@@ -117,8 +119,8 @@ describe("the console's passkey actions", () => {
     const session = await c.signIn(passkey);
     expect(session.accountId).toBe('acc-1');
     expect(c.session).toEqual(session);
-    expect(await c.createOrg('Acme')).toBe('org-1');
-    await c.installPackage('com.example.kv', '1.0.0');
+    expect(await (await c.orgs.create({ name: 'Acme' })).orgId).toBe('org-1');
+    await c.packages.install({ package: 'com.example.kv', version: '1.0.0' });
     expect(sent()).toEqual([
       ['POST', '/auth/passkey/login/begin'],
       ['POST', '/auth/passkey/login/finish'],
@@ -203,7 +205,7 @@ describe("the console's passkey actions", () => {
     const c = client();
     const policy = { policy: 'invite', orgInvites: true, signUpInvites: true, inviteRequired: true };
     node.answer = () => ({ status: 200, json: policy });
-    expect(await c.signUpPolicy()).toEqual(policy);
+    expect(await c.deployments.signUpPublic()).toEqual(policy);
     expect(sent()).toEqual([['GET', '/sign-up']]);
     const refusals: Array<[string, string]> = [
       ['sign-up refused: this cluster takes new accounts by invite only', 'invite-only'],
@@ -247,7 +249,7 @@ describe("the console's passkey actions", () => {
   it('upgrades an org with one passkey approval, follows the run and retries it', async () => {
     const c = client();
     confirming(RUN);
-    const run = await c.upgradeOrg('org-1', { package: 'com.example.kv', version: '1.1.0', cascade: true }, passkey);
+    const run = await c.orgs.upgrade({ org: 'org-1', package: 'com.example.kv', version: '1.1.0', cascade: true }, { confirm: passkeyConfirm(passkey) });
     expect(run).toEqual(RUN);
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/upgrade'],
@@ -262,24 +264,24 @@ describe("the console's passkey actions", () => {
 
     node.requests.length = 0;
     node.answer = () => ({ status: 200, json: RUN });
-    expect(await c.upgradeRun('org-1', 'r-1')).toEqual(RUN);
+    expect(await c.orgs.upgradeStatus({ org: 'org-1', run: 'r-1' })).toEqual(RUN);
     expect(sent()).toEqual([['GET', '/orgs/org-1/upgrades/r-1']]);
 
     node.requests.length = 0;
     confirming({ ...RUN, runId: 'r-2' });
-    expect((await c.retryUpgradeRun('org-1', 'r-1', passkey)).runId).toBe('r-2');
+    expect((await c.orgs.upgradeRetry({ org: 'org-1', run: 'r-1' }, { confirm: passkeyConfirm(passkey) })).runId).toBe('r-2');
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/upgrades/r-1/retry'],
       ['POST', '/orgs/org-1/upgrades/r-1/retry'],
     ]);
   });
 
-  it('postConfirmed reaches orgs/{org}/upgrade and /outbound as the console calls it', async () => {
+  it('orgs.upgrade and orgs.outboundApproval reach orgs/{org}/upgrade and /outbound as the console calls them', async () => {
     const c = client();
     confirming({ runId: 'r-9' });
-    expect(await c.postConfirmed('orgs/org-1/upgrade', { package: 'p', version: '2.0.0' }, passkey)).toEqual({ runId: 'r-9' });
+    expect(await c.orgs.upgrade({ org: 'org-1', package: 'p', version: '2.0.0' }, { confirm: passkeyConfirm(passkey) })).toEqual({ runId: 'r-9' });
     confirming({ ok: true });
-    await c.postConfirmed('orgs/org-1/outbound', { package: 'p' }, passkey);
+    await c.orgs.outboundApproval({ org: 'org-1', package: 'p' }, { confirm: passkeyConfirm(passkey) });
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/upgrade'],
       ['POST', '/orgs/org-1/upgrade'],
@@ -291,16 +293,16 @@ describe("the console's passkey actions", () => {
   it('approves outbound prefixes and releases, for an org or for the account', async () => {
     const c = client();
     confirming({});
-    await c.approveOutbound('org-1', 'com.example.kv', passkey);
+    await c.orgs.outboundApproval({ org: 'org-1', package: 'com.example.kv', prefixes: 'manifest', replace: false }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/outbound');
     expect(last().body).toMatchObject({ package: 'com.example.kv', prefixes: 'manifest', replace: false });
-    await c.approveOutbound(null, 'com.example.kv', passkey, { prefixes: ['https://api.example/'], replace: true });
+    await c.auth.accountOutboundApproval({ package: 'com.example.kv', prefixes: ['https://api.example/'], replace: true }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/auth/outbound');
     expect(last().body).toMatchObject({ prefixes: ['https://api.example/'], replace: true, confirm: { challengeId: 'c-1' } });
-    await c.approveRelease('org-1', '2.3.120', passkey);
+    await c.orgs.releaseApproval({ org: 'org-1', version: '2.3.120', approved: true }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/releases');
     expect(last().body).toMatchObject({ version: '2.3.120', approved: true });
-    await c.approveRelease(null, '2.3.110', passkey, false);
+    await c.auth.accountReleaseApproval({ version: '2.3.110', approved: false }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/auth/releases');
     expect(last().body).toMatchObject({ version: '2.3.110', approved: false });
   });
@@ -315,13 +317,13 @@ describe("the console's passkey actions", () => {
         ? { status: 200, json: { keyId: 'k-ci', key: 'cal_ci' } }
         : { status: 200, json: { index: 7, status: 'ok', error: null } };
     };
-    expect(await c.createApiKey({ label: 'ci', upgrades: { app: 'a-1' }, ttlSecs: 3600 }, passkey)).toEqual({
+    expect(await c.auth.apikeyCreate({ label: 'ci', upgrades: { app: 'a-1' }, ttlSecs: 3600 }, { confirm: passkeyConfirm(passkey) })).toEqual({
       keyId: 'k-ci',
       key: 'cal_ci',
     });
     expect(node.requests[0].body).toEqual({ label: 'ci', upgrades: { app: 'a-1' }, ttlSecs: 3600 });
     c.useApiKey('cal_ci');
-    expect(await c.upgradeApp('a-1', { version: '1.1.0' })).toEqual({ index: 7, status: 'ok', error: null });
+    expect(await c.apps.upgrade({ app: 'a-1', version: '1.1.0' })).toEqual({ index: 7, status: 'ok', error: null });
     expect(sent()).toEqual([
       ['POST', '/auth/apikeys'],
       ['POST', '/auth/apikeys'],
@@ -340,7 +342,7 @@ describe("the console's passkey actions", () => {
         ? { status: 200, json: { keyId: 'k-1', key: 'cal_secret' } }
         : { status: 200, json: { token: 'inv-1' } };
     };
-    expect(await c.createApiKey({ label: 'ci', apps: ['a-1'], readOnly: true }, passkey)).toEqual({
+    expect(await c.auth.apikeyCreate({ label: 'ci', apps: ['a-1'], readOnly: true }, { confirm: passkeyConfirm(passkey) })).toEqual({
       keyId: 'k-1',
       key: 'cal_secret',
     });
@@ -351,8 +353,8 @@ describe("the console's passkey actions", () => {
       readOnly: true,
       confirm: { challengeId: 'c-1', assertion: expect.objectContaining({ signature: 'sig' }) },
     });
-    await c.revokeApiKey('k-1', passkey);
-    expect(await c.invite('org-1', 'member', passkey, ['t-1'], { ttlSecs: 60, uses: 2 })).toBe('inv-1');
+    await c.auth.apikeyRevoke({ key: 'k-1' }, { confirm: passkeyConfirm(passkey) });
+    expect(await (await c.orgs.inviteCreate({ org: 'org-1', role: 'member', teams: ['t-1'], ttlSecs: 60, uses: 2 }, { confirm: passkeyConfirm(passkey) })).token).toBe('inv-1');
     expect(sent()).toEqual([
       ['POST', '/auth/apikeys'],
       ['POST', '/auth/apikeys'],
@@ -420,27 +422,27 @@ describe('credentials, memberships and invites are approved with a passkey (412 
 
   type Case = [string, (c: CalimeroClient) => Promise<unknown>, 'POST' | 'DELETE', string, Record<string, unknown>];
   const cases: Case[] = [
-    ['removePasskey', (c) => c.removePasskey('cred/1', passkey), 'DELETE', '/auth/passkeys/cred%2F1', {}],
-    ['setMember', (c) => c.setMember('org-1', 'acc-2', 'admin', passkey), 'POST', '/orgs/org-1/members', { account: 'acc-2', role: 'admin' }],
-    ['removeMember', (c) => c.removeMember('org-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/members/acc-2', {}],
+    ['removePasskey', (c) => c.auth.passkeyRemove({ cred: 'cred/1' }, { confirm: passkeyConfirm(passkey) }), 'DELETE', '/auth/passkeys/cred%2F1', {}],
+    ['setMember', (c) => c.orgs.setMember({ org: 'org-1', account: 'acc-2', role: 'admin' }, { confirm: passkeyConfirm(passkey) }), 'POST', '/orgs/org-1/members', { account: 'acc-2', role: 'admin' }],
+    ['removeMember', (c) => c.orgs.removeMember({ org: 'org-1', account: 'acc-2' }, { confirm: passkeyConfirm(passkey) }), 'DELETE', '/orgs/org-1/members/acc-2', {}],
     [
       'setCapabilities',
-      (c) => c.setCapabilities('org-1', 17, passkey, { account: 'acc-2', team: 't-1' }),
+      (c) => c.orgs.capabilities({ org: 'org-1', capabilities: 17, account: 'acc-2', team: 't-1' }, { confirm: passkeyConfirm(passkey) }),
       'POST',
       '/orgs/org-1/capabilities',
       { capabilities: 17, account: 'acc-2', team: 't-1' },
     ],
-    ['setCapabilities (default)', (c) => c.setCapabilities('org-1', 4, passkey), 'POST', '/orgs/org-1/capabilities', { capabilities: 4 }],
+    ['setCapabilities (default)', (c) => c.orgs.capabilities({ org: 'org-1', capabilities: 4 }, { confirm: passkeyConfirm(passkey) }), 'POST', '/orgs/org-1/capabilities', { capabilities: 4 }],
     [
       'setTeamMember',
-      (c) => c.setTeamMember('org-1', 't-1', 'acc-2', passkey, { role: 'readOnly' }),
+      (c) => c.orgs.teamSetMember({ org: 'org-1', team: 't-1', account: 'acc-2', role: 'readOnly' }, { confirm: passkeyConfirm(passkey) }),
       'POST',
       '/orgs/org-1/teams/t-1/members',
       { account: 'acc-2', role: 'readOnly' },
     ],
-    ['removeTeamMember', (c) => c.removeTeamMember('org-1', 't-1', 'acc-2', passkey), 'DELETE', '/orgs/org-1/teams/t-1/members/acc-2', {}],
-    ['deleteTeam', (c) => c.deleteTeam('org-1', 't-1', passkey), 'DELETE', '/orgs/org-1/teams/t-1', {}],
-    ['invite', (c) => c.invite('org-1', 'guest', passkey), 'POST', '/orgs/org-1/invites', { role: 'guest', teams: [] }],
+    ['removeTeamMember', (c) => c.orgs.teamRemoveMember({ org: 'org-1', team: 't-1', account: 'acc-2' }, { confirm: passkeyConfirm(passkey) }), 'DELETE', '/orgs/org-1/teams/t-1/members/acc-2', {}],
+    ['deleteTeam', (c) => c.orgs.teamDelete({ org: 'org-1', team: 't-1' }, { confirm: passkeyConfirm(passkey) }), 'DELETE', '/orgs/org-1/teams/t-1', {}],
+    ['invite', (c) => c.orgs.inviteCreate({ org: 'org-1', role: 'guest', teams: [] }, { confirm: passkeyConfirm(passkey) }), 'POST', '/orgs/org-1/invites', { role: 'guest', teams: [] }],
   ];
 
   it.each(cases)('%s answers the 412 and sends the same body again with confirm', async (_, act, method, path, body) => {
@@ -459,9 +461,8 @@ describe('credentials, memberships and invites are approved with a passkey (412 
 
   it('without a passkey the 412 is ConfirmRequired, carrying the challenge, and nothing more is sent', async () => {
     confirming({});
-    const none = undefined as unknown as PasskeyProvider;
     const error = await client()
-      .removeMember('org-1', 'acc-2', none)
+      .orgs.removeMember({ org: 'org-1', account: 'acc-2' })
       .then(() => undefined, (e: unknown) => e);
     expect(error).toBeInstanceOf(ConfirmRequired);
     expect(error).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: CHALLENGE });
@@ -470,7 +471,7 @@ describe('credentials, memberships and invites are approved with a passkey (412 
 
   it('deletes a team holding no apps without a passkey; one holding apps is ConfirmRequired naming them', async () => {
     node.answer = () => ({ status: 200, json: { apps: [] } });
-    await client().deleteTeam('org-1', 't-empty');
+    await client().orgs.teamDelete({ org: 'org-1', team: 't-empty' });
     expect(sent()).toEqual([['DELETE', '/orgs/org-1/teams/t-empty']]);
 
     node.requests.length = 0;
@@ -480,14 +481,14 @@ describe('credentials, memberships and invites are approved with a passkey (412 
         ? { status: 200, json: { apps: ['app-1'] } }
         : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details } };
     const error = await client()
-      .deleteTeam('org-1', 't-1')
+      .orgs.teamDelete({ org: 'org-1', team: 't-1' })
       .then(() => undefined, (e: unknown) => e);
     expect(error).toBeInstanceOf(ConfirmRequired);
     expect(error).toMatchObject({ status: 412, code: 'CONFIRM_REQUIRED', details: { apps: ['app-1'] } });
     expect(sent()).toEqual([['DELETE', '/orgs/org-1/teams/t-1']]);
 
     node.requests.length = 0;
-    await client().deleteTeam('org-1', 't-1', passkey);
+    await client().orgs.teamDelete({ org: 'org-1', team: 't-1' }, { confirm: passkeyConfirm(passkey) });
     expect(sent()).toEqual([
       ['DELETE', '/orgs/org-1/teams/t-1'],
       ['DELETE', '/orgs/org-1/teams/t-1'],
@@ -504,7 +505,7 @@ describe('credentials, memberships and invites are approved with a passkey (412 
       },
     };
     const error = await client()
-      .setMember('org-1', 'acc-2', 'member', declining)
+      .orgs.setMember({ org: 'org-1', account: 'acc-2', role: 'member' }, { confirm: passkeyConfirm(declining) })
       .then(() => undefined, (e: unknown) => e);
     expect(error).toBeInstanceOf(ConfirmCancelled);
     expect(sent()).toEqual([['POST', '/orgs/org-1/members']]);
@@ -512,7 +513,7 @@ describe('credentials, memberships and invites are approved with a passkey (412 
 
   it('redeeming an invite asks for nothing', async () => {
     node.answer = () => ({ status: 200, json: { orgId: 'org-1' } });
-    expect(await client().redeemInvite('inv-1')).toEqual({ orgId: 'org-1' });
+    expect(await client().orgs.inviteRedeem({ token: 'inv-1' })).toEqual({ orgId: 'org-1' });
     expect(sent()).toEqual([['POST', '/invites/inv-1/redeem']]);
     expect(last().body).toEqual({});
   });
@@ -538,7 +539,7 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
       ],
     };
     node.answer = () => ({ status: 200, json: listed });
-    expect(await client().listAppTeams('org/1')).toEqual(listed);
+    expect(await client().orgs.appTeamList({ org: 'org/1' })).toEqual(listed);
     expect(sent()).toEqual([['GET', '/orgs/org%2F1/app-teams']]);
   });
 
@@ -549,7 +550,7 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
     };
     confirming(result);
     const apps = [{ package: 'com.example.chat', name: 'Chat', instances: ['a-1'] }];
-    expect(await client().scopeApps('org-1', passkey, { apps, shared: true })).toEqual(result);
+    expect(await client().orgs.appTeamsScope({ org: 'org-1', apps, shared: true }, { confirm: passkeyConfirm(passkey) })).toEqual(result);
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/app-teams'],
       ['POST', '/orgs/org-1/app-teams'],
@@ -567,18 +568,18 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
     };
     confirming(result);
     const apps = [{ package: 'com.example.chat', join: 'invite' as const, keep: ['acc-bob'] }];
-    expect(await client().scopeApps('org-1', passkey, { apps })).toEqual(result);
+    expect(await client().orgs.appTeamsScope({ org: 'org-1', apps }, { confirm: passkeyConfirm(passkey) })).toEqual(result);
     expect(node.requests[0].body).toEqual({ apps });
     expect(last().body).toEqual({ apps, confirm: confirmed });
   });
 
   it('scopes every package with defaults: an empty body, never null fields the node would refuse', async () => {
     confirming({ mode: 'standalone', teams: [] });
-    await client().scopeApps('org-1', passkey);
+    await client().orgs.appTeamsScope({ org: 'org-1' }, { confirm: passkeyConfirm(passkey) });
     expect(node.requests[0].body).toEqual({});
     expect(last().body).toEqual({ confirm: confirmed });
     confirming({ mode: 'standalone', teams: [] });
-    await client().scopeApps('org-1', passkey, { apps: [{ package: 'com.example.blocks', instances: [] }], shared: false });
+    await client().orgs.appTeamsScope({ org: 'org-1', apps: [{ package: 'com.example.blocks', instances: [] }], shared: false }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toEqual({ apps: [{ package: 'com.example.blocks', instances: [] }], shared: false, confirm: confirmed });
   });
 
@@ -597,13 +598,13 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
       { inviteKey: 'k-0', role: 'guest', teams: [], usesLeft: 2, expiresAt: 1, expired: true, createdBy: null, createdAt: null },
     ];
     node.answer = () => ({ status: 200, json: { invites } });
-    expect(await client().listInvites('org-1')).toEqual(invites);
+    expect(await (await client().orgs.inviteList({ org: 'org-1' })).invites).toEqual(invites);
     expect(sent()).toEqual([['GET', '/orgs/org-1/invites']]);
   });
 
   it('revokes an invite by its key, approved with the passkey (__revoke_invite)', async () => {
     confirming({});
-    await client().revokeInvite('org-1', 'k/1', passkey);
+    await client().orgs.inviteRevoke({ org: 'org-1', key: 'k/1' }, { confirm: passkeyConfirm(passkey) });
     expect(sent()).toEqual([
       ['DELETE', '/orgs/org-1/invites/k%2F1'],
       ['DELETE', '/orgs/org-1/invites/k%2F1'],
@@ -614,7 +615,7 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
 
   it("sets a team's default capabilities: the team and no account", async () => {
     confirming({});
-    await client().setTeamDefaultCapabilities('org-1', 't-1', ORG_CAPABILITIES.INVITE_MEMBERS, passkey);
+    await client().orgs.capabilities({ org: 'org-1', team: 't-1', capabilities: ORG_CAPABILITIES.INVITE_MEMBERS }, { confirm: passkeyConfirm(passkey) });
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/capabilities'],
       ['POST', '/orgs/org-1/capabilities'],
@@ -625,10 +626,9 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
 
   it('without a passkey a scope or a revoke is ConfirmRequired, and nothing more is sent', async () => {
     confirming({});
-    const none = undefined as unknown as PasskeyProvider;
     const c = client();
-    expect(await c.scopeApps('org-1', none).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
-    expect(await c.revokeInvite('org-1', 'k-1', none).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
+    expect(await c.orgs.appTeamsScope({ org: 'org-1' }).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
+    expect(await c.orgs.inviteRevoke({ org: 'org-1', key: 'k-1' }).catch((e: unknown) => e)).toBeInstanceOf(ConfirmRequired);
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/app-teams'],
       ['DELETE', '/orgs/org-1/invites/k-1'],
@@ -637,14 +637,14 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
 
   it("an invite the caller may not see is NotFound; a refused scope keeps the node's message", async () => {
     node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no such invite' } });
-    expect(await client().revokeInvite('org-1', 'k-1', passkey).catch((e: unknown) => e)).toBeInstanceOf(NotFound);
+    expect(await client().orgs.inviteRevoke({ org: 'org-1', key: 'k-1' }, { confirm: passkeyConfirm(passkey) }).catch((e: unknown) => e)).toBeInstanceOf(NotFound);
     const message = "only the organization's owner and admins install apps in it and change its app teams";
     node.answer = (_, body) =>
       body.confirm
         ? { status: 400, json: { error: 'REJECTED', message } }
         : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
     const error = await client()
-      .scopeApps('org-1', passkey)
+      .orgs.appTeamsScope({ org: 'org-1' }, { confirm: passkeyConfirm(passkey) })
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ status: 400, code: 'REJECTED' });
     expect((error as Error).message).toContain(message);
@@ -666,7 +666,7 @@ describe('app teams, the invite list and team default capabilities (core #4890)'
       member: true,
     };
     node.answer = () => ({ status: 200, json: team });
-    const got = await client().getTeam('org-1', 't-1');
+    const got = await client().orgs.teamGet({ org: 'org-1', team: 't-1' });
     expect(got.package).toBe('com.example.chat');
     expect(got.defaultCapabilities).toBe(2);
     expect(got).toEqual(team);
@@ -681,13 +681,13 @@ describe('organization recovery', () => {
     const c = client();
     node.answer = () => ({ status: 200, json: { orgId: 'org-1' } });
     const key = await recoveryPublicKey(seed);
-    expect(await c.createOrg('Acme', { recoveryKey: key })).toBe('org-1');
+    expect(await (await c.orgs.create({ name: 'Acme', recoveryKey: key })).orgId).toBe('org-1');
     expect(last().body).toEqual({ name: 'Acme', recoveryKey: key });
     confirming({});
-    await c.setRecoveryKey('org-1', key, passkey);
+    await c.orgs.recoverySet({ org: 'org-1', publicKey: key }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toEqual({ publicKey: key, confirm: confirmed });
     confirming({});
-    await c.setRecoveryKey('org-1', null, passkey);
+    await c.orgs.recoverySet({ org: 'org-1', publicKey: null }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toEqual({ publicKey: null, confirm: confirmed });
     expect(sent().slice(1)).toEqual([
       ['POST', '/orgs/org-1/recovery'],
@@ -708,9 +708,9 @@ describe('organization recovery', () => {
     expect(signature).toBe(await signRecovery(seed, 'org-1', 'acc-2', nonce));
     expect(JSON.stringify(node.requests)).not.toContain(recoverySeedText(seed).replace(/-/g, ''));
     confirming({});
-    await c.cancelRecovery('org-1', passkey);
+    await c.orgs.recoveryCancel({ org: 'org-1' }, { confirm: passkeyConfirm(passkey) });
     confirming({ org: 'org-1', previousOwners: ['acc-1'] });
-    expect(await c.finishRecovery('org-1', passkey)).toEqual({ org: 'org-1', previousOwners: ['acc-1'] });
+    expect(await c.orgs.recoveryFinish({ org: 'org-1' }, { confirm: passkeyConfirm(passkey) })).toEqual({ org: 'org-1', previousOwners: ['acc-1'] });
     expect(sent()).toEqual([
       ['GET', '/auth/me'],
       ['POST', '/orgs/org-1/recovery/start'],
@@ -727,10 +727,10 @@ describe('the rest of the node API', () => {
     const c = client();
     node.answer = (head) =>
       head.path.startsWith('/auth/aliases/') ? { status: 200, json: { alias: 'kv', appId: 'a-1' } } : { status: 200, json: { apps: 1 } };
-    await c.labelPasskey('cred/1', 'laptop');
+    await c.auth.passkeyLabel({ cred: 'cred/1', label: 'laptop' });
     expect(last().body).toEqual({ label: 'laptop' });
-    expect(await c.usage()).toEqual({ apps: 1 });
-    expect(await c.alias('kv')).toBe('a-1');
+    expect(await c.auth.usage()).toEqual({ apps: 1 });
+    expect(await (await c.auth.aliasGet({ alias: 'kv' })).appId).toBe('a-1');
     expect(sent()).toEqual([
       ['POST', '/auth/passkeys/cred%2F1'],
       ['GET', '/auth/usage'],
@@ -763,24 +763,47 @@ describe('the rest of the node API', () => {
       if (head.path === '/auth/sessions/gone') return { status: 404, json: { error: 'NOT_FOUND', message: 'no such session' } };
       return { status: 200, json: {} };
     };
-    const me = await c.me();
+    const me = await c.auth.me();
     expect(me.passkeyId).toBe('cred');
     expect(me.orgs?.[0]?.role).toBe('admin');
     expect(me.passkeys?.map((p) => [p.id, p.addedAt, p.lastSignInAt])).toEqual([
       ['cred', 10, 30],
       ['old', null, null],
     ]);
-    const sessions = await c.listSessions();
+    const sessions = await (await c.auth.sessionsList()).sessions;
     expect(sessions).toEqual(SESSIONS);
     expect(sessions.find((s) => s.current)?.session).toBe('s-2');
-    await c.revokeSession('s/1');
-    await expect(c.revokeSession('gone')).rejects.toBeInstanceOf(NotFound);
+    await c.auth.sessionRevoke({ session: 's/1' });
+    await expect(c.auth.sessionRevoke({ session: 'gone' })).rejects.toBeInstanceOf(NotFound);
     expect(sent()).toEqual([
       ['GET', '/auth/me'],
       ['GET', '/auth/sessions'],
       ['DELETE', '/auth/sessions/s%2F1'],
       ['DELETE', '/auth/sessions/gone'],
     ]);
+  });
+
+  it('gives a member every app added later, and mints an invite that does, with a passkey', async () => {
+    const c = client();
+    node.answer = (_head, body) =>
+      body.confirm
+        ? { status: 200, json: { token: 'inv_1' } }
+        : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
+    await c.orgs.allApps({ org: 'o/1', account: 'acc-bob', allApps: true }, { confirm: passkeyConfirm(passkey) });
+    expect(sent()).toEqual([
+      ['POST', '/orgs/o%2F1/all-apps'],
+      ['POST', '/orgs/o%2F1/all-apps'],
+    ]);
+    expect(node.requests[0].body).toEqual({ account: 'acc-bob', allApps: true });
+    expect(last().body).toMatchObject({ account: 'acc-bob', allApps: true, confirm: { challengeId: 'c-1' } });
+    expect(await (await c.orgs.inviteCreate({ org: 'o-1', role: 'member', teams: [], allApps: true }, { confirm: passkeyConfirm(passkey) })).token).toBe('inv_1');
+    expect(last().body).toMatchObject({ role: 'member', teams: [], allApps: true });
+    // An invite without it sends no such field.
+    await (await c.orgs.inviteCreate({ org: 'o-1', role: 'member' }, { confirm: passkeyConfirm(passkey) })).token;
+    expect(last().body).not.toHaveProperty('allApps');
+    // A node from before the route.
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
+    await expect(c.orgs.allApps({ org: 'o-1', account: 'acc-bob', allApps: false }, { confirm: passkeyConfirm(passkey) })).rejects.toMatchObject({ status: 404 });
   });
 
   it('moves an app to another organization with a passkey, and says when the node has no route', async () => {
@@ -790,27 +813,27 @@ describe('the rest of the node API', () => {
       body.confirm
         ? { status: 200, json: moved }
         : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: '', details: CHALLENGE } };
-    expect(await c.moveApp('a-1', 'o-2', { bringMembers: true }, passkey)).toEqual(moved);
+    expect(await c.apps.move({ app: 'a-1', toOrg: 'o-2', bringMembers: true }, { confirm: passkeyConfirm(passkey) })).toEqual(moved);
     expect(last().body).toMatchObject({ toOrg: 'o-2', bringMembers: true, confirm: { challengeId: 'c-1' } });
     expect(sent()).toEqual([
       ['POST', '/apps/a-1/move'],
       ['POST', '/apps/a-1/move'],
     ]);
     // Without a passkey the step-up reaches the caller; bringMembers defaults to false.
-    await expect(c.moveApp('a-1', 'o-2')).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
+    await expect(c.apps.move({ app: 'a-1', toOrg: 'o-2', bringMembers: false })).rejects.toMatchObject({ code: 'CONFIRM_REQUIRED' });
     expect(last().body).toEqual({ toOrg: 'o-2', bringMembers: false });
     // A node from before the route.
     node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no route' } });
-    await expect(c.moveApp('a-1', 'o-2', {}, passkey)).rejects.toMatchObject({ status: 404 });
+    await expect(c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) })).rejects.toMatchObject({ status: 404 });
     // A cluster still rolling from a release before moves: refused before the step-up.
     const details = { feature: 'moveApp', needs: '1.0.0-rc.15', active: '1.0.0-rc.14' };
     node.answer = () => ({ status: 409, json: { error: 'FEATURE_NOT_ACTIVE', message: 'moveApp needs cluster version 1.0.0-rc.15', details } });
-    const refused = await c.moveApp('a-1', 'o-2', {}, passkey).catch((e: unknown) => e);
+    const refused = await c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(FeatureNotActive);
     expect(refused).toMatchObject({ status: 409, code: 'FEATURE_NOT_ACTIVE', ...details });
     // Before every node said which version it supports, `active` is null.
     node.answer = () => ({ status: 409, json: { error: 'FEATURE_NOT_ACTIVE', message: '', details: { ...details, active: null } } });
-    await expect(c.moveApp('a-1', 'o-2', {}, passkey)).rejects.toMatchObject({ active: '' });
+    await expect(c.apps.move({ app: 'a-1', toOrg: 'o-2' }, { confirm: passkeyConfirm(passkey) })).rejects.toMatchObject({ active: '' });
   });
 
   it("lists an organization's members' lockout risk for its admins (core #4902)", async () => {
@@ -821,7 +844,7 @@ describe('the rest of the node API', () => {
     ];
     node.answer = (head) =>
       head.path.startsWith('/orgs/o%2F1/members') ? { status: 200, json: { orgId: 'o/1', members: MEMBERS } } : { status: 200, json: {} };
-    expect(await c.orgMembersSecurity('o/1')).toEqual(MEMBERS);
+    expect(await (await c.orgs.members({ org: 'o/1', detail: 'security' })).members).toEqual(MEMBERS);
     expect(sent()).toEqual([['GET', '/orgs/o%2F1/members?detail=security']]);
   });
 
@@ -833,8 +856,8 @@ describe('the rest of the node API', () => {
     ];
     node.answer = (head) =>
       head.path.startsWith('/auth/activity') ? { status: 200, json: { activity: ACTIVITY } } : { status: 200, json: {} };
-    expect(await c.listActivity()).toEqual(ACTIVITY);
-    await c.listActivity(20);
+    expect(await (await c.auth.activityList({})).activity).toEqual(ACTIVITY);
+    await (await c.auth.activityList({ after: 20 })).activity;
     expect(sent()).toEqual([
       ['GET', '/auth/activity'],
       ['GET', '/auth/activity?after=20'],
@@ -854,15 +877,15 @@ describe('the rest of the node API', () => {
       if (head.path.endsWith('/info')) return { status: 200, json: blob };
       return { status: 200, json: { keys: 1 } };
     };
-    await c.setAppMetadata('a-1', { colour: 'teal' });
+    await c.apps.metadata({ app: 'a-1', metadata: { colour: 'teal' } });
     expect(last().body).toEqual({ metadata: { colour: 'teal' } });
-    expect(await c.appStorage('a-1')).toEqual({ keys: 1 });
-    await c.appAbi('a-1');
-    await c.transferApp('a-1', 'acc-2', passkey);
+    expect(await c.apps.storage({ app: 'a-1' })).toEqual({ keys: 1 });
+    await c.apps.abi({ app: 'a-1' });
+    await c.apps.transfer({ app: 'a-1', to: 'acc-2' }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toMatchObject({ to: 'acc-2', confirm: { challengeId: 'c-1' } });
-    expect(await c.listBlobs('a-1')).toEqual([blob]);
-    expect(await c.blobInfo('a-1', blob.blobId)).toEqual(blob);
-    await c.deleteBlob('a-1', blob.blobId);
+    expect(await (await c.apps.blobList({ app: 'a-1' })).blobs).toEqual([blob]);
+    expect(await c.apps.blobInfo({ app: 'a-1', id: blob.blobId })).toEqual(blob);
+    await c.apps.blobDelete({ app: 'a-1', id: blob.blobId });
     expect(sent()).toEqual([
       ['POST', '/apps/a-1/metadata'],
       ['GET', '/apps/a-1/storage'],
@@ -877,8 +900,8 @@ describe('the rest of the node API', () => {
 
   it("sets an org's and a member's metadata", async () => {
     const c = client();
-    await c.setOrgMetadata('org-1', { logo: 'x' });
-    await c.setMemberMetadata('org-1', 'acc-2', null);
+    await c.orgs.metadata({ org: 'org-1', metadata: { logo: 'x' } });
+    await c.orgs.memberMetadata({ org: 'org-1', account: 'acc-2', metadata: null });
     expect(sent()).toEqual([
       ['POST', '/orgs/org-1/metadata'],
       ['POST', '/orgs/org-1/members/acc-2/metadata'],
@@ -895,11 +918,11 @@ describe('the rest of the node API', () => {
       }
       return { status: 200, json: { present: [entry] } };
     };
-    await c.publishPresence('a-1', 3, new Uint8Array([1, 2]));
+    await c.apps.presencePublish({ app: 'a-1', seq: 3, state: presenceState(new Uint8Array([1, 2])) });
     expect(last().body).toEqual({ seq: 3, state: '0102' });
-    await c.publishPresence('a-1', 4, null);
+    await c.apps.presencePublish({ app: 'a-1', seq: 4, state: presenceState(null) });
     expect(last().body).toEqual({ seq: 4, state: null });
-    expect(await c.presence('a-1')).toEqual([entry]);
+    expect(await (await c.apps.presenceGet({ app: 'a-1' })).present).toEqual([entry]);
     const ac = new AbortController();
     const first = await c.presenceStream('a-1', ac.signal).next();
     ac.abort();
@@ -913,7 +936,7 @@ describe('the rest of the node API', () => {
   });
 
   it("reads the node's attestation unverified, for display", async () => {
-    const doc = await client().attestation();
+    const doc = await client().public.attestation({ nonce: '00'.repeat(32) });
     expect(doc).toMatchObject({ mock: true, transportKey: expect.stringMatching(/^[0-9a-f]{64}$/) });
   });
 });
@@ -925,9 +948,9 @@ describe('core 1.0.0-rc.7+ routes', () => {
   it('uploads a blob with its content type, octet-stream by default', async () => {
     const c = client();
     node.answer = () => ({ status: 200, json: { blobId: 'b', id: 'ab', size: 3 } });
-    await c.uploadBlob('a-1', new TextEncoder().encode('abc'), 'image/png');
-    await c.uploadBlob('a-1', new TextEncoder().encode('abc'), { contentType: 'text/plain; charset=utf-8' });
-    await c.uploadBlob('a-1', new TextEncoder().encode('abc'));
+    await c.apps.blobUpload({ app: 'a-1', body: new TextEncoder().encode('abc'), contentType: 'image/png' });
+    await c.apps.blobUpload({ app: 'a-1', body: new TextEncoder().encode('abc'), contentType: 'text/plain; charset=utf-8' });
+    await c.apps.blobUpload({ app: 'a-1', body: new TextEncoder().encode('abc') });
     expect(sent()).toEqual([
       ['POST', '/apps/a-1/blobs'],
       ['POST', '/apps/a-1/blobs'],
@@ -944,7 +967,8 @@ describe('core 1.0.0-rc.7+ routes', () => {
   it('downloads with the served content type, and with a grant and no session', async () => {
     const c = client();
     node.answer = () => ({ status: 200, bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' });
-    expect(await c.blobContent('a-1', '3yZe7d')).toEqual({ data: new Uint8Array([1, 2, 3]), contentType: 'image/png' });
+    const blob = await c.apps.blobDownload({ app: 'a-1', id: '3yZe7d' });
+    expect([new Uint8Array(await blob.arrayBuffer()), blob.type]).toEqual([new Uint8Array([1, 2, 3]), 'image/png']);
     expect(await c.downloadBlob('a-1', '3yZe7d')).toEqual(new Uint8Array([1, 2, 3]));
     expect(await c.downloadBlobGranted('a-1', '3yZe7d', 'g+1/x')).toEqual(new Uint8Array([1, 2, 3]));
     expect(sent()).toEqual([
@@ -960,23 +984,23 @@ describe('core 1.0.0-rc.7+ routes', () => {
   it("reads a component app's xcalls", async () => {
     const xcalls = { pending: 2, deadLetters: [{ seq: 7, app: 'a-2', method: 'ping', reason: 'no such app', atMs: 1 }] };
     node.answer = () => ({ status: 200, json: xcalls });
-    expect(await client().appXcalls('a-1')).toEqual(xcalls);
+    expect(await client().apps.xcalls({ app: 'a-1' })).toEqual(xcalls);
     expect(sent()).toEqual([['GET', '/apps/a-1/xcalls']]);
   });
 
   it('grants, lists and revokes deployers, each change approved with the passkey', async () => {
     const c = client();
     confirming({ key: 'org:org-1', deployer: { org: 'org-1' }, grant: {} });
-    await c.grantDeployer({ org: 'org-1' }, passkey, { until: new Date('2027-01-01T00:00:00Z') });
+    await c.deployments.deployerGrant({ deployer: { org: 'org-1' }, until: new Date('2027-01-01T00:00:00Z').toISOString() }, { confirm: passkeyConfirm(passkey) });
     expect(node.requests[0].body).toEqual({ deployer: { org: 'org-1' }, until: '2027-01-01T00:00:00.000Z' });
     expect(last().body).toMatchObject({ deployer: { org: 'org-1' }, confirm: { challengeId: 'c-1' } });
-    await c.grantDeployer({ account: 'acc-2' }, passkey);
+    await c.deployments.deployerGrant({ deployer: { account: 'acc-2' } }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).not.toHaveProperty('until');
-    await c.revokeDeployer({ account: 'acc-2' }, passkey);
+    await c.deployments.deployerRevoke({ key: deployerKey({ account: 'acc-2' }) }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toMatchObject({ confirm: { challengeId: 'c-1' } });
-    await c.revokeDeployer('org:org-1', passkey);
+    await c.deployments.deployerRevoke({ key: 'org:org-1' }, { confirm: passkeyConfirm(passkey) });
     node.answer = () => ({ status: 200, json: { deployments: 'granted', deployers: 'owner', owner: { org: 'org-1' }, grants: [] } });
-    expect((await c.deployers()).deployers).toBe('owner');
+    expect((await c.deployments.deployerList()).deployers).toBe('owner');
     expect(sent()).toEqual([
       ['POST', '/deployers'],
       ['POST', '/deployers'],
@@ -994,22 +1018,22 @@ describe('core 1.0.0-rc.7+ routes', () => {
   it('creates a deployment, offers and withdraws an app, lists and deletes it', async () => {
     const c = client();
     confirming({ id: 'd-1', deployment: {} });
-    expect(await c.createDeployment('Acme Labs', { org: 'org-1' }, passkey)).toBe('d-1');
+    expect(await (await c.deployments.create({ name: 'Acme Labs', owner: { org: 'org-1' } }, { confirm: passkeyConfirm(passkey) })).id).toBe('d-1');
     expect(last().body).toMatchObject({ name: 'Acme Labs', owner: { org: 'org-1' }, confirm: { challengeId: 'c-1' } });
     confirming({ deployment: 'd-1', app: 'notes', offer: {} });
-    await c.offerApp('d-1', { app: 'notes', package: 'com.example.notes', version: '1.0.0' }, passkey);
+    await c.deployments.offer({ id: 'd-1', app: 'notes', package: 'com.example.notes', version: '1.0.0' }, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toMatchObject({ app: 'notes', package: 'com.example.notes', version: '1.0.0', confirm: {} });
     confirming({});
-    await c.withdrawApp('d-1', 'notes', passkey);
-    await c.deleteDeployment('d-1', passkey);
+    await c.deployments.withdraw({ id: 'd-1', app: 'notes' }, { confirm: passkeyConfirm(passkey) });
+    await c.deployments.delete({ id: 'd-1' }, { confirm: passkeyConfirm(passkey) });
     node.answer = (head) => {
       if (head.path === '/deployments') return { status: 200, json: { deployments: [{ id: 'd-1' }] } };
       if (head.path.endsWith('/orgs')) return { status: 200, json: { deployment: 'd-1', orgs: [], outsideOrgs: 1 } };
       return { status: 200, json: { id: 'd-1', name: 'Acme Labs', owner: { kind: 'org', name: 'Acme' }, apps: [] } };
     };
-    expect(await c.deployments()).toEqual([{ id: 'd-1' }]);
-    expect((await c.deployment('d-1')).owner).toEqual({ kind: 'org', name: 'Acme' });
-    expect((await c.deploymentOrgs('d-1')).outsideOrgs).toBe(1);
+    expect((await c.deployments.list()).deployments).toEqual([{ id: 'd-1' }]);
+    expect((await c.deployments.get({ id: 'd-1' })).owner).toEqual({ kind: 'org', name: 'Acme' });
+    expect((await c.deployments.orgs({ id: 'd-1' })).outsideOrgs).toBe(1);
     expect(sent()).toEqual([
       ['POST', '/deployments'],
       ['POST', '/deployments'],
@@ -1031,7 +1055,7 @@ describe('core 1.0.0-rc.7+ routes', () => {
     const deployment = pageDeployment('https://notes.example/1.0.0/?deployment=d-1');
     expect(deployment).toBe('d-1');
     expect(pageDeployment('https://notes.example/1.0.0/')).toBeNull();
-    expect(await c.createApp('mine', { package: 'com.example.notes', deployment: deployment! }, { org: 'org-2' })).toBe('a-9');
+    expect(await (await c.apps.create({ name: 'mine', package: 'com.example.notes', deployment: deployment!, org: 'org-2' })).appId).toBe('a-9');
     expect(last().body).toEqual({ name: 'mine', package: 'com.example.notes', deployment: 'd-1', org: 'org-2' });
   });
 

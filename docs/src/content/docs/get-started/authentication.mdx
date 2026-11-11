@@ -10,6 +10,10 @@ import { Aside } from '@astrojs/starlight/components';
 Every credential travels inside the sealed envelope, so no proxy in the path
 sees it. A client holds one credential at a time: a session or an API key.
 
+
+A method that takes a passkey answers the node's `412 CONFIRM_REQUIRED` with
+`{ confirm: passkeyConfirm(passkey) }` (`import { passkeyConfirm } from '@calimero-network/mero-js'`).
+
 ## Passkeys
 
 ```ts
@@ -42,8 +46,8 @@ with a passkey the account already has (the new one cannot approve itself):
 
 ```ts
 const credentialId = await client.addPasskey(newDevicePasskey, passkey); // another device, approved by `passkey`
-await client.labelPasskey(credentialId, 'work laptop');
-await client.removePasskey(credentialId, passkey); // never the last one
+await client.auth.passkeyLabel({ cred: credentialId, label: 'work laptop' });
+await client.auth.passkeyRemove({ cred: credentialId }, { confirm: passkeyConfirm(passkey) }); // never the last one
 ```
 
 `me()` lists the account's passkeys, each with when it was added and last
@@ -88,17 +92,17 @@ origin. To host it yourself (`https://chat.example.com`), a manager of the
 package registers that origin, approved with their passkey:
 
 ```ts
-await client.packageOrigins.add('com.example.chat', 'https://chat.example.com', passkey);
+await client.packages.originsAdd({ package: 'com.example.chat', origin: 'https://chat.example.com' }, { confirm: passkeyConfirm(passkey) });
 // { package, origin, rpId: 'chat.example.com', addedBy, addedAt }; rpId defaults to the host
-await client.packageOrigins.list('com.example.chat');
-await client.packageOrigins.remove('com.example.chat', 'https://chat.example.com', passkey);
+await (await client.packages.originsList({ package: 'com.example.chat' })).origins;
+await client.packages.originsRemove({ package: 'com.example.chat', origin: 'https://chat.example.com' }, { confirm: passkeyConfirm(passkey) });
 ```
 
 To have the cluster serve the package's frontend on that name too (a custom
 domain, from the signed bundle), add it with `served: true`:
 
 ```ts
-await client.packageOrigins.add('com.example.chat', 'https://chat.example.com', passkey, { served: true });
+await client.packages.originsAdd({ package: 'com.example.chat', origin: 'https://chat.example.com', served: true }, { confirm: passkeyConfirm(passkey) });
 ```
 
 The record is the cluster's half: browsers reach the name once Calimero Cloud
@@ -161,9 +165,9 @@ say, from another device. Both take a session on the cluster's own origin
 (never an API key or an app's frontend session) and ask no passkey:
 
 ```ts
-const sessions = await client.listSessions(); // latest active first; `current` marks this one
+const sessions = await (await client.auth.sessionsList()).sessions; // latest active first; `current` marks this one
 const other = sessions.find((s) => !s.current); // { session, passkey, app, origin, openedAt, lastActiveAt }
-if (other) await client.revokeSession(other.session); // that device must sign in again
+if (other) await client.auth.sessionRevoke({ session: other.session }); // that device must sign in again
 ```
 
 `listActivity()` answers what the account's passkeys did, newest first (the
@@ -172,7 +176,7 @@ and each change a passkey approved, with its method and subject. Gated as
 `listSessions`:
 
 ```ts
-for (const a of await client.listActivity()) {
+for (const a of await (await client.auth.activityList({})).activity) {
   // { at, passkey, kind: 'signIn', app, origin } or { at, passkey, kind: 'approval', method, subject }
 }
 ```
@@ -184,22 +188,22 @@ revocable. Creating one is approved with the account's passkey, from a passkey
 session (an API key cannot mint another). The key is returned once.
 
 ```ts
-const { keyId, key } = await client.createApiKey(
+const { keyId, key } = await client.auth.apikeyCreate(
   {
     label: 'ci',
-    apps: [appId],      // only these apps
-    methods: ['get'],   // only these methods
+    apps: [appId],    // only these apps
+    methods: ['get'], // only these methods
     readOnly: true,
     ttlSecs: 86_400,
   },
-  passkey,
+  { confirm: passkeyConfirm(passkey) },
 );
 
 const agent = new CalimeroClient({ baseUrl, policy });
 agent.useApiKey(key);
 
-await client.listApiKeys(); // never the keys themselves
-await client.revokeApiKey(keyId, passkey); // approved with the passkey
+await (await client.auth.apikeyList()).keys; // never the keys themselves
+await client.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(passkey) }); // approved with the passkey
 ```
 
 ### Upgrade keys for CI
@@ -213,15 +217,12 @@ who may upgrade the app, release deadlines and deployer grants.
 
 ```ts
 // Once, by the app's owner:
-const { key } = await client.createApiKey(
-  { label: 'ci', upgrades: { app: appId }, ttlSecs: 90 * 86_400 },
-  passkey,
-);
+const { key } = await client.auth.apikeyCreate({ label: 'ci', upgrades: { app: appId }, ttlSecs: 90 * 86_400 }, { confirm: passkeyConfirm(passkey) });
 
 // In CI, after publishing 1.4.0 to the registry:
 const ci = new CalimeroClient({ baseUrl, policy });
 ci.useApiKey(key);
-await ci.upgradeApp(appId, { version: '1.4.0' });
+await ci.apps.upgrade({ app: appId, version: '1.4.0' });
 ```
 
 Revoke it with `revokeApiKey`; the app's `lastUpgrade` names the key that
@@ -234,12 +235,12 @@ method the app declares `confirm`, deleting an organization, upgrades,
 transfers and approvals, and every grant of access: adding or removing a
 passkey, creating an API key, setting or removing an organization or team
 member, capabilities and invites. The node answers `412 CONFIRM_REQUIRED` with a
-challenge; the `*Confirmed` methods, and every method that takes a `passkey`,
-sign it and send the request again.
+challenge; a generated method given `{ confirm: passkeyConfirm(passkey) }` (or a
+client made with `{ confirm }`) signs it and sends the request again.
 
 ```ts
-await client.callConfirmed(app, 'clear', {}, passkey);
-await client.postConfirmed(`orgs/${org}/outbound`, { package: 'com.example.kv' }, passkey);
+await client.apps.call({ app, method: 'clear', args: {} }, { confirm: passkeyConfirm(passkey) });
+await client.orgs.outboundApproval({ org, package: 'com.example.kv' }, { confirm: passkeyConfirm(passkey) });
 ```
 
 A prompt the user dismisses rejects with `ConfirmCancelled`, and nothing more is
@@ -251,7 +252,7 @@ offer to try again from a click:
 
 ```ts
 try {
-  await client.callConfirmed(app, 'clear', {}, passkey);
+  await client.apps.call({ app, method: 'clear', args: {} }, { confirm: passkeyConfirm(passkey) });
 } catch (error) {
   if (error instanceof ConfirmPromptBlocked) {
     showRetry('Your password manager or browser blocked the second prompt. Click to try again.');
@@ -277,7 +278,7 @@ A **recovery code**, made with a passkey and shown once, is the way back
 (core #4844):
 
 ```ts
-const code = await client.createRecoveryCode(passkey); // show it once; keep it offline
+const code = await (await client.auth.recoveryCreate({}, { confirm: passkeyConfirm(passkey) })).code; // show it once; keep it offline
 
 // Every passkey lost, signed out: the code and a new passkey start a recovery.
 const { accountId, readyAt } = await fresh.startAccountRecovery(code, browserPasskey());

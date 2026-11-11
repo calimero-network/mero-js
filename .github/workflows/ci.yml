@@ -32,6 +32,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      # The generated route types are those of the vendored OpenAPI document.
+      - run: pnpm check:api
       - run: pnpm build
       - run: pnpm test:unit
       - run: pnpm typecheck

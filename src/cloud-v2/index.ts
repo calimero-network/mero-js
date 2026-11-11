@@ -1,4 +1,4 @@
-export { CalimeroClient, deployerKey, frontendManifest, pageDeployment } from './client.js';
+export { CalimeroClient, deployerKey, frontendManifest, pageDeployment, presenceState } from './client.js';
 export { DEFAULT_DIRECTORY, DirectoryError } from './directory.js';
 export type { DirectoryFailure } from './directory.js';
 export {
@@ -22,6 +22,7 @@ export {
   QuotaExceeded,
   RecoveryNotReady,
   ReleaseDeadlineError,
+  RuntimeTooOld,
   SignUpRefused,
   TrapError,
   UnavailableError,
@@ -139,6 +140,7 @@ export type {
   OpenConsentOptions,
   Governance,
   LastUpgrade,
+  LatestBlocked,
   OpsAppsReport,
   OpsOrgsReport,
   PageOptions,
@@ -154,6 +156,7 @@ export type {
   ReportedBundle,
   ReportedRelease,
   ReportedReplica,
+  RuntimeShortNode,
   UpgradeAuthority,
 } from './approvals.js';
 export { DEFAULT_ORG_CAPABILITIES, ORG_CAPABILITIES, orgCapabilities } from './capabilities.js';

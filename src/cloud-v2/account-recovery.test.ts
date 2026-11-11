@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { StandInCloudNode } from '../../tests/cloud-v2/stand-in-node.js';
 import { CalimeroClient, NotFound, RecoveryNotReady, WrongRecoveryCode } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
+import { passkeyConfirm } from '../api/step-up.js';
 
 const node = new StandInCloudNode();
 beforeAll(() => node.start());
@@ -42,10 +43,10 @@ describe('the recovery code, signed in', () => {
   it('is made with a passkey and answered once, and removed with one', async () => {
     const c = client();
     confirming({ code: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789' });
-    expect(await c.createRecoveryCode(passkey)).toBe('ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789');
+    expect(await (await c.auth.recoveryCreate({}, { confirm: passkeyConfirm(passkey) })).code).toBe('ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789');
     expect(last().body).toEqual({ confirm: confirmed });
     confirming({});
-    await c.removeRecoveryCode(passkey);
+    await c.auth.recoveryRemove({}, { confirm: passkeyConfirm(passkey) });
     expect(sent()).toEqual([
       ['POST', '/auth/recovery'],
       ['POST', '/auth/recovery'],
@@ -57,9 +58,9 @@ describe('the recovery code, signed in', () => {
   it('a recovery under way shows on me() and a passkey the account has cancels it', async () => {
     const c = client();
     node.answer = () => ({ status: 200, json: { accountId: 'acc-1', recoveryCode: false, recoveryPending: PENDING } });
-    expect((await c.me()).recoveryPending).toEqual(PENDING);
+    expect((await c.auth.me()).recoveryPending).toEqual(PENDING);
     confirming({});
-    await c.cancelAccountRecovery(passkey);
+    await c.auth.accountRecoveryCancel({}, { confirm: passkeyConfirm(passkey) });
     expect(last().body).toEqual({ confirm: confirmed });
     expect(sent().slice(1)).toEqual([
       ['POST', '/auth/recovery/cancel'],

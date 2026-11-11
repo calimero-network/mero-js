@@ -1,6 +1,6 @@
 ---
 title: CalimeroClient
-description: Every CalimeroClient method, its arguments, and the node route it calls on a Calimero 1.0 cluster.
+description: Every CalimeroClient method, generated or hand-written, its arguments, and the node route it calls on a Calimero 1.0 cluster.
 sidebar:
   order: 1
 ---
@@ -29,186 +29,318 @@ new CalimeroClient({
 ```
 
 `client.nodeUrl` is the node in use and `client.nodes` every node the client
-may move to. Every route below is sent inside the sealed channel. `passkey` is a
-`PasskeyProvider` (`browserPasskey()` in a page); a method that takes one
-answers the node's `412 CONFIRM_REQUIRED` with it.
+may move to. Every route below is sent inside the sealed channel, but
+`GET attestation` and `GET health`. `passkey` is a `PasskeyProvider`
+(`browserPasskey()` in a page); a step-up takes `{ confirm: passkeyConfirm(passkey) }`.
 
-## Credentials
+## Flows and streams
+
+The hand-written methods: each is more than one route, or a stream.
+
+| Method | Routes |
+| --- | --- |
+| `signUp(passkey, name, { origin?, invite?, signal? })` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates; `SignUpRefused` when the policy or the invite refuses) | `POST auth/passkey/register/begin`, `…/finish` |
+| `signIn(passkey, { origin?, signal? })` → `CalimeroSession` (`PasskeyUnknownHere` for a passkey this cluster does not know) | `POST auth/passkey/login/begin`, `…/finish` |
+| `refresh()`, `signOut()`, `signOutEverywhere()`, `useSession(session)`, `useApiKey(key)` | `POST auth/refresh`, `auth/logout`, `auth/logout-all` |
+| `addPasskey(newPasskey, approver)` → credential id | `POST auth/passkeys/add/begin`, `…/finish` |
+| `startAccountRecovery(code, passkey)`, `finishAccountRecovery(passkey, accountId?)` | `POST auth/recovery/begin`, `…/start`, `…/finish` |
+| `startRecovery(org, seed)` (the seed signs here) | `GET auth/me`, `POST orgs/{org}/recovery/start` |
+| `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` → bytes | `GET apps/{app}/blobs/{id}` |
+| `events(app, from?, signal?)`, `presenceStream(app, signal?)` → server-sent events | `GET apps/{app}/events`, `apps/{app}/presence/stream` |
+| `appsReportAll(org)`, `pendingApprovals(org?)` | `GET orgs/{org}/apps` or `auth/apps` (every page), `GET releases` |
+| `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | `POST consent/requests`, `GET consent/{request}/result` |
+
+## The generated methods
+
+Every route of the node is a method, generated from core's OpenAPI document
+(`openapi/core-openapi.json`, by `pnpm gen:api` into `src/generated/`), in a
+group per tag: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`. Each takes
+one typed argument object (path parameters, query and body fields merged; a raw
+body under `body`, with `contentType`) and answers the route's typed payload; a
+refusal is thrown as its typed `CalimeroError`.
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });
+await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: passkeyConfirm(passkey) });
+```
+
+The second argument, `{ confirm, operatorProof, signal }`, answers this call's
+`412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
+`new CalimeroClient(options, { confirm, operatorProof })` answers every call that
+gives none. Routes the document marks retry-safe are retried on `503` (D70), and
+one that requires an idempotency key gets one. The event streams stay on the transport.
+`createRoutes(createApiClient(transport))` builds the groups on any
+`NodeTransport`.
+
+`client.api` is the low-level `openapi-fetch` client they run on (`{ data,
+error, response }`, with `stepUp` / `operatorSignature` middleware and `unwrap`),
+kept as an escape hatch.
+
+Every generated method, by group (`?` marks an optional argument):
+
+### `client.apps`
 
 | Method | Route |
 | --- | --- |
-| `signUp(passkey, name, { origin?, invite? })` → `CalimeroSession` (the new passkey is asked twice: to register, then to sign the account it creates, `412 CONFIRM_REQUIRED`; `invite` joins its organization, `SignUpRefused` when the policy or the invite refuses) | `POST auth/passkey/register/begin`, `…/finish` |
-| `signUpPolicy()` → `{ policy, orgInvites, signUpInvites, inviteRequired }` (no session) | `GET sign-up` |
-| `signIn(passkey, { origin? })` → `CalimeroSession` | `POST auth/passkey/login/begin`, `…/finish` |
-| `createRecoveryCode(passkey)` → the code, once (core #4844) | `POST auth/recovery` |
-| `removeRecoveryCode(passkey)` | `DELETE auth/recovery` |
-| `startAccountRecovery(code, passkey)` → `AccountRecovery` (signed out; `passkey` creates the new passkey; `WrongRecoveryCode`) | `POST auth/recovery/begin`, `…/start` |
-| `cancelAccountRecovery(passkey)` (a passkey the account already has) | `POST auth/recovery/cancel` |
-| `finishAccountRecovery(passkey, accountId?)` → `CalimeroSession` (at `readyAt`; `RecoveryNotReady` before) | `POST auth/recovery/finish` |
-| `refresh()` → `CalimeroSession` (concurrent calls share one refresh; the client also refreshes by itself on a `401`) | `POST auth/refresh` |
-| `signOut()` | `POST auth/logout` |
-| `signOutEverywhere()` | `POST auth/logout-all` |
-| `listSessions()` → `AccountSession[]` (`session`, `passkey`, `app`, `origin`, `openedAt`, `lastActiveAt`, `current`; latest active first; the account holder's own session, never an API key or a package-bound one) | `GET auth/sessions` |
-| `revokeSession(session)` (one of the account's sessions; `NotFound` for one it does not hold live) | `DELETE auth/sessions/{session}` |
-| `listActivity(after?)` → `AccountActivity[]` (`at`, `passkey`, `kind` `signIn` with `app`/`origin` or `approval` with `method`/`subject`; newest first, the last 100; gated as `listSessions`) | `GET auth/activity` |
-| `useSession(session)`, `useApiKey(key)`, `session`, `nodeUrl` (the node in use) | (local) |
-| `me()` → `MeInfo` (`accountId`, `name`, `passkeys` with each one's `addedAt` and `lastSignInAt`, `orgs` with the account's role in each, `via`, the `passkeyId` the session was opened with, and the package `app` and `origin` a session is bound to) | `GET auth/me` |
+| `abi({ app })` | `GET apps/{app}/abi` |
+| `access({ app, access })` | `POST apps/{app}/access` |
+| `attestation({ app, nonce, appHash?, purpose? })` | `GET apps/{app}/attestation` |
+| `blobDelete({ app, id })` | `DELETE apps/{app}/blobs/{id}` |
+| `blobDownload({ app, id, grant? })` | `GET apps/{app}/blobs/{id}` |
+| `blobInfo({ app, id })` | `GET apps/{app}/blobs/{id}/info` |
+| `blobList({ app })` | `GET apps/{app}/blobs` |
+| `blobRevoke({ app, id })` | `POST apps/{app}/blobs/{id}/revoke` |
+| `blobUpload({ app, sealed?, body, contentType? })` | `POST apps/{app}/blobs` |
+| `call({ app, method, args?, idempotencyKey? })` (retried on 503) | `POST apps/{app}/intents` |
+| `create({ name?, bundle?, package?, version?, service?, org?, access?, initArgs?, metadata?, deployment? })` | `POST apps` |
+| `delete({ app })` | `DELETE apps/{app}` |
+| `fileInfo({ app, id })` | `GET apps/{app}/files/{id}` |
+| `filesList({ app })` | `GET apps/{app}/files` |
+| `filesUpload({ app, body, contentType? })` | `POST apps/{app}/files` |
+| `get({ app })` | `GET apps/{app}` |
+| `list({ package?, bundle? })` | `GET apps` |
+| `metadata({ app, metadata })` | `POST apps/{app}/metadata` |
+| `method({ app, method, args?, idempotencyKey?, consistency?, minIndex? })` (retried on 503) | `POST apps/{app}/methods/{method}` |
+| `move({ app, toOrg, bringMembers? })` (step-up) | `POST apps/{app}/move` |
+| `openapi({ app })` | `GET apps/{app}/openapi.json` |
+| `presenceGet({ app })` | `GET apps/{app}/presence` |
+| `presencePublish({ app, seq, state? })` | `POST apps/{app}/presence` |
+| `run({ app, run })` | `GET apps/{app}/runs/{run}` |
+| `runs({ app, limit?, before? })` | `GET apps/{app}/runs` |
+| `storage({ app })` | `GET apps/{app}/storage` |
+| `transfer({ app, to })` (step-up) | `POST apps/{app}/transfer` |
+| `upgrade({ app, bundle?, package?, version?, service?, migrate? })` (step-up) | `POST apps/{app}/upgrade` |
+| `uploadAbort({ app, upload })` | `DELETE apps/{app}/files/uploads/{upload}` |
+| `uploadBegin({ app, size })` | `POST apps/{app}/files/uploads` |
+| `uploadComplete({ app, upload })` | `POST apps/{app}/files/uploads/{upload}/complete` |
+| `uploadPart({ app, upload, k, body, contentType? })` | `PUT apps/{app}/files/uploads/{upload}/parts/{k}` |
+| `uploadStatus({ app, upload })` | `GET apps/{app}/files/uploads/{upload}` |
+| `usage({ app })` | `GET apps/{app}/usage` |
+| `view({ app, method, args?, consistency?, minIndex? })` (retried on 503) | `POST apps/{app}/views` |
+| `xcalls({ app })` | `GET apps/{app}/xcalls` |
+
+### `client.auth`
+
+| Method | Route |
+| --- | --- |
+| `accountApps({ after?, limit? })` | `GET auth/apps` |
+| `accountOutboundApproval({ package, prefixes?, replace? })` (step-up) | `POST auth/outbound` |
+| `accountProofProve({ nonce, audience })` | `POST auth/account-proof` |
+| `accountRecoveryBegin({ code })` | `POST auth/recovery/begin` |
+| `accountRecoveryCancel()` (step-up) | `POST auth/recovery/cancel` |
+| `accountRecoveryFinish({ accountId? })` (step-up) | `POST auth/recovery/finish` |
+| `accountRecoveryStart({ challengeId, code, registration })` | `POST auth/recovery/start` |
+| `accountReleaseApproval({ version, approved? })` (step-up) | `POST auth/releases` |
+| `activityList({ after? })` | `GET auth/activity` |
+| `aliasDelete({ alias })` | `DELETE auth/aliases/{alias}` |
+| `aliasGet({ alias })` | `GET auth/aliases/{alias}` |
+| `aliasList()` | `GET auth/aliases` |
+| `aliasSet({ alias, app })` | `PUT auth/aliases/{alias}` |
+| `apikeyCreate({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs?, upgrades? })` (step-up) | `POST auth/apikeys` |
+| `apikeyList()` | `GET auth/apikeys` |
+| `apikeyRevoke({ key })` (step-up) | `DELETE auth/apikeys/{key}` |
+| `loginBegin({ origin? })` | `POST auth/passkey/login/begin` |
+| `loginFinish({ challengeId, assertion })` | `POST auth/passkey/login/finish` |
+| `logout()` | `POST auth/logout` |
+| `logoutAll()` | `POST auth/logout-all` |
+| `me()` | `GET auth/me` |
+| `passkeyAddBegin()` | `POST auth/passkeys/add/begin` |
+| `passkeyAddFinish({ challengeId, registration })` (step-up) | `POST auth/passkeys/add/finish` |
+| `passkeyLabel({ cred, label })` | `POST auth/passkeys/{cred}` |
+| `passkeyRemove({ cred })` (step-up) | `DELETE auth/passkeys/{cred}` |
+| `recoveryCreate()` (step-up) | `POST auth/recovery` |
+| `recoveryRemove()` (step-up) | `DELETE auth/recovery` |
+| `refresh({ refreshToken })` | `POST auth/refresh` |
+| `registerBegin({ name?, origin?, invite? })` | `POST auth/passkey/register/begin` |
+| `registerFinish({ challengeId, registration, invite? })` (step-up) | `POST auth/passkey/register/finish` |
+| `sessionRevoke({ session })` | `DELETE auth/sessions/{session}` |
+| `sessionsList()` | `GET auth/sessions` |
 | `usage()` | `GET auth/usage` |
-| `addPasskey(passkey, approver)` → credential id (`approver`: a passkey the account already has) | `POST auth/passkeys/add/begin`, `…/finish` |
-| `labelPasskey(credentialId, label)` | `POST auth/passkeys/{cred}` |
-| `removePasskey(credentialId, passkey)` | `DELETE auth/passkeys/{cred}` |
-| `createApiKey({ label?, apps?, methods?, readOnly?, allowConfirm?, ttlSecs?, upgrades? }, passkey)` → `{ keyId, key }` (a passkey session; `upgrades: { app, package? }` makes an upgrade key) | `POST auth/apikeys` |
-| `listApiKeys()` | `GET auth/apikeys` |
-| `revokeApiKey(keyId, passkey)` (approved with the account's passkey) | `DELETE auth/apikeys/{key}` |
-| `attestation()` → `AttestationDoc` (unverified, for display) | `GET attestation` (in the clear) |
 
-## Packages and bundles
+### `client.consent`
 
 | Method | Route |
 | --- | --- |
-| `installPackage(package, version)` → `PackageInstalled` | `POST packages/install` |
-| `uploadPackage(mpk)` → `PackageInstalled` | `POST packages` |
-| `packages()` → `PackageInfo[]` | `GET packages` |
-| `package(name)` → `PackageInfo` | `GET packages/{package}` |
-| `uninstallPackage(name, version?)` | `DELETE packages/{package}[/{version}]` |
-| `uploadBundle(wasm)` → hash (development clusters) | `POST bundles` |
+| `pageCreate({ body })` | `POST consent/requests` |
+| `pageResult({ request })` | `GET consent/{request}/result` |
 
-## Package origins
-
-A package's managers register the web origins of a frontend they host
-themselves, so it can sign people in with passkeys. A session opened there is
-bound to the package. See
-[Sign in from your own site](/get-started/authentication/#sign-in-from-your-own-site).
+### `client.deployments`
 
 | Method | Route |
 | --- | --- |
-| `packageOrigins.list(package)` → `PackageOrigin[]` (`{ origin, rpId, addedBy, addedAt, served }`) | `GET package-origins/{package}` |
-| `packageOrigins.add(package, origin, passkey?, { rpId?, served? })` → `{ package, origin, rpId, addedBy, addedAt, served }` | `POST package-origins/{package}` (`412` over `__add_origin`) |
-| `packageOrigins.remove(package, origin, passkey?)` → `{ package, origin, removed: true }` | `DELETE package-origins/{package}` (`412` over `__remove_origin`) |
+| `create({ name, owner })` (step-up) | `POST deployments` |
+| `delete({ id })` (step-up) | `DELETE deployments/{id}` |
+| `deployerGrant({ deployer, until? })` (step-up) | `POST deployers` |
+| `deployerList()` | `GET deployers` |
+| `deployerRevoke({ key })` (step-up) | `DELETE deployers/{key}` |
+| `get({ id })` | `GET deployments/{id}` |
+| `list()` | `GET deployments` |
+| `offer({ id, app, package, version })` (step-up) | `POST deployments/{id}/apps` |
+| `orgs({ id })` | `GET deployments/{id}/orgs` |
+| `signUpInviteCreate({ uses?, ttlSecs? })` (step-up) | `POST sign-up/invites` |
+| `signUpInviteList()` | `GET sign-up/invites` |
+| `signUpInviteRevoke({ key })` (step-up) | `DELETE sign-up/invites/{key}` |
+| `signUpPublic()` | `GET sign-up` |
+| `signUpSet({ policy })` (step-up) | `POST sign-up` |
+| `withdraw({ id, app })` (step-up) | `DELETE deployments/{id}/apps/{app}` |
 
-`add` refuses with `BadOrigin` (`BAD_ORIGIN`, `BAD_RP_ID`), `OriginTaken` and
-`QuotaExceeded`; `list` and `remove` with `NotFound`. Without a passkey the
-`412` reaches the caller as `ConfirmRequired`.
-
-`served: true` registers a custom domain: the cluster also serves the
-package's frontend on it from the signed bundle. The origin must be
-`https://host` with no port, and the consent the passkey signs names it
-(`{ origin, rpId, served: true }`). It further refuses with `NotServing` (the
-cluster serves no frontends), `ClusterNotUpgraded` (a node is on an older
-release), `QuotaExceeded` (4 served per package, 64 per cluster) and
-`OriginTaken` (held with the other `served`; remove it first).
-
-## Apps
-
-| Method | Route |
-| --- | --- |
-| `createApp(name, bundle \| { package, version?, service? }, { org?, access?, confirmMethods?, initArgs? })` → app id | `POST apps` |
-| `listApps({ package?, bundle? })` → `AppInfo[]` | `GET apps` |
-| `getApp(app)` | `GET apps/{app}` |
-| `deleteApp(app)` | `DELETE apps/{app}` |
-| `setAccess(app, access)` | `POST apps/{app}/access` |
-| `setAppMetadata(app, metadata)` | `POST apps/{app}/metadata` |
-| `appStorage(app)` | `GET apps/{app}/storage` |
-| `appAbi(app)` | `GET apps/{app}/abi` |
-| `upgradeApp(app, { version?, package?, service?, bundle?, migrate? }, passkey?)` | `POST apps/{app}/upgrade` |
-| `transferApp(app, to, passkey)` (the owner, for an organization's app only while a member, or an organization admin) | `POST apps/{app}/transfer` |
-| `moveApp(app, toOrg, { bringMembers }, passkey?)` (whoever manages the app now, as an admin of `toOrg`; its data stays put, its payer and access go to the target; `404` on a node from before the route) | `POST apps/{app}/move` |
-| `call(app, method, args?, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
-| `callConfirmed(app, method, args, passkey, idempotencyKey?)` → `CallResult` | `POST apps/{app}/intents` |
-| `view(app, method, args?, { stale?, minIndex? })` → `ViewResult` | `POST apps/{app}/views` |
-| `events(app, from?, signal?)` → async iterable of `CloudEvent` | `GET apps/{app}/events` |
-| `uploadBlob(app, bytes)` → `{ blobId, id, size }` | `POST apps/{app}/blobs` |
-| `listBlobs(app)` → `BlobInfo[]` | `GET apps/{app}/blobs` |
-| `blobInfo(app, id)` → `BlobInfo` | `GET apps/{app}/blobs/{id}/info` |
-| `downloadBlob(app, id)` → bytes | `GET apps/{app}/blobs/{id}` |
-| `deleteBlob(app, id)` | `DELETE apps/{app}/blobs/{id}` |
-| `publishPresence(app, seq, state \| null)` | `POST apps/{app}/presence` |
-| `presence(app)` → `PresenceEntry[]` | `GET apps/{app}/presence` |
-| `presenceStream(app, signal?)` → async iterable of `CloudEvent` | `GET apps/{app}/presence/stream` |
-
-## Aliases
+### `client.ops`
 
 | Method | Route |
 | --- | --- |
-| `setAlias(alias, app)` | `PUT auth/aliases/{alias}` |
-| `alias(alias)` → app id | `GET auth/aliases/{alias}` |
-| `aliases()` → `{ alias: appId }` | `GET auth/aliases` |
-| `deleteAlias(alias)` | `DELETE auth/aliases/{alias}` |
+| `apps({ after?, limit? })` | `GET ops/apps` |
+| `backup({ all? })` | `POST ops/backup` |
+| `cluster()` | `GET ops/cluster` |
+| `clusterOwner({ owner })` (operator signature) | `POST ops/cluster-owner` |
+| `deployerGrant({ deployer, until? })` (operator signature) | `POST ops/deployers` |
+| `deployerRevokeDelete({ key })` (operator signature) | `DELETE ops/deployers/{key}` |
+| `deployerRevokePost({ key })` (operator signature) | `POST ops/deployers/{key}/revoke` |
+| `deploymentsGranted()` (operator signature) | `POST ops/deployments/granted` |
+| `metrics()` | `GET ops/metrics` |
+| `orgs({ after?, limit? })` | `GET ops/orgs` |
+| `orgUpgrade({ org, package, version, team?, cascade?, migrate? })` (operator signature) | `POST ops/orgs/{org}/upgrade` |
+| `outbound({ package, prefixes?, replace? })` (operator signature) | `POST ops/outbound` |
+| `packageInstall({ package, version })` | `POST ops/packages/install` |
+| `packageList()` | `GET ops/packages` |
+| `packageUninstall({ package })` | `DELETE ops/packages/{package}` |
+| `packageUpload({ body, contentType? })` | `POST ops/packages` |
+| `packageVersionUninstall({ package, version })` | `DELETE ops/packages/{package}/{version}` |
+| `placement()` | `GET ops/placement` |
+| `poolsGet()` | `GET ops/pools` |
+| `poolsSet({ pools })` (operator signature) | `POST ops/pools` |
+| `quotasGet()` | `GET ops/quotas` |
+| `quotasSet({ org? })` (operator signature) | `POST ops/quotas` |
+| `receiptKey({ id })` | `GET ops/nodes/{id}/receipt-key` |
+| `registerNode({ id, addr, zone?, role?, pool? })` (operator signature) | `POST ops/nodes` |
+| `release({ version, approved? })` (operator signature) | `POST ops/releases` |
+| `releaseDeadline({ version, after? })` (operator signature) | `POST ops/releases/{version}/deadline` |
+| `releaseDeadlineLift({ version })` (operator signature) | `DELETE ops/releases/{version}/deadline` |
+| `removeNode({ id })` (operator signature) | `DELETE ops/nodes/{id}` |
+| `restore({ app, backup? })` (operator signature) | `POST ops/apps/{app}/restore` |
+| `served()` | `GET ops/served-origins` |
+| `setReplicas({ app, replicas })` (operator signature) | `POST ops/apps/{app}/replicas` |
+| `signUpInviteCreate({ token, uses?, expiresAt })` (operator signature) | `POST ops/sign-up/invites` |
+| `signUpInviteList()` | `GET ops/sign-up/invites` |
+| `signUpInviteRevokeDelete({ key })` (operator signature) | `DELETE ops/sign-up/invites/{key}` |
+| `signUpInviteRevokePost({ key })` (operator signature) | `POST ops/sign-up/invites/{key}/revoke` |
+| `signUpSet({ policy })` (operator signature) | `POST ops/sign-up` |
+| `status()` | `GET ops/status` |
+| `upgrade({ app, bundle?, package?, version?, service?, migrate? })` (operator signature) | `POST ops/apps/{app}/upgrade` |
 
-## Organizations
-
-| Method | Route |
-| --- | --- |
-| `createOrg(name, { recoveryKey? })` → org id | `POST orgs` |
-| `getOrg(org)` → `OrgInfo` (`releaseApprovers`, `publishes`, `newWorkStopped`, `recovery`) | `GET orgs/{org}` |
-| `orgMembersSecurity(org)` → `OrgMemberSecurity[]` (`account`, `name`, `role`, `teams`, `passkeys` to `'3+'`, `recoveryCode`, `lastActiveDay`, `sessions`; the owner and admins only, `403` below; never ids, labels, sessions or activity) | `GET orgs/{org}/members?detail=security` |
-| `deleteOrg(org, passkey)` | `DELETE orgs/{org}` |
-| `setOrgMetadata(org, metadata)` | `POST orgs/{org}/metadata` |
-| `setMember(org, account, role, passkey)` | `POST orgs/{org}/members` |
-| `removeMember(org, account, passkey)` (also to leave: your own account) | `DELETE orgs/{org}/members/{account}` |
-| `setMemberMetadata(org, account, metadata)` | `POST orgs/{org}/members/{account}/metadata` |
-| `setCapabilities(org, bits, passkey, { account?, team? })` | `POST orgs/{org}/capabilities` |
-| `setTeamDefaultCapabilities(org, team, bits, passkey)` (what everyone in the team holds there) | `POST orgs/{org}/capabilities` |
-| `createTeam(org, name, join, parent?)` → team id | `POST orgs/{org}/teams` |
-| `getTeam(org, team)` → `TeamInfo` (with `package`, `defaultCapabilities`) | `GET orgs/{org}/teams/{team}` |
-| `updateTeam(org, team, { name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
-| `deleteTeam(org, team, passkey?)` | `DELETE orgs/{org}/teams/{team}`; when its teams hold apps, approved with `passkey` (the `412` details list the `apps`) |
-| `setTeamMember(org, team, account, passkey, { role?, lead?, capabilities? })` | `POST orgs/{org}/teams/{team}/members` |
-| `removeTeamMember(org, team, account, passkey)` | `DELETE orgs/{org}/teams/{team}/members/{account}` |
-| `invite(org, role, passkey, teams?, { ttlSecs?, uses? })` → token | `POST orgs/{org}/invites` |
-| `redeemInvite(token)` (no approval) | `POST invites/{token}/redeem` |
-| `listInvites(org)` → `OrgInvite[]` (the ones the caller may see; never a token) | `GET orgs/{org}/invites` |
-| `revokeInvite(org, inviteKey, passkey)` | `DELETE orgs/{org}/invites/{inviteKey}` |
-| `listAppTeams(org)` → `{ mode, appTeams }` | `GET orgs/{org}/app-teams` |
-| `scopeApps(org, passkey, { apps?, shared? })` → `{ mode, teams }` (owner or admin) | `POST orgs/{org}/app-teams` |
-| `setRecoveryKey(org, publicKey \| null, passkey)` (the owner) | `POST orgs/{org}/recovery` |
-| `startRecovery(org, seed)` → `{ startedAt, readyAt }` (signs locally) | `POST orgs/{org}/recovery/start` |
-| `cancelRecovery(org, passkey)` (the owner) | `POST orgs/{org}/recovery/cancel` |
-| `finishRecovery(org, passkey)` → `{ org, previousOwners }` | `POST orgs/{org}/recovery/finish` |
-| `upgradeOrg(org, { package, version, team?, cascade?, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrade` |
-| `upgradeRun(org, run)` → `UpgradeRun` | `GET orgs/{org}/upgrades/{run}` |
-| `retryUpgradeRun(org, run, passkey)` → `UpgradeRun` | `POST orgs/{org}/upgrades/{run}/retry` |
-| `approveRelease(org \| null, version, passkey, approved?)` | `POST orgs/{org}/releases` or `auth/releases` |
-| `publisherBinding(signerId)` → `{ signerId, cluster, generation, bound }` | `GET publishers/{signerId}` |
-| `bindPublisher(org, { signerId, publicKey, signature }, passkey)` | `POST orgs/{org}/publishers` |
-| `upgradePublished(org, package, { version, migrate? }, passkey)` → `UpgradeRun` | `POST orgs/{org}/packages/{package}/upgrade` |
-| `approveOutbound(org \| null, package, passkey, { prefixes?, replace? })` | `POST orgs/{org}/outbound` or `auth/outbound` |
-
-## Approvals and the consent page
-
-The approval routes above refuse a session opened on an app's frontend
-(`403`). An app sends its user to the node's consent page instead
-([guide](/guides/user-approvals/)).
+### `client.orgs`
 
 | Method | Route |
 | --- | --- |
-| `appsReport(org \| null, { after?, limit? })` → `AppsReport` | `GET orgs/{org}/apps` or `auth/apps` |
-| `appsReportAll(org \| null)` → `AppsReport` (every page) | the same, following `next` |
-| `releaseRules()` → `{ governance, deadlines }` | `GET releases` |
-| `pendingApprovals(org?)` → `PendingApprovals` | `GET auth/apps` (or `orgs/{org}/apps`), `GET releases` |
-| `requestConsent(request)` → `{ requestId, url, expiresAt, code? }`; show `code` to the user before sending them to `url`, and they should see the same code on the page | `POST consent/requests` |
-| `openConsentPage(request, navigate? \| { navigate?, confirm? })`: checks `code` against `confirmationCode(requestId)` (else `CalimeroError` `CONSENT_CODE_MISMATCH`), runs `confirm(started)` so the app can show `code`, and navigates unless it answers `false` | `POST consent/requests`, then navigates to `url` |
-| `consentResult(requestId)` → `{ requestId, kind, status, decidedAt }` | `GET consent/{id}/result` |
-| `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | polls `GET consent/{id}/result` |
+| `allApps({ org, account, allApps })` (step-up) | `POST orgs/{org}/all-apps` |
+| `apps({ org, after?, limit? })` | `GET orgs/{org}/apps` |
+| `appTeamList({ org })` | `GET orgs/{org}/app-teams` |
+| `appTeamsScope({ org, apps?, shared? })` (step-up) | `POST orgs/{org}/app-teams` |
+| `capabilities({ org, account?, team?, capabilities })` (step-up) | `POST orgs/{org}/capabilities` |
+| `create({ name, recoveryKey? })` | `POST orgs` |
+| `delete({ org })` (step-up) | `DELETE orgs/{org}` |
+| `get({ org })` | `GET orgs/{org}` |
+| `inviteCreate({ org, role, teams?, ttlSecs?, uses?, allApps? })` (step-up) | `POST orgs/{org}/invites` |
+| `inviteList({ org })` | `GET orgs/{org}/invites` |
+| `inviteRedeem({ token })` | `POST invites/{token}/redeem` |
+| `inviteRevoke({ org, key })` (step-up) | `DELETE orgs/{org}/invites/{key}` |
+| `memberMetadata({ org, account, metadata })` | `POST orgs/{org}/members/{account}/metadata` |
+| `memberRemoveTeams({ org, account, teams })` (step-up) | `DELETE orgs/{org}/members/{account}/teams` |
+| `members({ org, detail? })` | `GET orgs/{org}/members` |
+| `memberSetTeams({ org, account, teams })` (step-up) | `POST orgs/{org}/members/{account}/teams` |
+| `metadata({ org, metadata })` | `POST orgs/{org}/metadata` |
+| `outboundApproval({ org, package, prefixes?, replace? })` (step-up) | `POST orgs/{org}/outbound` |
+| `publisher({ org, signerId, publicKey, signature })` (step-up) | `POST orgs/{org}/publishers` |
+| `publisherUpgrade({ org, package, version, migrate? })` (step-up) | `POST orgs/{org}/packages/{package}/upgrade` |
+| `recoveryCancel({ org })` (step-up) | `POST orgs/{org}/recovery/cancel` |
+| `recoveryFinish({ org })` (step-up) | `POST orgs/{org}/recovery/finish` |
+| `recoverySet({ org, publicKey? })` (step-up) | `POST orgs/{org}/recovery` |
+| `recoveryStart({ org, nonce, signature })` | `POST orgs/{org}/recovery/start` |
+| `releaseApproval({ org, version, approved? })` (step-up) | `POST orgs/{org}/releases` |
+| `removeMember({ org, account })` (step-up) | `DELETE orgs/{org}/members/{account}` |
+| `rename({ org, name })` (step-up) | `POST orgs/{org}/name` |
+| `setMember({ org, account, role })` (step-up) | `POST orgs/{org}/members` |
+| `teamCreate({ org, name, parent?, join })` | `POST orgs/{org}/teams` |
+| `teamDelete({ org, team })` (step-up) | `DELETE orgs/{org}/teams/{team}` |
+| `teamGet({ org, team })` | `GET orgs/{org}/teams/{team}` |
+| `teamRemoveMember({ org, team, account })` (step-up) | `DELETE orgs/{org}/teams/{team}/members/{account}` |
+| `teamSetMember({ org, team, account, lead?, role?, capabilities? })` (step-up) | `POST orgs/{org}/teams/{team}/members` |
+| `teamUpdate({ org, team, name?, join?, parent?, metadata? })` | `POST orgs/{org}/teams/{team}` |
+| `upgrade({ org, package, version, team?, cascade?, migrate? })` (step-up) | `POST orgs/{org}/upgrade` |
+| `upgradeRetry({ org, run })` (step-up, operator signature) | `POST orgs/{org}/upgrades/{run}/retry` |
+| `upgradeStatus({ org, run })` | `GET orgs/{org}/upgrades/{run}` |
+| `usage({ org })` | `GET orgs/{org}/usage` |
 
-## Operator
-
-With the operator token (`useApiKey(token)`):
+### `client.packages`
 
 | Method | Route |
 | --- | --- |
-| `opsApps({ after?, limit? })` → `OpsAppsReport` | `GET ops/apps` |
-| `opsOrgs({ after?, limit? })` → `OpsOrgsReport` | `GET ops/orgs` |
-| `opsServedOrigins()` → `{ fresh, origins: [{ origin, host, label, addedAt }] }` | `GET ops/served-origins` |
-| `setReleaseDeadline(version, after)` | `POST ops/releases/{version}/deadline` |
-| `liftReleaseDeadline(version)` | `DELETE ops/releases/{version}/deadline` |
+| `bundlePut({ body, contentType? })` | `POST bundles` |
+| `get({ package })` | `GET packages/{package}` |
+| `install({ package, version })` | `POST packages/install` |
+| `list()` | `GET packages` |
+| `originsAdd({ package, origin, rpId?, served? })` (step-up) | `POST package-origins/{package}` |
+| `originsList({ package })` | `GET package-origins/{package}` |
+| `originsRemove({ package, origin })` (step-up) | `DELETE package-origins/{package}` |
+| `uninstall({ package })` | `DELETE packages/{package}` |
+| `upload({ body, contentType? })` | `POST packages` |
+| `versionUninstall({ package, version })` | `DELETE packages/{package}/{version}` |
 
-## Any route
+### `client.public`
 
-`get`, `post`, `put` and `delete(path, body?)` send any request through the
-sealed channel with the client's credential and map a refusal to a typed error.
-`postConfirmed(path, body, passkey)` and `deleteConfirmed(path, passkey, body?)`
-answer a `412 CONFIRM_REQUIRED`.
+| Method | Route |
+| --- | --- |
+| `attestation({ nonce, app?, appHash?, purpose? })` | `GET attestation` |
+| `health()` | `GET health` |
+| `publisherBinding({ signer })` | `GET publishers/{signer}` |
+| `releasesPublic()` | `GET releases` |
+
+## The generated methods
+
+Every route of the node is a method, generated from core's OpenAPI document
+(`openapi/core-openapi.json`, by `pnpm gen:api` into `src/generated/`), in a
+group per tag: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`. Each takes
+one typed argument object (path parameters, query and body fields merged; a raw
+body under `body`, with `contentType`) and answers the route's typed payload; a
+refusal is thrown as its typed `CalimeroError`.
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });
+await client.orgs.setMember({ org: orgId, account, role: 'member' }, { confirm: passkeyConfirm(passkey) });
+```
+
+The second argument, `{ confirm, operatorProof, signal }`, answers this call's
+`412 CONFIRM_REQUIRED` or `428 OPERATOR_SIGNATURE_REQUIRED`;
+`new CalimeroClient(options, { confirm, operatorProof })` answers every call that
+gives none. Routes the document marks retry-safe are retried on `503` (D70), and
+one that requires an idempotency key gets one. The route methods above are thin calls onto these,
+deprecated until the apps have moved; the event streams stay on the transport.
+`createRoutes(createApiClient(transport))` builds the groups on any
+`NodeTransport`.
+
+`client.api` is the low-level `openapi-fetch` client they run on (`{ data,
+error, response }`, with `stepUp` / `operatorSignature` middleware and `unwrap`),
+kept as an escape hatch.
+
+## The runtime
+
+Every request goes through `client.transport`, a `Transport` from
+`@calimero-network/mero-js/runtime`: attestation, the sealed channel, the
+session and its refresh, `421` moves, D70 retries, the `412` step-up, error
+mapping and server-sent events, behind `request(method, path, options)`,
+`json(method, path, options)` and `events(path, options)`; `exchange(method,
+path, options)` answers a refusal as the node's response, which is what the
+generated client sends through. `options` takes `query`, a JSON `body` or raw
+`bytes` with `contentType`, a `passkey` that answers a `412 CONFIRM_REQUIRED`,
+`retry` (`true` for a call or a view, `'once'` for a confirmed attempt) and
+`signal`. `routePath('orgs/{org}', { org })` encodes the path's segments.
+`new CalimeroClient(transport)` builds a client on a `NodeTransport` made
+elsewhere.
 
 ## Not covered
 

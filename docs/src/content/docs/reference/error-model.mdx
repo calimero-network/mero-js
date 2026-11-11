@@ -21,6 +21,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `ConfirmCancelled` | (not from the node) | The user dismissed the passkey prompt. Nothing was sent. |
 | `ConfirmPromptBlocked` | (not from the node) | The browser or a password manager refused to show the passkey prompt (the page was not focused, or another prompt was still open). The user did not decline and nothing was sent: offer to try again from a click. `cause` is the browser's error. |
 | `IdempotencyMismatch` | `409 IDEMPOTENCY_MISMATCH` | The key was used before with other arguments. |
+| `RuntimeTooOld` | `409 RUNTIME_TOO_OLD` | A node that would run the app (a replica, for an upgrade) runs an older runtime than the release's `minRuntimeVersion`: `minRuntimeVersion` and `nodes` name them. Nothing ran; the report's `latestReachable` is the newest release it can move to. |
 | `ReleaseDeadlineError` | `409 RELEASE_DEADLINE` | A release's deadline passed unapproved: no new apps, installs or upgrades until `release` (or newer) is approved. Running apps keep running. |
 | `ConsentStale` | `409 CONSENT_STALE` | What a consent page showed changed before the approval; ask for a new request. |
 | `OriginNotRegistered` | `403 ORIGIN_NOT_REGISTERED` | A sign-up or sign-in from a web origin nobody registered: "this site (`origin`) is not registered for `package`". |
@@ -28,7 +29,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 | `OriginTaken` | `409 ORIGIN_TAKEN` | The origin is registered already (or with the other `served`), or is one of the cluster's own. |
 | `NotServing` | `400 NOT_SERVING` | A served origin (`served: true`) on a cluster that serves no frontends. |
 | `ClusterNotUpgraded` | `409 CLUSTER_NOT_UPGRADED` | The change (a served origin, say) needs every node of the cluster on the node's release; one is older. |
-| `FeatureNotActive` | `409 FEATURE_NOT_ACTIVE` | The command (or a field of it) needs a cluster version not every node supports yet: a rollout from an older release is under way, and nothing was done. `feature`, `needs` (the release it needs) and `active` (the cluster's now, `''` when not every node said) come from `details`. It works once the old nodes have left: `moveApp` on a cluster still holding a node from before 1.0.0-rc.15, say. |
+| `FeatureNotActive` | `409 FEATURE_NOT_ACTIVE` | The command (or a field of it) needs a cluster version not every node supports yet: a rollout from an older release is under way, and nothing was done. `feature`, `needs` (the release it needs) and `active` (the cluster's now, `''` when not every node said) come from `details`. It works once the old nodes have left: `client.apps.move` on a cluster still holding a node from before 1.0.0-rc.15, say. |
 | `QuotaExceeded` | `429 QUOTA_EXCEEDED` | The caller holds as many of something (registered origins, a component app's blobs, …) as it may. |
 | `ArgsTooLarge` | `413 ARGS_TOO_LARGE` | The call's arguments are over the node's limit (512 KiB); it did not run. |
 | `AppError` | `422 APP_ERROR` | The app refused the call: `appCode` (its declared error) and `fields`. The call was logged; its key is spent. |
@@ -40,7 +41,7 @@ typed error extends `CalimeroError`, so `instanceof CalimeroError` and its
 import { AppError, CalimeroError, UnavailableError } from '@calimero-network/mero-js';
 
 try {
-  await client.call(app, 'book', { slot }, `book-${slot}`);
+  await client.apps.call({ app, method: 'book', args: { slot }, idempotencyKey: `book-${slot}` });
 } catch (e) {
   if (e instanceof AppError && e.appCode === 'Taken') showTaken(e.fields);
   else if (e instanceof UnavailableError && e.committed === 'unknown') retryLaterWithSameKey();

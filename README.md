@@ -29,7 +29,7 @@ quotes and is loaded on first use.
 ## Quick start
 
 ```ts
-import { CalimeroClient, browserPasskey } from '@calimero-network/mero-js';
+import { CalimeroClient, browserPasskey, passkeyConfirm } from '@calimero-network/mero-js';
 
 // Reach a Calimero Cloud cluster by name.
 const client = await CalimeroClient.connect({
@@ -39,14 +39,14 @@ const client = await CalimeroClient.connect({
 });
 
 await client.signUp(browserPasskey(), 'alice'); // or signIn(browserPasskey())
-await client.installPackage('com.example.kv', '1.0.0'); // signed .mpk from the registry
-const app = await client.createApp('kv', { package: 'com.example.kv', version: '1.0.0' }, { confirmMethods: ['clear'] });
+await client.packages.install({ package: 'com.example.kv', version: '1.0.0' }); // signed .mpk from the registry
+const { appId: app } = await client.apps.create({ name: 'kv', package: 'com.example.kv', version: '1.0.0' });
 
-await client.call(app, 'set', { key: 'a', value: '1' });
-const { result } = await client.view(app, 'get', { key: 'a' });
-await client.callConfirmed(app, 'clear', {}, browserPasskey()); // passkey consent
+await client.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
+const { result } = await client.apps.view({ app, method: 'get', args: { key: 'a' } });
+await client.apps.call({ app, method: 'clear', args: {} }, { confirm: passkeyConfirm(browserPasskey()) }); // passkey consent
 for await (const event of client.events(app)) console.log(event);
-await client.upgradeApp(app, { version: '1.1.0' }, browserPasskey()); // the owner approves
+await client.apps.upgrade({ app, version: '1.1.0' }, { confirm: passkeyConfirm(browserPasskey()) }); // the owner approves
 ```
 
 A development cluster (`merod local`, `merod run --dev`) sends mock quotes,
@@ -97,21 +97,21 @@ Pinned measurements go through `policy.verifyQuote` (`createQuoteVerifier`).
 
 ## The API
 
-- **Credentials**: `signUp` (with an `invite`, on a cluster that takes new accounts by invite; `signUpPolicy` reads which), `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `listSessions`, `revokeSession`, `listActivity`, `useSession`, `useApiKey`, `me`, `usage`, `addPasskey`, `labelPasskey`, `removePasskey`, `createApiKey`, `listApiKeys`, `revokeApiKey`. Adding or removing a passkey and creating an API key are approved with a passkey the account already has.
-- **Account recovery** (core #4844): `createRecoveryCode`, `removeRecoveryCode` (passkey-approved; the code is shown once), then signed out `startAccountRecovery(code, passkey)` and, 72 hours later, `finishAccountRecovery(passkey, accountId?)`; a passkey the account still has cancels in between (`cancelAccountRecovery`; `me()` shows `recoveryCode` and `recoveryPending`).
-- **Package origins**: `packageOrigins.list`, `packageOrigins.add`, `packageOrigins.remove`. A package's managers register the web origins of a frontend they host themselves (approved with a passkey); `signUp` and `signIn` on such a page send its origin, sign for that origin's relying-party id, and open a session bound to the package (`me()` answers its `app` and `origin`). An unregistered origin is refused with `OriginNotRegistered`. `packageOrigins.add(pkg, origin, passkey, { served: true })` registers a custom domain: the cluster also serves the package's frontend there from its signed bundle (`https://host`, no port; the passkey's consent names `served: true`); `list` answers `served` on each origin, and the extra refusals are `NotServing` (the cluster serves no frontends), `ClusterNotUpgraded` (a node is on an older release), `QuotaExceeded` (4 served per package, 64 per cluster) and `OriginTaken` (held with the other `served`).
-- **Packages**: `installPackage`, `uploadPackage`, `packages`, `package`, `uninstallPackage`; `uploadBundle` (raw WASM, development clusters only).
-- **Apps**: `createApp`, `listApps`, `getApp`, `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `upgradeApp`, `transferApp`, `moveApp`.
-- **Calls**: `call`, `callConfirmed`, `view`, `events`. A call always carries an idempotency key, and is sent again with it while the node answers `503`, then to the next node.
-- **Blobs and presence**: `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob`; `publishPresence`, `presence`, `presenceStream`.
-- **Organizations**: `createOrg`, `getOrg`, `orgMembersSecurity` (owners and admins: each member's passkey count to `3+`, recovery code set, last active day, live sessions), `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities` (`ORG_CAPABILITIES`), `setTeamDefaultCapabilities`, teams, app teams (`listAppTeams`, `scopeApps`), `invite`, `redeemInvite`, `listInvites`, `revokeInvite`, recovery (`setRecoveryKey`, `startRecovery`, `cancelRecovery`, `finishRecovery`; `newRecoverySeed`, `recoveryPublicKey`). Setting or removing a member or team member, capabilities, invites (minting and revoking) and scoping apps are approved with the caller's passkey; redeeming an invite is not.
-- **Owner decisions** (passkey approval, never from an app's frontend): `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `approveRelease`, `approveOutbound`, `bindPublisher`, `upgradePublished`.
-- **Approvals from an app**: `appsReport`, `releaseRules`, `pendingApprovals`, then `requestConsent` / `openConsentPage` to send the user to the node's consent page, and `consentResult`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
-- **Operator** (ops token): `opsApps`, `opsOrgs`, `opsServedOrigins` (every custom domain the log holds, by package label), `setReleaseDeadline`, `liftReleaseDeadline`.
-- **Any route**: `get`, `post`, `put`, `delete`; `postConfirmed` and `deleteConfirmed` answer a `412 CONFIRM_REQUIRED` with a passkey.
+Every route of the node is a generated method, in a group per area
+(`client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.ops`, `client.public`); see
+[below](#the-runtime-and-the-route-layer). The hand-written methods left are the
+flows and streams a single route cannot be:
+
+- **Credentials**: `signUp(passkey, name, { invite?, origin?, signal? })`, `signIn(passkey, { origin?, signal? })`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `addPasskey(newPasskey, approver)`.
+- **Account recovery** (core #4844): signed out, `startAccountRecovery(code, passkey)` and, 72 hours later, `finishAccountRecovery(passkey, accountId?)`. The code itself is `client.auth.recoveryCreate({}, { confirm })`.
+- **Organization recovery**: `startRecovery(org, seed)` (the seed signs here and never leaves the process); `newRecoverySeed`, `recoveryPublicKey`.
+- **Blobs**: `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` (bytes; `client.apps.blobDownload` answers a `Blob` with its type).
+- **Streams**: `events(app, from?, signal?)`, `presenceStream(app, signal?)`.
+- **Approvals from an app**: `pendingApprovals(org?)`, `appsReportAll(org)`, then `openConsentPage(request, …)` to send the user to the node's consent page, and `waitForConsent(requestId)`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 
 Refusals are typed (`LoginRequired`, `PasskeyUnknownHere`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`, `ConfirmPromptBlocked`,
-`ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `ConsentStale`, `AppError`, `TrapError`,
+`ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `RuntimeTooOld`, `ConsentStale`, `AppError`, `TrapError`,
 `UnavailableError`, `OriginNotRegistered`, `BadOrigin`, `OriginTaken`, `QuotaExceeded`),
 all extending `CalimeroError` with the node's `status` and `code`. A `401` once
 the node that issued the session is replaced or out of reach is answered by one
@@ -124,6 +124,232 @@ The pieces it is built from are exported too: the sealed transport
 (`createQuoteVerifier`, `createSignedReleaseVerifier`, `trustSignedRelease`), and
 the client for mero-tee's private agent gate (`attestAgent`, `provisionAgent`,
 `releaseAgent`).
+
+## The runtime and the route layer
+
+The client is two layers. The **runtime** (`@calimero-network/mero-js/runtime`,
+`src/runtime/`) is everything that is not a route: the node's attestation, the
+sealed channel, the credential and the session's refresh on a `401`, moving on
+`421 WRONG_NODE`, D70 retries and failover, error mapping and server-sent
+events. The **route layer** is generated from core's OpenAPI document
+(`openapi/core-openapi.json`, the node's `docs/public/openapi.json`) by
+`pnpm gen:api`: `openapi-typescript` writes the types (`src/generated/api.ts`)
+and `scripts/gen-methods.mjs` one method per operation
+(`src/generated/methods.ts`), grouped by the operation's tag. `CalimeroClient`
+exposes the groups, which share `client.transport`'s session:
+
+```ts
+import { passkeyConfirm } from '@calimero-network/mero-js';
+
+const org = await client.orgs.get({ org: orgId });             // the typed payload
+const { result } = await client.apps.call({ app, method: 'set', args: { key: 'a' } });
+const { token } = await client.orgs.inviteCreate(               // a step-up (412)
+  { org: orgId, role: 'member' },
+  { confirm: passkeyConfirm(passkey) },
+);
+await client.apps.blobUpload({ app, body: bytes, contentType: 'image/png' });
+```
+
+- **Groups**: `client.apps`, `client.auth`, `client.orgs`, `client.packages`,
+  `client.deployments`, `client.consent`, `client.ops`, `client.public`.
+- **One argument object**: path parameters, query parameters and body fields
+  merged, all typed from the document. The body goes whole under `body` when it is
+  raw bytes (with an optional `contentType`) or when its field names would collide.
+  A route whose query parameter is named like a path parameter takes its query
+  under `query`.
+- **The answer** is the route's typed success payload (a `Blob` for a download).
+  A refusal is thrown as the typed `CalimeroError` (`NotFound`, `ConfirmRequired`, ...).
+- **Challenges**: the second argument `{ confirm?, operatorProof?, signal? }`
+  answers this call's `412 CONFIRM_REQUIRED` (`passkeyConfirm(passkey)`) or
+  `428 OPERATOR_SIGNATURE_REQUIRED` (the operator key's signature over the
+  statement). The client's own `new CalimeroClient(options, { confirm, operatorProof })`
+  answers every call that gives none.
+- **Retries**: a route the document marks `x-calimero-retry-safe` (a call, a
+  view, a method by its path) is sent again on a `503` as D70 says; one whose
+  retries require an `idempotencyKey` gets one when it has none, which its retries
+  and its confirmed retry share. A `421 WRONG_NODE` moves to the next node.
+- **Step-ups** ask the passkey for the route's own user verification
+  (`x-calimero-user-verification`: `preferred` for the sign-up's confirmation,
+  `required` elsewhere).
+- **Streams** (`events`, `presenceStream`) stay hand-written on the runtime.
+- `createRoutes(createApiClient(transport, { confirm, operatorProof }))` builds
+  the same groups on any `NodeTransport`.
+
+`client.api` is the **low-level** escape hatch: the raw `openapi-fetch`
+client the methods run on (`client.api.GET('/orgs/{org}', { params: { path: {
+org } } })` answers `{ data, error, response }`). Its `fetch` is
+`transportFetch(transport)`: the path, query and body go through the transport
+(sealed, with the credential), and the two routes served in the clear
+(`/attestation`, `/health`) go unsealed. `stepUp(...)` and
+`operatorSignature(...)` are its middleware; `unwrap(result)` throws a refusal.
+Apps should not write against it.
+
+The single-route methods of 29.x (`createOrg`, `call`, ...) are gone; see
+[Upgrading from 29.x](#upgrading-from-29x). The ceremonies (`signUp`, `signIn`, `addPasskey`,
+account and organization recovery, `openConsentPage`, ...) stay as flows.
+
+The runtime's own surface toward routes is still one interface, for a route
+layer of your own:
+
+```ts
+interface Transport {
+  request(method: HttpMethod, path: string, options?: RequestOptions): Promise<Response>; // 2xx, body unread
+  json<T>(method: HttpMethod, path: string, options?: RequestOptions): Promise<T>;
+  events(path: string, options?: { query?; signal? }): AsyncGenerator<CloudEvent>;
+}
+// RequestOptions: { query?, body? (JSON) | bytes? + contentType?, passkey? (answers a 412),
+//                   userVerification?, retry?: true | 'once' (D70), signal?, promptSignal? }
+```
+
+`NodeTransport` implements it, and `exchange(method, path, options)` answers a
+refusal as the node's response instead of throwing it (what the generated
+client sends through). The `/runtime` entry re-exports the package's own bundle,
+so its error classes are the ones `CalimeroClient` throws (`instanceof` holds
+across both imports).
+
+### Refreshing the OpenAPI document
+
+`openapi/core-openapi.json` is vendored from core at the commit `openapi/SOURCE`
+names. `scripts/refresh-openapi.sh [<core ref>]` (`pnpm refresh:openapi`)
+fetches it again, records the commit and regenerates `src/generated/`;
+`pnpm check:api` fails when the generated types or methods are not those of the
+vendored document.
+
+`.github/workflows/openapi-sync.yml` does this on its own: core sends a
+`repository_dispatch` (`core-openapi`, with the core commit) whenever its
+document changes, and a weekly run catches a missed one (or run it by hand with a
+`ref`). When the document or the generated code changed, it opens or refreshes a
+pull request on `chore/core-openapi` that lists the generated methods added,
+removed or changed (`scripts/openapi-sync-summary.mjs`); a removed or renamed
+one needs a major release.
+
+It opens that pull request with a GitHub App's token, so the pull request's CI
+runs: the organization's shared `vars.ACTIONS_APP_ID` /
+`secrets.ACTIONS_APP_PRIVATE_KEY`, which must be shared with this repository. The
+app must be installed on this repository
+with contents and pull-requests write.
+
+## Upgrading from 29.x
+
+30.0 removes the single-route methods 29.x deprecated, and the untyped `get`,
+`post`, `put`, `delete`, `postConfirmed` and `deleteConfirmed`. Each is a
+generated method now, which takes one argument object and answers the route's
+payload (pick the field the old method answered: `(await client.orgs.create({
+name })).orgId`). A step-up takes `{ confirm: passkeyConfirm(passkey) }` as the
+second argument. `client.packages` and `client.deployments` are groups, no longer
+callable (`(await client.packages.list()).packages`).
+
+| 29.x | 30.0 |
+| --- | --- |
+| `signUpPolicy()` | `client.deployments.signUpPublic()` |
+| `listSessions()` | `(await client.auth.sessionsList()).sessions` |
+| `revokeSession(session)` | `client.auth.sessionRevoke({ session })` |
+| `listActivity(after)` | `(await client.auth.activityList({ after })).activity` |
+| `me()` | `client.auth.me()` |
+| `removePasskey(credentialId, passkey)` | `client.auth.passkeyRemove({ cred: credentialId }, { confirm: passkeyConfirm(passkey) })` |
+| `labelPasskey(credentialId, label)` | `client.auth.passkeyLabel({ cred: credentialId, label })` |
+| `createRecoveryCode(passkey)` | `(await client.auth.recoveryCreate({}, { confirm: passkeyConfirm(passkey) })).code` |
+| `removeRecoveryCode(passkey)` | `client.auth.recoveryRemove({}, { confirm: passkeyConfirm(passkey) })` |
+| `cancelAccountRecovery(passkey)` | `client.auth.accountRecoveryCancel({}, { confirm: passkeyConfirm(passkey) })` |
+| `usage()` | `client.auth.usage()` |
+| `attestation()` | `client.public.attestation({ nonce: '00'.repeat(32) })` |
+| `listApiKeys()` | `(await client.auth.apikeyList()).keys` |
+| `revokeApiKey(keyId, passkey)` | `client.auth.apikeyRevoke({ key: keyId }, { confirm: passkeyConfirm(passkey) })` |
+| `createApiKey(options, passkey)` | `client.auth.apikeyCreate({ ...options }, { confirm: passkeyConfirm(passkey) })` |
+| `uploadBundle(wasm)` | `(await client.packages.bundlePut({ body: wasm, contentType: 'application/wasm' })).hash` |
+| `uploadBlob(app, data, contentType)` | `client.apps.blobUpload({ app, body: data, contentType })` |
+| `blobContent(app, id, options)` | `client.apps.blobDownload({ app, id, grant })` (a `Blob`: `arrayBuffer()` and `type`) |
+| `listBlobs(app)` | `(await client.apps.blobList({ app })).blobs` |
+| `blobInfo(app, id)` | `client.apps.blobInfo({ app, id })` |
+| `deleteBlob(app, id)` | `client.apps.blobDelete({ app, id })` |
+| `uploadPackage(mpk)` | `client.packages.upload({ body: mpk, contentType: 'application/octet-stream' })` |
+| `installPackage(pkg, version)` | `client.packages.install({ package: pkg, version })` |
+| `packages()` | `(await client.packages.list()).packages` |
+| `package(pkg)` | `client.packages.get({ package: pkg })` |
+| `uninstallPackage(pkg, version)` | `client.packages.uninstall({ package: pkg })` or `client.packages.versionUninstall({ package: pkg, version })` |
+| `listApps(filter)` | `(await client.apps.list({ ...filter })).apps` |
+| `getApp(app)` | `client.apps.get({ app })` |
+| `deleteApp(app)` | `client.apps.delete({ app })` |
+| `setAccess(app, access)` | `client.apps.access({ app, access })` |
+| `setAppMetadata(app, metadata)` | `client.apps.metadata({ app, metadata })` |
+| `appXcalls(app)` | `client.apps.xcalls({ app })` |
+| `appStorage(app)` | `client.apps.storage({ app })` |
+| `appAbi(app)` | `client.apps.abi({ app })` |
+| `transferApp(app, to, passkey)` | `client.apps.transfer({ app, to }, { confirm: passkeyConfirm(passkey) })` |
+| `moveApp(app, toOrg, options, passkey)` | `client.apps.move({ app, toOrg, ...options }, { confirm: passkeyConfirm(passkey) })` |
+| `upgradeApp(app, target, passkey)` | `client.apps.upgrade({ app, ...target }, { confirm: passkeyConfirm(passkey) })` |
+| `createApp(name, bundle, options)` | `(await client.apps.create({ name, bundle, ...options })).appId` |
+| `call(app, method, args, idempotencyKey)` | `client.apps.call({ app, method, args, idempotencyKey })` |
+| `callConfirmed(app, method, args, passkey, idempotencyKey)` | `client.apps.call({ app, method, args, idempotencyKey }, { confirm: passkeyConfirm(passkey) })` |
+| `view(app, method, args, options)` | `client.apps.view({ app, method, args, consistency: options.stale ? 'stale' : undefined, minIndex: options.minIndex })` |
+| `publishPresence(app, seq, state)` | `client.apps.presencePublish({ app, seq, state: presenceState(state) })` |
+| `presence(app)` | `(await client.apps.presenceGet({ app })).present` |
+| `setAlias(alias, app)` | `client.auth.aliasSet({ alias, app })` |
+| `aliases()` | `(await client.auth.aliasList()).aliases` |
+| `alias(alias)` | `(await client.auth.aliasGet({ alias })).appId` |
+| `deleteAlias(alias)` | `client.auth.aliasDelete({ alias })` |
+| `createOrg(name, options)` | `(await client.orgs.create({ name, ...options })).orgId` |
+| `setRecoveryKey(org, publicKey, passkey)` | `client.orgs.recoverySet({ org, publicKey }, { confirm: passkeyConfirm(passkey) })` |
+| `cancelRecovery(org, passkey)` | `client.orgs.recoveryCancel({ org }, { confirm: passkeyConfirm(passkey) })` |
+| `finishRecovery(org, passkey)` | `client.orgs.recoveryFinish({ org }, { confirm: passkeyConfirm(passkey) })` |
+| `getOrg(org)` | `client.orgs.get({ org })` |
+| `orgMembersSecurity(org)` | `(await client.orgs.members({ org, detail: 'security' })).members` |
+| `deleteOrg(org, passkey)` | `client.orgs.delete({ org }, { confirm: passkeyConfirm(passkey) })` |
+| `setOrgMetadata(org, metadata)` | `client.orgs.metadata({ org, metadata })` |
+| `setMemberMetadata(org, account, metadata)` | `client.orgs.memberMetadata({ org, account, metadata })` |
+| `upgradeOrg(org, target, passkey)` | `client.orgs.upgrade({ org, ...target }, { confirm: passkeyConfirm(passkey) })` |
+| `upgradeRun(org, run)` | `client.orgs.upgradeStatus({ org, run })` |
+| `retryUpgradeRun(org, run, passkey)` | `client.orgs.upgradeRetry({ org, run }, { confirm: passkeyConfirm(passkey) })` |
+| `approveRelease(org, version, passkey, approved)` | `client.auth.accountReleaseApproval({ version, approved }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })` |
+| `approveOutbound(org, pkg, passkey, options)` | `client.auth.accountOutboundApproval({ package: pkg, ...options }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.outboundApproval({ org, package: pkg, ...options }, { confirm: passkeyConfirm(passkey) })` |
+| `appsReport(org, page)` | `client.auth.accountApps({ ...page })` or `client.orgs.apps({ org, ...page })` |
+| `releaseRules()` | `client.public.releasesPublic()` |
+| `requestConsent(request)` | `client.consent.pageCreate({ body: request })` |
+| `consentResult(requestId)` | `client.consent.pageResult({ request: requestId })` |
+| `publisherBinding(signerId)` | `client.public.publisherBinding({ signer: signerId })` |
+| `bindPublisher(org, proof, passkey)` | `client.orgs.publisher({ org, ...proof }, { confirm: passkeyConfirm(passkey) })` |
+| `upgradePublished(org, pkg, target, passkey)` | `client.orgs.publisherUpgrade({ org, package: pkg, ...target }, { confirm: passkeyConfirm(passkey) })` |
+| `opsApps(page)` | `client.ops.apps({ ...page })` |
+| `opsOrgs(page)` | `client.ops.orgs({ ...page })` |
+| `opsServedOrigins()` | `client.ops.served()` |
+| `setReleaseDeadline(version, after)` | `client.ops.releaseDeadline({ version, after }) (after as an RFC 3339 string)` |
+| `liftReleaseDeadline(version)` | `client.ops.releaseDeadlineLift({ version })` |
+| `setMember(org, account, role, passkey)` | `client.orgs.setMember({ org, account, role }, { confirm: passkeyConfirm(passkey) })` |
+| `removeMember(org, account, passkey)` | `client.orgs.removeMember({ org, account }, { confirm: passkeyConfirm(passkey) })` |
+| `setCapabilities(org, capabilities, passkey, at)` | `client.orgs.capabilities({ org, capabilities, ...at }, { confirm: passkeyConfirm(passkey) })` |
+| `setAllApps(org, account, allApps, passkey)` | `client.orgs.allApps({ org, account, allApps }, { confirm: passkeyConfirm(passkey) })` |
+| `setTeamDefaultCapabilities(org, team, capabilities, passkey)` | `client.orgs.capabilities({ org, team, capabilities }, { confirm: passkeyConfirm(passkey) })` |
+| `createTeam(org, name, join, parent)` | `(await client.orgs.teamCreate({ org, name, join, parent })).teamId` |
+| `getTeam(org, team)` | `client.orgs.teamGet({ org, team })` |
+| `updateTeam(org, team, update)` | `client.orgs.teamUpdate({ org, team, ...update })` |
+| `deleteTeam(org, team, passkey)` | `client.orgs.teamDelete({ org, team }, { confirm: passkeyConfirm(passkey) })` |
+| `setTeamMember(org, team, account, passkey, row)` | `client.orgs.teamSetMember({ org, team, account, ...row }, { confirm: passkeyConfirm(passkey) })` |
+| `removeTeamMember(org, team, account, passkey)` | `client.orgs.teamRemoveMember({ org, team, account }, { confirm: passkeyConfirm(passkey) })` |
+| `invite(org, role, passkey, teams, options)` | `(await client.orgs.inviteCreate({ org, role, teams, ...options }, { confirm: passkeyConfirm(passkey) })).token` |
+| `redeemInvite(token)` | `client.orgs.inviteRedeem({ token })` |
+| `listInvites(org)` | `(await client.orgs.inviteList({ org })).invites` |
+| `revokeInvite(org, inviteKey, passkey)` | `client.orgs.inviteRevoke({ org, key: inviteKey }, { confirm: passkeyConfirm(passkey) })` |
+| `listAppTeams(org)` | `client.orgs.appTeamList({ org })` |
+| `scopeApps(org, passkey, options)` | `client.orgs.appTeamsScope({ org, ...options }, { confirm: passkeyConfirm(passkey) })` |
+| `packageOrigins.list(pkg)` | `(await client.packages.originsList({ package: pkg })).origins` |
+| `packageOrigins.add(pkg, origin, passkey, options)` | `client.packages.originsAdd({ package: pkg, origin, ...options }, { confirm: passkeyConfirm(passkey) })` |
+| `packageOrigins.remove(pkg, origin, passkey)` | `client.packages.originsRemove({ package: pkg, origin }, { confirm: passkeyConfirm(passkey) })` |
+| `grantDeployer(deployer, passkey, options)` | `client.deployments.deployerGrant({ deployer, ...options }, { confirm: passkeyConfirm(passkey) }) (until as an RFC 3339 string)` |
+| `deployers()` | `client.deployments.deployerList()` |
+| `revokeDeployer(deployer, passkey)` | `client.deployments.deployerRevoke({ key: deployerKey(deployer) }, { confirm: passkeyConfirm(passkey) })` (or the key string itself) |
+| `createDeployment(name, owner, passkey)` | `(await client.deployments.create({ name, owner }, { confirm: passkeyConfirm(passkey) })).id` |
+| `deployments()` | `(await client.deployments.list()).deployments` |
+| `deployment(id)` | `client.deployments.get({ id })` |
+| `deleteDeployment(id, passkey)` | `client.deployments.delete({ id }, { confirm: passkeyConfirm(passkey) })` |
+| `offerApp(id, offer, passkey)` | `client.deployments.offer({ id, ...offer }, { confirm: passkeyConfirm(passkey) })` |
+| `withdrawApp(id, app, passkey)` | `client.deployments.withdraw({ id, app }, { confirm: passkeyConfirm(passkey) })` |
+| `deploymentOrgs(id)` | `client.deployments.orgs({ id })` |
+| `get(path)` | the route's generated method: `client.get('orgs/' + org)` → `client.orgs.get({ org })` |
+| `post(path, body)` | the route's generated method: `client.post('orgs', { name })` → `client.orgs.create({ name })` |
+| `put(path, body)` | the route's generated method: `client.put('auth/aliases/' + alias, { app })` → `client.auth.aliasSet({ alias, app })` |
+| `delete(path, body)` | the route's generated method: `client.delete('apps/' + app)` → `client.apps.delete({ app })` |
+| `postConfirmed(path, body, passkey)` | the route's generated method with `{ confirm: passkeyConfirm(passkey) }`: `client.postConfirmed('orgs/' + org + '/upgrade', body, passkey)` → `client.orgs.upgrade({ org, ...body }, { confirm: passkeyConfirm(passkey) })` |
+| `deleteConfirmed(path, passkey, body)` | the route's generated method with `{ confirm: passkeyConfirm(passkey) }`: `client.deleteConfirmed('orgs/' + org, passkey)` → `client.orgs.delete({ org }, { confirm: passkeyConfirm(passkey) })` |
 
 ## Development
 

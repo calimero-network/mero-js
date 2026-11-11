@@ -14,6 +14,7 @@ import {
   ConsentStale,
   ORG_CAPABILITIES,
   ReleaseDeadlineError,
+  RuntimeTooOld,
   confirmationCode,
   consentReturn,
   pageQuery,
@@ -28,6 +29,7 @@ import {
   type ReleaseRules,
 } from './index.js';
 import type { PasskeyProvider } from './passkey.js';
+import { passkeyConfirm } from '../api/step-up.js';
 
 const node = new StandInCloudNode();
 beforeAll(() => node.start());
@@ -54,9 +56,11 @@ const app = (id: string, version: string, availableVersions: string[]) => ({
   scope: { kind: 'account' as const },
   bundle: `h-${id}`,
   package: { package: 'com.example.kv', version, service: null },
-  publisher: { signer: 'did:key:z6Mk' },
+  publisher: { signer: 'did:key:z6Mk', org: null },
   upgradesHeldBy: 'owner' as const,
+  releasesApprovedBy: 'owner' as const,
   lastUpgrade: null,
+  lastWriteAt: null,
   approvedReleases: ['2.3.109'],
   replicas: [{ node: 1, release: '2.3.109', approved: true }],
   name: `app ${id}`,
@@ -96,7 +100,17 @@ describe('pendingApprovalsFrom', () => {
       expect.objectContaining({ version: '2.3.120', deadline: RULES.deadlines[0] }),
     ]);
     expect(pending.upgrades).toEqual([
-      { app: 'a-1', name: 'app a-1', package: 'com.example.kv', from: '1.0.0', to: '1.1.0', available: ['1.0.1', '1.1.0'], actionable: true },
+      {
+        app: 'a-1',
+        name: 'app a-1',
+        package: 'com.example.kv',
+        from: '1.0.0',
+        to: '1.1.0',
+        reachable: true,
+        blocked: null,
+        available: ['1.0.1', '1.1.0'],
+        actionable: true,
+      },
     ]);
     expect(pending.stalledBy).toBeNull();
     expect(pending.actionable).toBe(true);
@@ -109,6 +123,23 @@ describe('pendingApprovalsFrom', () => {
     expect(stalledBy(['2.3.130'], RULES.deadlines, after)).toBeNull();
     // Unrestricted (no approvals ever recorded) is never stopped.
     expect(stalledBy(null, RULES.deadlines, after)).toBeNull();
+  });
+
+  it('offers the newest release an app can reach, and says why the latest is not it', () => {
+    const blocked = {
+      version: '1.1.0',
+      reason: 'runtime' as const,
+      message: 'com.example.kv@1.1.0 needs runtime 1.0.0 or newer, and node 4 runs 0.9.0',
+      minRuntimeVersion: '1.0.0',
+      nodes: [{ node: 4, runtime: '0.9.0' }],
+    };
+    const behind = { ...app('a-1', '1.0.0', ['1.0.1', '1.1.0']), latestReachable: '1.0.1', latestBlocked: blocked };
+    const stuck = { ...app('a-2', '1.0.0', ['1.1.0']), latestReachable: null, latestBlocked: { ...blocked } };
+    const pending = pendingApprovalsFrom({ ...REPORT, apps: [behind, stuck] }, RULES, at('2027-01-01T00:00:00Z'));
+    expect(pending.upgrades).toEqual([
+      expect.objectContaining({ app: 'a-1', to: '1.0.1', reachable: true, blocked }),
+      expect.objectContaining({ app: 'a-2', to: '1.1.0', reachable: false, blocked }),
+    ]);
   });
 
   it('marks nothing actionable where the operator holds the decisions', () => {
@@ -176,13 +207,13 @@ describe('over the sealed channel', () => {
   it("reads an organization's report and an organization's release fields", async () => {
     const c = client();
     node.answer = () => ({ status: 200, json: { ...REPORT, scope: { kind: 'org', org: 'org-1' } } });
-    await c.appsReport('org-1', { limit: 10 });
+    await c.orgs.apps({ org: 'org-1', limit: 10 });
     expect(last().head.path).toBe('/orgs/org-1/apps?limit=10');
     node.answer = () => ({
       status: 200,
       json: { orgId: 'org-1', releaseApprovers: ['acc-1'], publishes: ['did:key:z6Mk'], newWorkStopped: null },
     });
-    const org = await c.getOrg('org-1');
+    const org = await c.orgs.get({ org: 'org-1' });
     expect(org.releaseApprovers).toEqual(['acc-1']);
     expect(org.publishes).toEqual(['did:key:z6Mk']);
     expect(org.newWorkStopped).toBeNull();
@@ -199,21 +230,21 @@ describe('over the sealed channel', () => {
     expect(last().head.path).toBe('/consent/requests');
     expect(last().body).toEqual({ kind: 'upgrade', subject: { app: 'a-1', toVersion: '1.1.0' }, returnTo: 'https://kv.apps.example/settings' });
 
-    await c.requestConsent(releaseConsent({ kind: 'org', org: 'org-1' }, '2.3.130', 'https://kv.apps.example/'));
+    await c.consent.pageCreate({ body: releaseConsent({ kind: 'org', org: 'org-1' }, '2.3.130', 'https://kv.apps.example/') });
     expect(last().body).toEqual({
       kind: 'release',
       scope: { org: 'org-1' },
       subject: { version: '2.3.130' },
       returnTo: 'https://kv.apps.example/',
     });
-    await c.requestConsent(releaseConsent({ kind: 'account' }, '2.3.130', 'https://kv.apps.example/'));
+    await c.consent.pageCreate({ body: releaseConsent({ kind: 'account' }, '2.3.130', 'https://kv.apps.example/') });
     expect(last().body).toMatchObject({ scope: 'account' });
 
     // Withdrawing goes through the page too; an approval sends no `withdraw` at all.
     expect(node.requests[node.requests.length - 2].body).toEqual(
       expect.objectContaining({ subject: { version: '2.3.130' } }),
     );
-    await c.requestConsent(withdrawConsent({ kind: 'org', org: 'org-1' }, '2.3.109', 'https://kv.apps.example/'));
+    await c.consent.pageCreate({ body: withdrawConsent({ kind: 'org', org: 'org-1' }, '2.3.109', 'https://kv.apps.example/') });
     expect(last().body).toEqual({
       kind: 'release',
       scope: { org: 'org-1' },
@@ -301,12 +332,24 @@ describe('over the sealed channel', () => {
         details: { release: '2.3.120', after: '2027-03-12T00:00:00Z', afterSecs: 1804809600 },
       },
     });
-    const refused = await c.upgradeApp('a-1', { version: '1.1.0' }).catch((e: unknown) => e);
+    const refused = await c.apps.upgrade({ app: 'a-1', version: '1.1.0' }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(ReleaseDeadlineError);
     expect(refused).toMatchObject({ status: 409, release: '2.3.120', after: '2027-03-12T00:00:00Z' });
 
+    node.answer = () => ({
+      status: 409,
+      json: {
+        error: 'RUNTIME_TOO_OLD',
+        message: 'com.example.kv@1.1.0 needs runtime 1.0.0 or newer, and node 4 runs 0.9.0',
+        details: { minRuntimeVersion: '1.0.0', nodes: [{ node: 4, runtime: '0.9.0' }] },
+      },
+    });
+    const tooOld = await c.apps.upgrade({ app: 'a-1', version: '1.1.0' }).catch((e: unknown) => e);
+    expect(tooOld).toBeInstanceOf(RuntimeTooOld);
+    expect(tooOld).toMatchObject({ status: 409, minRuntimeVersion: '1.0.0', nodes: [{ node: 4, runtime: '0.9.0' }] });
+
     node.answer = () => ({ status: 409, json: { error: 'CONSENT_STALE', message: 'the target changed' } });
-    expect(await c.requestConsent(upgradeConsent('a-1', '1.1.0', 'https://kv.apps.example/')).catch((e: unknown) => e)).toBeInstanceOf(
+    expect(await c.consent.pageCreate({ body: upgradeConsent('a-1', '1.1.0', 'https://kv.apps.example/') }).catch((e: unknown) => e)).toBeInstanceOf(
       ConsentStale,
     );
   });
@@ -314,7 +357,7 @@ describe('over the sealed channel', () => {
   it('binds a publisher key and upgrades its published instances with a passkey', async () => {
     const c = client();
     node.answer = () => ({ status: 200, json: { signerId: 'did:key:z6Mk', cluster: 'prod-eu', generation: 2, bound: false } });
-    const info = await c.publisherBinding('did:key:z6Mk');
+    const info = await c.public.publisherBinding({ signer: 'did:key:z6Mk' });
     expect(last().head.path).toBe('/publishers/did%3Akey%3Az6Mk');
     expect(info.generation).toBe(2);
 
@@ -325,12 +368,12 @@ describe('over the sealed channel', () => {
           : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
     };
     confirming({});
-    await c.bindPublisher('org-1', { signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig' }, passkey);
+    await c.orgs.publisher({ org: 'org-1', signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig' }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/publishers');
     expect(last().body).toEqual({ signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig', confirm: CONFIRM });
 
     confirming({ runId: 'r-1' });
-    await c.upgradePublished('org-1', 'com.example.kv', { version: '1.1.0' }, passkey);
+    await c.orgs.publisherUpgrade({ org: 'org-1', package: 'com.example.kv', version: '1.1.0' }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/packages/com.example.kv/upgrade');
     expect(last().body).toEqual({ version: '1.1.0', confirm: CONFIRM });
   });
@@ -339,11 +382,11 @@ describe('over the sealed channel', () => {
     const c = client();
     c.useApiKey('ops-token');
     node.answer = () => ({ status: 200, json: { fresh: true, governance: OWNERS, apps: [], orgs: [], next: null } });
-    await c.opsApps({ limit: 100 });
-    await c.opsOrgs({ after: 'org-1' });
-    await c.setReleaseDeadline('2.3.120', new Date('2027-03-12T00:00:00Z'));
+    await c.ops.apps({ limit: 100 });
+    await c.ops.orgs({ after: 'org-1' });
+    await c.ops.releaseDeadline({ version: '2.3.120', after: new Date('2027-03-12T00:00:00Z').toISOString() });
     expect(last().body).toEqual({ after: '2027-03-12T00:00:00.000Z' });
-    await c.liftReleaseDeadline('2.3.120');
+    await c.ops.releaseDeadlineLift({ version: '2.3.120' });
     expect(sent()).toEqual([
       ['GET', '/ops/apps?limit=100'],
       ['GET', '/ops/orgs?after=org-1'],

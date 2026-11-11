@@ -1,3 +1,37 @@
+## [30.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.17.0...mero-js-v30.0.0) (2026-11-11)
+
+### ⚠ BREAKING CHANGES
+
+* **client:** remove the deprecated route wrappers (30.0) (#359)
+
+### Features
+
+* **client:** remove the deprecated route wrappers (30.0) ([#359](https://github.com/calimero-network/mero-js/issues/359)) ([ad2a152](https://github.com/calimero-network/mero-js/commit/ad2a152cffeb760d5b6ea821b5b1a8ec634df16a))
+
+## [29.17.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.16.0...mero-js-v29.17.0) (2026-11-11)
+
+### Features
+
+* **api:** a client generated from core's OpenAPI document, over the sealed transport ([#358](https://github.com/calimero-network/mero-js/issues/358)) ([3d949f6](https://github.com/calimero-network/mero-js/commit/3d949f679d79c9bdc5e6f06fac2cabf3a20384b6)), closes [#4937](https://github.com/calimero-network/mero-js/issues/4937) [#127](https://github.com/calimero-network/mero-js/issues/127) [#4937](https://github.com/calimero-network/mero-js/issues/4937)
+
+## [29.16.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.15.0...mero-js-v29.16.0) (2026-11-11)
+
+### Features
+
+* **runtime:** split the transport runtime from the route methods ([#356](https://github.com/calimero-network/mero-js/issues/356)) ([ef12441](https://github.com/calimero-network/mero-js/commit/ef12441d16201670edde7f5ca82908c330590c37))
+
+## [29.15.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.14.0...mero-js-v29.15.0) (2026-11-11)
+
+### Features
+
+* **cloud-v2:** offer the newest release an app can reach, and type RUNTIME_TOO_OLD ([#355](https://github.com/calimero-network/mero-js/issues/355)) ([57bd0d0](https://github.com/calimero-network/mero-js/commit/57bd0d0e7912450eba67ad1c1288da9940e71f87))
+
+## [29.14.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.13.0...mero-js-v29.14.0) (2026-11-10)
+
+### Features
+
+* **cloud-v2:** setAllApps and invite allApps, every app added later ([#351](https://github.com/calimero-network/mero-js/issues/351)) ([18d5979](https://github.com/calimero-network/mero-js/commit/18d59791a52a05e156437498e224304c74dc1e6b))
+
 ## [29.13.0](https://github.com/calimero-network/mero-js/compare/mero-js-v29.12.0...mero-js-v29.13.0) (2026-11-10)
 
 ### Features
