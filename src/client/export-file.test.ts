@@ -4,7 +4,8 @@ import { fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
 import { SEALED_FILE_VECTORS as V } from '../sealed/fixtures/sealed-file-vectors.js';
 import { fileId } from '../sealed/file.js';
 import type { Transport } from '../runtime/transport.js';
-import { exportFile, exportFileTo } from './files.js';
+import { ExportError, exportFile, exportFileTo } from './files.js';
+import { SEGMENT_BYTES } from '../sealed/file.js';
 
 const bytes = (value: string) => fromHexUnsized(value, 'vector');
 const sha = async (data: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', data));
@@ -13,8 +14,14 @@ type Vector = (typeof V.vectors)[number];
 const plain = (len: number) => Uint8Array.from({ length: len }, (_, i) => i % 251);
 
 /** A node holding one vector: its export answer (changeable) and its segment. */
-function node(v: Vector, change: (answer: Record<string, unknown>) => void = () => {}, segment = bytes(v.segment0)) {
+function node(
+  v: Vector,
+  change: (answer: Record<string, unknown>) => void = () => {},
+  segment = bytes(v.segment0),
+  respond: () => Response = () => new Response(segment),
+) {
   const calls: string[] = [];
+  const signals: unknown[] = [];
   let body: unknown;
   const answer: Record<string, unknown> = {
     app: v.app,
@@ -27,17 +34,19 @@ function node(v: Vector, change: (answer: Record<string, unknown>) => void = () 
   };
   change(answer);
   const transport = {
-    json: async (method: string, path: string, options?: { body?: unknown }) => {
+    json: async (method: string, path: string, options?: { body?: unknown; signal?: unknown }) => {
       calls.push(`${method} ${path}`);
+      signals.push(options?.signal);
       body = options?.body;
       return answer;
     },
-    request: async (method: string, path: string) => {
+    request: async (method: string, path: string, options?: { signal?: unknown }) => {
       calls.push(`${method} ${path}`);
-      return new Response(segment);
+      signals.push(options?.signal);
+      return respond();
     },
   } as unknown as Pick<Transport, 'json' | 'request'>;
-  return { transport, calls, body: () => body };
+  return { transport, calls, signals, body: () => body };
 }
 
 function sink() {
@@ -45,8 +54,14 @@ function sink() {
   return { chunks, write: (chunk: Uint8Array) => void chunks.push(chunk), total: () => chunks.reduce((n, c) => n + c.length, 0) };
 }
 
+const codeOf = (promise: Promise<unknown>) =>
+  promise.then(
+    () => 'resolved',
+    (e: unknown) => (e instanceof ExportError ? e.code : `not an ExportError: ${String(e)}`),
+  );
+
 const run = (n: ReturnType<typeof node>, v: Vector, out = sink()) =>
-  exportFileTo(n.transport, v.app, v.id, out, bytes(v.recipientSecret));
+  exportFileTo(n.transport, v.app, v.id, out, undefined, bytes(v.recipientSecret));
 
 describe('exportFileTo', () => {
   it('decrypts the Rust vectors to exactly their plaintext', async () => {
@@ -98,7 +113,7 @@ describe('exportFileTo', () => {
   it('fails an answer that names another file than the one asked for', async () => {
     const n = node(three);
     await expect(
-      exportFileTo(n.transport, three.app, full.id, sink(), bytes(three.recipientSecret)),
+      exportFileTo(n.transport, three.app, full.id, sink(), undefined, bytes(three.recipientSecret)),
     ).rejects.toThrow('are not the file');
   });
 
@@ -108,7 +123,7 @@ describe('exportFileTo', () => {
       a.segments = [];
       a.id = id;
     });
-    await expect(exportFileTo(n.transport, three.app, id, sink(), bytes(three.recipientSecret))).rejects.toThrow(
+    await expect(exportFileTo(n.transport, three.app, id, sink(), undefined, bytes(three.recipientSecret))).rejects.toThrow(
       'are not the file',
     );
   });
@@ -153,5 +168,122 @@ describe('exportFile', () => {
     // exportFile makes its own export key, so only the failure path can run without the vector's secret
     await expect(exportFile(node(three).transport, three.app, three.id)).rejects.toThrow('does not open');
     expect(fromHex(three.id, 'id', 32)).toHaveLength(32);
+  });
+});
+
+/** A body of `chunk`-sized pieces, `count` of them (forever if 0), counting pulls and noting a cancel. */
+function stream(chunk: number, count: number, headers: Record<string, string> = {}, delayMs = 0) {
+  const seen = { pulls: 0, cancelled: false };
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      seen.pulls += 1;
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (count && seen.pulls > count) controller.close();
+      else controller.enqueue(new Uint8Array(chunk));
+    },
+    cancel() {
+      seen.cancelled = true;
+    },
+  });
+  return { seen, response: () => new Response(body, { headers }) };
+}
+
+describe('bounded segment reads', () => {
+  it('refuses a declared length past a whole segment without reading the body', async () => {
+    const s = stream(1024, 0, { 'content-length': String(SEGMENT_BYTES + 1) });
+    const out = sink();
+    const n = node(three, () => {}, undefined, s.response);
+    expect(await codeOf(run(n, three, out))).toBe('TOO_LARGE');
+    expect(s.seen.pulls).toBeLessThanOrEqual(1);
+    expect(s.seen.cancelled).toBe(true);
+    expect(out.chunks).toEqual([]);
+  });
+
+  it('stops reading a stream that runs past a whole segment, the last segment included', async () => {
+    const s = stream(1 << 20, 0);
+    const n = node(three, () => {}, undefined, s.response);
+    expect(await codeOf(run(n, three))).toBe('TOO_LARGE');
+    expect(s.seen.pulls).toBeLessThan(40);
+    expect(s.seen.cancelled).toBe(true);
+  });
+});
+
+describe('abort', () => {
+  it('passes the signal to both requests', async () => {
+    const controller = new AbortController();
+    const n = node(three);
+    await exportFileTo(n.transport, three.app, three.id, sink(), controller.signal, bytes(three.recipientSecret));
+    expect(n.signals).toEqual([controller.signal, controller.signal]);
+  });
+
+  it('stops a download that never ends', async () => {
+    const s = stream(1024, 0, {}, 5);
+    const n = node(three, () => {}, undefined, s.response);
+    const controller = new AbortController();
+    const done = codeOf(
+      exportFileTo(n.transport, three.app, three.id, sink(), controller.signal, bytes(three.recipientSecret)),
+    );
+    setTimeout(() => controller.abort(), 20);
+    expect(await done).toBe('ABORTED');
+    expect(s.seen.cancelled).toBe(true);
+  });
+
+  it('reports a transport that rejects on abort as ABORTED', async () => {
+    const controller = new AbortController();
+    const n = node(three);
+    n.transport.request = (async () => {
+      controller.abort();
+      throw new DOMException('aborted', 'AbortError');
+    }) as never;
+    const done = exportFileTo(n.transport, three.app, three.id, sink(), controller.signal, bytes(three.recipientSecret));
+    expect(await codeOf(done)).toBe('ABORTED');
+  });
+
+  it('does not start when already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const n = node(three);
+    const done = exportFileTo(n.transport, three.app, three.id, sink(), controller.signal, bytes(three.recipientSecret));
+    expect(await codeOf(done)).toBe('ABORTED');
+    expect(n.calls.filter((c) => c.startsWith('GET'))).toEqual([]);
+  });
+});
+
+describe('error codes', () => {
+  it('names the check that failed', async () => {
+    const tampered = bytes(three.segment0);
+    tampered[3] ^= 1;
+    expect(await codeOf(run(node(three, () => {}, tampered), three))).toBe('TAMPERED');
+    expect(await codeOf(run(node(three, (a) => (a.size = 1)), three))).toBe('TAMPERED');
+    expect(await codeOf(run(node(three, (a) => (a.app = 'x')), three))).toBe('TAMPERED');
+    expect(await codeOf(run(node(three, (a) => (a.segments = [hex(new Uint8Array(32))])), three))).toBe('NOT_THE_FILE');
+  });
+
+  it('turns a malformed answer into BAD_ANSWER, never a TypeError', async () => {
+    const bad: Array<(a: Record<string, unknown>) => void> = [
+      (a) => (a.segments = 'nope'),
+      (a) => (a.segments = [7]),
+      (a) => (a.segments = ['zz']),
+      (a) => (a.app = 5),
+      (a) => (a.id = undefined),
+      (a) => (a.size = '3'),
+      (a) => (a.size = 1.5),
+      (a) => (a.sha256 = null),
+      (a) => (a.ephemeral = 'ab'),
+      (a) => (a.wrapped = 'abc'),
+      (a) => (a.wrapped = undefined),
+    ];
+    for (const change of bad) expect(await codeOf(run(node(three, change), three))).toBe('BAD_ANSWER');
+    const n = node(three);
+    n.transport.json = (async () => null) as never;
+    expect(await codeOf(run(n, three))).toBe('BAD_ANSWER');
+  });
+
+  it('leaves the node\'s own refusal as the transport\'s error', async () => {
+    const n = node(three);
+    n.transport.json = (async () => {
+      throw new RangeError('refused');
+    }) as never;
+    expect(await codeOf(run(n, three))).toContain('not an ExportError');
   });
 });

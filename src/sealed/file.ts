@@ -5,7 +5,7 @@
  * requester made for one export.
  */
 
-import { Sha256 } from '../crypto/sha256.js';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
 import { concat, hex } from '../crypto/internal.js';
 import { dh, type X25519KeyPair } from './noise.js';
 
@@ -20,6 +20,20 @@ const AAD_PREFIX = enc.encode('calimero.file.v1'); // then the last-chunk flag b
 const SEGMENT_DOMAIN = enc.encode('calimero.file.segments.v1\0'); // prefix of a file id's preimage
 const EXPORT_WRAP_SALT = enc.encode('calimero.export-wrap.v1');
 const DERIVE_LABEL = enc.encode('calimero.sealed.derive.v1\0'); // prefix of every wrap's HKDF info
+
+/** Why an export was refused locally. A node's own refusal stays the transport's typed error. */
+export type ExportErrorCode = 'BAD_ANSWER' | 'NOT_THE_FILE' | 'TAMPERED' | 'TOO_LARGE' | 'ABORTED';
+
+/** An export that failed a check here, never one the node refused; messages carry no plaintext or keys. */
+export class ExportError extends Error {
+  constructor(
+    readonly code: ExportErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ExportError';
+  }
+}
 
 const sha256 = async (data: Uint8Array): Promise<Uint8Array> =>
   new Uint8Array(await crypto.subtle.digest('SHA-256', data));
@@ -51,9 +65,9 @@ export async function unwrapExport(
   wrap: ExportWrap,
   wrapped: Uint8Array,
 ): Promise<Uint8Array> {
-  if (wrapped.length < NONCE_BYTES) throw new Error('the wrapped key is truncated');
+  if (wrapped.length < NONCE_BYTES) throw new ExportError('TAMPERED', 'the wrapped key is truncated');
   const shared = await dh(recipient.privateKey, ephemeral);
-  if (shared.every((b) => b === 0)) throw new Error('the ephemeral key is of low order');
+  if (shared.every((b) => b === 0)) throw new ExportError('BAD_ANSWER', 'the ephemeral key is of low order');
   const info = concat(ephemeral, recipient.publicKey, prefixed(wrap.appId), prefixed(wrap.fileId));
   const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveBits']);
   const keyBytes = await crypto.subtle.deriveBits(
@@ -70,9 +84,9 @@ export async function unwrapExport(
       wrapped.subarray(NONCE_BYTES),
     );
   } catch {
-    throw new Error('the wrapped key does not open');
+    throw new ExportError('TAMPERED', 'the wrapped key does not open');
   }
-  if (secret.byteLength !== 32) throw new Error('the wrapped key has the wrong length');
+  if (secret.byteLength !== 32) throw new ExportError('TAMPERED', 'the wrapped key has the wrong length');
   return new Uint8Array(secret);
 }
 
@@ -86,7 +100,7 @@ export class SegmentReader {
   private index = 0;
   private next = 0;
   private size = 0;
-  private readonly hash = new Sha256();
+  private readonly hash = nobleSha256.create();
 
   private constructor(
     private readonly key: CryptoKey,
@@ -101,12 +115,12 @@ export class SegmentReader {
   /** Take the next segment; `emit` gets the plaintext of every chunk it completes. */
   async push(segment: Uint8Array, emit: (plaintext: Uint8Array) => Promise<void> | void): Promise<void> {
     const want = this.segments[this.next];
-    if (want === undefined) throw new Error(`the file has no segment ${this.next}`);
+    if (want === undefined) throw new ExportError('TAMPERED', `the file has no segment ${this.next}`);
     if (this.next + 1 < this.segments.length && segment.length !== SEGMENT_BYTES) {
-      throw new Error(`segment ${this.next} is not a whole segment`);
+      throw new ExportError('TAMPERED', `segment ${this.next} is not a whole segment`);
     }
     if (hex(await sha256(segment)) !== want) {
-      throw new Error(`segment ${this.next} is not the one the file lists`);
+      throw new ExportError('TAMPERED', `segment ${this.next} is not the one the file lists`);
     }
     this.next += 1;
     // Bytes past a full chunk prove it was not the last, so one chunk is always held back.
@@ -121,11 +135,11 @@ export class SegmentReader {
 
   /** Open the last chunk and check the whole plaintext's size and SHA-256: GCM does not commit to its key. */
   async finishExpecting(size: number, sha256Hex: string): Promise<Uint8Array> {
-    if (this.next !== this.segments.length) throw new Error('the file is missing segments');
-    if (this.pending.length < TAG_BYTES) throw new Error('the file is truncated');
+    if (this.next !== this.segments.length) throw new ExportError('TAMPERED', 'the file is missing segments');
+    if (this.pending.length < TAG_BYTES) throw new ExportError('TAMPERED', 'the file is truncated');
     const last = await this.open(this.pending, true);
     if (this.size !== size || hex(this.hash.digest()) !== sha256Hex) {
-      throw new Error('the file is not the one that was sealed');
+      throw new ExportError('TAMPERED', 'the file is not the one that was sealed');
     }
     return last;
   }
@@ -143,7 +157,10 @@ export class SegmentReader {
         ),
       );
     } catch {
-      throw new Error(`chunk ${this.index} does not open: the file is altered, truncated or under another key`);
+      throw new ExportError(
+        'TAMPERED',
+        `chunk ${this.index} does not open: the file is altered, truncated or under another key`,
+      );
     }
     this.hash.update(plain);
     this.size += plain.length;

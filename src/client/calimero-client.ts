@@ -637,14 +637,18 @@ export class CalimeroClient {
     return new Uint8Array(await (await this.apps.blobDownload({ app, id })).arrayBuffer());
   }
 
-  /** Write the plaintext of sealed file `id` of component app `app` to `sink`, checked against its id, size and hash. */
-  exportFileTo(app: string, id: string, sink: FileSink): Promise<ExportedFile> {
-    return exportFileTo(this.transport, app, id, sink);
+  /**
+   * Write the plaintext of sealed file `id` of component app `app` to `sink`, checked against its id,
+   * size and hash. On rejection, discard what `sink` received: it is authentic but may be a prefix of
+   * the file. A failed check is an `ExportError`; `signal` aborts the download.
+   */
+  exportFileTo(app: string, id: string, sink: FileSink, signal?: AbortSignal): Promise<ExportedFile> {
+    return exportFileTo(this.transport, app, id, sink, signal);
   }
 
   /** The plaintext of sealed file `id` of component app `app`, in memory; use {@link exportFileTo} for a large one. */
-  exportFile(app: string, id: string): Promise<Uint8Array> {
-    return exportFile(this.transport, app, id);
+  exportFile(app: string, id: string, signal?: AbortSignal): Promise<Uint8Array> {
+    return exportFile(this.transport, app, id, signal);
   }
 
   /**
