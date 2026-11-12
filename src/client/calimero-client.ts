@@ -32,17 +32,19 @@ import { createRoutes, type Routes } from '../generated/methods.js';
 import { passkeyConfirm, type PasskeyConfirmOptions } from '../runtime/passkey.js';
 
 import { signRecovery } from './recovery-key.js';
-import { consentHelpers, type ConsentHelpers } from './consent.js';
 import {
+  CONSENT_STORAGE_KEY,
   confirmationCode,
   pageQuery,
   pendingApprovalsFrom,
+  withoutConsentReturn,
   type AppsReport,
   type ConsentRequest,
   type ConsentResult,
   type ConsentStarted,
   type OpenConsentOptions,
   type PageOptions,
+  type ResumeConsentOptions,
   type PendingApprovals,
   type ReportedApp,
 } from './approvals.js';
@@ -331,14 +333,8 @@ export class CalimeroClient {
   readonly apps: Routes['apps'];
   /** Account, session, passkey and API-key routes: `client.auth.me()`. See {@link apps}. */
   readonly auth: Routes['auth'];
-  /**
-   * The consent page's routes (`pageCreate`, `pageResult`; see {@link apps})
-   * and its flow ({@link ConsentHelpers}): `client.consent.begin(body)` sends
-   * the person to the node's page, `client.consent.resume()` reads the
-   * decision when they come back, `client.consent.wait(ticket)` polls for a
-   * popup.
-   */
-  readonly consent: Routes['consent'] & ConsentHelpers;
+  /** The consent page's routes. See {@link apps}. */
+  readonly consent: Routes['consent'];
   /** Operator routes (the ops token). See {@link apps}. */
   readonly ops: Routes['ops'];
   /** Organization, member, team and invite routes. See {@link apps}. */
@@ -379,7 +375,7 @@ export class CalimeroClient {
     const routes = createRoutes(createRouteClient(this.transport, challenges));
     this.apps = routes.apps;
     this.auth = routes.auth;
-    this.consent = { ...routes.consent, ...consentHelpers(routes.consent) };
+    this.consent = routes.consent;
     this.ops = routes.ops;
     this.orgs = routes.orgs;
     this.public = routes.public;
@@ -702,6 +698,8 @@ export class CalimeroClient {
    * (`CONSENT_CODE_MISMATCH`) and does not navigate. Answers the request
    * once `navigate` returns (or `confirm` declines): with a popup
    * (`url => window.open(url)`), poll it with {@link waitForConsent}.
+   * Before navigating it keeps `requestId` in `sessionStorage` (where there
+   * is one), for {@link resumeConsent} when the page sends the person back.
    */
   async openConsentPage(
     request: ConsentRequest,
@@ -715,7 +713,9 @@ export class CalimeroClient {
         if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
         w.location.assign(url);
       });
-    const started = await this.consent.pageCreate({ body: request });
+    // The organization kinds (core#5014) are typed by hand in approvals.ts
+    // until the vendored OpenAPI document names them.
+    const started = await this.consent.pageCreate({ body: request as Parameters<Routes['consent']['pageCreate']>[0]['body'] });
     if (started.code !== undefined) {
       const expected = await confirmationCode(started.requestId);
       if (started.code !== expected) {
@@ -727,8 +727,81 @@ export class CalimeroClient {
       }
     }
     if (options.confirm && !(await options.confirm(started))) return started;
+    try {
+      consentStorage()?.setItem(CONSENT_STORAGE_KEY, started.requestId);
+    } catch {
+      // No storage here: pass `requestId` to `resumeConsent`.
+    }
     navigate(started.url);
     return started;
+  }
+
+  /**
+   * On the page the consent page sent the person back to
+   * (`returnTo?request_id=…&result=…`): the decision on the request this page
+   * started, read from the node (`GET /consent/{id}/result`), never from the
+   * URL. `null` when the URL carries no `request_id`. The request is
+   * `options.requestId`, or the one {@link openConsentPage} stored in this
+   * tab; with the default `href` (`location.href`) the parameters are then
+   * removed with `history.replaceState`, and the stored id once decided.
+   *
+   * Throws `CalimeroError`:
+   * - `CONSENT_NOT_STARTED`: the URL names a request, and this page started none;
+   * - `CONSENT_REQUEST_MISMATCH`: the URL names another request than this page's;
+   * - `CONSENT_NOT_DECIDED`: this page's request is still pending although the
+   *   page sent the person back, a sign that another request was approved on a
+   *   page that was not the node's. Do not act on it.
+   *
+   * The URL's `result` is never trusted: the answer's `status` is the node's.
+   * An approval's `outcome` (`orgId`, an invite's `token`, the `org` joined) is
+   * in the answer, typed by `kind`.
+   */
+  async resumeConsent(options: ResumeConsentOptions = {}): Promise<ConsentResult | null> {
+    const g = globalThis as {
+      location?: { href: string };
+      history?: { state: unknown; replaceState(state: unknown, unused: string, url?: string): void };
+    };
+    const href = options.href ?? g.location?.href;
+    if (href === undefined) throw new Error('no page to read the consent return from; pass `href`');
+    const url = new URL(href);
+    const returned = url.searchParams.get('request_id');
+    if (!returned) return null;
+    if (options.href === undefined && g.history) g.history.replaceState(g.history.state, '', withoutConsentReturn(url));
+
+    let ownId = options.requestId;
+    if (ownId === undefined) {
+      try {
+        ownId = consentStorage()?.getItem(CONSENT_STORAGE_KEY) ?? undefined;
+      } catch {
+        ownId = undefined;
+      }
+    }
+    if (!ownId) {
+      throw new CalimeroError(200, 'CONSENT_NOT_STARTED', 'this page started no consent request', { returned });
+    }
+    if (returned !== ownId) {
+      throw new CalimeroError(200, 'CONSENT_REQUEST_MISMATCH', 'the consent page returned another request than this page started', {
+        requestId: ownId,
+        returned,
+      });
+    }
+    const result = (await this.consent.pageResult({ request: ownId })) as ConsentResult;
+    if (result.requestId !== ownId) {
+      throw new CalimeroError(200, 'CONSENT_REQUEST_MISMATCH', 'the node answered another request', { requestId: ownId, returned: result.requestId });
+    }
+    if (result.status === 'pending') {
+      throw new CalimeroError(200, 'CONSENT_NOT_DECIDED', 'the consent page returned, but this request is still pending', {
+        requestId: ownId,
+      });
+    }
+    try {
+      if (options.requestId === undefined || consentStorage()?.getItem(CONSENT_STORAGE_KEY) === ownId) {
+        consentStorage()?.removeItem(CONSENT_STORAGE_KEY);
+      }
+    } catch {
+      // nothing to clear
+    }
+    return result;
   }
 
   /**
@@ -742,7 +815,7 @@ export class CalimeroClient {
   ): Promise<ConsentResult> {
     const interval = options.intervalMs ?? 2000;
     for (;;) {
-      const result = await this.consent.pageResult({ request: requestId });
+      const result = (await this.consent.pageResult({ request: requestId })) as ConsentResult;
       if (result.status !== 'pending') return result;
       if (options.signal?.aborted) return result;
       if (options.expiresAt !== undefined && Date.now() / 1000 >= options.expiresAt) return result;
@@ -760,4 +833,13 @@ export class CalimeroClient {
 
   // ---------------------------------------------------------------- deployments
 
+}
+
+/** This page's `sessionStorage`, where there is one (a sandboxed frame or a turned-off store throws). */
+function consentStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined {
+  try {
+    return (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  } catch {
+    return undefined;
+  }
 }

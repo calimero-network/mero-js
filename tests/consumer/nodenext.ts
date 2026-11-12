@@ -66,10 +66,12 @@ export const extraArg = () => client.orgs.get({ org: 'o', bogus: 1 });
 // @ts-expect-error an invite's role is one the node knows
 export const badRole = () => client.orgs.inviteCreate({ org: 'o', role: 'emperor' });
 
-// The consent flow: bodies and outcomes typed per kind.
-import type { ConsentDecision, ConsentTicket } from '@calimero-network/mero-js';
+// The consent page's organization kinds: requests and outcomes typed by kind.
+import { createOrgConsent } from '@calimero-network/mero-js';
+import type { ConsentResult } from '@calimero-network/mero-js';
 
-export const newOrg = (): Promise<ConsentTicket<'createOrg'>> => client.consent.begin({ kind: 'createOrg', subject: { name: 'Acme' } });
-export const orgOf = (d: ConsentDecision): string | undefined => (d.kind === 'createOrg' ? d.outcome?.orgId : undefined);
+export const newOrg = () => client.openConsentPage(createOrgConsent('Acme', 'https://kv.apps.example/'));
+export const orgOf = (r: ConsentResult): string | undefined => (r.kind === 'createOrg' ? r.outcome?.orgId : undefined);
+export const resumed = (): Promise<ConsentResult | null> => client.resumeConsent();
 // @ts-expect-error an invite's role is guest, member or admin
-export const badInvite = () => client.consent.request({ kind: 'createInvite', subject: { org: 'o', role: 'owner' }, returnTo: 'https://x/' });
+export const badInvite = () => client.openConsentPage({ kind: 'createInvite', subject: { org: 'o', role: 'owner' }, returnTo: 'https://x/' });

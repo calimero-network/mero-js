@@ -194,7 +194,45 @@ export type ConsentRequest =
       /** `package`: a package-bound session's own when left out; `prefixes`: every one the latest release declares. */
       subject: { package?: string; prefixes?: string[] };
       returnTo: string;
+    }
+  | {
+      /** A new organization, owned by whoever approves. Outcome: `{ orgId }`. */
+      kind: 'createOrg';
+      subject: { name: string };
+      returnTo: string;
+    }
+  | {
+      /** A new invite to `subject.org`. Outcome: `{ token }`. */
+      kind: 'createInvite';
+      subject: InviteConsentSubject;
+      returnTo: string;
+    }
+  | {
+      /** Joining an organization with an invite's `token`. Outcome: `{ org }`. */
+      kind: 'acceptInvite';
+      subject: { token: string };
+      returnTo: string;
     };
+
+/** A consent request's kind. */
+export type ConsentKind = ConsentRequest['kind'];
+
+/** A role an invite gives (core's `Role`). */
+export type InviteRole = 'guest' | 'member' | 'admin';
+
+/** What a `createInvite` consent request asks for. */
+export interface InviteConsentSubject {
+  org: string;
+  role: InviteRole;
+  /** Teams the invite joins its user to. */
+  teams?: string[];
+  /** How long the invite lasts, in seconds. */
+  ttlSecs?: number;
+  /** How many times it may be used. */
+  uses?: number;
+  /** Whether it gives every app of the organization. */
+  allApps?: boolean;
+}
 
 /** The node's answer to a consent request: send the person to `url`. */
 export type ConsentStarted = ApiAnswer<'consent_page_create'>;
@@ -231,8 +269,40 @@ export async function confirmationCode(requestId: string): Promise<string> {
   return code;
 }
 
-/** `GET /consent/{id}/result`. */
-export type ConsentResult = ApiAnswer<'consent_page_result'>;
+/**
+ * What an approval made, by kind (`outcome` on {@link ConsentResult}, once
+ * approved): `release`, `upgrade` and `outbound` make nothing. An invite's
+ * `token` is a credential: keep it out of logs.
+ */
+export interface ConsentOutcomes {
+  release: never;
+  upgrade: never;
+  outbound: never;
+  createOrg: { orgId: string };
+  createInvite: { token: string };
+  acceptInvite: { org: string };
+}
+
+/** `GET /consent/{id}/result` for a request of kind `K`. */
+export interface ConsentResultOf<K extends ConsentKind> {
+  requestId: string;
+  kind: K;
+  status: 'pending' | 'approved' | 'declined';
+  /** Unix seconds; `null` while pending. */
+  decidedAt: number | null;
+  /** What the approval made, once approved, for the kinds that make something. */
+  outcome?: ConsentOutcomes[K];
+}
+
+/**
+ * `GET /consent/{id}/result`, narrowed by `kind`:
+ * `if (r.kind === 'createOrg') r.outcome?.orgId`. Read `outcome` only from
+ * this sealed answer, never from the page's redirect, which carries none.
+ *
+ * Typed here by hand: the vendored OpenAPI document does not name the
+ * organization kinds (core#5014) yet; the next openapi-sync brings them.
+ */
+export type ConsentResult = { [K in ConsentKind]: ConsentResultOf<K> }[ConsentKind];
 
 /**
  * What the consent page put on `returnTo` when it sent the person back, or
@@ -245,6 +315,28 @@ export function consentReturn(href: string | URL): { requestId: string; result: 
   const result = url.searchParams.get('result');
   if (!requestId || (result !== 'approved' && result !== 'declined')) return null;
   return { requestId, result };
+}
+
+/** `href` without the consent page's `request_id` and `result`. */
+export function withoutConsentReturn(href: string | URL): string {
+  const url = new URL(String(href));
+  url.searchParams.delete('request_id');
+  url.searchParams.delete('result');
+  return url.toString();
+}
+
+/** The `sessionStorage` key {@link CalimeroClient.openConsentPage} keeps its request id under, for {@link CalimeroClient.resumeConsent}. */
+export const CONSENT_STORAGE_KEY = 'calimero.consent';
+
+/** How {@link CalimeroClient.resumeConsent} reads the page's return. */
+export interface ResumeConsentOptions {
+  /**
+   * The request this page started; by default the one
+   * {@link CalimeroClient.openConsentPage} stored in this tab.
+   */
+  requestId?: string;
+  /** The URL the page sent the person back to; by default `location.href`, whose parameters are then removed. */
+  href?: string;
 }
 
 // ---------------------------------------------------------------- pending
@@ -390,4 +482,19 @@ export function withdrawConsent(scope: ReportScope, version: string, returnTo: s
 /** The consent request that upgrades `app` to `toVersion`. */
 export function upgradeConsent(app: string, toVersion: string, returnTo: string): ConsentRequest {
   return { kind: 'upgrade', subject: { app, toVersion }, returnTo };
+}
+
+/** The consent request that creates an organization named `name`; its outcome names the new `orgId`. */
+export function createOrgConsent(name: string, returnTo: string): ConsentRequest & { kind: 'createOrg' } {
+  return { kind: 'createOrg', subject: { name }, returnTo };
+}
+
+/** The consent request that creates an invite to `subject.org`; its outcome carries the invite's `token`. */
+export function createInviteConsent(subject: InviteConsentSubject, returnTo: string): ConsentRequest & { kind: 'createInvite' } {
+  return { kind: 'createInvite', subject, returnTo };
+}
+
+/** The consent request that joins the organization `token` invites to; its outcome names the `org`. */
+export function acceptInviteConsent(token: string, returnTo: string): ConsentRequest & { kind: 'acceptInvite' } {
+  return { kind: 'acceptInvite', subject: { token }, returnTo };
 }

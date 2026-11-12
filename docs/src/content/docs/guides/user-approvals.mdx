@@ -63,90 +63,10 @@ Where the cluster gives a decision to its operator, its items are not
 (per app: its release, publisher, replicas and last upgrade) use
 `appsReport(org | null, { after, limit })`.
 
-## The consent flow in four calls
-
-`client.consent` carries the whole round trip, for every kind of request, so
-your app does not hand-roll it:
-
-```ts
-// On "Approve": ask the node, show the code, go to its page.
-await client.consent.begin({ kind: 'upgrade', subject: { app: upgrade.app, toVersion: upgrade.to } }, {
-  returnTo: `${location.origin}/settings`, // by default, this page
-  confirm: ({ code }) => window.confirm(`Check that the next page shows ${code}. Continue?`),
-});
-
-// On every page load: the decision, when the page just sent the person back.
-const decision = await client.consent.resume();
-if (decision?.status === 'approved') refresh();
-```
-
-- `client.consent.request(body)` posts `POST /consent/requests` and answers
-  `{ requestId, url, code, expiresAt, kind }`, after checking `code` against
-  `confirmationCode(requestId)` (`CONSENT_CODE_MISMATCH` when it differs).
-  Bodies are typed per `kind`.
-- `client.consent.begin(body, { returnTo?, confirm?, navigate? })` does
-  `request`, keeps `{ requestId, kind }` in `sessionStorage` (under
-  `calimero.consent`), and navigates to `url` (`location.assign`). `returnTo`
-  defaults to the body's own, then to the current page without `request_id`
-  and `result`. When `confirm` answers `false`, nothing is stored or opened.
-- `client.consent.resume()` reads `request_id` from the URL. With none it
-  answers `null`. Otherwise it reads `GET /consent/{id}/result`, removes
-  `request_id` and `result` with `history.replaceState`, clears the stored
-  request once decided, and answers `{ requestId, kind, status, decidedAt,
-  outcome? }`. The URL's `result` is never trusted: `status` is the node's,
-  and is `pending` when the person came back without deciding. A
-  `request_id` other than the one `begin` stored in this tab is ignored
-  (`null`, nothing fetched), and a result of another kind than the one begun
-  throws `CONSENT_KIND_MISMATCH`.
-- `client.consent.wait(ticketOrId, { signal?, pollMs?, timeoutMs? })` polls
-  the result every `pollMs` (2 s) until it is decided, for a page opened in a
-  popup or new tab. It rejects with the signal's reason on abort, and with a
-  `TimeoutError` after `timeoutMs` (by default, given the ticket, when the
-  request expires).
-
-```ts
-const ticket = await client.consent.begin(
-  { kind: 'createOrg', subject: { name: 'Acme' } },
-  { navigate: (url) => window.open(url, '_blank'), confirm: ({ code }) => (showCode(code), true) },
-);
-const decided = await client.consent.wait(ticket);
-if (decided.status === 'approved') openOrg(decided.outcome?.orgId);
-```
-
-## Organizations from your app
-
-A frontend's package-bound session may not create organizations or invites,
-or join with one, by itself: these go through the consent page too.
-
-| `kind` | `subject` | `outcome` once approved |
-| --- | --- | --- |
-| `createOrg` | `{ name }` | `{ orgId }` |
-| `createInvite` | `{ org, role, teams?, ttlSecs?, uses?, allApps? }` | `{ token }` |
-| `acceptInvite` | `{ token }` | `{ org }` |
-
-The decision is typed by `kind`, so checking it narrows `outcome`:
-
-```ts
-const decision = await client.consent.resume();
-if (decision?.status === 'approved' && decision.kind === 'createInvite') {
-  shareInvite(decision.outcome?.token);
-}
-```
-
-An invite token is a credential. The helpers keep it out of storage, the URL
-and errors, and log nothing; keep it out of your own logs too.
-
-<Aside type="note">
-  These three kinds need a node with core's organization consent kinds
-  (calimero-network/core#5014). Their bodies are typed by hand in
-  `src/client/consent.ts` until core's OpenAPI document, which the generated
-  `client.consent.pageCreate` follows, names them.
-</Aside>
-
 ## Send them to the consent page
 
 ```ts
-import { releaseConsent, upgradeConsent, consentReturn } from '@calimero-network/mero-js';
+import { releaseConsent, upgradeConsent } from '@calimero-network/mero-js';
 
 const returnTo = `${location.origin}/settings`;
 
@@ -164,12 +84,28 @@ them back to `returnTo?request_id=…&result=approved|declined`. Treat that as
 a hint and confirm it:
 
 ```ts
-const back = consentReturn(location.href);
-if (back) {
-  const { status } = await client.consent.pageResult({ request: back.requestId });
-  if (status === 'approved') refresh();
-}
+const decision = await client.resumeConsent(); // null when the URL carries no request_id
+if (decision?.status === 'approved') refresh();
 ```
+
+`openConsentPage` keeps the request's id in `sessionStorage` before it
+navigates; `resumeConsent` reads `request_id` from the URL, reads the decision
+on this page's own request from the node (`GET /consent/{id}/result`, over the
+sealed channel), removes `request_id` and `result` with
+`history.replaceState`, and answers `{ requestId, kind, status, decidedAt,
+outcome? }`. The URL's `result` is never trusted, and it throws
+`CalimeroError` rather than answer a return it cannot vouch for:
+
+- `CONSENT_NOT_STARTED`: the URL names a request, and this page started none;
+- `CONSENT_REQUEST_MISMATCH`: the URL names another request than this page's;
+- `CONSENT_NOT_DECIDED`: this page's request is still pending although the
+  person was sent back. That is the sign of a page that was not the node's
+  approving some other request: do not act on it.
+
+Without `sessionStorage`, keep `started.requestId` yourself and pass it:
+`resumeConsent({ requestId })`. To read a URL other than the current one, pass
+`href` (history is then left alone). `consentReturn(href)` still reads the
+raw parameters, as a hint only.
 
 ### Show the confirmation code first
 
@@ -242,6 +178,40 @@ If what the page showed changes before the person approves (a new bundle, a
 re-published release), the node answers `ConsentStale` (`409 CONSENT_STALE`):
 ask again so they see the new facts. A node that cannot fetch a release's
 signed measurements answers `503`.
+
+## Organizations from your app
+
+A frontend's package-bound session may not create organizations or invites,
+or join with one, by itself: these go through the consent page too.
+
+| Request | `subject` | `outcome` once approved |
+| --- | --- | --- |
+| `createOrgConsent(name, returnTo)` | `{ name }` | `{ orgId }` |
+| `createInviteConsent({ org, role, teams?, ttlSecs?, uses?, allApps? }, returnTo)` | the same | `{ token }` |
+| `acceptInviteConsent(token, returnTo)` | `{ token }` | `{ org }` |
+
+```ts
+import { createInviteConsent } from '@calimero-network/mero-js';
+
+await client.openConsentPage(createInviteConsent({ org, role: 'member' }, returnTo));
+
+// back on returnTo:
+const decision = await client.resumeConsent();
+if (decision?.status === 'approved' && decision.kind === 'createInvite') {
+  shareInvite(decision.outcome?.token); // narrowed by `kind`
+}
+```
+
+`outcome` is only in the node's sealed answer, never in the redirect. An
+invite token is a credential: keep it out of your logs (the client logs
+nothing and puts it in no error).
+
+<Aside type="note">
+  These kinds need a node with core's organization consent kinds
+  (calimero-network/core#5014). They are typed by hand in `approvals.ts`
+  until core's OpenAPI document, which the generated
+  `client.consent.pageCreate` follows, names them.
+</Aside>
 
 ## Who approves
 
