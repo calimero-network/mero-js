@@ -20,6 +20,7 @@ import {
   passkeyConfirm,
   type PasskeyProvider,
 } from '../index.js';
+import { route, type RouteShape } from './method.js';
 
 const node = new StandInNode();
 beforeAll(() => node.start());
@@ -106,9 +107,30 @@ describe('generated methods: one argument object', () => {
     expect(sent()).toEqual([['GET', '/apps/a-1/blobs/ab?grant=g']]);
   });
 
+  it('flattens the app attestation query beside its path parameter', async () => {
+    // core 92ac297a1: `GET /apps/{app}/attestation` documents only `nonce`, so
+    // nothing collides with the path's `app` and the query is flattened.
+    node.answer = () => ({ status: 200, json: { appId: 'a-1', replicas: [] } });
+    await client().apps.attestation({ app: 'a-1', nonce: '00' });
+    expect(sent()).toEqual([['GET', '/apps/a-1/attestation?nonce=00']]);
+  });
+
   it('takes the query whole where a query parameter is named like a path parameter', async () => {
-    node.answer = () => ({ status: 200, json: { replicas: [] } });
-    await client().apps.attestation({ app: 'a-1', query: { nonce: '00', app: 'other' } });
+    // No route of the current document has such a pair; the generator keeps the
+    // shape for one that does, so it is held here with a synthetic route.
+    node.answer = () => ({ status: 200, json: {} });
+    const api = createRouteClient(new NodeTransport({ baseUrl: node.url, policy: { allowMock: true } }));
+    const shape: RouteShape = {
+      method: 'GET',
+      path: '/apps/{app}/attestation',
+      pathParams: ['app'],
+      query: ['nonce', 'app'],
+      queryWhole: true,
+      body: 'none',
+      optionalBody: false,
+      reply: 'json',
+    };
+    await route(api, shape, { app: 'a-1', query: { nonce: '00', app: 'other' } });
     expect(sent()).toEqual([['GET', '/apps/a-1/attestation?nonce=00&app=other']]);
   });
 

@@ -367,8 +367,10 @@ describe('over the sealed channel', () => {
           ? { status: 200, json }
           : { status: 412, json: { error: 'CONFIRM_REQUIRED', message: 'approve', details: CHALLENGE } };
     };
-    confirming({});
-    await c.orgs.publisher({ org: 'org-1', signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig' }, { confirm: passkeyConfirm(passkey) });
+    // core 92ac297a1: the binding answers the generation it was bound at, not `{ signer, approval }`.
+    confirming({ generation: 2 });
+    const bound = await c.orgs.publisher({ org: 'org-1', signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig' }, { confirm: passkeyConfirm(passkey) });
+    expect(bound.generation).toBe(2);
     expect(last().head.path).toBe('/orgs/org-1/publishers');
     expect(last().body).toEqual({ signerId: 'did:key:z6Mk', publicKey: 'pk', signature: 'sig', confirm: CONFIRM });
 
