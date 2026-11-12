@@ -10,6 +10,7 @@ jobs:
   release:
     name: Create Release and Publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # One release at a time: two overlapping runs would compute the same next
     # version and race on its tag. Queued, not cancelled, so no push is lost.
     concurrency:
