@@ -1,3 +1,9 @@
+## [33.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.1.0...mero-js-v33.2.0) (2026-11-12)
+
+### Features
+
+* **files:** upload sealed files through the files API ([#349](https://github.com/calimero-network/mero-js/issues/349)) ([e375f6c](https://github.com/calimero-network/mero-js/commit/e375f6c458e815f81b5658005341e1a5ceea88e8))
+
 ## [33.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.0.0...mero-js-v33.1.0) (2026-11-12)
 
 ### Features
