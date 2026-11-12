@@ -45,3 +45,5 @@ export * from './sealed/index.js';
 // Private agents (mero-tee's agent gate): attest one, claim it with your key,
 // give it its secrets sealed to its TD.
 export * from './agent-gate/index.js';
+// The recovery disk's files as their holder's device opens them.
+export * from './recovery/backup-files.js';
