@@ -16,6 +16,6 @@ wire format:
 ## Test plan
 
 - [ ] `pnpm test:unit`
-- [ ] `pnpm typecheck` and `pnpm typecheck:consumer`
+- [ ] `pnpm typecheck`, `pnpm typecheck:consumer` and `pnpm typecheck:tests`
 - [ ] `pnpm lint`
 - [ ] `pnpm build`
