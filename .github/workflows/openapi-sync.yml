@@ -4,12 +4,19 @@ name: OpenAPI sync
 #
 # Core's openapi-sync workflow sends `repository_dispatch` (type
 # `core-openapi`, `client_payload.commit` = the core commit) whenever
-# `docs/public/openapi.json` changes on its master. This vendors that commit's
-# document (scripts/refresh-openapi.sh), regenerates src/generated/
-# (`pnpm gen:api`), and, when anything changed, opens or refreshes one pull
-# request on the machine-owned branch `chore/core-openapi`, listing the
-# generated methods that were added, removed or changed
-# (scripts/openapi-sync-summary.mjs). A weekly run catches a missed event.
+# `docs/public/openapi.json` changes on its master; a weekly run catches a
+# missed event. The sync itself is core's reusable sdk-openapi-sync.yml, the
+# one all four SDKs call: it vendors that commit's document
+# (scripts/refresh-openapi.sh), regenerates src/generated/ (`pnpm gen:api`),
+# and, when anything changed, opens or refreshes one pull request on the
+# machine-owned branch `chore/core-openapi`, listing the generated methods that
+# were added, removed or changed (scripts/openapi-sync-summary.mjs).
+#
+# The pull request is titled by what the change does to callers, which is what
+# semantic-release reads: `feat(api)!:` with a `BREAKING-CHANGE:` footer (major),
+# `feat(api):` (minor) or `chore(api):` (patch). core's
+# scripts/openapi-classify.py decides, from the document vendored here now
+# against the new one.
 #
 # Two things here are load-bearing:
 #
@@ -22,6 +29,9 @@ name: OpenAPI sync
 #
 #   * `chore/core-openapi` belongs to this workflow and is force-pushed on every
 #     sync. Do not commit to it by hand: push a fix to a branch of your own.
+#
+# The `uses:` line pins core's workflow by commit; the classifier it runs is
+# read from core at that same commit. Move the pin to take a change there.
 
 on:
   repository_dispatch:
@@ -53,161 +63,33 @@ concurrency:
 
 jobs:
   sync:
-    name: Sync with core's OpenAPI document
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out the default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "20"
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
-      # What to vendor, and the ref openapi/SOURCE records for it: the commit
-      # core sent (on its master), or the ref asked for by hand, or master.
-      - name: Decide which core commit to vendor
-        id: target
-        env:
-          EVENT: ${{ github.event_name }}
-          PAYLOAD_COMMIT: ${{ github.event.client_payload.commit }}
-          INPUT_REF: ${{ inputs.ref }}
-        run: |
-          set -euo pipefail
-          case "$EVENT" in
-            repository_dispatch)
-              if ! [[ "$PAYLOAD_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-                echo "::error::client_payload.commit must be a full core commit sha, got '$PAYLOAD_COMMIT'"
-                exit 1
-              fi
-              target="$PAYLOAD_COMMIT"; recorded=master ;;
-            workflow_dispatch)
-              target="${INPUT_REF:-master}"; recorded="$target"
-              # A commit asked for by hand is recorded as on master too.
-              if [[ "$target" =~ ^[0-9a-f]{40}$ ]]; then recorded=master; fi ;;
-            *)
-              target=master; recorded=master ;;
-          esac
-          echo "target=$target" >> "$GITHUB_OUTPUT"
-          echo "recorded=$recorded" >> "$GITHUB_OUTPUT"
-
-      - name: Keep the generated files as they are now
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/before"
-          cp src/generated/methods.ts src/generated/api.ts "$RUNNER_TEMP/before/"
-
-      - name: Vendor core's document and regenerate
-        env:
-          TARGET: ${{ steps.target.outputs.target }}
-          RECORDED: ${{ steps.target.outputs.recorded }}
-        run: |
-          set -euo pipefail
-          scripts/refresh-openapi.sh "$TARGET" "$RECORDED"
-          pnpm gen:api
-
-      - name: Decide whether anything changed
-        id: diff
-        run: |
-          set -euo pipefail
-          commit=$(sed -n 's/^commit=//p' openapi/SOURCE)
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          echo "short=${commit:0:9}" >> "$GITHUB_OUTPUT"
-          # openapi/SOURCE alone moving (a new core commit with the same
-          # document) is not worth a pull request.
-          if git diff --quiet -- openapi/core-openapi.json src/generated; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::core@${commit:0:9}: the document and the generated code are unchanged; nothing to do"
-            exit 0
-          fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          git --no-pager diff --stat
-
-      - name: Summarise the generated methods
-        if: steps.diff.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          node scripts/openapi-sync-summary.mjs \
-            "$RUNNER_TEMP/before/methods.ts" src/generated/methods.ts \
-            "$RUNNER_TEMP/before/api.ts" src/generated/api.ts > "$RUNNER_TEMP/summary.md"
-          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
-
-      # The checks the pull request's CI will run anyway, so a sync that breaks
-      # the build says so in this run too.
-      - name: Typecheck the regenerated code
-        if: steps.diff.outputs.changed == 'true'
-        run: pnpm typecheck
-
-      - name: Mint a token for this repository
-        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
-        id: token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ vars.ACTIONS_APP_ID }}
-          private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          # Only what pushing the branch and opening the pull request needs.
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Identify the app
-        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
-        id: app
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          SLUG: ${{ steps.token.outputs.app-slug }}
-        run: echo "uid=$(gh api "/users/${SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-
-      - name: Open or refresh the pull request
-        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          REPO: ${{ github.repository }}
-          SLUG: ${{ steps.token.outputs.app-slug }}
-          APP_UID: ${{ steps.app.outputs.uid }}
-          COMMIT: ${{ steps.diff.outputs.commit }}
-          SHORT: ${{ steps.diff.outputs.short }}
-        run: |
-          set -euo pipefail
-
-          branch="chore/core-openapi"
-          title="chore(api): sync with core $SHORT"
-
-          git config user.name "${SLUG}[bot]"
-          git config user.email "${APP_UID}+${SLUG}[bot]@users.noreply.github.com"
-
-          git checkout -B "$branch"
-          git add openapi/core-openapi.json openapi/SOURCE src/generated
-          git commit -m "$title" \
-            -m "Vendors calimero-network/core@$COMMIT's docs/public/openapi.json and regenerates src/generated/. Generated by the openapi-sync workflow."
-
-          # The checkout kept no credentials; the app's token pushes, so the
-          # pull request's own workflows run.
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/$branch"
-
-          {
-            echo "Vendors core's node API document from [calimero-network/core@$SHORT](https://github.com/calimero-network/core/commit/$COMMIT) (\`docs/public/openapi.json\`) and regenerates \`src/generated/\` (\`pnpm gen:api\`)."
-            echo
-            echo "**A removed or renamed generated method, or one whose signature changed, is a breaking change**: merge it with a major bump (\`feat(api)!:\` or a \`BREAKING-CHANGE:\` footer), and move the callers first."
-            echo
-            echo "### Generated methods"
-            echo
-            cat "$RUNNER_TEMP/summary.md"
-            echo
-            echo "Opened by the \`openapi-sync\` workflow on the machine-owned branch \`$branch\`, force-pushed on every sync. Do not commit to it by hand."
-          } > "$RUNNER_TEMP/pr-body.md"
-
-          if gh pr view "$branch" --repo "$REPO" >/dev/null 2>&1; then
-            gh pr edit "$branch" --repo "$REPO" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
-            echo "::notice::refreshed the existing pull request for $branch"
-          else
-            gh pr create --repo "$REPO" --head "$branch" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
-          fi
-          gh pr view "$branch" --repo "$REPO" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+    name: Sync
+    uses: calimero-network/core/.github/workflows/sdk-openapi-sync.yml@fb0ed2e0c891df7e5a6fea9b0ad78b4e94a011b5
+    with:
+      ref: ${{ inputs.ref }}
+      dry-run: ${{ inputs.dry_run == true }}
+      timeout-minutes: 20
+      pnpm: true
+      node-version: "20"
+      setup: pnpm install --frozen-lockfile
+      # openapi/SOURCE records a commit core sent as on master.
+      generate: |
+        scripts/refresh-openapi.sh "$CORE_TARGET" "$CORE_RECORDED"
+        pnpm gen:api
+      vendor-path: openapi/core-openapi.json
+      source-file: openapi/SOURCE
+      source-key: commit
+      owned-paths: openapi/core-openapi.json openapi/SOURCE src/generated
+      # openapi/SOURCE alone moving (a new core commit with the same document)
+      # is not worth a pull request.
+      changed-paths: openapi/core-openapi.json src/generated
+      summary: |
+        node scripts/openapi-sync-summary.mjs \
+          "$SYNC_BEFORE/src/generated/methods.ts" src/generated/methods.ts \
+          "$SYNC_BEFORE/src/generated/api.ts" src/generated/api.ts
+      # The check the pull request's CI runs anyway, so a sync that breaks the
+      # build says so in this run too.
+      check: pnpm typecheck
+      app-id: ${{ vars.ACTIONS_APP_ID }}
+    secrets:
+      app-private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
