@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { browserPasskey, b64url, es256First } from "./passkey";
+import { browserPasskey, b64url, es256First } from "./passkey.js";
 
 // A page where an extension (LastPass) has replaced navigator.credentials:
 // after one prompt it answers every later one in the tab with "A request is
@@ -160,7 +160,8 @@ describe("browserPasskey with an AbortSignal", () => {
       })
       .catch((e: unknown) => e);
     controller.abort();
-    const error = (await pending) as Error;
+    // The source attaches `cause` with Object.assign: the ES2020 lib's Error has none.
+    const error = (await pending) as Error & { cause?: unknown };
     expect((seen[0] as { signal?: AbortSignal }).signal).toBe(controller.signal);
     expect(error.name).toBe("NotAllowedError");
     expect(error.message).toBe("passkey sign-in was cancelled");
