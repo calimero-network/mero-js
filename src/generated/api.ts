@@ -21,7 +21,7 @@ export interface paths {
         put?: never;
         /**
          * Create an app instance
-         * @description From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`) or the caller's own. `initArgs` go to the app's `init`.
+         * @description From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`) or the caller's own. `initArgs` go to the app's `init` and `metadata` is kept as given (both free-form JSON). Answers once `init` committed; `compute` says whether the app has a compute component.
          *
          *     **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
          */
@@ -69,7 +69,7 @@ export interface paths {
         };
         /**
          * An app's ABI
-         * @description The ABI its bundle embeds: methods, events, errors and state.
+         * @description The ABI its bundle embeds: methods, events, errors and state. `abi` is the bundle's own document, free-form here: its format is the ABI's, not this API's.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -111,7 +111,7 @@ export interface paths {
         };
         /**
          * Every replica's receipt-key attestation
-         * @description Each replica's `/attestation?purpose=receipts` for `nonce`. It reads the query `/attestation` does, but only `nonce`: `app`, `appHash` and `purpose` are ignored here.
+         * @description Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`). Any other query parameter is ignored.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -141,7 +141,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a blob
-         * @description A plain blob, stored with the request's `Content-Type` (default `application/octet-stream`), which a component app's download answers with. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
+         * @description A plain blob, stored with the request's `Content-Type`, which a component app's download answers with: any media type (printable ASCII, 127 bytes at most; another is `400 BAD_REQUEST`), `application/octet-stream` when the request names none. Send the blob's own type, not `*\/*`, which would be stored as its type. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -327,7 +327,7 @@ export interface paths {
         put?: never;
         /**
          * Commit an upload
-         * @description Charges and commits the file; a retry answers the same file.
+         * @description Charges and commits the file; a retry answers the same file. `409 UPLOAD_INCOMPLETE` names the part still missing.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -348,7 +348,7 @@ export interface paths {
         get?: never;
         /**
          * Send one part
-         * @description Part `k` (from 0), raw bytes; a part out of order answers the next one expected in `details.next`.
+         * @description Part `k` (from 0), raw bytes; a part out of order (`409 PART_OUT_OF_ORDER`), or one that differs from the part sent before as `k` (`409 PART_CONFLICT`), answers the next one expected in `details.next`.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -393,7 +393,7 @@ export interface paths {
         put?: never;
         /**
          * Call a method
-         * @description A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`.
+         * @description A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`. `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -415,7 +415,7 @@ export interface paths {
         put?: never;
         /**
          * Set an app's metadata
-         * @description The owner or an organization admin; 16 KiB at most.
+         * @description The owner or an organization admin; 16 KiB at most. `metadata` is the caller's own JSON, free-form, kept as given.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -437,7 +437,7 @@ export interface paths {
         put?: never;
         /**
          * Call a method by its path
-         * @description The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`.
+         * @description The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`. `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -479,7 +479,7 @@ export interface paths {
         };
         /**
          * An app's OpenAPI document
-         * @description Generated from the ABI of the bundle the app runs, under the access `/abi` has: one `POST /apps/{app}/methods/{method}` per method, with its arguments, result and errors.
+         * @description Generated from the ABI of the bundle the app runs, under the access `/abi` has: one `POST /apps/{app}/methods/{method}` per method, with its arguments, result and errors. Free-form here: it is a document of its own, which a client reads as OpenAPI.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -549,7 +549,9 @@ export interface paths {
         };
         /**
          * An app's compute runs
-         * @description **Who:** whoever the app's access admits (a public app: anyone).
+         * @description Newest first, `limit` (1 to 100, default 20) at a time; `next` is the `before` of the next page, `null` on the last.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
          */
         get: operations["app_runs"];
         put?: never;
@@ -615,7 +617,7 @@ export interface paths {
         put?: never;
         /**
          * Hand an app to another account
-         * @description The owner (for an organization's app, while a member and in the app's team), or an organization admin; an organization's app only to a member.
+         * @description The owner (for an organization's app, while a member and in the app's team), or an organization admin; an organization's app only to a member. Answers `null`.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -637,7 +639,7 @@ export interface paths {
         put?: never;
         /**
          * Upgrade an app instance
-         * @description To a release (`version`, of the app's own package unless `package` names another) or a `bundle`, code only: the state stays and is read by the new code. Whoever the package's manifest names (`upgrades`: the owner, or its publisher's `MANAGE_APPLICATION` holders), with a step-up over `{ bundle, migrate, manifest }`; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers `422 UPGRADE_FAILED` with the app log's error in `details` (`MigrationsNotSupported` when `migrate` is named: there are no migrations in this version).
+         * @description To a release (`version`, of the app's own package unless `package` names another) or a `bundle`, code only: the state stays and is read by the new code. Whoever the package's manifest names (`upgrades`: the owner, or its publisher's `MANAGE_APPLICATION` holders), with a step-up over `{ bundle, migrate, manifest }`; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers `422 UPGRADE_FAILED` with the app log's error in `details` (`MigrationsNotSupported` when `migrate` is named: there are no migrations in this version). `error` is the app log's error value (`null` when it ran), free-form: the app's own.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -681,7 +683,7 @@ export interface paths {
         put?: never;
         /**
          * Read with a view method
-         * @description Read on a caught-up replica (`consistency: "strong"`, the default; any value but `"stale"` reads as it), or (`"stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`).
+         * @description Read on a caught-up replica (`consistency: "strong"`, the default; any value but `"stale"` reads as it), or (`"stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`). `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -927,7 +929,9 @@ export interface paths {
         put?: never;
         /**
          * End every session of the account
-         * @description **Who:** an account holder (a passkey session not bound to an app's frontend).
+         * @description `revoked`: how many sessions ended.
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend).
          */
         post: operations["logout_all"];
         delete?: never;
@@ -989,7 +993,7 @@ export interface paths {
         put?: never;
         /**
          * Start a sign-in
-         * @description A WebAuthn challenge for any passkey of the cluster. `origin` is an app frontend's registered origin, whose rp-id the ceremony then uses.
+         * @description A WebAuthn challenge for any passkey of the cluster. `origin` is an app frontend's registered origin, whose rp-id the ceremony then uses. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
          *
          *     **Who:** anyone.
          */
@@ -1031,7 +1035,7 @@ export interface paths {
         put?: never;
         /**
          * Start a sign-up
-         * @description Creation options for a new passkey. `invite` is an organization or cluster sign-up invite token, which the policy may require; `403 SIGN_UP_REFUSED` when the policy would refuse the sign-up.
+         * @description Creation options for a new passkey. `invite` is an organization or cluster sign-up invite token, which the policy may require; `403 SIGN_UP_REFUSED` when the policy would refuse the sign-up. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
          *
          *     **Who:** anyone.
          */
@@ -1075,7 +1079,7 @@ export interface paths {
         put?: never;
         /**
          * Start adding a passkey
-         * @description Creation options for another passkey (a device) on the caller's account.
+         * @description Creation options for another passkey (a device) on the caller's account. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend).
          */
@@ -1171,7 +1175,7 @@ export interface paths {
         put?: never;
         /**
          * Start an account recovery
-         * @description Signed out, with the recovery code: creation options for the passkey that will replace the lost ones.
+         * @description Signed out, with the recovery code: creation options for the passkey that will replace the lost ones. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
          *
          *     **Who:** anyone.
          */
@@ -1345,7 +1349,7 @@ export interface paths {
         };
         /**
          * The account's usage against its quotas
-         * @description Apps, bundle bytes, API keys and owned organizations; what today's runs of the apps the account develops used (decimal strings).
+         * @description The apps the account owns, its bundle bytes (a decimal string), API keys and owned organizations; the file bytes held by each payer it belongs to (each organization it is in, and `account:<id>` for its own apps); the cluster's quotas; and what today's runs of the apps the account develops used (decimal strings).
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -1597,7 +1601,7 @@ export interface paths {
         };
         /**
          * Node health
-         * @description In the clear. The node's id, the system group's leader, its release, the newest cluster version it supports (`clusterVersion`) and the cluster's rollback epoch.
+         * @description In the clear. The node's id, the system group's leader (`null`: none known), its `merod` release, the newest cluster version it supports (`clusterVersion`) and the cluster's rollback epoch (`null` on a node without a rollback counter).
          *
          *     **Who:** anyone.
          */
@@ -1621,7 +1625,7 @@ export interface paths {
         put?: never;
         /**
          * Join with an invite
-         * @description No passkey prompt: the node signs the redemption with the token's key.
+         * @description No passkey prompt: the node signs the redemption with the token's key. Answers the organization joined.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -1687,7 +1691,7 @@ export interface paths {
         put?: never;
         /**
          * Restore an app from its sealed backup
-         * @description Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state.
+         * @description Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status.
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
@@ -1709,7 +1713,7 @@ export interface paths {
         put?: never;
         /**
          * Upgrade an app as the operator
-         * @description To a release the operator installed, where the operator holds app upgrades.
+         * @description To a release the operator installed, where the operator holds app upgrades. `error` is the app log's error value (`null` when it ran), free-form: the app's own.
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
@@ -1731,7 +1735,7 @@ export interface paths {
         put?: never;
         /**
          * Snapshot the apps this node leads
-         * @description Into `--backup-dir`. With `all=true`, every group this node holds, leader or not: what a node of a cluster that lost a majority still has, to found the cluster again from (`merod --bootstrap --restore-from`).
+         * @description Into `--backup-dir`. With `all=true`, every group this node holds, leader or not: what a node of a cluster that lost a majority still has, to found the cluster again from (`merod --bootstrap --restore-from`). `written`: how many snapshots it wrote.
          *
          *     **Who:** the ops token.
          */
@@ -1751,7 +1755,9 @@ export interface paths {
         };
         /**
          * The cluster's identity
-         * @description **Who:** the ops token.
+         * @description The cluster's name and the identity this replica holds (hex).
+         *
+         *     **Who:** the ops token.
          */
         get: operations["ops_cluster"];
         put?: never;
@@ -2169,7 +2175,7 @@ export interface paths {
         put?: never;
         /**
          * Change quotas
-         * @description Changes the limits the body names, the others keep their value; signed over `cluster / __set_quotas / { quotas }` with every limit after the change. With `org`: one payer's `maxConcurrentRuns`, `computeFuel` (decimal string) and `maxFileBytes` (`null` clears one). A name that is no quota is refused.
+         * @description Changes the limits the body names, the others keep their value; signed over `cluster / __set_quotas / { quotas }` with every limit after the change. Without `org`, the cluster's limits (`GET /ops/quotas` names them); `orgs`, which that answer carries, is ignored, so its answer may be sent back changed. With `org`: one payer's `maxConcurrentRuns`, `computeFuel` (decimal string) and `maxFileBytes` (`null` clears one, back to the cluster's), and no other limit. A property that is no limit (of the cluster's, or with `org` of a payer's) is refused `400 UNKNOWN_QUOTA`.
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
@@ -2347,7 +2353,7 @@ export interface paths {
         };
         /**
          * The node and the cluster
-         * @description Counts, Raft status and governance; never app state, names or credentials.
+         * @description Counts, Raft status and governance; never app state, names or credentials. `groups`: the app groups this node hosts; `apps` and `accounts` are counts; `rollback` is this node's rollback counter, `null` on a node without one.
          *
          *     **Who:** the ops token.
          */
@@ -2400,7 +2406,7 @@ export interface paths {
         post?: never;
         /**
          * Delete an organization
-         * @description With its teams, invites and apps; the owner.
+         * @description With its teams, invites and apps; the owner. `apps`: the apps deleted with it.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -2613,7 +2619,9 @@ export interface paths {
         put?: never;
         /**
          * Set a member's metadata
-         * @description **Who:** signed in (a session or an API key).
+         * @description `metadata` is the caller's own JSON, free-form, kept as given.
+         *
+         *     **Who:** signed in (a session or an API key).
          */
         post: operations["member_metadata"];
         delete?: never;
@@ -2661,7 +2669,9 @@ export interface paths {
         put?: never;
         /**
          * Set an organization's metadata
-         * @description **Who:** signed in (a session or an API key).
+         * @description `metadata` is the caller's own JSON, free-form, kept as given.
+         *
+         *     **Who:** signed in (a session or an API key).
          */
         post: operations["org_metadata"];
         delete?: never;
@@ -2747,7 +2757,7 @@ export interface paths {
         put?: never;
         /**
          * Bind a package signing key
-         * @description The key's signature over the binding proves the organization holds it; then its `MANAGE_APPLICATION` holders upgrade the apps of packages that name `publisher`.
+         * @description The key's signature over the binding proves the organization holds it; then its `MANAGE_APPLICATION` holders upgrade the apps of packages that name `publisher`. Answers the key's binding generation now.
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -2905,7 +2915,7 @@ export interface paths {
         put?: never;
         /**
          * Update a team
-         * @description Rename, open or restrict, move under another parent, or set its metadata. `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
+         * @description Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -3037,7 +3047,7 @@ export interface paths {
         };
         /**
          * An organization's usage
-         * @description An admin: what today's runs of the apps the organization develops used (decimal strings) and its quotas; a member gets `403`.
+         * @description An admin: how many apps the organization develops, what their runs used today (decimal strings) and the cluster's quotas; a member gets `403`.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -3067,7 +3077,7 @@ export interface paths {
         put?: never;
         /**
          * Register a frontend origin
-         * @description By whoever manages the package, with a passkey step-up over the change.
+         * @description By whoever manages the package, with a passkey step-up over the change. Answers the origin as registered (the one already there, when the same origin is registered again).
          *
          *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -3298,12 +3308,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description An error answer. */
+        /** @description An error answer: `error` is the code. `details`, absent for most codes, has the schema `x-calimero-details` names for the code on the operation's response (every code's: `x-calimero-error-details` at the document's root); a code it names no schema for carries none, or a value clients need not read. */
         Error: {
             /** Format: int64 */
             status: number;
             error: string;
             message: string;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             details?: unknown;
         };
         /** @description A passkey assertion over the challenge a `412 CONFIRM_REQUIRED` named: the same request sent again with it approves exactly that request. */
@@ -3311,24 +3322,25 @@ export interface components {
             challengeId: string;
             assertion: components["schemas"]["Assertion"];
         };
-        /** @description `details` of a `412 CONFIRM_REQUIRED`: the WebAuthn challenge to sign with a passkey of the account. */
+        /** @description `details` of a `412 CONFIRM_REQUIRED`: the WebAuthn challenge to sign under `rpId` with one of the passkeys `allowCredentials` names (credential ids; empty: any of the account's), and the `challengeId` the retry's `confirm` names. `apps`: deleting a team that holds apps, the apps that go with it. */
         ConfirmRequired: {
             challengeId: string;
             /** @description base64url (RFC 4648 section 5) without padding */
             challenge: string;
             rpId: string;
             allowCredentials: string[];
+            apps?: string[];
         };
         /** @description The operator key's Ed25519 signature (hex) over the statement a `428 OPERATOR_SIGNATURE_REQUIRED` named, with that statement's nonce. */
         OperatorProof: {
             nonce: string;
             signature: string;
         };
-        /** @description `details` of a `428 OPERATOR_SIGNATURE_REQUIRED`: the statement to sign and the exact bytes (`message`, base64). */
+        /** @description `details` of a `428 OPERATOR_SIGNATURE_REQUIRED`: the statement to sign (`args` is the JSON text of its arguments, as signed) and the exact bytes to sign (`message`, standard base64). */
         OperatorSignatureRequired: {
             subject: string;
             method: string;
-            args: unknown;
+            args: string;
             nonce: string;
             cluster: string;
             message: string;
@@ -3353,16 +3365,102 @@ export interface components {
             expiresAt: number;
             refreshToken: string;
         };
-        /** @description What the system log answered for the command this request wrote (for example the id it made). */
-        Written: {
-            [key: string]: unknown;
-        };
-        /** @description An entry an app's log applied: its index, how it ended and the app's error, if any. */
+        /** @description An entry an app's log applied: its index, how it ended and the app's error (`null` when it ended `ok`; the app's own error value otherwise, free-form). `details` of a `422 UPGRADE_FAILED`. */
         Applied: {
             /** Format: int64 */
             index: number;
-            status: string;
+            /** @enum {string} */
+            status: "ok" | "appError" | "trap";
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             error: unknown;
+        };
+        /** @description `details` of a `421 NOT_LEADER`: the leader's URL to send the same request to, and its node id where known. */
+        NotLeader: {
+            leaderUrl: string;
+            /** Format: int64 */
+            leader?: number;
+        };
+        /** @description `details` of a `409 FEATURE_NOT_ACTIVE`: the feature the request needs, the cluster version it ships in (`needs`) and the version active now (`null`: none logged, and the nodes could not say). */
+        FeatureNotActive: {
+            feature: string;
+            needs: string;
+            active: string | null;
+        };
+        /** @description `details` of a `409 RUNTIME_TOO_OLD`: the runtime the release needs and the replicas known to fall short of it, each with what it runs (a version, or `{ before }`: a release older than that one). */
+        RuntimeTooOld: {
+            minRuntimeVersion: string;
+            nodes: {
+                /** Format: int64 */
+                node: number;
+                runtime: string | {
+                    before: string;
+                };
+            }[];
+        };
+        /** @description `details` of a `409 RELEASE_DEADLINE`: the mero-tee release whose deadline passed, and the deadline (`after` RFC 3339, `afterSecs` Unix seconds). Approving that release (or a newer one) lifts it. */
+        ReleaseDeadline: {
+            release: string;
+            after: string;
+            /** Format: int64 */
+            afterSecs: number;
+        };
+        /** @description `details` of a `409 UPGRADE_PENDING`: the release every node must run first, and the nodes that run an older one (`release` `null`: one this node could not attest). */
+        UpgradePending: {
+            release: string;
+            nodes: {
+                /** Format: int64 */
+                node: number;
+                release: string | null;
+            }[];
+        };
+        /** @description `details` of a `422 APP_ERROR`: the app's error code, its fields (the app's own value, free-form: the object its ABI declares for the error, or the app's message as a string when that is not JSON), and the log index of the call (absent when the node refused it before it ran: `UnknownMethod`, `WrongKind`, `Forbidden`, `ConfirmNotAView`, `NotAView`, `ConfirmRequired`). */
+        AppError: {
+            /** Format: int64 */
+            index?: number;
+            code: string;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+            fields: unknown;
+        };
+        /** @description `details` of a `422 TRAP`: the log index of the run, how it trapped, and the engine's account of it. */
+        Trap: {
+            /** Format: int64 */
+            index: number;
+            /** @enum {string} */
+            kind: "OutOfFuel" | "Timeout" | "Cancelled" | "Unavailable" | "OutOfMemory" | "StackOverflow" | "Fault" | "HostDenied";
+            detail: string;
+        };
+        /** @description `details` of a `422 INIT_FAILED`: the app made, and the error its `init` ended with (the app log's, free-form). */
+        InitFailed: {
+            appId: string;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+            error: unknown;
+        };
+        /** @description `details` of a `409 RECOVERY_NOT_READY`: when the recovery may finish (Unix seconds). */
+        RecoveryNotReady: {
+            /** Format: int64 */
+            readyAt: number;
+        };
+        /** @description `details` of a `409 PART_CONFLICT`, `409 PART_OUT_OF_ORDER` or `409 UPLOAD_INCOMPLETE`: the part the upload expects next. */
+        UploadPosition: {
+            /** Format: int64 */
+            next: number;
+        };
+        /** @description `details` of a `503 TIMEOUT` or `503 FILES_UNAVAILABLE`: the seconds to wait before sending the same request (with the same idempotency key) again. */
+        RetryAfter: {
+            /** Format: int64 */
+            retryAfter: number;
+        };
+        /** @description `details` of a `400 UNSUPPORTED_BUNDLE`, `400 BAD_BUNDLE` or `400 COMPUTE_ABI_MISMATCH` refusing one service of a release: the service, and `compute: true` when it was that service's compute component. Absent when the refusal is of a raw bundle. */
+        ServiceRefused: {
+            service: string;
+            compute?: boolean;
+        };
+        /** @description The sealed channel's own refusal, outside the envelope and in the clear: not an `Error`. `busy` (`503`, with `Retry-After: 1`): too many sealed requests or sessions at once, send it again; the other codes (`400`, `malformed` and the like) say the envelope could not be opened. */
+        SealedRefusal: {
+            error: {
+                code: string;
+                message: string;
+            };
         };
         /** @description The answering node's signature (receipt key, hex) over `(app, index, SHA-256(JCS(result)), node)`. */
         Receipt: {
@@ -3431,7 +3529,7 @@ export interface components {
             version: string;
             profile: string;
         };
-        /** @description A node's attestation: the TDX quote (base64), the key it binds (hex) and what it was asked for. */
+        /** @description A node's attestation: the TDX quote (base64), the key it binds (hex) and what it was asked for. `receiptKey` and `governance` with `purpose=receipts`, `kms` with `purpose=kms` on a node with a KMS record, `clusterIdentity` with `purpose=orchestrator`; `jobKey` only from a job node, never from this API. */
         AttestationDoc: {
             quote: string;
             transportKey: string;
@@ -3443,9 +3541,285 @@ export interface components {
             node: number;
             mock: boolean;
             receiptKey?: string;
-            governance?: unknown;
-            kms?: unknown;
+            governance?: components["schemas"]["Governance"];
+            kms?: components["schemas"]["KmsKeys"];
+            jobKey?: string;
             clusterIdentity?: string;
+        };
+        /** @description What a node verified of the mero-kms replicas it took its keys from: the storage key `merod` fetched, and the data disk's key the boot script fetched; each absent without a record. */
+        KmsKeys: {
+            storage?: components["schemas"]["KmsEvidence"];
+            disk?: components["schemas"]["KmsEvidence"];
+        };
+        /** @description The KMS quote a node accepted a key under: the KMS host, the mero-kms release (and image profile) whose signed policy it matched, the quote's registers (hex), its TCB status, SHA-256 and when it was verified (Unix seconds); `mock` (absent: false) in development builds only. */
+        KmsEvidence: {
+            kmsHost: string;
+            release: string;
+            profile?: string;
+            mrtd: string;
+            rtmr0: string;
+            rtmr1: string;
+            rtmr2: string;
+            rtmr3: string;
+            tcbStatus?: string;
+            quoteSha256: string;
+            /** Format: int64 */
+            verifiedAt: number;
+            mock?: boolean;
+        };
+        /** @description A Raft group's status as one node sees it: the leader (`null`: none known), whether this node is it, the term, the last log index (`null`: an empty log), the applied index, and the voters and learners. */
+        GroupStatus: {
+            /** Format: int64 */
+            group: number;
+            /** Format: int64 */
+            leader: number | null;
+            is_leader: boolean;
+            /** Format: int64 */
+            term: number;
+            /** Format: int64 */
+            last_log: number | null;
+            /** Format: int64 */
+            applied: number;
+            voters: number[];
+            learners: number[];
+        };
+        /** @description A node's rollback counter: the cluster's epoch (rollbacks forced so far), its generation and mark, whether this start was forced (`--accept-rollback`), and the seconds since mero-kms last acknowledged a checkpoint. */
+        RollbackStatus: {
+            /** Format: int64 */
+            epoch: number;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int64 */
+            mark: number;
+            forced: boolean;
+            /** Format: int64 */
+            sinceCheckpointSecs: number;
+        };
+        /**
+         * @description What a node does: hold app replicas, or run compute jobs.
+         * @enum {string}
+         */
+        NodeRole: "replica" | "job";
+        /** @description A registered node: its id, address, zone, role and (a job node's) compute pool, absent for none. */
+        NodeRecord: {
+            /** Format: int64 */
+            id: number;
+            addr: string;
+            zone: string;
+            role: components["schemas"]["NodeRole"];
+            pool?: string;
+        };
+        /** @description The per-account limits, and the compute and file limits of each organization (or personal account) that has no override. `maxFuelPerDeveloperPerDay` (0: no limit) is a decimal string; the others are JSON numbers. */
+        Quotas: {
+            /** Format: int64 */
+            maxAppsPerAccount: number;
+            /** Format: int64 */
+            maxBundleBytesPerAccount: number;
+            /** Format: int64 */
+            maxApiKeysPerAccount: number;
+            /** Format: int64 */
+            maxOrgsPerAccount: number;
+            /** Format: int64 */
+            maxAccounts: number;
+            /** Format: int64 */
+            maxFileBytesPerOrg: number;
+            /** Format: int64 */
+            maxConcurrentRunsPerOrg: number;
+            /** Format: int64 */
+            computeFuelPerOrg: number;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            maxFuelPerDeveloperPerDay: string;
+        };
+        /** @description One payer's limits in place of the cluster's; a limit left out is the cluster's. */
+        OrgQuotas: {
+            /** Format: int64 */
+            maxConcurrentRuns?: number;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            computeFuel?: string;
+            /** Format: int64 */
+            maxFileBytes?: number;
+        };
+        /** @description `GET /ops/quotas`: the cluster's limits and, under `orgs`, each payer's overrides by payer id. */
+        QuotaSettings: {
+            /** Format: int64 */
+            maxAppsPerAccount: number;
+            /** Format: int64 */
+            maxBundleBytesPerAccount: number;
+            /** Format: int64 */
+            maxApiKeysPerAccount: number;
+            /** Format: int64 */
+            maxOrgsPerAccount: number;
+            /** Format: int64 */
+            maxAccounts: number;
+            /** Format: int64 */
+            maxFileBytesPerOrg: number;
+            /** Format: int64 */
+            maxConcurrentRunsPerOrg: number;
+            /** Format: int64 */
+            computeFuelPerOrg: number;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            maxFuelPerDeveloperPerDay: string;
+            orgs: {
+                [key: string]: components["schemas"]["OrgQuotas"];
+            };
+        };
+        /** @description What an app's runs used on one UTC day (`date`, `YYYY-MM-DD`), each figure a decimal string; `wallMs` is information only. */
+        UsageDay: {
+            date: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            runs: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            fuel: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            wallMs: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            writes: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            bytesWritten: string;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            events: string;
+        };
+        /** @description A file a run reads or wrote: its id, and its plaintext size and SHA-256 (hex) only for a caller who may list the app's files. */
+        RunFile: {
+            id: string;
+            /** Format: int64 */
+            size?: number;
+            sha256?: string;
+        };
+        /** @description A compute run's record, without its arguments or keys: its method, state, caps (`fuel` a JSON number here), inputs, attempts (`tsMs` Unix milliseconds) and final outcome (`null` while it runs; `message` the failure text, `null` unless the caller may list the app's files). `progress` is the leader's last poll (`null` elsewhere, when it is not active, or to a caller who may not list files); `queue` where the run waits for a job node, to a caller who may list files only. */
+        Run: {
+            run: string;
+            method: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "done" | "failed" | "cancelled";
+            cancelRequested: boolean;
+            /** Format: int64 */
+            startTsMs: number;
+            caps: {
+                /** Format: int64 */
+                fuel: number;
+                /** Format: int64 */
+                memoryMib: number;
+                /** Format: int64 */
+                wallSecs: number;
+            };
+            inputs: components["schemas"]["RunFile"][];
+            attempts: {
+                /** Format: int64 */
+                attempt: number;
+                /** Format: int64 */
+                node: number;
+                /** Format: int64 */
+                tsMs: number;
+            }[];
+            final: {
+                /** Format: int64 */
+                attempt: number;
+                outcome: {
+                    /** @enum {string} */
+                    kind: "done";
+                } | {
+                    /** @enum {string} */
+                    kind: "failed";
+                    /** @enum {string} */
+                    reason: "fuel" | "memory" | "trap" | "app-error" | "integrity" | "cancelled" | "lost" | "refused" | "timeout" | "quota" | "not-granted" | "too-large";
+                } | {
+                    /** @enum {string} */
+                    kind: "cancelled";
+                };
+                outputs: components["schemas"]["RunFile"][];
+                usage: {
+                    /** Format: int64 */
+                    cpuMicros: number;
+                    /** Format: int64 */
+                    gibMicros: number;
+                    /** Format: int64 */
+                    fuel: number;
+                };
+                /** Format: int64 */
+                tsMs: number;
+                message: string | null;
+            } | null;
+            progress: {
+                /** Format: int64 */
+                percent: number;
+                step: string;
+            } | null;
+            queue?: {
+                /** @enum {string} */
+                state: "unplaced" | "waiting" | "granted";
+                /** Format: int64 */
+                capacity: number;
+                pool: string;
+                /** @enum {string} */
+                reason?: "NO_CAPACITY" | "POOL_FULL" | "PAYER_AT_RUN_QUOTA" | "PAYER_AT_FUEL_QUOTA";
+            };
+        };
+        /** @description A statement, signed with the answering node's receipt key (hex, Ed25519 over the statement's canonical JSON after its domain), that the account asked to bind `nonce` for `audience`, valid from `issuedAt` to `expiresAt` (Unix seconds). */
+        AccountProof: {
+            statement: components["schemas"]["AccountStatement"];
+            key: string;
+            signature: string;
+        };
+        /** @description What an account proof states: the cluster and node, the account, the nonce and audience it binds, and when it was issued and expires (Unix seconds). */
+        AccountStatement: {
+            cluster: string;
+            /** Format: int64 */
+            node: number;
+            account: string;
+            nonce: string;
+            audience: string;
+            /** Format: int64 */
+            issuedAt: number;
+            /** Format: int64 */
+            expiresAt: number;
+        };
+        /** @description A custom frontend origin of a package: the rp-id its passkeys use, who registered it and when (RFC 3339), and whether the cluster serves the package's frontend there. */
+        PackageOrigin: {
+            package: string;
+            origin: string;
+            rpId: string;
+            addedBy: string;
+            addedAt: string;
+            served: boolean;
+        };
+        /** @description The sign-up policy and what it implies: whether organization invites and cluster sign-up invites admit a new account, and whether one is required. */
+        SignUpState: {
+            policy: components["schemas"]["SignUp"];
+            orgInvites: boolean;
+            signUpInvites: boolean;
+            inviteRequired: boolean;
+        };
+        /** @description The mero-tee releases the scope approves now, after the change. */
+        ApprovedReleases: {
+            approvedReleases: string[];
+        };
+        /** @description The outbound approval the scope holds now for the package's publisher (`signer`), after the change. */
+        OutboundApproved: {
+            signer: string;
+            approval: components["schemas"]["OutboundApproval"];
+        };
+        /** @description The versions an uninstall removed. */
+        Uninstalled: {
+            removed: string[];
+        };
+        /** @description Every release deadline after the change, oldest release first (`after` RFC 3339, `afterSecs` Unix seconds). */
+        Deadlines: {
+            deadlines: {
+                version: string;
+                after: string;
+                /** Format: int64 */
+                afterSecs: number;
+            }[];
+        };
+        /** @description The cluster's governance and sign-up policy after the change. */
+        SignUpSet: {
+            governance: components["schemas"]["Governance"];
+            signUp: components["schemas"]["SignUpState"];
+        };
+        /** @description The key of the cluster sign-up invite withdrawn. */
+        InviteKey: {
+            inviteKey: string;
         };
         /** @description An organization-wide upgrade run: the apps it targets, those done, and why each failed one failed. */
         UpgradeRun: {
@@ -3480,8 +3854,10 @@ export interface components {
             replicas: number[];
             /** Format: int64 */
             createdAt: number;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             initArgs: unknown;
             computeBundle?: string;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             metadata: unknown;
             lastUpgrade?: components["schemas"]["Upgrade"];
             deployment?: string;
@@ -3523,6 +3899,7 @@ export interface components {
             at: number;
             by: string;
             ok: boolean;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             error?: unknown;
             run?: string;
             apiKey?: string;
@@ -3545,6 +3922,7 @@ export interface components {
                 services: {
                     [key: string]: string;
                 };
+                /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                 metadata: unknown;
                 outbound: string[];
                 installedBy: string;
@@ -3589,6 +3967,7 @@ export interface components {
             outboundApprovals: {
                 [key: string]: components["schemas"]["OutboundApproval"];
             };
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             metadata: unknown;
             memberMetadata: {
                 [key: string]: unknown;
@@ -3631,6 +4010,7 @@ export interface components {
             capabilities: {
                 [key: string]: number;
             };
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             metadata: unknown;
             removed: string[];
             /** Format: int64 */
@@ -3642,6 +4022,7 @@ export interface components {
             name: string;
             parent: string | null;
             join: components["schemas"]["TeamJoin"];
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             metadata: unknown;
             package?: string | null;
             /** Format: int64 */
@@ -3739,6 +4120,7 @@ export interface components {
             /** @enum {string} */
             actorKind: "owner" | "member" | "operator";
             actor?: string;
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             error?: unknown;
             run?: string;
             apiKey?: string;
@@ -3837,6 +4219,37 @@ export interface components {
         ConfirmOnly: {
             confirm?: components["schemas"]["Confirm"];
         };
+        /** @description The limits `POST /ops/quotas` changes, each optional: without `org`, the cluster's (those `GET /ops/quotas` answers, `maxFuelPerDeveloperPerDay` a decimal string); with `org`, one payer's (`maxConcurrentRuns`, `computeFuel` a decimal string, `maxFileBytes`; `null` clears one). `orgs` is ignored. Any other property is refused `400 UNKNOWN_QUOTA`. */
+        QuotaChanges: {
+            org?: string;
+            operatorProof?: components["schemas"]["OperatorProof"];
+            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+            orgs?: unknown;
+            /** Format: int64 */
+            maxAppsPerAccount?: number;
+            /** Format: int64 */
+            maxBundleBytesPerAccount?: number;
+            /** Format: int64 */
+            maxApiKeysPerAccount?: number;
+            /** Format: int64 */
+            maxOrgsPerAccount?: number;
+            /** Format: int64 */
+            maxAccounts?: number;
+            /** Format: int64 */
+            maxFileBytesPerOrg?: number;
+            /** Format: int64 */
+            maxConcurrentRunsPerOrg?: number;
+            /** Format: int64 */
+            computeFuelPerOrg?: number;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            maxFuelPerDeveloperPerDay?: string;
+            /** Format: int64 */
+            maxConcurrentRuns?: number | null;
+            /** @description an unsigned 64-bit integer as a decimal string (D20) */
+            computeFuel?: string | null;
+            /** Format: int64 */
+            maxFileBytes?: number | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -3906,7 +4319,9 @@ export interface operations {
                     service?: string;
                     org?: string;
                     access?: components["schemas"]["Access"];
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     initArgs?: unknown;
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     metadata?: unknown;
                     deployment?: string;
                 };
@@ -3925,7 +4340,7 @@ export interface operations {
                         /** Format: int64 */
                         group: number;
                         replicas: number[];
-                        compute?: unknown;
+                        compute: boolean;
                     };
                 };
             };
@@ -3956,7 +4371,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
+            /** @description `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD`. `details` of `RELEASE_DEADLINE`: a `ReleaseDeadline`, `RUNTIME_TOO_OLD`: a `RuntimeTooOld`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3974,7 +4389,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `INIT_FAILED` */
+            /** @description `INIT_FAILED`. `details` of `INIT_FAILED`: a `InitFailed`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4123,6 +4538,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         bundle: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         abi: unknown;
                     };
                 };
@@ -4206,9 +4622,6 @@ export interface operations {
         parameters: {
             query: {
                 nonce: string;
-                app?: string;
-                appHash?: string;
-                purpose?: "receipts" | "kms";
             };
             header?: never;
             path: {
@@ -4316,9 +4729,10 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description the blob, of any media type */
+        /** @description the blob; its `Content-Type` is the type it is stored and served with */
         requestBody: {
             content: {
+                "application/octet-stream": string;
                 "*/*": string;
             };
         };
@@ -4923,6 +5337,8 @@ export interface operations {
                         /** Format: int64 */
                         expiresAt: number;
                         /** Format: int64 */
+                        size: number;
+                        /** Format: int64 */
                         next: number;
                     };
                 };
@@ -4965,9 +5381,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5021,6 +5435,15 @@ export interface operations {
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UPLOAD_INCOMPLETE`. `details` of `UPLOAD_INCOMPLETE`: a `UploadPosition`. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5087,8 +5510,26 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description `PART_CONFLICT`; `PART_OUT_OF_ORDER`. `details` of `PART_CONFLICT`: a `UploadPosition`, `PART_OUT_OF_ORDER`: a `UploadPosition`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
             421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FILES_UNAVAILABLE`. `details` of `FILES_UNAVAILABLE`: a `RetryAfter`. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5167,6 +5608,7 @@ export interface operations {
             content: {
                 "application/json": {
                     method: string;
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     args?: unknown;
                     idempotencyKey?: string;
                     confirm?: components["schemas"]["Confirm"];
@@ -5183,9 +5625,11 @@ export interface operations {
                     "application/json": {
                         /** Format: int64 */
                         index: number;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         result: unknown;
                         events: {
                             kind: string;
+                            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                             data: unknown;
                         }[];
                         receipt: components["schemas"]["Receipt"];
@@ -5228,7 +5672,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `RELEASE_DEADLINE` */
+            /** @description `RELEASE_DEADLINE`. `details` of `RELEASE_DEADLINE`: a `ReleaseDeadline`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5237,7 +5681,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -5264,7 +5708,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `APP_ERROR`; `TRAP` */
+            /** @description `APP_ERROR`; `TRAP`. `details` of `APP_ERROR`: a `AppError`, `TRAP`: a `Trap`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5282,7 +5726,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `UNAVAILABLE`: the cluster cannot answer now */
+            /** @description `TIMEOUT`; `UNAVAILABLE`: the cluster cannot answer now. `details` of `TIMEOUT`: a `RetryAfter`. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -5305,6 +5749,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     metadata: unknown;
                 };
             };
@@ -5361,6 +5806,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     args?: unknown;
                     idempotencyKey?: string;
                     confirm?: components["schemas"]["Confirm"];
@@ -5381,9 +5827,11 @@ export interface operations {
                     "application/json": {
                         /** Format: int64 */
                         index: number;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         result: unknown;
                         events?: {
                             kind: string;
+                            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                             data: unknown;
                         }[];
                         receipt: components["schemas"]["Receipt"];
@@ -5426,7 +5874,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `RELEASE_DEADLINE` */
+            /** @description `RELEASE_DEADLINE`. `details` of `RELEASE_DEADLINE`: a `ReleaseDeadline`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5435,7 +5883,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -5462,7 +5910,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `APP_ERROR`; `TRAP` */
+            /** @description `APP_ERROR`; `TRAP`. `details` of `APP_ERROR`: a `AppError`, `TRAP`: a `Trap`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5480,7 +5928,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `NOT_CAUGHT_UP`; `UNAVAILABLE`: the cluster cannot answer now */
+            /** @description `NOT_CAUGHT_UP`; `TIMEOUT`; `UNAVAILABLE`: the cluster cannot answer now. `details` of `TIMEOUT`: a `RetryAfter`. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -5555,7 +6003,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5564,7 +6012,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -5826,11 +6274,12 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        runs: components["schemas"]["Run"][];
+                        next: string | null;
                     };
                 };
             };
-            /** @description `BAD_LIMIT` */
+            /** @description `BAD_CURSOR`; `BAD_LIMIT` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5886,9 +6335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Run"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -5995,7 +6442,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": null;
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -6025,7 +6472,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -6077,12 +6524,13 @@ export interface operations {
                         /** Format: int64 */
                         index: number;
                         status: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         error: unknown;
                         compute: boolean;
                     };
                 };
             };
-            /** @description `AMBIGUOUS_COMPUTE`; `BAD_BUNDLE`; `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE`; `VERSION_REQUIRED` */
+            /** @description `AMBIGUOUS_COMPUTE`; `BAD_BUNDLE`; `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE`; `VERSION_REQUIRED`. `details` of `BAD_BUNDLE`: a `ServiceRefused`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6109,7 +6557,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFLICT`: the state does not allow it now; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
+            /** @description `CONFLICT`: the state does not allow it now; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD`. `details` of `RELEASE_DEADLINE`: a `ReleaseDeadline`, `RUNTIME_TOO_OLD`: a `RuntimeTooOld`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6118,7 +6566,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -6136,7 +6584,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `UPGRADE_FAILED` */
+            /** @description `UPGRADE_FAILED`. `details` of `UPGRADE_FAILED`: a `Applied`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6165,22 +6613,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        today: unknown;
-                        days: {
-                            date: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            runs: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            fuel: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            wallMs: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            writes: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            bytesWritten: string;
-                            /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                            events: string;
-                        }[];
+                        today: components["schemas"]["UsageDay"];
+                        days: components["schemas"]["UsageDay"][];
                     };
                 };
             };
@@ -6226,6 +6660,7 @@ export interface operations {
             content: {
                 "application/json": {
                     method: string;
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     args?: unknown;
                     /** @enum {string} */
                     consistency?: "strong" | "stale";
@@ -6244,6 +6679,7 @@ export interface operations {
                     "application/json": {
                         /** Format: int64 */
                         index: number;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         result: unknown;
                         receipt: components["schemas"]["Receipt"];
                     };
@@ -6267,7 +6703,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `APP_ERROR`; `TRAP` */
+            /** @description `APP_ERROR`; `TRAP`. `details` of `APP_ERROR`: a `AppError`, `TRAP`: a `Trap`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6276,7 +6712,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `NOT_CAUGHT_UP` */
+            /** @description `NOT_CAUGHT_UP`; `TIMEOUT`. `details` of `TIMEOUT`: a `RetryAfter`. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -6414,9 +6850,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AccountProof"];
                 };
             };
             /** @description `BAD_AUDIENCE`; `BAD_NONCE` */
@@ -6821,7 +7255,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -6911,7 +7345,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7041,7 +7475,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": {
+                        /** Format: int64 */
+                        revoked: number;
+                    };
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -7180,7 +7617,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["OutboundApproved"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -7210,7 +7647,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7254,6 +7691,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         challengeId: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         options: unknown;
                     };
                 };
@@ -7348,6 +7786,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         challengeId: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         options: unknown;
                     };
                 };
@@ -7426,7 +7865,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7463,6 +7902,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         challengeId: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         options: unknown;
                     };
                 };
@@ -7551,7 +7991,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7678,7 +8118,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7750,7 +8190,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7820,7 +8260,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -7863,6 +8303,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         challengeId: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         options: unknown;
                     };
                 };
@@ -7937,7 +8378,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -8000,7 +8441,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `RECOVERY_NOT_READY` */
+            /** @description `RECOVERY_NOT_READY`. `details` of `RECOVERY_NOT_READY`: a `RecoveryNotReady`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8009,7 +8450,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -8167,7 +8608,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["ApprovedReleases"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -8197,7 +8638,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -8350,12 +8791,22 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** Format: int64 */
+                        apps: number;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         bundleBytes: string;
+                        /** Format: int64 */
+                        apiKeys: number;
+                        /** Format: int64 */
+                        orgsOwned: number;
+                        fileBytes: {
+                            [key: string]: number;
+                        };
+                        quotas: components["schemas"]["Quotas"];
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                        developerFuelToday?: string;
+                        developerFuelToday: string;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                        developerWritesToday?: string;
+                        developerWritesToday: string;
                     };
                 };
             };
@@ -8404,7 +8855,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_BUNDLE`; `UNSUPPORTED_BUNDLE` */
+            /** @description `BAD_BUNDLE`; `UNSUPPORTED_BUNDLE`. `details` of `BAD_BUNDLE`: a `ServiceRefused`, `UNSUPPORTED_BUNDLE`: a `ServiceRefused`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -8760,7 +9211,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -8834,7 +9285,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -8951,7 +9402,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -9088,7 +9539,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -9176,7 +9627,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -9219,7 +9670,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": {
+                        deployment: string;
+                        app: string;
+                    };
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -9258,7 +9712,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -9358,10 +9812,10 @@ export interface operations {
                         node: number;
                         /** Format: int64 */
                         systemLeader: number | null;
-                        release: unknown;
+                        release: string;
                         clusterVersion: string;
                         /** Format: int64 */
-                        rollbackEpoch?: number | null;
+                        rollbackEpoch: number | null;
                     };
                 };
             };
@@ -9535,7 +9989,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `MOVE_IN_PROGRESS`; `RUNTIME_TOO_OLD` */
+            /** @description `MOVE_IN_PROGRESS`; `RUNTIME_TOO_OLD`. `details` of `RUNTIME_TOO_OLD`: a `RuntimeTooOld`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9544,7 +9998,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl` */
+            /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl`. `details` of `NOT_LEADER`: a `NotLeader`. */
             421: {
                 headers: {
                     [name: string]: unknown;
@@ -9553,7 +10007,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -9594,8 +10048,16 @@ export interface operations {
                         group: number;
                         /** Format: int64 */
                         rows: number;
-                        backup: unknown;
-                        status: string;
+                        backup: {
+                            name: string;
+                            /** Format: int64 */
+                            index: number;
+                            /** Format: int64 */
+                            format: number;
+                            merod: string | null;
+                            release: string | null;
+                        };
+                        status: components["schemas"]["GroupStatus"];
                     };
                 };
             };
@@ -9635,7 +10097,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `BACKUP_FROM_NEWER_RELEASE`; `BUNDLE_GONE`; `MOVE_IN_PROGRESS`; `NO_BACKUP_DIR`; `UNKNOWN_BACKUP_FORMAT`; `UPGRADE_PENDING` */
+            /** @description `BACKUP_FROM_NEWER_RELEASE`; `BUNDLE_GONE`; `MOVE_IN_PROGRESS`; `NO_BACKUP_DIR`; `UNKNOWN_BACKUP_FORMAT`; `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9644,7 +10106,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -9687,6 +10149,7 @@ export interface operations {
                         /** Format: int64 */
                         index: number;
                         status: string;
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                         error: unknown;
                         compute: boolean;
                     };
@@ -9719,7 +10182,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `NOT_INSTALLED`; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD` */
+            /** @description `NOT_INSTALLED`; `RELEASE_DEADLINE`; `RUNTIME_TOO_OLD`. `details` of `RELEASE_DEADLINE`: a `ReleaseDeadline`, `RUNTIME_TOO_OLD`: a `RuntimeTooOld`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9728,7 +10191,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `UPGRADE_FAILED` */
+            /** @description `UPGRADE_FAILED`. `details` of `UPGRADE_FAILED`: a `Applied`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9737,7 +10200,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -9766,7 +10229,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        written: unknown;
+                        /** Format: int64 */
+                        written: number;
                     };
                 };
             };
@@ -9806,8 +10270,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        cluster: unknown;
-                        identity: unknown;
+                        cluster: string;
+                        identity: string;
                     };
                 };
             };
@@ -9885,7 +10349,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -9945,7 +10409,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10001,7 +10465,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10057,7 +10521,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10089,7 +10553,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        governance: unknown;
+                        governance: components["schemas"]["Governance"];
                     };
                 };
             };
@@ -10120,7 +10584,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10236,7 +10700,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10315,7 +10779,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl` */
+            /** @description `NOT_LEADER`: send it to the leader named in `details.leaderUrl`. `details` of `NOT_LEADER`: a `NotLeader`. */
             421: {
                 headers: {
                     [name: string]: unknown;
@@ -10324,7 +10788,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10499,7 +10963,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10534,7 +10998,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["OutboundApproved"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10555,7 +11019,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10636,7 +11100,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_BUNDLE`; `BAD_PACKAGE` */
+            /** @description `BAD_BUNDLE`; `BAD_PACKAGE`; `COMPUTE_ABI_MISMATCH`; `UNSUPPORTED_BUNDLE`. `details` of `BAD_BUNDLE`: a `ServiceRefused`, `COMPUTE_ABI_MISMATCH`: a `ServiceRefused`, `UNSUPPORTED_BUNDLE`: a `ServiceRefused`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10697,6 +11161,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description `BAD_BUNDLE`; `COMPUTE_ABI_MISMATCH`; `UNSUPPORTED_BUNDLE`. `details` of `BAD_BUNDLE`: a `ServiceRefused`, `COMPUTE_ABI_MISMATCH`: a `ServiceRefused`, `UNSUPPORTED_BUNDLE`: a `ServiceRefused`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
             401: {
                 headers: {
@@ -10734,7 +11207,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Uninstalled"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10775,7 +11248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Uninstalled"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -10825,7 +11298,7 @@ export interface operations {
                             /** Format: int64 */
                             id: number;
                             zone: string;
-                            role: unknown;
+                            role: components["schemas"]["NodeRole"];
                             release: string | null;
                             /** Format: int64 */
                             apps: number;
@@ -10954,7 +11427,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `POOL_IN_USE`; `UPGRADE_PENDING` */
+            /** @description `POOL_IN_USE`; `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10963,7 +11436,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -10989,27 +11462,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: int64 */
-                        maxAppsPerAccount: number;
-                        /** Format: int64 */
-                        maxBundleBytesPerAccount: number;
-                        /** Format: int64 */
-                        maxApiKeysPerAccount: number;
-                        /** Format: int64 */
-                        maxOrgsPerAccount: number;
-                        /** Format: int64 */
-                        maxAccounts: number;
-                        /** Format: int64 */
-                        maxFileBytesPerOrg: number;
-                        /** Format: int64 */
-                        maxConcurrentRunsPerOrg: number;
-                        /** Format: int64 */
-                        computeFuelPerOrg: number;
-                        /** @description an unsigned 64-bit integer as a decimal string (D20) */
-                        maxFuelPerDeveloperPerDay: string;
-                        orgs: unknown;
-                    };
+                    "application/json": components["schemas"]["QuotaSettings"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11041,10 +11494,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    org?: string;
-                    operatorProof?: components["schemas"]["OperatorProof"];
-                };
+                "application/json": components["schemas"]["QuotaChanges"];
             };
         };
         responses: {
@@ -11084,7 +11534,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `UPGRADE_PENDING` */
+            /** @description `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11093,7 +11543,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11127,7 +11577,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["ApprovedReleases"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11148,7 +11598,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11183,7 +11633,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Deadlines"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11204,7 +11654,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11237,7 +11687,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Deadlines"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11258,7 +11708,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11338,7 +11788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["SignUpSet"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11359,7 +11809,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11473,7 +11923,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11506,7 +11956,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["InviteKey"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11527,7 +11977,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11560,7 +12010,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["InviteKey"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -11581,7 +12031,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -11608,14 +12058,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        node: unknown;
-                        system: unknown;
+                        /** Format: int64 */
+                        node: number;
+                        system: components["schemas"]["GroupStatus"];
                         governance: components["schemas"]["Governance"];
-                        groups: unknown;
-                        nodes: unknown;
-                        apps: unknown;
-                        accounts: unknown;
-                        rollback?: unknown;
+                        groups: {
+                            app: string;
+                            status: components["schemas"]["GroupStatus"];
+                        }[];
+                        nodes: components["schemas"]["NodeRecord"][];
+                        /** Format: int64 */
+                        apps: number;
+                        /** Format: int64 */
+                        accounts: number;
+                        rollback: components["schemas"]["RollbackStatus"] | null;
                     };
                 };
             };
@@ -11775,7 +12231,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": {
+                        apps: string[];
+                    };
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -11805,7 +12263,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -11889,7 +12347,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11898,7 +12356,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12058,7 +12516,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12067,7 +12525,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12203,7 +12661,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12358,7 +12816,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12367,7 +12825,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12449,7 +12907,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12606,7 +13064,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12679,7 +13137,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12712,6 +13170,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     metadata: unknown;
                 };
             };
@@ -12806,7 +13265,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12815,7 +13274,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12890,7 +13349,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12899,7 +13358,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -12931,6 +13390,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     metadata: unknown;
                 };
             };
@@ -13031,7 +13491,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FEATURE_NOT_ACTIVE` */
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13040,7 +13500,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13086,7 +13546,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["OutboundApproved"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -13116,7 +13576,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13201,7 +13661,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13248,8 +13708,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        signer: string;
-                        approval: unknown;
+                        /** Format: int64 */
+                        generation: number;
                     };
                 };
             };
@@ -13289,7 +13749,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13363,7 +13823,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13444,7 +13904,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13488,7 +13948,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         org: string;
-                        previousOwners: unknown;
+                        previousOwners: string[];
                     };
                 };
             };
@@ -13528,7 +13988,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `RECOVERY_NOT_READY` */
+            /** @description `RECOVERY_NOT_READY`. `details` of `RECOVERY_NOT_READY`: a `RecoveryNotReady`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13537,7 +13997,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13652,7 +14112,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["ApprovedReleases"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -13682,7 +14142,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -13827,6 +14287,7 @@ export interface operations {
                     name?: string;
                     join?: components["schemas"]["TeamJoin"];
                     parent?: string | null;
+                    /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
                     metadata?: unknown;
                 };
             };
@@ -13935,7 +14396,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14014,7 +14475,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14088,7 +14549,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14167,7 +14628,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14302,7 +14763,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14320,7 +14781,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` is a `OperatorSignatureRequired`. */
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
                 headers: {
                     [name: string]: unknown;
@@ -14349,12 +14810,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        apps: unknown;
+                        /** Format: int64 */
+                        apps: number;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         developerFuelToday: string;
                         /** @description an unsigned 64-bit integer as a decimal string (D20) */
                         developerWritesToday: string;
-                        quotas: unknown;
+                        quotas: components["schemas"]["Quotas"];
                     };
                 };
             };
@@ -14415,14 +14877,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         package: string;
-                        origins: {
-                            package: string;
-                            origin: string;
-                            rpId: string;
-                            addedBy: string;
-                            addedAt: string;
-                            served: boolean;
-                        }[];
+                        origins: components["schemas"]["PackageOrigin"][];
                     };
                 };
             };
@@ -14472,7 +14927,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["PackageOrigin"];
                 };
             };
             /** @description `BAD_RP_ID`; `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -14502,7 +14957,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14555,7 +15010,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": {
+                        package: string;
+                        origin: string;
+                        removed: boolean;
+                    };
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -14594,7 +15053,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -14684,7 +15143,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_BUNDLE`; `BAD_PACKAGE` */
+            /** @description `BAD_BUNDLE`; `BAD_PACKAGE`; `COMPUTE_ABI_MISMATCH`; `UNSUPPORTED_BUNDLE`. `details` of `BAD_BUNDLE`: a `ServiceRefused`, `COMPUTE_ABI_MISMATCH`: a `ServiceRefused`, `UNSUPPORTED_BUNDLE`: a `ServiceRefused`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14763,7 +15222,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_PACKAGE`; `NO_REGISTRY` */
+            /** @description `BAD_BUNDLE`; `BAD_PACKAGE`; `COMPUTE_ABI_MISMATCH`; `NO_REGISTRY`; `UNSUPPORTED_BUNDLE`. `details` of `BAD_BUNDLE`: a `ServiceRefused`, `COMPUTE_ABI_MISMATCH`: a `ServiceRefused`, `UNSUPPORTED_BUNDLE`: a `ServiceRefused`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14867,7 +15326,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Uninstalled"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -14917,7 +15376,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["Uninstalled"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
@@ -15073,7 +15532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["SignUpSet"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -15103,7 +15562,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -15245,7 +15704,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -15287,7 +15746,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Written"];
+                    "application/json": components["schemas"]["InviteKey"];
                 };
             };
             /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
@@ -15317,7 +15776,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` is a `ConfirmRequired`. */
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
             412: {
                 headers: {
                     [name: string]: unknown;

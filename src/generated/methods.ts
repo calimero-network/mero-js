@@ -38,8 +38,8 @@ export function createRoutes(api: RouteClient) {
        * `GET /apps/{app}/attestation` (`app_attestation`). **Who:** whoever the app's access admits (a public app: anyone).
        * A `421 WRONG_NODE` moves the client to the next node of the cluster.
        */
-      attestation: (args: operations['app_attestation']['parameters']['path'] & { query: NonNullable<operations['app_attestation']['parameters']['query']> }, options?: MethodOptions): Promise<operations['app_attestation']['responses'][200]['content']['application/json']> =>
-        route(api, {"method":"GET","path":"/apps/{app}/attestation","pathParams":["app"],"query":["nonce","app","appHash","purpose"],"queryWhole":true,"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_attestation']['responses'][200]['content']['application/json']>,
+      attestation: (args: operations['app_attestation']['parameters']['path'] & NonNullable<operations['app_attestation']['parameters']['query']>, options?: MethodOptions): Promise<operations['app_attestation']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/apps/{app}/attestation","pathParams":["app"],"query":["nonce"],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_attestation']['responses'][200]['content']['application/json']>,
       /**
        * Forget a blob.
        *
