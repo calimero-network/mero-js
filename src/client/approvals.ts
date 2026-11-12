@@ -17,6 +17,7 @@
 
 import { compareReleaseVersions } from '../sealed/release.js';
 import type { ApiAnswer, ApiSchema } from '../routes/types.js';
+import type { operations } from '../generated/api.js';
 
 // ---------------------------------------------------------------- governance
 
@@ -173,106 +174,40 @@ export function publisherBindingBytes(cluster: string, org: string, signerId: st
 /** Whose approval a release or outbound request is for. */
 export type ConsentScope = 'account' | { org: string };
 
-/** What the app asks its user to approve (`POST /consent/requests`). Unknown fields are refused. */
-export type ConsentRequest =
-  | {
-      kind: 'release';
-      scope: ConsentScope;
-      /** `withdraw: true` asks to withdraw the release's approval instead of approving it. */
-      subject: { version: string; withdraw?: boolean };
-      /** Where the page sends the person back: the package's frontend origin, or one its manifest names. */
-      returnTo: string;
-    }
-  | {
-      kind: 'upgrade';
-      subject: { app: string; toVersion: string };
-      returnTo: string;
-    }
-  | {
-      kind: 'outbound';
-      scope: ConsentScope;
-      /** `package`: a package-bound session's own when left out; `prefixes`: every one the latest release declares. */
-      subject: { package?: string; prefixes?: string[] };
-      returnTo: string;
-    }
-  | {
-      /** A new organization, owned by whoever approves. Outcome: `{ orgId }`. */
-      kind: 'createOrg';
-      subject: { name: string };
-      returnTo: string;
-    }
-  | {
-      /** A new invite to `subject.org`. Outcome: `{ token }`. */
-      kind: 'createInvite';
-      subject: InviteConsentSubject;
-      returnTo: string;
-    }
-  | {
-      /** Joining an organization with an invite's `token`. Outcome: `{ org }`. */
-      kind: 'acceptInvite';
-      subject: { token: string };
-      returnTo: string;
-    }
-  | {
-      /** Leaving `org` (any member but its owner, whose ownership moves first). */
-      kind: 'leaveOrg';
-      subject: { org: string };
-      returnTo: string;
-    }
-  | {
-      /** Removing `account` from `org` (an admin; never the owner, never oneself: that is `leaveOrg`). */
-      kind: 'removeMember';
-      subject: { org: string; account: string };
-      returnTo: string;
-    }
-  | {
-      /** Changing a current member's role (an admin; the owner for ownership). */
-      kind: 'setMemberRole';
-      subject: { org: string; account: string; role: OrgRole };
-      returnTo: string;
-    }
-  | {
-      /** Adding `account` to teams of `org`, or changing its rows there (1 to 64 teams). */
-      kind: 'setMemberTeams';
-      subject: { org: string; account: string; teams: MemberTeamConsent[] };
-      returnTo: string;
-    }
-  | {
-      /** Removing `account` from teams of `org` (the member themself, or whoever manages each team). */
-      kind: 'removeMemberTeams';
-      subject: { org: string; account: string; teams: string[] };
-      returnTo: string;
-    }
-  | {
-      /** Revoking the invite `inviteKey` of `org` (whoever sees it). */
-      kind: 'revokeInvite';
-      subject: { org: string; inviteKey: string };
-      returnTo: string;
-    }
-  | {
-      /** Renaming `org` (the owner or an admin). Outcome: `{ orgId, name }`. */
-      kind: 'renameOrg';
-      subject: { org: string; name: string };
-      returnTo: string;
-    }
-  | {
-      /** Deleting `org` (its owner; not while it owns a deployment). Outcome: `{ apps }`, the apps deleted. */
-      kind: 'deleteOrg';
-      subject: { org: string };
-      returnTo: string;
-    }
-  | {
-      /** Setting capability bits in `org` ({@link CapabilitiesConsentSubject}). */
-      kind: 'setCapabilities';
-      subject: CapabilitiesConsentSubject;
-      returnTo: string;
-    }
-  | {
-      /** Giving `account` every app of `org`, or taking that back (an admin). */
-      kind: 'setAllApps';
-      subject: { org: string; account: string; allApps: boolean };
-      returnTo: string;
-    };
+/**
+ * What the app asks its user to approve (`POST /consent/requests`), by
+ * `kind`: the route's generated body. Unknown fields are refused. Build one
+ * with the helpers below (`releaseConsent`, `createOrgConsent`, ...), each
+ * typed as the kind it builds.
+ *
+ * - `release`, `upgrade`, `outbound`: a release approval (or withdrawal), an
+ *   app upgrade, outbound prefixes.
+ * - `createOrg`, `createInvite`, `acceptInvite` (core#5014): a new
+ *   organization, an invite, joining with one.
+ * - `leaveOrg`, `removeMember`, `setMemberRole`, `setMemberTeams`,
+ *   `removeMemberTeams`, `revokeInvite`, `renameOrg`, `deleteOrg`,
+ *   `setCapabilities`, `setAllApps` (core#5018): managing an organization.
+ *
+ * `returnTo` is where the page sends the person back: the package's frontend
+ * origin, or one its manifest names.
+ */
+export type ConsentRequest = NonNullable<operations['consent_page_create']['requestBody']>['content']['application/json'];
+
+/** A consent request's kind. */
+export type ConsentKind = ConsentRequest['kind'];
+
+/** The consent request of kind `K`. */
+type ConsentRequestOf<K extends ConsentKind> = Extract<ConsentRequest, { kind: K }>;
+
+/**
+ * What a `createInvite` consent request asks for: `org`, `role`, and
+ * optionally `teams` to join, `ttlSecs` it lasts, `uses` it allows and
+ * `allApps`, every app of the organization.
+ */
+export type InviteConsentSubject = ConsentRequestOf<'createInvite'>['subject'];
+
+/** A role an invite gives (core's `Role`, short of `owner`). */
+export type InviteRole = InviteConsentSubject['role'];
 
 /** A member's role in an organization (core's `Role`). */
 export type OrgRole = ApiSchema<'OrgRole'>;
@@ -280,47 +215,19 @@ export type OrgRole = ApiSchema<'OrgRole'>;
 /** A member's role in a team (core's `TeamRole`). */
 export type TeamRole = ApiSchema<'TeamRole'>;
 
-/** One team row a `setMemberTeams` consent request sets. */
-export interface MemberTeamConsent {
-  team: string;
-  /** The member's role there; the team's default when left out. */
-  role?: TeamRole;
-  /** Capability bits there ({@link ORG_CAPABILITIES}); the team's default when left out. */
-  capabilities?: number;
-}
+/**
+ * One team row a `setMemberTeams` consent request sets: `team`, and the
+ * member's `role` and `capabilities` bits (`ORG_CAPABILITIES`) there,
+ * each the team's default when left out.
+ */
+export type MemberTeamConsent = ConsentRequestOf<'setMemberTeams'>['subject']['teams'][number];
 
 /**
- * Whose capability bits a `setCapabilities` consent request sets: with
- * `account`, that member's (organization-wide, or in `team`); without, a
- * default (the organization's, or `team`'s).
+ * Whose capability bits (`ORG_CAPABILITIES`) a `setCapabilities`
+ * consent request sets: with `account`, that member's (organization-wide, or
+ * in `team`); without, a default (the organization's, or `team`'s).
  */
-export interface CapabilitiesConsentSubject {
-  org: string;
-  account?: string;
-  team?: string;
-  /** The capability bits ({@link ORG_CAPABILITIES}). */
-  capabilities: number;
-}
-
-/** A consent request's kind. */
-export type ConsentKind = ConsentRequest['kind'];
-
-/** A role an invite gives (core's `Role`). */
-export type InviteRole = 'guest' | 'member' | 'admin';
-
-/** What a `createInvite` consent request asks for. */
-export interface InviteConsentSubject {
-  org: string;
-  role: InviteRole;
-  /** Teams the invite joins its user to. */
-  teams?: string[];
-  /** How long the invite lasts, in seconds. */
-  ttlSecs?: number;
-  /** How many times it may be used. */
-  uses?: number;
-  /** Whether it gives every app of the organization. */
-  allApps?: boolean;
-}
+export type CapabilitiesConsentSubject = ConsentRequestOf<'setCapabilities'>['subject'];
 
 /** The node's answer to a consent request: send the person to `url`. */
 export type ConsentStarted = ApiAnswer<'consent_page_create'>;
@@ -367,29 +274,29 @@ export interface ConsentOutcomes {
   release: never;
   upgrade: never;
   outbound: never;
-  createOrg: { orgId: string };
-  createInvite: { token: string };
-  acceptInvite: { org: string };
+  createOrg: Required<Pick<GeneratedOutcome, 'orgId'>>;
+  createInvite: Required<Pick<GeneratedOutcome, 'token'>>;
+  acceptInvite: Required<Pick<GeneratedOutcome, 'org'>>;
   leaveOrg: never;
   removeMember: never;
   setMemberRole: never;
   setMemberTeams: never;
   removeMemberTeams: never;
   revokeInvite: never;
-  renameOrg: { orgId: string; name: string };
+  renameOrg: Required<Pick<GeneratedOutcome, 'orgId' | 'name'>>;
   /** The apps deleted with the organization. */
-  deleteOrg: { apps: string[] };
+  deleteOrg: Required<Pick<GeneratedOutcome, 'apps'>>;
   setCapabilities: never;
   setAllApps: never;
 }
 
-/** `GET /consent/{id}/result` for a request of kind `K`. */
-export interface ConsentResultOf<K extends ConsentKind> {
-  requestId: string;
+/** The route's generated answer, whose one `outcome` has every kind's fields optional. */
+type GeneratedResult = ApiAnswer<'consent_page_result'>;
+type GeneratedOutcome = NonNullable<GeneratedResult['outcome']>;
+
+/** `GET /consent/{id}/result` for a request of kind `K`: `requestId`, `status`, and `decidedAt` (Unix seconds; `null` while pending). */
+export interface ConsentResultOf<K extends ConsentKind> extends Omit<GeneratedResult, 'kind' | 'outcome'> {
   kind: K;
-  status: 'pending' | 'approved' | 'declined';
-  /** Unix seconds; `null` while pending. */
-  decidedAt: number | null;
   /** What the approval made, once approved, for the kinds that make something. */
   outcome?: ConsentOutcomes[K];
 }
@@ -399,8 +306,7 @@ export interface ConsentResultOf<K extends ConsentKind> {
  * `if (r.kind === 'createOrg') r.outcome?.orgId`. Read `outcome` only from
  * this sealed answer, never from the page's redirect, which carries none.
  *
- * Typed here by kind, from the shapes core's OpenAPI document gives the
- * route (whose generated answer has one `outcome` with every field optional).
+ * The generated answer, with `outcome` typed by kind.
  */
 export type ConsentResult = { [K in ConsentKind]: ConsentResultOf<K> }[ConsentKind];
 
