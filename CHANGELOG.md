@@ -1,3 +1,9 @@
+## [33.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v33.3.0...mero-js-v33.3.1) (2026-11-12)
+
+### Bug Fixes
+
+* **recovery:** check recovery files' attestation with the v3 receipt-key binding ([#378](https://github.com/calimero-network/mero-js/issues/378)) ([7b37528](https://github.com/calimero-network/mero-js/commit/7b37528211c268e4a462c70195aa5d47b669c479))
+
 ## [33.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.2.0...mero-js-v33.3.0) (2026-11-12)
 
 ### Features
