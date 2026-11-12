@@ -1,3 +1,16 @@
+## [32.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.3...mero-js-v32.0.0) (2026-11-12)
+
+### ⚠ BREAKING CHANGES
+
+* **api:** core's node API changed in a way callers of the generated client see:
+- `DELETE /ops/nodes/{id}`: the `status` response's property `type` changed from `string` to `object` for status `200`
+
+Co-authored-by: gh-actions-calimero[bot] <168463340+gh-actions-calimero[bot]@users.noreply.github.com>
+
+### Features
+
+* **api:** sync with core fb0ed2e0c ([#365](https://github.com/calimero-network/mero-js/issues/365)) ([a2d1372](https://github.com/calimero-network/mero-js/commit/a2d1372c0323dcef3062d5ae8e1d830a624073ae))
+
 ## [31.0.3](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.2...mero-js-v31.0.3) (2026-11-12)
 
 ### Bug Fixes
