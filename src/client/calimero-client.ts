@@ -32,6 +32,7 @@ import { createRoutes, type Routes } from '../generated/methods.js';
 import { passkeyConfirm, type PasskeyConfirmOptions } from '../runtime/passkey.js';
 
 import { signRecovery } from './recovery-key.js';
+import { consentHelpers, type ConsentHelpers } from './consent.js';
 import {
   confirmationCode,
   pageQuery,
@@ -330,8 +331,14 @@ export class CalimeroClient {
   readonly apps: Routes['apps'];
   /** Account, session, passkey and API-key routes: `client.auth.me()`. See {@link apps}. */
   readonly auth: Routes['auth'];
-  /** The consent page's routes. See {@link apps}. */
-  readonly consent: Routes['consent'];
+  /**
+   * The consent page's routes (`pageCreate`, `pageResult`; see {@link apps})
+   * and its flow ({@link ConsentHelpers}): `client.consent.begin(body)` sends
+   * the person to the node's page, `client.consent.resume()` reads the
+   * decision when they come back, `client.consent.wait(ticket)` polls for a
+   * popup.
+   */
+  readonly consent: Routes['consent'] & ConsentHelpers;
   /** Operator routes (the ops token). See {@link apps}. */
   readonly ops: Routes['ops'];
   /** Organization, member, team and invite routes. See {@link apps}. */
@@ -372,7 +379,7 @@ export class CalimeroClient {
     const routes = createRoutes(createRouteClient(this.transport, challenges));
     this.apps = routes.apps;
     this.auth = routes.auth;
-    this.consent = routes.consent;
+    this.consent = { ...routes.consent, ...consentHelpers(routes.consent) };
     this.ops = routes.ops;
     this.orgs = routes.orgs;
     this.public = routes.public;

@@ -3,7 +3,7 @@
 // routes/ from generated/) on one runtime transport, and adds what no single
 // route is: the passkey ceremonies (`signUp`, `signIn`, `addPasskey`, account
 // recovery), downloads as bytes, the event streams, and the consent-page and
-// approval flows (`approvals.ts`), with organization recovery keys
+// approval flows (`approvals.ts`, `consent.ts`), with organization recovery keys
 // (`recovery-key.ts`) and capability bits (`capabilities.ts`). It re-exports
 // the runtime's errors, passkeys and directory, which callers of the client
 // use. src/routes/index.ts describes the layering.
@@ -96,6 +96,27 @@ export type {
   PasskeyUserVerification,
   RegistrationJSON,
 } from '../runtime/passkey.js';
+export { CONSENT_STORAGE_KEY, withoutConsentParams } from './consent.js';
+export type {
+  AcceptInviteConsentRequest,
+  BeginConsentOptions,
+  ConsentDecision,
+  ConsentDecisionOf,
+  ConsentDraft,
+  ConsentHelpers,
+  ConsentKind,
+  ConsentOutcomes,
+  ConsentPageRequest,
+  ConsentStatus,
+  ConsentTicket,
+  CreateInviteConsentRequest,
+  CreateOrgConsentRequest,
+  InviteRole,
+  OutboundConsentRequest,
+  ReleaseConsentRequest,
+  UpgradeConsentRequest,
+  WaitConsentOptions,
+} from './consent.js';
 export {
   MAX_REPORT_PAGE,
   RELEASE_VERIFIER,

@@ -48,6 +48,7 @@ The hand-written methods: each is more than one route, or a stream.
 | `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` → bytes | `GET apps/{app}/blobs/{id}` |
 | `events(app, from?, signal?)`, `presenceStream(app, signal?)` → server-sent events | `GET apps/{app}/events`, `apps/{app}/presence/stream` |
 | `appsReportAll(org)`, `pendingApprovals(org?)` | `GET orgs/{org}/apps` or `auth/apps` (every page), `GET releases` |
+| `consent.request(body)`, `consent.begin(body, { returnTo?, confirm?, navigate? })`, `consent.resume(href?)`, `consent.wait(ticketOrId, { signal?, pollMs?, timeoutMs? })` | `POST consent/requests`, `GET consent/{request}/result` (the [consent flow](/guides/user-approvals/#the-consent-flow-in-four-calls)) |
 | `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | `POST consent/requests`, `GET consent/{request}/result` |
 
 ## The generated methods
@@ -162,6 +163,9 @@ Every generated method, by group (`?` marks an optional argument):
 | --- | --- |
 | `pageCreate({ body })` | `POST consent/requests` |
 | `pageResult({ request })` | `GET consent/{request}/result` |
+
+Beside them, the flow's helpers: `request`, `begin`, `resume` and `wait` (see
+[the consent flow](/guides/user-approvals/#the-consent-flow-in-four-calls)).
 
 ### `client.deployments`
 
@@ -321,7 +325,7 @@ elsewhere.
 `fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
 `DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `withdrawConsent`, `upgradeConsent`,
-`consentReturn`, `confirmationCode`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
+`consentReturn`, `confirmationCode`, `withoutConsentParams`, `CONSENT_STORAGE_KEY`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
 `publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
 and release verification (`createQuoteVerifier`, `trustedMeasurementsFromReleases`,

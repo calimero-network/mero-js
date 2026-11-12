@@ -65,3 +65,11 @@ export const extraArg = () => client.orgs.get({ org: 'o', bogus: 1 });
 
 // @ts-expect-error an invite's role is one the node knows
 export const badRole = () => client.orgs.inviteCreate({ org: 'o', role: 'emperor' });
+
+// The consent flow: bodies and outcomes typed per kind.
+import type { ConsentDecision, ConsentTicket } from '@calimero-network/mero-js';
+
+export const newOrg = (): Promise<ConsentTicket<'createOrg'>> => client.consent.begin({ kind: 'createOrg', subject: { name: 'Acme' } });
+export const orgOf = (d: ConsentDecision): string | undefined => (d.kind === 'createOrg' ? d.outcome?.orgId : undefined);
+// @ts-expect-error an invite's role is guest, member or admin
+export const badInvite = () => client.consent.request({ kind: 'createInvite', subject: { org: 'o', role: 'owner' }, returnTo: 'https://x/' });
