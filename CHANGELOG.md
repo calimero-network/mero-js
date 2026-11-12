@@ -1,3 +1,9 @@
+## [33.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v33.3.1...mero-js-v33.3.2) (2026-11-12)
+
+### Bug Fixes
+
+* **consent:** type each consent helper as the request kind it builds ([#380](https://github.com/calimero-network/mero-js/issues/380)) ([73d3d8c](https://github.com/calimero-network/mero-js/commit/73d3d8ce11841b36563cbc708ca9fee692b51d6e))
+
 ## [33.3.1](https://github.com/calimero-network/mero-js/compare/mero-js-v33.3.0...mero-js-v33.3.1) (2026-11-12)
 
 ### Bug Fixes
