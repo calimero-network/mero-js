@@ -182,6 +182,25 @@ describe('client.resumeConsent', () => {
     expect(store.get(CONSENT_STORAGE_KEY)).toBe(ID);
   });
 
+  it('refuses a return whose request a newer one replaced (404)', async () => {
+    const { store } = stubBrowser(back('approved'));
+    store.set(CONSENT_STORAGE_KEY, ID);
+    node.answer = () => ({ status: 404, json: { error: 'NOT_FOUND', message: 'no such consent request' } });
+    const refused = await client().resumeConsent().catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(CalimeroError);
+    expect(refused).toMatchObject({ code: 'CONSENT_REPLACED', details: { requestId: ID } });
+    expect(paths()).toEqual([`GET /consent/${ID}/result`]);
+    expect(store.has(CONSENT_STORAGE_KEY)).toBe(false);
+  });
+
+  it('passes other refusals through', async () => {
+    const { store } = stubBrowser(back('approved'));
+    store.set(CONSENT_STORAGE_KEY, ID);
+    node.answer = () => ({ status: 403, json: { error: 'FORBIDDEN', message: 'no' } });
+    expect(await client().resumeConsent().catch((e: unknown) => e)).toMatchObject({ status: 403, code: 'FORBIDDEN' });
+    expect(store.get(CONSENT_STORAGE_KEY)).toBe(ID);
+  });
+
   it('refuses an answer for another request', async () => {
     stubBrowser(back());
     node.answer = () => ({ status: 200, json: result('approved', 'createOrg', { orgId: 'o' }, '1.other') });

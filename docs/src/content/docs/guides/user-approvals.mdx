@@ -101,6 +101,10 @@ outcome? }`. The URL's `result` is never trusted, and it throws
 - `CONSENT_NOT_DECIDED`: this page's request is still pending although the
   person was sent back. That is the sign of a page that was not the node's
   approving some other request: do not act on it.
+- `CONSENT_REPLACED`: the node answers `404` for this page's request. An
+  account has one undecided consent request per node, and a newer one
+  replaces the older; this page's was replaced, possibly on a page that was
+  not the node's. Do not act on it either; ask again if the person still wants it.
 
 Without `sessionStorage`, keep `started.requestId` yourself and pass it:
 `resumeConsent({ requestId })`. To read a URL other than the current one, pass
