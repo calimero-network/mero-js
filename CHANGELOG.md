@@ -1,3 +1,28 @@
+## [34.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.3.2...mero-js-v34.0.0) (2026-11-12)
+
+### ⚠ BREAKING CHANGES
+
+* **api:** core's node API changed in a way callers of the generated client see:
+- `GET /consent/{request}/result`: added the new `acceptInvite` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `createInvite` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `createOrg` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `deleteOrg` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `leaveOrg` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `removeMemberTeams` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `removeMember` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `renameOrg` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `revokeInvite` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `setAllApps` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `setCapabilities` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `setMemberRole` enum value to the `kind` response property for the response status `200`
+- `GET /consent/{request}/result`: added the new `setMemberTeams` enum value to the `kind` response property for the response status `200`
+
+Co-authored-by: gh-actions-calimero[bot] <168463340+gh-actions-calimero[bot]@users.noreply.github.com>
+
+### Features
+
+* **api:** sync with core c350a92bc ([#375](https://github.com/calimero-network/mero-js/issues/375)) ([095dfa8](https://github.com/calimero-network/mero-js/commit/095dfa8552a6f3869bff75beae475b6c0834dbb3))
+
 ## [33.3.2](https://github.com/calimero-network/mero-js/compare/mero-js-v33.3.1...mero-js-v33.3.2) (2026-11-12)
 
 ### Bug Fixes
