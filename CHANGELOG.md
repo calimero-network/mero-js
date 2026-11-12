@@ -1,3 +1,10 @@
+## [33.3.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.2.0...mero-js-v33.3.0) (2026-11-12)
+
+### Features
+
+* **client:** organization consent kinds and a checked consent return ([#377](https://github.com/calimero-network/mero-js/issues/377)) ([218f07d](https://github.com/calimero-network/mero-js/commit/218f07d5f1cc01f7517ed923da2ba094163db5f6))
+* **files:** download a sealed file, checked against its id and hash ([#374](https://github.com/calimero-network/mero-js/issues/374)) ([87d018d](https://github.com/calimero-network/mero-js/commit/87d018db59f8bebfaa840571c857aa6dce44233e))
+
 ## [33.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.1.0...mero-js-v33.2.0) (2026-11-12)
 
 ### Features
