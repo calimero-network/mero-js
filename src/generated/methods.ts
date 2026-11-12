@@ -6,7 +6,7 @@
 // collide) and answers the route's success payload; a refusal is thrown as the
 // typed `CalimeroError`. Event streams are not here: read them with
 // `transport.events`.
-// Streams left out: GET /apps/{app}/events, GET /apps/{app}/presence/stream.
+// Streams left out: GET /apps/{app}/events, GET /apps/{app}/pipeline-runs/{run}/events, GET /apps/{app}/presence/stream.
 
 import type { operations } from './api.js';
 import type { RouteClient } from '../routes/route-client.js';
@@ -115,6 +115,22 @@ export function createRoutes(api: RouteClient) {
       delete: (args: operations['app_delete']['parameters']['path'], options?: MethodOptions): Promise<operations['app_delete']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"DELETE","path":"/apps/{app}","pathParams":["app"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_delete']['responses'][200]['content']['application/json']>,
       /**
+       * Export a sealed file's key.
+       *
+       * `POST /apps/{app}/files/{id}/export` (`exports_export`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      exportsExport: (args: operations['exports_export']['parameters']['path'] & operations['exports_export']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['exports_export']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/apps/{app}/files/{id}/export","pathParams":["app","id"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['exports_export']['responses'][200]['content']['application/json']>,
+      /**
+       * One segment of a sealed file.
+       *
+       * `GET /apps/{app}/files/{id}/segments/{k}` (`exports_segment`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      exportsSegment: (args: operations['exports_segment']['parameters']['path'], options?: MethodOptions): Promise<Blob> =>
+        route(api, {"method":"GET","path":"/apps/{app}/files/{id}/segments/{k}","pathParams":["app","id","k"],"query":[],"body":"none","optionalBody":false,"reply":"bytes"}, args as unknown as Record<string, unknown>, options) as Promise<Blob>,
+      /**
        * One sealed file.
        *
        * `GET /apps/{app}/files/{id}` (`file_info`). **Who:** signed in (a session or an API key).
@@ -189,6 +205,70 @@ export function createRoutes(api: RouteClient) {
        */
       openapi: (args: operations['app_openapi']['parameters']['path'], options?: MethodOptions): Promise<operations['app_openapi']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/apps/{app}/openapi.json","pathParams":["app"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_openapi']['responses'][200]['content']['application/json']>,
+      /**
+       * A pipeline run's receipt.
+       *
+       * `GET /apps/{app}/pipeline-runs/{run}/receipt` (`pipeline_receipt_receipt`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelineReceiptReceipt: (args: operations['pipeline_receipt_receipt']['parameters']['path'], options?: MethodOptions): Promise<operations['pipeline_receipt_receipt']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/apps/{app}/pipeline-runs/{run}/receipt","pathParams":["app","run"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipeline_receipt_receipt']['responses'][200]['content']['application/json']>,
+      /**
+       * Cancel a pipeline run.
+       *
+       * `POST /apps/{app}/pipeline-runs/{run}/cancel` (`pipelines_cancel`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesCancel: (args: operations['pipelines_cancel']['parameters']['path'], options?: MethodOptions): Promise<operations['pipelines_cancel']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/apps/{app}/pipeline-runs/{run}/cancel","pathParams":["app","run"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_cancel']['responses'][200]['content']['application/json']>,
+      /**
+       * Estimate a pipeline run.
+       *
+       * `POST /apps/{app}/pipelines/{name}/estimate` (`pipelines_estimate_run`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesEstimateRun: (args: operations['pipelines_estimate_run']['parameters']['path'] & operations['pipelines_estimate_run']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['pipelines_estimate_run']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/apps/{app}/pipelines/{name}/estimate","pathParams":["app","name"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_estimate_run']['responses'][200]['content']['application/json']>,
+      /**
+       * One pipeline run.
+       *
+       * `GET /apps/{app}/pipeline-runs/{run}` (`pipelines_get`). **Who:** whoever the app's access admits (a public app: anyone).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesGet: (args: operations['pipelines_get']['parameters']['path'], options?: MethodOptions): Promise<operations['pipelines_get']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/apps/{app}/pipeline-runs/{run}","pathParams":["app","run"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_get']['responses'][200]['content']['application/json']>,
+      /**
+       * An app's pipeline runs.
+       *
+       * `GET /apps/{app}/pipeline-runs` (`pipelines_list`). **Who:** whoever the app's access admits (a public app: anyone).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesList: (args: operations['pipelines_list']['parameters']['path'] & NonNullable<operations['pipelines_list']['parameters']['query']>, options?: MethodOptions): Promise<operations['pipelines_list']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/apps/{app}/pipeline-runs","pathParams":["app"],"query":["limit"],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_list']['responses'][200]['content']['application/json']>,
+      /**
+       * Retry a pipeline run.
+       *
+       * `POST /apps/{app}/pipeline-runs/{run}/retry` (`pipelines_retry`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesRetry: (args: operations['pipelines_retry']['parameters']['path'] & operations['pipelines_retry']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['pipelines_retry']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/apps/{app}/pipeline-runs/{run}/retry","pathParams":["app","run"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_retry']['responses'][200]['content']['application/json']>,
+      /**
+       * Start a pipeline run.
+       *
+       * `POST /apps/{app}/pipelines/{name}/runs` (`pipelines_start`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesStart: (args: operations['pipelines_start']['parameters']['path'] & operations['pipelines_start']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['pipelines_start']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/apps/{app}/pipelines/{name}/runs","pathParams":["app","name"],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_start']['responses'][200]['content']['application/json']>,
+      /**
+       * Validate a pipeline.
+       *
+       * `POST /pipelines/validate` (`pipelines_validate`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelinesValidate: (args: operations['pipelines_validate']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['pipelines_validate']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/pipelines/validate","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['pipelines_validate']['responses'][200]['content']['application/json']>,
       /**
        * Who is present.
        *
@@ -323,6 +403,14 @@ export function createRoutes(api: RouteClient) {
       accountApps: (args: NonNullable<operations['account_apps']['parameters']['query']> = {}, options?: MethodOptions): Promise<operations['account_apps']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/auth/apps","pathParams":[],"query":["after","limit"],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_apps']['responses'][200]['content']['application/json']>,
       /**
+       * The account's backup key.
+       *
+       * `GET /auth/backup-key` (`account_backup_key`). **Who:** an account holder (a passkey session not bound to an app's frontend).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      accountBackupKey: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['account_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/auth/backup-key","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_backup_key']['responses'][200]['content']['application/json']>,
+      /**
        * Approve outbound prefixes for the account's apps.
        *
        * `POST /auth/outbound` (`account_outbound_approval`). **Who:** an account holder (a passkey session not bound to an app's frontend).
@@ -381,6 +469,15 @@ export function createRoutes(api: RouteClient) {
        */
       accountReleaseApproval: (args: operations['account_release_approval']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['account_release_approval']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/auth/releases","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_release_approval']['responses'][200]['content']['application/json']>,
+      /**
+       * Set the account's backup key.
+       *
+       * `POST /auth/backup-key` (`account_set_backup_key`). **Who:** an account holder (a passkey session not bound to an app's frontend).
+       * Answers `412 CONFIRM_REQUIRED` first: give `confirm` (here or on the client); the passkey must verify the user `required`.
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      accountSetBackupKey: (args: operations['account_set_backup_key']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['account_set_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/auth/backup-key","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_set_backup_key']['responses'][200]['content']['application/json']>,
       /**
        * What the account's passkeys did.
        *
@@ -751,6 +848,13 @@ export function createRoutes(api: RouteClient) {
       backup: (args: NonNullable<operations['ops_backup']['parameters']['query']> = {}, options?: MethodOptions): Promise<operations['ops_backup']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/ops/backup","pathParams":[],"query":["all"],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_backup']['responses'][200]['content']['application/json']>,
       /**
+       * The operator's backup key.
+       *
+       * `GET /ops/backup-key` (`ops_backup_key`). **Who:** the ops token.
+       */
+      backupKey: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['ops_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/ops/backup-key","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_backup_key']['responses'][200]['content']['application/json']>,
+      /**
        * The cluster's identity.
        *
        * `GET /ops/cluster` (`ops_cluster`). **Who:** the ops token.
@@ -885,6 +989,21 @@ export function createRoutes(api: RouteClient) {
       poolsSet: (args: operations['ops_pools_set']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['ops_pools_set']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/ops/pools","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","operator":true}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_pools_set']['responses'][200]['content']['application/json']>,
       /**
+       * The price table.
+       *
+       * `GET /ops/prices` (`ops_prices_get`). **Who:** the ops token.
+       */
+      pricesGet: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['ops_prices_get']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/ops/prices","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_prices_get']['responses'][200]['content']['application/json']>,
+      /**
+       * Set the price table.
+       *
+       * `POST /ops/prices` (`ops_prices_set`). **Who:** the ops token.
+       * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).
+       */
+      pricesSet: (args: operations['ops_prices_set']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['ops_prices_set']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/ops/prices","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","operator":true}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_prices_set']['responses'][200]['content']['application/json']>,
+      /**
        * The quotas.
        *
        * `GET /ops/quotas` (`ops_quotas_get`). **Who:** the ops token.
@@ -906,6 +1025,20 @@ export function createRoutes(api: RouteClient) {
        */
       receiptKey: (args: operations['ops_receipt_key']['parameters']['path'], options?: MethodOptions): Promise<operations['ops_receipt_key']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/ops/nodes/{id}/receipt-key","pathParams":["id"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_receipt_key']['responses'][200]['content']['application/json']>,
+      /**
+       * Found the cluster again from its recovery disk.
+       *
+       * `POST /ops/recover` (`ops_recover`). **Who:** the ops token.
+       */
+      recover: (args: operations['ops_recover']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['ops_recover']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/ops/recover","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_recover']['responses'][200]['content']['application/json']>,
+      /**
+       * The recovery files a node reads.
+       *
+       * `GET /ops/recovery-files` (`ops_recovery_files`). **Who:** the ops token.
+       */
+      recoveryFiles: (args: NonNullable<operations['ops_recovery_files']['parameters']['query']> = {}, options?: MethodOptions): Promise<operations['ops_recovery_files']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/ops/recovery-files","pathParams":[],"query":["holder"],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_recovery_files']['responses'][200]['content']['application/json']>,
       /**
        * Register a node.
        *
@@ -961,6 +1094,14 @@ export function createRoutes(api: RouteClient) {
        */
       served: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['ops_served']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/ops/served-origins","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_served']['responses'][200]['content']['application/json']>,
+      /**
+       * Set the operator's backup key.
+       *
+       * `POST /ops/backup-key` (`ops_set_backup_key`). **Who:** the ops token.
+       * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).
+       */
+      setBackupKey: (args: operations['ops_set_backup_key']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['ops_set_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/ops/backup-key","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","operator":true}, args as unknown as Record<string, unknown>, options) as Promise<operations['ops_set_backup_key']['responses'][200]['content']['application/json']>,
       /**
        * Move an app's replicas.
        *
@@ -1059,6 +1200,14 @@ export function createRoutes(api: RouteClient) {
        */
       appTeamsScope: (args: operations['app_teams_scope']['parameters']['path'] & operations['app_teams_scope']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['app_teams_scope']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/orgs/{org}/app-teams","pathParams":["org"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_teams_scope']['responses'][200]['content']['application/json']>,
+      /**
+       * The organization's backup key.
+       *
+       * `GET /orgs/{org}/backup-key` (`org_backup_key`). **Who:** an account holder (a passkey session not bound to an app's frontend).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      backupKey: (args: operations['org_backup_key']['parameters']['path'], options?: MethodOptions): Promise<operations['org_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/orgs/{org}/backup-key","pathParams":["org"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['org_backup_key']['responses'][200]['content']['application/json']>,
       /**
        * Set capabilities.
        *
@@ -1259,6 +1408,15 @@ export function createRoutes(api: RouteClient) {
       rename: (args: operations['org_rename']['parameters']['path'] & operations['org_rename']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['org_rename']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/orgs/{org}/name","pathParams":["org"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['org_rename']['responses'][200]['content']['application/json']>,
       /**
+       * Set the organization's backup key.
+       *
+       * `POST /orgs/{org}/backup-key` (`org_set_backup_key`). **Who:** an account holder (a passkey session not bound to an app's frontend).
+       * Answers `412 CONFIRM_REQUIRED` first: give `confirm` (here or on the client); the passkey must verify the user `required`.
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      setBackupKey: (args: operations['org_set_backup_key']['parameters']['path'] & operations['org_set_backup_key']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['org_set_backup_key']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/orgs/{org}/backup-key","pathParams":["org"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['org_set_backup_key']['responses'][200]['content']['application/json']>,
+      /**
        * Set a member's role.
        *
        * `POST /orgs/{org}/members` (`org_set_member`). **Who:** a passkey session (an API key is refused).
@@ -1414,6 +1572,14 @@ export function createRoutes(api: RouteClient) {
       originsRemove: (args: operations['origins_remove']['parameters']['path'] & operations['origins_remove']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['origins_remove']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"DELETE","path":"/package-origins/{package}","pathParams":["package"],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['origins_remove']['responses'][200]['content']['application/json']>,
       /**
+       * A release's pipelines.
+       *
+       * `GET /packages/{package}/{version}/pipelines` (`package_pipelines`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      pipelines: (args: operations['package_pipelines']['parameters']['path'], options?: MethodOptions): Promise<operations['package_pipelines']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/packages/{package}/{version}/pipelines","pathParams":["package","version"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['package_pipelines']['responses'][200]['content']['application/json']>,
+      /**
        * Uninstall a package.
        *
        * `DELETE /packages/{package}` (`package_uninstall`). **Who:** an account holder (a passkey session not bound to an app's frontend).
@@ -1468,6 +1634,14 @@ export function createRoutes(api: RouteClient) {
        */
       releasesPublic: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['releases_public']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/releases","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['releases_public']['responses'][200]['content']['application/json']>,
+      /**
+       * Bring an organization's or account's apps back from its recovery files.
+       *
+       * `POST /recover/holder` (`restore_recover_holder`). **Who:** anyone.
+       * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: give `operatorProof` (here or on the client).
+       */
+      restoreRecoverHolder: (args: operations['restore_recover_holder']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['restore_recover_holder']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"POST","path":"/recover/holder","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","operator":true}, args as unknown as Record<string, unknown>, options) as Promise<operations['restore_recover_holder']['responses'][200]['content']['application/json']>,
     },
   };
 }

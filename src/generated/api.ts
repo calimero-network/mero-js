@@ -93,7 +93,9 @@ export interface paths {
         put?: never;
         /**
          * Set who may reach an app
-         * @description **Who:** a passkey session (an API key is refused).
+         * @description A package-bound session: only its own package's app, from one of its package's teams to another.
+         *
+         *     **Who:** a passkey session (an API key is refused).
          */
         post: operations["app_access"];
         delete?: never;
@@ -111,7 +113,7 @@ export interface paths {
         };
         /**
          * Every replica's receipt-key attestation
-         * @description Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`). Any other query parameter is ignored.
+         * @description Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`), and `cluster`, the cluster id each quote binds (with the replica's `node`): the documents are fetched in the clear, so their own `cluster` and `node` fields count for nothing. Any other query parameter is ignored.
          *
          *     **Who:** whoever the app's access admits (a public app: anyone).
          */
@@ -382,6 +384,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/apps/{app}/files/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export a sealed file's key
+         * @description The owner and the organization's members. `recipient` is an X25519 public key (64 hex characters); the file's data key comes back wrapped to it, with the file's `segments` (each one's hash, hex) and `ephemeral` public key. The node never answers plaintext or a key in the clear. 30 a minute per account.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["exports_export"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/files/{id}/segments/{k}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One segment of a sealed file
+         * @description Segment `k` (from 0) of the file's ciphertext, raw; the owner and the organization's members.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        get: operations["exports_segment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/apps/{app}/intents": {
         parameters: {
             query?: never;
@@ -486,6 +532,182 @@ export interface paths {
         get: operations["app_openapi"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An app's pipeline runs
+         * @description The recent runs, newest first, as `{ runs }`; `limit` 1 to 100. Sizes, hashes and results only for callers who may list the app's files.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
+         */
+        get: operations["pipelines_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One pipeline run
+         * @description Its record: `state`, `version`, `hash`, `computeBundle`, `inputs`, `params`, per-step `status`, `runs`, `outputs`, `result`, `reason` and `cost` (`cost` and `costSoFar` for a run with a cap). Sizes, hashes and results only for callers who may list the app's files.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
+         */
+        get: operations["pipelines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs/{run}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a pipeline run
+         * @description The owner and the organization's members. Its pending steps end cancelled and its running steps' runs stop.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["pipelines_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs/{run}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A pipeline run as server-sent events
+         * @description Whoever may read the run. Metadata only; at most 64 streams per app per node, and one lasts an hour.
+         *
+         *     **Who:** whoever the app's access admits (a public app: anyone).
+         */
+        get: operations["pipeline_events_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs/{run}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A pipeline run's receipt
+         * @description The owner and the organization's members. For an ended run: the receipt, the answering node and its signature over it, by the node's receipt key.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        get: operations["pipeline_receipt_receipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipeline-runs/{run}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a pipeline run
+         * @description The owner and the organization's members. A new run of an ended run's pipeline at the same release, hash and compute component, with the same inputs and params, the `limits` applied and `retryOf` set. `202`.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["pipelines_retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipelines/{name}/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate a pipeline run
+         * @description The owner and the organization's members. Runs, fuel and cost of a run of a pipeline the app's release registers, for `inputs` (file ids, only counted) or `counts`, not both; numbers as decimal strings.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["pipelines_estimate_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{app}/pipelines/{name}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a pipeline run
+         * @description The owner and the organization's members. Starts a run of a pipeline the app's release registers. `maxCost` (micro-units, a decimal string) caps the run, and `worstCase` answers it. `202`.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["pipelines_start"];
         delete?: never;
         options?: never;
         head?: never;
@@ -892,6 +1114,34 @@ export interface paths {
         get: operations["account_apps"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/backup-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The account's backup key
+         * @description The X25519 public key the recovery-disk backups of the account's personal apps are sealed to (`key`, `null` while none is set).
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend).
+         */
+        get: operations["account_backup_key"];
+        put?: never;
+        /**
+         * Set the account's backup key
+         * @description `publicKey`: 64 lowercase hex, an X25519 public key whose private half the account holder keeps (never a node), for its personal apps, where owners upgrade apps. `412` first.
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+         */
+        post: operations["account_set_backup_key"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1395,7 +1645,7 @@ export interface paths {
         put?: never;
         /**
          * Ask the account's owner to approve
-         * @description From an app's frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node's own consent page (`url`), which takes the passkey. 64 KiB at most.
+         * @description From an app's frontend: a release approval, an upgrade of its instance, outbound prefixes, a new organization, a new invite or joining with one, leaving an organization, a member's removal, role, teams or capabilities, an invite's revocation, an organization's name, its deletion, defaults or all-apps grants, approved on the node's own consent page (`url`), which takes the passkey. What the approval made (`orgId`, an invite's `token`, the `org` joined, a rename's `{ orgId, name }`, a deletion's `apps`) is in `/consent/{request}/result`'s `outcome`. 64 KiB at most.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -1415,7 +1665,7 @@ export interface paths {
         };
         /**
          * What became of a consent request
-         * @description `decidedAt` (Unix seconds) is `null` while it is pending.
+         * @description `decidedAt` (Unix seconds) is `null` while it is pending. `outcome`, once approved, is what the approval made: `{ orgId }` for `createOrg`, `{ token }` for `createInvite`, `{ org }` for `acceptInvite`, `{ orgId, name }` for `renameOrg`, `{ apps }` (the apps deleted) for `deleteOrg`; absent for the other kinds.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -1691,7 +1941,7 @@ export interface paths {
         put?: never;
         /**
          * Restore an app from its sealed backup
-         * @description Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status.
+         * @description Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status. `recovery` restores from a recovery-disk file instead (in the app's holder's directory under `--recover-from`, else `--recovery-dir`), opened with the data key its holder opened from it (hex); `backup` is then the file's name and `sha256` its body's.
          *
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
@@ -1740,6 +1990,34 @@ export interface paths {
          *     **Who:** the ops token.
          */
         post: operations["ops_backup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ops/backup-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The operator's backup key
+         * @description The X25519 public key every app's recovery-disk backups are sealed to where the operator upgrades apps (`key`, `null` while none is set).
+         *
+         *     **Who:** the ops token.
+         */
+        get: operations["ops_backup_key"];
+        put?: never;
+        /**
+         * Set the operator's backup key
+         * @description Signed over `operator / __set_backup_key / { publicKey }`, where the operator upgrades apps (else `403`). `publicKey`: 64 lowercase hex, an X25519 public key whose private half the operator keeps (never a node).
+         *
+         *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+         */
+        post: operations["ops_set_backup_key"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2158,6 +2436,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ops/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The price table
+         * @description In micro-units of the billing currency; `{}` until one is set.
+         *
+         *     **Who:** the ops token.
+         */
+        get: operations["ops_prices_get"];
+        put?: never;
+        /**
+         * Set the price table
+         * @description Signed over `cluster / __set_price_table / { table }`; `PRICE_VERSION` unless `version` is the current one plus one (1 for the first), `BAD_PRICES` for a zero `fuelPerVcpuSecond`.
+         *
+         *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+         */
+        post: operations["ops_prices_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ops/quotas": {
         parameters: {
             query?: never;
@@ -2180,6 +2486,50 @@ export interface paths {
          *     **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
          */
         post: operations["ops_quotas_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ops/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Found the cluster again from its recovery disk
+         * @description On the founder started with `--bootstrap --recover-from DIR`, its system state empty: the newest `system` file in `DIR/operator/` and the apps' `code` files, each with the data key the operator opened from it (hex). Checked as founding from backups is (governance, operator key, no node of the old cluster answering), then the system group is seeded; each app waits for `POST /ops/apps/{app}/restore { recovery }`.
+         *
+         *     **Who:** the ops token.
+         */
+        post: operations["ops_recover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ops/recovery-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The recovery files a node reads
+         * @description In `--recover-from`, else `--recovery-dir`, of `holder` (`operator`, the default; `org:<id>`; `account:<id>`): each file's name, its header as signed (JSON text) and the node's Ed25519 signature over `calimero.recovery-backup.v1\0` and those bytes (hex), for the holder's device to check before it opens a key with its own.
+         *
+         *     **Who:** the ops token.
+         */
+        get: operations["ops_recovery_files"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2482,6 +2832,34 @@ export interface paths {
         get: operations["org_apps"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{org}/backup-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The organization's backup key
+         * @description The X25519 public key its apps' recovery-disk backups are sealed to (`key`, `null` while none is set), and how many apps that covers. Any member; `404` outside the organization.
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend).
+         */
+        get: operations["org_backup_key"];
+        put?: never;
+        /**
+         * Set the organization's backup key
+         * @description `publicKey`: 64 lowercase hex, an X25519 public key whose private half its holder keeps (never a node). Those who upgrade all the organization's apps (org-wide `MANAGE_APPLICATION`), where owners upgrade apps; replaces the key before. `412` first.
+         *
+         *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+         */
+        post: operations["org_set_backup_key"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2889,7 +3267,7 @@ export interface paths {
         put?: never;
         /**
          * Create a team
-         * @description An admin, a lead of `parent`, a member with `CREATE_TEAM` at the top, or a member who holds `CREATE_CHILD_TEAM` under `parent` (a restricted team only).
+         * @description An admin, a lead of `parent`, a member with `CREATE_TEAM` at the top, or a member who holds `CREATE_CHILD_TEAM` under `parent` (a restricted team only). A package-bound session: only its own package's teams (its app team and the teams below it): `parent` one of them.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -2915,14 +3293,14 @@ export interface paths {
         put?: never;
         /**
          * Update a team
-         * @description Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
+         * @description Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team. A package-bound session: only its own package's teams (its app team and the teams below it): a team below its app team, moved only within.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
         post: operations["team_update"];
         /**
          * Delete a team
-         * @description With the teams and apps below it.
+         * @description With the teams and apps below it. A package-bound session: only its own package's teams (its app team and the teams below it): a team below its app team whose apps are all its package's.
          *
          *     **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -2943,7 +3321,9 @@ export interface paths {
         put?: never;
         /**
          * Add or change a team member
-         * @description **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+         * @description A package-bound session: only its own package's teams (its app team and the teams below it).
+         *
+         *     **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
         post: operations["team_set_member"];
         delete?: never;
@@ -2964,7 +3344,9 @@ export interface paths {
         post?: never;
         /**
          * Remove a team member, or leave
-         * @description **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+         * @description A package-bound session: only its own package's teams (its app team and the teams below it).
+         *
+         *     **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
         delete: operations["team_remove_member"];
         options?: never;
@@ -3188,6 +3570,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packages/{package}/{version}/pipelines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A release's pipelines
+         * @description The pipelines the release registers, by name: `hash`, `worstCaseFuel` (a decimal string), the `modules` they pin and the canonical `pipeline`. `404` for a release the caller may not see.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        get: operations["package_pipelines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pipelines/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate a pipeline
+         * @description Every problem of `source`; with `package` and `version` (both, a release the caller sees) also against that release's methods, modules and the cluster's pools. Writes nothing.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        post: operations["pipelines_validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/publishers/{signer}": {
         parameters: {
             query?: never;
@@ -3204,6 +3630,28 @@ export interface paths {
         get: operations["publisher_binding"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recover/holder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring an organization's or account's apps back from its recovery files
+         * @description Sent by the holder's own device, over the sealed channel: its newest `holder` file (`slice`), each app's file and the code files, in the receiving node's `--recovery-dir` (or `--recover-from`) under `org-<id>/` or `account-<id>/`, each with the data key the holder opened from it with its backup key (hex). The cluster admits it with the operator's signature over `cluster / __recover_holder / { holder, slice, apps: [{ app, file, sha256 }] }` (`428` first, naming it). Where owners upgrade apps, and only for an organization, account, apps and passkeys the cluster does not hold; the receiving node seeds each app, which answers `409 APP_RESTORING` until its replicas hold it. People sign in again with the passkeys they had.
+         *
+         *     **Who:** anyone. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+         */
+        post: operations["restore_recover_holder"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3364,6 +3812,22 @@ export interface components {
             /** Format: int64 */
             expiresAt: number;
             refreshToken: string;
+        };
+        /** @description A holder's backup key: who holds it (`{ kind: "operator" }`, `{ kind: "org", id }` or `{ kind: "account", id }`), the X25519 public key the recovery disk seals their apps' backups to (`null` while none is set), and how many apps that covers. */
+        BackupKeyAnswer: {
+            holder: {
+                /** @enum {string} */
+                kind: "operator" | "org" | "account";
+                id?: string;
+            };
+            key: {
+                publicKey: string;
+                /** Format: int64 */
+                setAt: number;
+                setBy: string;
+            } | null;
+            /** Format: int64 */
+            apps: number;
         };
         /** @description An entry an app's log applied: its index, how it ended and the app's error (`null` when it ended `ok`; the app's own error value otherwise, free-form). `details` of a `422 UPGRADE_FAILED`. */
         Applied: {
@@ -3857,6 +4321,8 @@ export interface components {
             /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             initArgs: unknown;
             computeBundle?: string;
+            /** @enum {string} */
+            components?: "computeOnly";
             /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
             metadata: unknown;
             lastUpgrade?: components["schemas"]["Upgrade"];
@@ -4639,6 +5105,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         appId: string;
+                        cluster: string;
                         replicas: ({
                             /** Format: int64 */
                             node: number;
@@ -5595,6 +6062,167 @@ export interface operations {
             };
         };
     };
+    exports_export: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    recipient: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        app: string;
+                        id: string;
+                        /** Format: int64 */
+                        size: number;
+                        sha256: string;
+                        segments: string[];
+                        ephemeral: string;
+                        wrapped: string;
+                    };
+                };
+            };
+            /** @description `BAD_RECIPIENT`; `BAD_REQUEST`: the request is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `TOO_MANY_EXPORTS` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    exports_segment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                id: string;
+                k: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK: the segment's ciphertext, `application/octet-stream`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description `BAD_REQUEST`: the request is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see; `NO_SUCH_SEGMENT` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     intents: {
         parameters: {
             query?: never;
@@ -6092,6 +6720,641 @@ export interface operations {
             };
             /** @description `BAD_ABI` */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_list: {
+        parameters: {
+            query?: {
+                limit?: string;
+            };
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description `BAD_LIMIT` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: string;
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipeline_events_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent events: a `snapshot`, then `run` and `step` per change, then `end`, and the stream closes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `TOO_MANY_SUBSCRIBERS` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipeline_receipt_receipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                        receipt: unknown;
+                        node: string;
+                        signature: string;
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `RUN_NOT_ENDED` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    limits?: {
+                        [key: string]: {
+                            /** Format: int64 */
+                            fuel?: number;
+                            /** Format: int64 */
+                            memoryMib?: number;
+                            /** Format: int64 */
+                            wallSecs?: number;
+                        };
+                    };
+                    maxCost?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: string;
+                        retryOf: string;
+                        worstCase?: string;
+                    };
+                };
+            };
+            /** @description `BAD_LIMITS`; `BAD_MAX_COST`; `LIMIT_EXCEEDS_CAP` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `CLUSTER_NOT_UPGRADED`; `NO_PRICE_TABLE`; `STILL_RUNNING` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `OUTPUT_EXPIRED` */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `TOO_MANY_PIPELINE_RUNS` */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_estimate_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    inputs?: {
+                        [key: string]: string[];
+                    };
+                    counts?: {
+                        [key: string]: number;
+                    };
+                    params?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        steps: {
+                            [key: string]: {
+                                runs: string;
+                                fuel: string;
+                                cost?: string;
+                            };
+                        };
+                        fuel: string;
+                        cost?: string;
+                        /** Format: int64 */
+                        priceVersion?: number;
+                    };
+                };
+            };
+            /** @description `BAD_INPUTS`; `BAD_PARAMS` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see; `NO_SUCH_PIPELINE` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    inputs?: {
+                        [key: string]: string[];
+                    };
+                    params?: {
+                        [key: string]: unknown;
+                    };
+                    maxCost?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: string;
+                        worstCase?: string;
+                    };
+                };
+            };
+            /** @description `BAD_INPUTS`; `BAD_MAX_COST`; `BAD_PARAMS` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see; `NO_SUCH_PIPELINE` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `CLUSTER_NOT_UPGRADED`; `NO_PRICE_TABLE` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `OUTPUT_EXPIRED` */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `PIPELINES_NEED_ONE_SERVICE` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `TOO_MANY_PIPELINE_RUNS` */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7395,6 +8658,134 @@ export interface operations {
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    account_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    account_set_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    publicKey: string;
+                    confirm?: components["schemas"]["Confirm"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `BAD_BACKUP_KEY`; `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8950,6 +10341,127 @@ export interface operations {
                         prefixes?: string[];
                     };
                     returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "createOrg";
+                    subject: {
+                        name: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "createInvite";
+                    subject: {
+                        org: string;
+                        /** @enum {string} */
+                        role: "guest" | "member" | "admin";
+                        teams?: string[];
+                        /** Format: int64 */
+                        ttlSecs?: number;
+                        /** Format: int64 */
+                        uses?: number;
+                        allApps?: boolean;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "acceptInvite";
+                    subject: {
+                        token: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "leaveOrg";
+                    subject: {
+                        org: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "removeMember";
+                    subject: {
+                        org: string;
+                        account: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "setMemberRole";
+                    subject: {
+                        org: string;
+                        account: string;
+                        /** @enum {string} */
+                        role: "guest" | "member" | "admin" | "owner";
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "setMemberTeams";
+                    subject: {
+                        org: string;
+                        account: string;
+                        teams: {
+                            team: string;
+                            /** @enum {string} */
+                            role?: "lead" | "member" | "readOnly";
+                            /** Format: int64 */
+                            capabilities?: number;
+                        }[];
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "removeMemberTeams";
+                    subject: {
+                        org: string;
+                        account: string;
+                        teams: string[];
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "revokeInvite";
+                    subject: {
+                        org: string;
+                        inviteKey: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "renameOrg";
+                    subject: {
+                        org: string;
+                        name: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "deleteOrg";
+                    subject: {
+                        org: string;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "setCapabilities";
+                    subject: {
+                        org: string;
+                        account?: string;
+                        team?: string;
+                        /** Format: int64 */
+                        capabilities: number;
+                    };
+                    returnTo: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "setAllApps";
+                    subject: {
+                        org: string;
+                        account: string;
+                        allApps: boolean;
+                    };
+                    returnTo: string;
                 };
             };
         };
@@ -9036,11 +10548,18 @@ export interface operations {
                     "application/json": {
                         requestId: string;
                         /** @enum {string} */
-                        kind: "release" | "upgrade" | "outbound";
+                        kind: "release" | "upgrade" | "outbound" | "createOrg" | "createInvite" | "acceptInvite" | "leaveOrg" | "removeMember" | "setMemberRole" | "setMemberTeams" | "removeMemberTeams" | "revokeInvite" | "renameOrg" | "deleteOrg" | "setCapabilities" | "setAllApps";
                         /** @enum {string} */
                         status: "pending" | "approved" | "declined";
                         /** Format: int64 */
                         decidedAt: number | null;
+                        outcome?: {
+                            orgId?: string;
+                            token?: string;
+                            org?: string;
+                            name?: string;
+                            apps?: string[];
+                        };
                     };
                 };
             };
@@ -10031,6 +11550,10 @@ export interface operations {
             content: {
                 "application/json": {
                     backup?: string;
+                    recovery?: {
+                        file: string;
+                        key: string;
+                    };
                     operatorProof?: components["schemas"]["OperatorProof"];
                 };
             };
@@ -10061,7 +11584,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_BACKUP`; `NOT_A_REPLICA_NODE` */
+            /** @description `BAD_BACKUP`; `BAD_RECOVERY_FILE`; `BAD_RECOVERY_KEY`; `BAD_REQUEST`: the request is malformed; `NOT_A_REPLICA_NODE`; `UNATTESTED_RECOVERY_FILE` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10097,7 +11620,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `BACKUP_FROM_NEWER_RELEASE`; `BUNDLE_GONE`; `MOVE_IN_PROGRESS`; `NO_BACKUP_DIR`; `UNKNOWN_BACKUP_FORMAT`; `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
+            /** @description `BACKUP_FROM_NEWER_RELEASE`; `BUNDLE_GONE`; `MOVE_IN_PROGRESS`; `NO_BACKUP_DIR`; `RECOVERY_SEGMENTS_MISSING`; `UNKNOWN_BACKUP_FORMAT`; `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10245,6 +11768,116 @@ export interface operations {
             };
             /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ops_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ops_set_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    publicKey: string;
+                    operatorProof?: components["schemas"]["OperatorProof"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `BAD_BACKUP_KEY` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11447,6 +13080,146 @@ export interface operations {
             };
         };
     };
+    ops_prices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        version?: number;
+                        /** Format: int64 */
+                        fuelPerVcpuSecond?: number;
+                        /** Format: int64 */
+                        vcpuSecond?: number;
+                        /** Format: int64 */
+                        gibSecond?: number;
+                        /** Format: int64 */
+                        connectorGib?: number;
+                        /** Format: int64 */
+                        storageGibMonth?: number;
+                        /** Format: int64 */
+                        egressGib?: number;
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ops_prices_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    table: {
+                        /** Format: int64 */
+                        version: number;
+                        /** Format: int64 */
+                        fuelPerVcpuSecond: number;
+                        /** Format: int64 */
+                        vcpuSecond: number;
+                        /** Format: int64 */
+                        gibSecond: number;
+                        /** Format: int64 */
+                        connectorGib: number;
+                        /** Format: int64 */
+                        storageGibMonth: number;
+                        /** Format: int64 */
+                        egressGib: number;
+                    };
+                    operatorProof?: components["schemas"]["OperatorProof"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description `BAD_PRICES` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `BAD_OPERATOR_SIGNATURE`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `PRICE_VERSION`; `UPGRADE_PENDING`. `details` of `UPGRADE_PENDING`: a `UpgradePending`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     ops_quotas_get: {
         parameters: {
             query?: never;
@@ -11545,6 +13318,148 @@ export interface operations {
             };
             /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ops_recover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    system: {
+                        file: string;
+                        key: string;
+                    };
+                    code?: {
+                        file: string;
+                        key: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        apps: number;
+                        /** Format: int64 */
+                        accounts: number;
+                        /** Format: int64 */
+                        index: number;
+                    };
+                };
+            };
+            /** @description `BAD_RECOVERY_FILE`; `BAD_RECOVERY_KEY`; `TOO_MANY_FILES`; `UNATTESTED_RECOVERY_FILE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_RECOVERING`; `OLD_CLUSTER_ANSWERS`; `OTHER_DEPLOYMENT` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ops_recovery_files: {
+        parameters: {
+            query?: {
+                holder?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                        holder: unknown;
+                        files: {
+                            name: string;
+                            header: string;
+                            signature: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description `BAD_REQUEST`: the request is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NO_BACKUP_DIR` */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12586,6 +14501,147 @@ export interface operations {
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    org_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    org_set_backup_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    publicKey: string;
+                    confirm?: components["schemas"]["Confirm"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupKeyAnswer"];
+                };
+            };
+            /** @description `BAD_BACKUP_KEY`; `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FEATURE_NOT_ACTIVE`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15408,6 +17464,141 @@ export interface operations {
             };
         };
     };
+    package_pipelines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                package: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: {
+                            hash: string;
+                            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                            worstCaseFuel: unknown;
+                            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                            modules: unknown;
+                            /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                            pipeline: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pipelines_validate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    source: string;
+                    package?: string;
+                    version?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        errors: {
+                            path: string;
+                            code: string;
+                            message: string;
+                        }[];
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                        pipeline?: unknown;
+                        worstCaseFuel?: string;
+                        worstCaseCost?: string;
+                    };
+                };
+            };
+            /** @description `BAD_RELEASE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     publisher_binding: {
         parameters: {
             query?: never;
@@ -15445,6 +17636,84 @@ export interface operations {
             };
             /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
             421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    restore_recover_holder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    holder: string;
+                    slice: {
+                        file: string;
+                        key: string;
+                    };
+                    apps?: {
+                        file: string;
+                        key: string;
+                    }[];
+                    code?: {
+                        file: string;
+                        key: string;
+                    }[];
+                    operatorProof?: components["schemas"]["OperatorProof"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
+                        apps: unknown;
+                    };
+                };
+            };
+            /** @description `BAD_RECOVERY_FILE`; `BAD_RECOVERY_KEY`; `BAD_REQUEST`: the request is malformed; `NOT_A_REPLICA_NODE`; `TOO_MANY_FILES`; `UNATTESTED_RECOVERY_FILE` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `BAD_OPERATOR_SIGNATURE` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `FEATURE_NOT_ACTIVE`; `NO_BACKUP_DIR`; `RECOVERY_SEGMENTS_MISSING`. `details` of `FEATURE_NOT_ACTIVE`: a `FeatureNotActive`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `OPERATOR_SIGNATURE_REQUIRED`: the operator key must sign the decision; `details` names the statement. `details` of `OPERATOR_SIGNATURE_REQUIRED`: a `OperatorSignatureRequired`. */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
