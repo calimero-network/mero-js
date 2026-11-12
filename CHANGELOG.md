@@ -1,3 +1,9 @@
+## [31.0.3](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.2...mero-js-v31.0.3) (2026-11-12)
+
+### Bug Fixes
+
+* **release:** only feat, fix and perf cut a release ([#369](https://github.com/calimero-network/mero-js/issues/369)) ([9e57a45](https://github.com/calimero-network/mero-js/commit/9e57a4533211217f4d68027d09455efcae59466e))
+
 ## [31.0.2](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.1...mero-js-v31.0.2) (2026-11-12)
 
 ## [31.0.1](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.0...mero-js-v31.0.1) (2026-11-11)
