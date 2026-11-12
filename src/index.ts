@@ -47,3 +47,6 @@ export * from './sealed/index.js';
 export * from './agent-gate/index.js';
 // The recovery disk's files as their holder's device opens them.
 export * from './recovery/backup-files.js';
+
+// Building and signing a compute-only pipeline package (.mpk), byte-compatible with core.
+export * from './package/pack.js';

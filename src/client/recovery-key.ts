@@ -68,7 +68,7 @@ function checkSeed(seed: Uint8Array): void {
   if (seed.length !== 32) throw new Error('a recovery seed is 32 bytes');
 }
 
-function privateKey(seed: Uint8Array, extractable: boolean): Promise<CryptoKey> {
+export function privateKey(seed: Uint8Array, extractable: boolean): Promise<CryptoKey> {
   checkSeed(seed);
   const pkcs8 = new Uint8Array(PKCS8_ED25519.length + 32);
   pkcs8.set(PKCS8_ED25519);
@@ -76,4 +76,4 @@ function privateKey(seed: Uint8Array, extractable: boolean): Promise<CryptoKey> 
   return crypto.subtle.importKey('pkcs8', buf(pkcs8), { name: 'Ed25519' }, extractable, ['sign']);
 }
 
-const buf = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+export const buf = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
