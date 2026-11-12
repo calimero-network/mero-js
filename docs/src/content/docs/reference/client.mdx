@@ -49,7 +49,7 @@ The hand-written methods: each is more than one route, or a stream.
 | `uploadFile(app, data)` → `FileInfo` | `POST apps/{app}/files`, or a session: `POST .../files/uploads`, `PUT .../uploads/{u}/parts/{k}`, `POST .../uploads/{u}/complete` |
 | `events(app, from?, signal?)`, `presenceStream(app, signal?)` → server-sent events | `GET apps/{app}/events`, `apps/{app}/presence/stream` |
 | `appsReportAll(org)`, `pendingApprovals(org?)` | `GET orgs/{org}/apps` or `auth/apps` (every page), `GET releases` |
-| `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | `POST consent/requests`, `GET consent/{request}/result` |
+| `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })`, `resumeConsent({ requestId?, href? })` | `POST consent/requests`, `GET consent/{request}/result` |
 
 ## The generated methods
 
@@ -322,6 +322,7 @@ elsewhere.
 `fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
 `DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `withdrawConsent`, `upgradeConsent`,
+`createOrgConsent`, `createInviteConsent`, `acceptInviteConsent`, `withoutConsentReturn`, `CONSENT_STORAGE_KEY`,
 `consentReturn`, `confirmationCode`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
 `publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
