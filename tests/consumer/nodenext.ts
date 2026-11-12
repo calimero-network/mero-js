@@ -1,6 +1,13 @@
 // Compiled by tsconfig.consumer.json as an external NodeNext consumer of the built
 // dist/. The @ts-expect-error lines fail if unresolvable specifiers widen the API to any.
-import { CalimeroClient, ConfirmRequired, browserPasskey } from '@calimero-network/mero-js';
+import {
+  CalimeroClient,
+  ConfirmRequired,
+  browserPasskey,
+  releaseConsent,
+  upgradeConsent,
+  withdrawConsent,
+} from '@calimero-network/mero-js';
 import type { CalimeroClientOptions, CalimeroSession, NodePolicy, UpgradeRun } from '@calimero-network/mero-js';
 
 const policy: NodePolicy = { release: { minReleaseVersion: '2.3.109' } };
@@ -75,3 +82,14 @@ export const orgOf = (r: ConsentResult): string | undefined => (r.kind === 'crea
 export const resumed = (): Promise<ConsentResult | null> => client.resumeConsent();
 // @ts-expect-error an invite's role is guest, member or admin
 export const badInvite = () => client.openConsentPage({ kind: 'createInvite', subject: { org: 'o', role: 'owner' }, returnTo: 'https://x/' });
+
+// Each consent helper builds the request kind its name says, and that request is
+// what the node's `POST /consent/requests` route takes, as apps send it. A helper
+// typed as the whole `ConsentRequest` union would carry kinds the generated route
+// body may not list yet.
+export const openUpgrade = (c: CalimeroClient, appId: string, version: string, returnTo: string) =>
+  c.consent.pageCreate({ body: upgradeConsent(appId, version, returnTo) });
+export const openRelease = (c: CalimeroClient, version: string, returnTo: string) =>
+  c.consent.pageCreate({ body: releaseConsent({ kind: 'account' }, version, returnTo) });
+export const openWithdraw = (c: CalimeroClient, version: string, returnTo: string) =>
+  c.consent.pageCreate({ body: withdrawConsent({ kind: 'account' }, version, returnTo) });
