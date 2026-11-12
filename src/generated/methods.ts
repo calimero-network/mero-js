@@ -411,15 +411,6 @@ export function createRoutes(api: RouteClient) {
       accountBackupKey: (args: Record<string, never> = {}, options?: MethodOptions): Promise<operations['account_backup_key']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/auth/backup-key","pathParams":[],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_backup_key']['responses'][200]['content']['application/json']>,
       /**
-       * Approve outbound prefixes for the account's apps.
-       *
-       * `POST /auth/outbound` (`account_outbound_approval`). **Who:** an account holder (a passkey session not bound to an app's frontend).
-       * Answers `412 CONFIRM_REQUIRED` first: give `confirm` (here or on the client); the passkey must verify the user `required`.
-       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
-       */
-      accountOutboundApproval: (args: operations['account_outbound_approval']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['account_outbound_approval']['responses'][200]['content']['application/json']> =>
-        route(api, {"method":"POST","path":"/auth/outbound","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_outbound_approval']['responses'][200]['content']['application/json']>,
-      /**
        * Prove the account to another party.
        *
        * `POST /auth/account-proof` (`account_proof_prove`). **Who:** a passkey session (an API key is refused).
@@ -460,15 +451,6 @@ export function createRoutes(api: RouteClient) {
        */
       accountRecoveryStart: (args: operations['account_recovery_start']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['account_recovery_start']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"POST","path":"/auth/recovery/start","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_recovery_start']['responses'][200]['content']['application/json']>,
-      /**
-       * Approve a mero-tee release for the account's apps.
-       *
-       * `POST /auth/releases` (`account_release_approval`). **Who:** an account holder (a passkey session not bound to an app's frontend).
-       * Answers `412 CONFIRM_REQUIRED` first: give `confirm` (here or on the client); the passkey must verify the user `required`.
-       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
-       */
-      accountReleaseApproval: (args: operations['account_release_approval']['requestBody']['content']['application/json'], options?: MethodOptions): Promise<operations['account_release_approval']['responses'][200]['content']['application/json']> =>
-        route(api, {"method":"POST","path":"/auth/releases","pathParams":[],"query":[],"body":"fields","optionalBody":false,"reply":"json","stepUp":true,"userVerification":"required"}, args as unknown as Record<string, unknown>, options) as Promise<operations['account_release_approval']['responses'][200]['content']['application/json']>,
       /**
        * Set the account's backup key.
        *

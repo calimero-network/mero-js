@@ -21,7 +21,7 @@ export interface paths {
         put?: never;
         /**
          * Create an app instance
-         * @description From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`) or the caller's own. `initArgs` go to the app's `init` and `metadata` is kept as given (both free-form JSON). Answers once `init` committed; `compute` says whether the app has a compute component.
+         * @description From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`), or, naming none, the caller's personal organization. Every app is in an organization. `initArgs` go to the app's `init` and `metadata` is kept as given (both free-form JSON). Answers once `init` committed; `compute` says whether the app has a compute component.
          *
          *     **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
          */
@@ -1107,7 +1107,7 @@ export interface paths {
         };
         /**
          * The account's own apps
-         * @description Outside any organization (a package-bound session: its package's): each app's release, the newer releases it may upgrade to, its last upgrade, its replicas' releases and `lastWriteAt`.
+         * @description The apps the account owns, in any organization (a package-bound session: its package's), with its personal organization's `approvedReleases`: each app's release, the newer releases it may upgrade to, its last upgrade, its replicas' releases and `lastWriteAt`.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -1199,33 +1199,13 @@ export interface paths {
         };
         /**
          * The caller's account
-         * @description The account, its passkeys (with `addedAt` and `lastSignInAt`), organizations, approvals and recovery state, and how the caller came (`via`).
+         * @description The account, its passkeys (with `addedAt` and `lastSignInAt`), organizations (`personal`: the one made at sign-up, where its instances go unless they name another; its approvals are that organization's), recovery state, and how the caller came (`via`).
          *
          *     **Who:** signed in (a session or an API key).
          */
         get: operations["me"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/outbound": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve outbound prefixes for the account's apps
-         * @description **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
-         */
-        post: operations["account_outbound_approval"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1524,28 +1504,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/releases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve a mero-tee release for the account's apps
-         * @description Where the owner holds release approvals; `412` first.
-         *
-         *     **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
-         */
-        post: operations["account_release_approval"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auth/sessions": {
         parameters: {
             query?: never;
@@ -1829,7 +1787,7 @@ export interface paths {
         };
         /**
          * The organizations a deployment serves
-         * @description For its managers: each organization with instances from it, its name (`null` when unknown), member counts (`activeMembers30d`: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization are only counted (`outsideOrgs`). Never who the members are.
+         * @description For its managers: each organization with instances from it, its name (`null` when unknown), member counts (`activeMembers30d`: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization, or in a personal organization, are only counted (`outsideOrgs`). Never who the members are.
          *
          *     **Who:** signed in (a session or an API key).
          */
@@ -2727,7 +2685,7 @@ export interface paths {
         put?: never;
         /**
          * Create an organization
-         * @description `recoveryKey` is the public half of an organization recovery key.
+         * @description `recoveryKey` is the public half of an organization recovery key. Every account also has a personal organization from sign-up (`personal` in `/auth/me`), which this does not make.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -4414,7 +4372,7 @@ export interface components {
                 proofKey: string;
             };
         };
-        /** @description An organization as `GET /orgs/{org}` answers it. `members` maps each account to its role, `capabilities` and `defaultCapabilities` are capability bits, `outboundApprovals` is keyed by package signer, `upgradeRuns` by run id; `recovery` is absent when the organization set no recovery key, `allApps` when no member gets every app added later. */
+        /** @description An organization as `GET /orgs/{org}` answers it. `members` maps each account to its role, `capabilities` and `defaultCapabilities` are capability bits, `outboundApprovals` is keyed by package signer, `upgradeRuns` by run id; `recovery` is absent when the organization set no recovery key, `allApps` when no member gets every app added later, `personal` unless it is its owner's personal organization (where instances created without naming an organization go). */
         Org: {
             orgId: string;
             name: string;
@@ -4454,6 +4412,7 @@ export interface components {
                 } | null;
             };
             allApps?: string[];
+            personal?: boolean;
             /** @enum {string} */
             mode?: "legacy" | "standalone" | "shared";
             releaseApprovers?: string[];
@@ -4554,11 +4513,12 @@ export interface components {
             prefixes: string[];
             reviewed: string[];
         };
-        /** @description The scope whose approvals cover an app: its organization, or its owner's account (never named). */
+        /** @description The scope whose approvals cover an app: its organization (`personal: true` when it is its owner's personal organization). `account` is only `GET /auth/apps`' own scope: the apps the account owns, wherever they are. */
         AppScope: {
             /** @enum {string} */
             kind: "org";
             org: string;
+            personal?: boolean;
         } | {
             /** @enum {string} */
             kind: "account";
@@ -8933,16 +8893,13 @@ export interface operations {
                             orgId: string;
                             name: string;
                             role: components["schemas"]["OrgRole"];
+                            personal?: boolean;
                         }[];
                         /** @enum {string} */
                         via: "session" | "apiKey";
                         passkeyId: string | null;
                         app?: string | null;
                         origin?: string | null;
-                        approvedReleases: string[];
-                        outboundApprovals: {
-                            [key: string]: components["schemas"]["OutboundApproval"];
-                        };
                         recoveryCode?: boolean;
                         recoveryPending?: {
                             accountId: string;
@@ -8966,80 +8923,6 @@ export interface operations {
             };
             /** @description `NOT_FOUND`: no such object, or one the caller may not see */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
-            421: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    account_outbound_approval: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    package: string;
-                    prefixes?: components["schemas"]["OutboundSelection"];
-                    replace?: boolean;
-                    confirm?: components["schemas"]["Confirm"];
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OutboundApproved"];
-                };
-            };
-            /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
-            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9967,79 +9850,6 @@ export interface operations {
             };
             /** @description `UNAVAILABLE`: the cluster cannot answer now */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    account_release_approval: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    version: string;
-                    approved?: boolean;
-                    confirm?: components["schemas"]["Confirm"];
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApprovedReleases"];
-                };
-            };
-            /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE` */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `CONFIRM_REQUIRED`: a passkey assertion is needed; `details` carries the challenge. `details` of `CONFIRM_REQUIRED`: a `ConfirmRequired`. */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
-            421: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14035,6 +13845,15 @@ export interface operations {
                     "application/json": {
                         orgId: string;
                     };
+                };
+            };
+            /** @description `BAD_REQUEST`: the request is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
