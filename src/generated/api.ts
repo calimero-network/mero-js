@@ -2449,7 +2449,7 @@ export interface paths {
         put?: never;
         /**
          * Give apps app teams, or open or close one
-         * @description The owner or an admin; `keep` names who stays when a team closes. `412` first.
+         * @description The owner or an admin; `keep` names who stays when a team closes; `childTeams` says whether the app team's members make restricted teams below it (private channels), adding or removing `CREATE_CHILD_TEAM` (absent: as they are). Naming `join` or `childTeams` on any package leaves `shared` unset to mean no other team. `412` first.
          *
          *     **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
          */
@@ -10270,7 +10270,21 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        status: string;
+                        status: {
+                            /** Format: int64 */
+                            group: number;
+                            /** Format: int64 */
+                            leader: number | null;
+                            is_leader: boolean;
+                            /** Format: int64 */
+                            term: number;
+                            /** Format: int64 */
+                            last_log: number | null;
+                            /** Format: int64 */
+                            applied: number;
+                            voters: number[];
+                            learners: number[];
+                        };
                     };
                 };
             };
@@ -11986,6 +12000,7 @@ export interface operations {
                         instances?: string[];
                         join?: components["schemas"]["TeamJoin"];
                         keep?: string[];
+                        childTeams?: boolean;
                     }[];
                     shared?: boolean;
                     confirm?: components["schemas"]["Confirm"];
