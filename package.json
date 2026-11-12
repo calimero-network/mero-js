@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "31.0.0",
+  "version": "31.0.2",
   "description": "JavaScript client for Calimero 1.0: attested TEE nodes, a sealed channel, passkeys and API keys",
   "type": "module",
   "exports": {
@@ -61,7 +61,6 @@
     "clean": "pnpm rimraf dist",
     "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer",
     "test:cluster": "vitest run --config vitest.cluster.config.ts",
-    "test:cloud-v2": "pnpm test:cluster",
     "gen:api": "openapi-typescript openapi/core-openapi.json -o src/generated/api.ts && node scripts/gen-methods.mjs",
     "check:api": "pnpm gen:api && git diff --exit-code -- src/generated",
     "refresh:openapi": "scripts/refresh-openapi.sh"
