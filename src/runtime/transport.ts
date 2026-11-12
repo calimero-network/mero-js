@@ -286,7 +286,8 @@ export class NodeTransport implements Transport {
   private current: CalimeroSession | undefined;
   /** The refresh under way, which every request that needs one shares. */
   private refreshing: Promise<CalimeroSession> | undefined;
-  private readonly retry: Required<RetryOptions>;
+  /** The backoff between retries, for a caller that retries a request the routes do not. */
+  readonly retry: Required<RetryOptions>;
   /** Rejections of the underlying `fetch` itself: the node could not be reached or dropped the connection. */
   private readonly networkFailures = new WeakSet<object>();
   /** The directory the node list came from, if it came from one. */
@@ -311,6 +312,11 @@ export class NodeTransport implements Transport {
       }
     };
     this.raw = raw;
+  }
+
+  /** Whether `error` is a `fetch` that got no answer: the node could not be reached or dropped the connection. */
+  isNetworkFailure(error: unknown): boolean {
+    return error instanceof TypeError && this.networkFailures.has(error);
   }
 
   /** Re-read the node list from `source` when it is due, and after a failover. */

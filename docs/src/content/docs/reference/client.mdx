@@ -46,6 +46,7 @@ The hand-written methods: each is more than one route, or a stream.
 | `startAccountRecovery(code, passkey)`, `finishAccountRecovery(passkey, accountId?)` | `POST auth/recovery/begin`, `…/start`, `…/finish` |
 | `startRecovery(org, seed)` (the seed signs here) | `GET auth/me`, `POST orgs/{org}/recovery/start` |
 | `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` → bytes | `GET apps/{app}/blobs/{id}` |
+| `uploadFile(app, data)` → `FileInfo` | `POST apps/{app}/files`, or a session: `POST .../files/uploads`, `PUT .../uploads/{u}/parts/{k}`, `POST .../uploads/{u}/complete` |
 | `events(app, from?, signal?)`, `presenceStream(app, signal?)` → server-sent events | `GET apps/{app}/events`, `apps/{app}/presence/stream` |
 | `appsReportAll(org)`, `pendingApprovals(org?)` | `GET orgs/{org}/apps` or `auth/apps` (every page), `GET releases` |
 | `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })` | `POST consent/requests`, `GET consent/{request}/result` |
