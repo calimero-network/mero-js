@@ -1,3 +1,36 @@
+## [33.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v32.0.0...mero-js-v33.0.0) (2026-11-12)
+
+### ⚠ BREAKING CHANGES
+
+* **api:** core's node API changed in a way callers of the generated client see:
+- removed the schema `Written`
+- `GET /apps/{app}/attestation`: deleted the `query` request parameter `appHash`
+- `GET /apps/{app}/attestation`: deleted the `query` request parameter `app`
+- `GET /apps/{app}/attestation`: deleted the `query` request parameter `purpose`
+- `GET /ops/status`: added `#/components/schemas/RollbackStatus, subschema #2` to the `rollback` response property `anyOf` list for the response status `200`
+- `POST /apps/{app}/transfer`: the response's body became nullable
+- `POST /apps/{app}/transfer`: the response's body `type` changed from `object` to `null` for status `200`
+- `POST /ops/apps/{app}/restore`: the `status` response's property `type` changed from `string` to `object` for status `200`
+- `POST /orgs/{org}/publishers`: removed the required property `approval` from the response with the `200` status
+- `POST /orgs/{org}/publishers`: removed the required property `signer` from the response with the `200` status
+
+* test(routes): follow core 92ac297a1's app attestation query and publisher answer
+
+`GET /apps/{app}/attestation` documents only `nonce` now (the node never
+read `app`, `appHash` or `purpose` there), so the generated method flattens
+it beside the path's `app`. The method test that used it to exercise a query
+named like a path parameter now does so through `route()` with a synthetic
+shape, and a new case holds the flattened call. The publisher binding's fake
+answers `{ generation }`, as the node does, and the client reference drops the
+removed parameters.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01RYxobRQaXBRFPdkTkQmgj8
+
+### Features
+
+* **api:** sync with core 92ac297a1 ([#372](https://github.com/calimero-network/mero-js/issues/372)) ([e0c4aaa](https://github.com/calimero-network/mero-js/commit/e0c4aaadd330a48fa7edad800769ecf7df76c79d))
+
 ## [32.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v31.0.3...mero-js-v32.0.0) (2026-11-12)
 
 ### ⚠ BREAKING CHANGES
