@@ -24,7 +24,7 @@ import {
 } from '../runtime/transport.js';
 import { type NodePolicy } from '../runtime/attestation.js';
 import { DEFAULT_DIRECTORY } from '../runtime/directory.js';
-import { CalimeroError, LoginRequired, NotFound, OriginNotRegistered, WrongRecoveryCode } from '../runtime/errors.js';
+import { CalimeroError, LoginRequired, NotFound, OriginNotRegistered, UnavailableError, WrongRecoveryCode } from '../runtime/errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from '../runtime/passkey.js';
 import { createRouteClient, type RouteClientOptions } from '../routes/route-client.js';
 import type { MethodOptions } from '../routes/method.js';
@@ -81,6 +81,13 @@ export type { Committed, SignUpRefusal } from '../runtime/errors.js';
 
 export type { CalimeroSession, NodeEvent };
 
+/** The largest file sent as one request, and the part size a session is asked for. */
+export const FILE_PART_BYTES = 16 * 1024 * 1024;
+const PART_RESENDS = 1; // times a part is sent again before the node is asked where the session is
+const MAX_FAILURES = 8; // failed sends in a row, with no part accepted between them, before giving up
+const MAX_JUMPS = 16; // PART_OUT_OF_ORDER answers followed in one session before giving up
+const CALL_RETRIES = 8; // times beginning and completing a session are sent again while the node is unavailable
+
 export type CallResult = ApiAnswer<'intents'>;
 
 export type ViewResult = ApiAnswer<'views'>;
@@ -100,6 +107,12 @@ export type UpgradeRun = ApiSchema<'UpgradeRun'>;
 
 /** One of an app's blobs: `blobId` base58 (what apps print), `id` hex. */
 export type BlobInfo = ApiAnswer<'blob_info'>;
+
+/** A sealed file: `id` and `sha256` hex, `blobId` base58 (what apps print), `index` the log index that recorded it. */
+export type FileInfo = ApiAnswer<'file_info'>;
+
+/** What {@link CalimeroClient.uploadFile} takes; a `Blob` is read part by part, never whole. */
+export type FileData = Blob | Uint8Array | ArrayBuffer;
 
 /** One device present in an app (`publishPresence`); `state` hex, `null` once retracted. */
 export type PresenceEntry = ApiAnswer<'presence_get'>['present'][number];
@@ -306,6 +319,19 @@ export interface CalimeroConnectOptions {
   retry?: RetryOptions;
   /** Randomness for the weighted node order, in [0, 1). Defaults to `Math.random`. */
   random?: () => number;
+}
+
+/** Bytes `start` to `end` of `data`, as a view or a slice: a `Blob` is never read whole. */
+async function readSlice(data: FileData, start: number, end: number): Promise<Uint8Array> {
+  if (data instanceof Blob) return new Uint8Array(await data.slice(start, end).arrayBuffer());
+  return data instanceof ArrayBuffer ? new Uint8Array(data, start, end - start) : data.subarray(start, end);
+}
+
+/** The `next` an answer names, which cannot be past the last part. */
+function nextPart(answer: unknown, parts: number): number {
+  const next = (answer as { next?: unknown } | undefined)?.next;
+  if (typeof next === 'number' && Number.isInteger(next) && next >= 0 && next <= parts) return next;
+  throw new Error(`the node answered a bad next: ${JSON.stringify(answer)}`);
 }
 
 export class CalimeroClient {
@@ -620,6 +646,89 @@ export class CalimeroClient {
    */
   async downloadBlobGranted(app: string, id: string, grant: string): Promise<Uint8Array> {
     return new Uint8Array(await (await this.apps.blobDownload({ app, id, grant })).arrayBuffer());
+  }
+
+  /**
+   * Upload a sealed file for component app `app`; answers `{ id, blobId, size, sha256, index }`.
+   * Up to {@link FILE_PART_BYTES} it is one request, sent once (the node mints a new
+   * file for each, so one that may have reached it is never repeated); a larger file
+   * is a session of parts, each sent again after a dropped connection or a `503`.
+   * A session the node lost is begun again once; any other failure aborts it.
+   * `413 TOO_LARGE` and `429 QUOTA_EXCEEDED` are the node's refusals.
+   */
+  async uploadFile(app: string, data: FileData): Promise<FileInfo> {
+    const size = data instanceof Blob ? data.size : data.byteLength;
+    if (size <= FILE_PART_BYTES) return this.apps.filesUpload({ app, body: await readSlice(data, 0, size) });
+    try {
+      return await this.uploadSession(app, data, size);
+    } catch (error) {
+      if (!(error instanceof CalimeroError) || error.code !== 'UPLOAD_UNKNOWN') throw error;
+      return this.uploadSession(app, data, size);
+    }
+  }
+
+  /** Begin a session, send its parts and complete it, aborting it if that fails for good. */
+  private async uploadSession(app: string, data: FileData, size: number): Promise<FileInfo> {
+    const begin = await this.untilAvailable(() => this.apps.uploadBegin({ app, size }));
+    const { uploadId: upload, partBytes, parts } = begin;
+    if (!upload || !partBytes || partBytes <= 0 || parts !== Math.ceil(size / partBytes)) {
+      throw new Error(`the node began an upload it cannot take: ${JSON.stringify(begin)}`);
+    }
+    try {
+      await this.sendParts(app, upload, data, size, partBytes, parts);
+      return await this.untilAvailable(() => this.apps.uploadComplete({ app, upload }));
+    } catch (error) {
+      if (!(error instanceof CalimeroError && error.code === 'UPLOAD_UNKNOWN')) await this.apps.uploadAbort({ app, upload }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Send every part, in order, from wherever the node says the session is. */
+  private async sendParts(app: string, upload: string, data: FileData, size: number, partBytes: number, parts: number): Promise<void> {
+    let [next, failures, jumps] = [0, 0, 0];
+    while (next < parts) {
+      try {
+        const body = await readSlice(data, next * partBytes, Math.min((next + 1) * partBytes, size));
+        next = nextPart(await this.apps.uploadPart({ app, upload, k: String(next), body }), parts);
+        failures = 0;
+        continue;
+      } catch (error) {
+        if (error instanceof CalimeroError && error.code === 'PART_OUT_OF_ORDER') {
+          jumps += 1;
+          if (jumps > MAX_JUMPS) throw error;
+          next = nextPart(error.details, parts);
+          continue;
+        }
+        if (!this.isTransient(error) || ++failures > MAX_FAILURES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(failures - 1, this.transport.retry)));
+        if (failures > PART_RESENDS) {
+          try {
+            const at = nextPart(await this.apps.uploadStatus({ app, upload }), parts);
+            if (at > next) failures = 0;
+            next = at;
+          } catch (asked) {
+            if (!this.isTransient(asked)) throw asked;
+          }
+        }
+      }
+    }
+  }
+
+  /** `send` again, after a backoff, while the node is unavailable or cannot be reached. */
+  private async untilAvailable<T>(send: () => Promise<T>): Promise<T> {
+    for (let retry = 0; ; retry++) {
+      try {
+        return await send();
+      } catch (error) {
+        if (!this.isTransient(error) || retry >= CALL_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retry, this.transport.retry)));
+      }
+    }
+  }
+
+  /** Whether the same request may succeed if sent again: the node answered `503`, or gave no answer. */
+  private isTransient(error: unknown): boolean {
+    return error instanceof UnavailableError || this.transport.isNetworkFailure(error);
   }
 
   // ---------------------------------------------------------------- packages

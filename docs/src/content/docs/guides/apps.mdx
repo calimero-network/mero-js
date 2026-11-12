@@ -103,6 +103,22 @@ await client.apps.blobDelete({ app, id: blobId });
 A blob over 47 MiB is refused with `TOO_LARGE`, by the node or, past 64 MiB,
 by the sealed envelope.
 
+## Sealed files
+
+```ts
+const { id, blobId, size, sha256, index } = await client.uploadFile(app, file); // a Blob, Uint8Array or ArrayBuffer
+await client.apps.filesList({ app });
+await client.apps.fileInfo({ app, id });
+```
+
+Up to 16 MiB (`FILE_PART_BYTES`) a file is one request, sent once: a `503` or a
+dropped connection is an error, because the node may already have committed it.
+A larger file goes up as a session of parts, read from a `Blob` one slice at a
+time. A part is sent again after a dropped connection or a `503`, the session
+is begun again once if the node lost it, and any other failure aborts it.
+Only the app's owner or a member of its organization may upload; the node must
+be release rc.15 or later.
+
 ## Presence
 
 Who is in an app now: in memory on every node, never logged.

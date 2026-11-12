@@ -1,3 +1,9 @@
+## [33.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v33.0.0...mero-js-v33.1.0) (2026-11-12)
+
+### Features
+
+* **recovery:** open the recovery disk's files on the holder's device ([#376](https://github.com/calimero-network/mero-js/issues/376)) ([5a39035](https://github.com/calimero-network/mero-js/commit/5a39035915b20de5b8d46311343c1083848af5f4))
+
 ## [33.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v32.0.0...mero-js-v33.0.0) (2026-11-12)
 
 ### ⚠ BREAKING CHANGES

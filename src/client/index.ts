@@ -8,7 +8,7 @@
 // the runtime's errors, passkeys and directory, which callers of the client
 // use. src/routes/index.ts describes the layering.
 
-export { CalimeroClient, deployerKey, frontendManifest, pageDeployment, presenceState } from './calimero-client.js';
+export { CalimeroClient, FILE_PART_BYTES, deployerKey, frontendManifest, pageDeployment, presenceState } from './calimero-client.js';
 export { DEFAULT_DIRECTORY, DirectoryError } from '../runtime/directory.js';
 export type { DirectoryFailure } from '../runtime/directory.js';
 export {
@@ -46,6 +46,8 @@ export type {
   AppTeam,
   AppTeams,
   BlobInfo,
+  FileData,
+  FileInfo,
   DeadLetter,
   Deployer,
   FrontendManifest,
