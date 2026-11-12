@@ -245,12 +245,24 @@ export async function recoveryAttestationNonce(cluster: string, node: number): P
 }
 
 /**
- * What a receipt-key quote binds after its nonce (core's `receipt_key_binding`),
- * hex: the key and the cluster's governance, as the node serialized it.
+ * What a receipt-key quote binds after its nonce (core's `receipt_key_binding`,
+ * `receipt-key.v3`), hex: the key, the cluster's governance as the node
+ * serialized it, and the cluster (u32-BE length-prefixed) and node id (u64 BE),
+ * so one node's quote never stands for another node's or another cluster's.
  */
-export async function receiptKeyBinding(receiptKey: Uint8Array, governance: unknown): Promise<string> {
+export async function receiptKeyBinding(
+  receiptKey: Uint8Array,
+  governance: unknown,
+  cluster: string,
+  node: number,
+): Promise<string> {
   const g = await sha256(utf8(JSON.stringify(governance)));
-  return hex(await sha256(concat(utf8('calimero.tee-attest.receipt-key.v2'), receiptKey, g)));
+  const name = utf8(cluster);
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, name.length, false);
+  const id = new Uint8Array(8);
+  new DataView(id.buffer).setBigUint64(0, BigInt(node), false);
+  return hex(await sha256(concat(utf8('calimero.tee-attest.receipt-key.v3'), receiptKey, g, len, name, id)));
 }
 
 interface ReceiptAttestation {
@@ -281,7 +293,12 @@ export async function verifyRecoveryAttestation(
   }
   const nonce = await recoveryAttestationNonce(header.cluster, header.node);
   if (doc.nonce !== nonce) throw new Error('the attestation is not over the recovery nonce');
-  const reportDataSuffix = await receiptKeyBinding(fromHex(header.signingKey, 'signing key', 32), doc.governance);
+  const reportDataSuffix = await receiptKeyBinding(
+    fromHex(header.signingKey, 'signing key', 32),
+    doc.governance,
+    header.cluster,
+    header.node,
+  );
   const ok = await verifyQuote({ quoteB64: doc.quote, nonce, reportDataSuffix });
   if (!ok) throw new Error('the quote was not accepted');
 }

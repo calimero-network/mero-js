@@ -53,24 +53,31 @@ describe('recovery files sealed by a node', () => {
   });
 });
 
-// Core's `attestation_nonce("c", 1)` and `receipt_key_binding` of the fixture's
-// signing key under the default governance.
+// Core's `attestation_nonce` and `receipt_key_binding` (v3) of the fixture's
+// signing key under the default governance, for its cluster and node.
 describe('a recovery file attestation', () => {
   it('binds the nonce and the receipt key as core does', async () => {
-    expect(await recoveryAttestationNonce('c', 1)).toBe(binding.nonce);
-    expect(await receiptKeyBinding(fromHexStr(binding.signingKey), binding.governance)).toBe(binding.binding);
+    expect(await recoveryAttestationNonce(binding.cluster, binding.node)).toBe(binding.nonce);
+    const key = fromHexStr(binding.signingKey);
+    expect(await receiptKeyBinding(key, binding.governance, binding.cluster, binding.node)).toBe(binding.binding);
+    // Another node's quote binds other bytes.
+    expect(await receiptKeyBinding(key, binding.governance, binding.cluster, binding.node + 1)).not.toBe(
+      binding.binding,
+    );
   });
 
   it('asks the quote verifier for that nonce and binding, and refuses another key', async () => {
     const header = await verifyRecoveryHeader(fixture);
     const attested = {
       ...header,
+      cluster: binding.cluster,
+      node: binding.node,
       signingKey: binding.signingKey,
       attestation: {
         quote: 'cXVvdGU=',
         nonce: binding.nonce,
-        cluster: 'c',
-        node: 1,
+        cluster: binding.cluster,
+        node: binding.node,
         receiptKey: binding.signingKey,
         governance: binding.governance,
       },
