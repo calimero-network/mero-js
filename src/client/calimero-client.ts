@@ -31,6 +31,7 @@ import type { MethodOptions } from '../routes/method.js';
 import { createRoutes, type Routes } from '../generated/methods.js';
 import { passkeyConfirm, type PasskeyConfirmOptions } from '../runtime/passkey.js';
 
+import { exportFile, exportFileTo, type ExportedFile, type FileSink } from './files.js';
 import { signRecovery } from './recovery-key.js';
 import {
   confirmationCode,
@@ -634,6 +635,16 @@ export class CalimeroClient {
   /** One of `app`'s blobs, by id (base58 or hex). */
   async downloadBlob(app: string, id: string): Promise<Uint8Array> {
     return new Uint8Array(await (await this.apps.blobDownload({ app, id })).arrayBuffer());
+  }
+
+  /** Write the plaintext of sealed file `id` of component app `app` to `sink`, checked against its id, size and hash. */
+  exportFileTo(app: string, id: string, sink: FileSink): Promise<ExportedFile> {
+    return exportFileTo(this.transport, app, id, sink);
+  }
+
+  /** The plaintext of sealed file `id` of component app `app`, in memory; use {@link exportFileTo} for a large one. */
+  exportFile(app: string, id: string): Promise<Uint8Array> {
+    return exportFile(this.transport, app, id);
   }
 
   /**
