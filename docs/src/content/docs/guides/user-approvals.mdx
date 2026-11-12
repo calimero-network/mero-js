@@ -18,8 +18,9 @@ to the owner side (the default):
 - **A new app version.** An upgrade switches the app to other code, which then
   reads its data.
 - **Outbound hosts.** A new destination the app may send data to.
-- **Organizations.** Creating one, creating an invite to one, and joining one
-  with an invite ([below](#organizations-from-your-app)).
+- **Organizations.** Creating one, inviting to it and joining it, and managing
+  it: members, their roles, teams and capabilities, invites, its name, and
+  deleting it ([below](#organizations-from-your-app)).
 
 Each is a passkey step-up over that exact change, logged as consent. A passkey
 prompt is blind, though: the authenticator shows a site name, never what it
@@ -185,14 +186,32 @@ signed measurements answers `503`.
 
 ## Organizations from your app
 
-A frontend's package-bound session may not create organizations or invites,
-or join with one, by itself: these go through the consent page too.
+A frontend's package-bound session may not create, join or manage an
+organization by itself: each of these goes through the consent page too,
+which checks who may make the change when it is asked and again when it is
+approved.
 
 | Request | `subject` | `outcome` once approved |
 | --- | --- | --- |
 | `createOrgConsent(name, returnTo)` | `{ name }` | `{ orgId }` |
 | `createInviteConsent({ org, role, teams?, ttlSecs?, uses?, allApps? }, returnTo)` | the same | `{ token }` |
 | `acceptInviteConsent(token, returnTo)` | `{ token }` | `{ org }` |
+| `leaveOrgConsent(org, returnTo)` | `{ org }` | none |
+| `removeMemberConsent(org, account, returnTo)` | `{ org, account }` | none |
+| `setMemberRoleConsent(org, account, role, returnTo)` | `{ org, account, role }` | none |
+| `setMemberTeamsConsent(org, account, teams, returnTo)` | `{ org, account, teams: [{ team, role?, capabilities? }] }` | none |
+| `removeMemberTeamsConsent(org, account, teams, returnTo)` | `{ org, account, teams }` | none |
+| `revokeInviteConsent(org, inviteKey, returnTo)` | `{ org, inviteKey }` | none |
+| `renameOrgConsent(org, name, returnTo)` | `{ org, name }` | `{ orgId, name }` |
+| `deleteOrgConsent(org, returnTo)` | `{ org }` | `{ apps }`, the apps deleted |
+| `setCapabilitiesConsent({ org, account?, team?, capabilities }, returnTo)` | the same | none |
+| `setAllAppsConsent(org, account, allApps, returnTo)` | `{ org, account, allApps }` | none |
+
+`role` is an organization role (`guest`, `member`, `admin`, `owner`) for
+`setMemberRole`, and a team role (`lead`, `member`, `readOnly`) in a
+`setMemberTeams` row. `setCapabilities` sets a member's bits with `account`
+(organization-wide, or in `team`), and without it a default (the
+organization's, or `team`'s).
 
 ```ts
 import { createInviteConsent } from '@calimero-network/mero-js';
@@ -211,10 +230,9 @@ invite token is a credential: keep it out of your logs (the client logs
 nothing and puts it in no error).
 
 <Aside type="note">
-  These kinds need a node with core's organization consent kinds
-  (calimero-network/core#5014). They are typed by hand in `approvals.ts`
-  until core's OpenAPI document, which the generated
-  `client.consent.pageCreate` follows, names them.
+  These kinds need a node with core's organization consent kinds:
+  `createOrg`, `createInvite` and `acceptInvite` since
+  calimero-network/core#5014, the others since calimero-network/core#5018.
 </Aside>
 
 ## Who approves

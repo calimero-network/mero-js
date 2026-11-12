@@ -16,7 +16,8 @@
  */
 
 import { compareReleaseVersions } from '../sealed/release.js';
-import type { ApiAnswer } from '../routes/types.js';
+import type { ApiAnswer, ApiSchema } from '../routes/types.js';
+import type { operations } from '../generated/api.js';
 
 // ---------------------------------------------------------------- governance
 
@@ -173,66 +174,60 @@ export function publisherBindingBytes(cluster: string, org: string, signerId: st
 /** Whose approval a release or outbound request is for. */
 export type ConsentScope = 'account' | { org: string };
 
-/** What the app asks its user to approve (`POST /consent/requests`). Unknown fields are refused. */
-export type ConsentRequest =
-  | {
-      kind: 'release';
-      scope: ConsentScope;
-      /** `withdraw: true` asks to withdraw the release's approval instead of approving it. */
-      subject: { version: string; withdraw?: boolean };
-      /** Where the page sends the person back: the package's frontend origin, or one its manifest names. */
-      returnTo: string;
-    }
-  | {
-      kind: 'upgrade';
-      subject: { app: string; toVersion: string };
-      returnTo: string;
-    }
-  | {
-      kind: 'outbound';
-      scope: ConsentScope;
-      /** `package`: a package-bound session's own when left out; `prefixes`: every one the latest release declares. */
-      subject: { package?: string; prefixes?: string[] };
-      returnTo: string;
-    }
-  | {
-      /** A new organization, owned by whoever approves. Outcome: `{ orgId }`. */
-      kind: 'createOrg';
-      subject: { name: string };
-      returnTo: string;
-    }
-  | {
-      /** A new invite to `subject.org`. Outcome: `{ token }`. */
-      kind: 'createInvite';
-      subject: InviteConsentSubject;
-      returnTo: string;
-    }
-  | {
-      /** Joining an organization with an invite's `token`. Outcome: `{ org }`. */
-      kind: 'acceptInvite';
-      subject: { token: string };
-      returnTo: string;
-    };
+/**
+ * What the app asks its user to approve (`POST /consent/requests`), by
+ * `kind`: the route's generated body. Unknown fields are refused. Build one
+ * with the helpers below (`releaseConsent`, `createOrgConsent`, ...), each
+ * typed as the kind it builds.
+ *
+ * - `release`, `upgrade`, `outbound`: a release approval (or withdrawal), an
+ *   app upgrade, outbound prefixes.
+ * - `createOrg`, `createInvite`, `acceptInvite` (core#5014): a new
+ *   organization, an invite, joining with one.
+ * - `leaveOrg`, `removeMember`, `setMemberRole`, `setMemberTeams`,
+ *   `removeMemberTeams`, `revokeInvite`, `renameOrg`, `deleteOrg`,
+ *   `setCapabilities`, `setAllApps` (core#5018): managing an organization.
+ *
+ * `returnTo` is where the page sends the person back: the package's frontend
+ * origin, or one its manifest names.
+ */
+export type ConsentRequest = NonNullable<operations['consent_page_create']['requestBody']>['content']['application/json'];
 
 /** A consent request's kind. */
 export type ConsentKind = ConsentRequest['kind'];
 
-/** A role an invite gives (core's `Role`). */
-export type InviteRole = 'guest' | 'member' | 'admin';
+/** The consent request of kind `K`. */
+type ConsentRequestOf<K extends ConsentKind> = Extract<ConsentRequest, { kind: K }>;
 
-/** What a `createInvite` consent request asks for. */
-export interface InviteConsentSubject {
-  org: string;
-  role: InviteRole;
-  /** Teams the invite joins its user to. */
-  teams?: string[];
-  /** How long the invite lasts, in seconds. */
-  ttlSecs?: number;
-  /** How many times it may be used. */
-  uses?: number;
-  /** Whether it gives every app of the organization. */
-  allApps?: boolean;
-}
+/**
+ * What a `createInvite` consent request asks for: `org`, `role`, and
+ * optionally `teams` to join, `ttlSecs` it lasts, `uses` it allows and
+ * `allApps`, every app of the organization.
+ */
+export type InviteConsentSubject = ConsentRequestOf<'createInvite'>['subject'];
+
+/** A role an invite gives (core's `Role`, short of `owner`). */
+export type InviteRole = InviteConsentSubject['role'];
+
+/** A member's role in an organization (core's `Role`). */
+export type OrgRole = ApiSchema<'OrgRole'>;
+
+/** A member's role in a team (core's `TeamRole`). */
+export type TeamRole = ApiSchema<'TeamRole'>;
+
+/**
+ * One team row a `setMemberTeams` consent request sets: `team`, and the
+ * member's `role` and `capabilities` bits (`ORG_CAPABILITIES`) there,
+ * each the team's default when left out.
+ */
+export type MemberTeamConsent = ConsentRequestOf<'setMemberTeams'>['subject']['teams'][number];
+
+/**
+ * Whose capability bits (`ORG_CAPABILITIES`) a `setCapabilities`
+ * consent request sets: with `account`, that member's (organization-wide, or
+ * in `team`); without, a default (the organization's, or `team`'s).
+ */
+export type CapabilitiesConsentSubject = ConsentRequestOf<'setCapabilities'>['subject'];
 
 /** The node's answer to a consent request: send the person to `url`. */
 export type ConsentStarted = ApiAnswer<'consent_page_create'>;
@@ -271,25 +266,37 @@ export async function confirmationCode(requestId: string): Promise<string> {
 
 /**
  * What an approval made, by kind (`outcome` on {@link ConsentResult}, once
- * approved): `release`, `upgrade` and `outbound` make nothing. An invite's
- * `token` is a credential: keep it out of logs.
+ * approved): `createOrg`, `createInvite`, `acceptInvite`, `renameOrg` and
+ * `deleteOrg` make something; the other kinds nothing. An invite's `token` is
+ * a credential: keep it out of logs.
  */
 export interface ConsentOutcomes {
   release: never;
   upgrade: never;
   outbound: never;
-  createOrg: { orgId: string };
-  createInvite: { token: string };
-  acceptInvite: { org: string };
+  createOrg: Required<Pick<GeneratedOutcome, 'orgId'>>;
+  createInvite: Required<Pick<GeneratedOutcome, 'token'>>;
+  acceptInvite: Required<Pick<GeneratedOutcome, 'org'>>;
+  leaveOrg: never;
+  removeMember: never;
+  setMemberRole: never;
+  setMemberTeams: never;
+  removeMemberTeams: never;
+  revokeInvite: never;
+  renameOrg: Required<Pick<GeneratedOutcome, 'orgId' | 'name'>>;
+  /** The apps deleted with the organization. */
+  deleteOrg: Required<Pick<GeneratedOutcome, 'apps'>>;
+  setCapabilities: never;
+  setAllApps: never;
 }
 
-/** `GET /consent/{id}/result` for a request of kind `K`. */
-export interface ConsentResultOf<K extends ConsentKind> {
-  requestId: string;
+/** The route's generated answer, whose one `outcome` has every kind's fields optional. */
+type GeneratedResult = ApiAnswer<'consent_page_result'>;
+type GeneratedOutcome = NonNullable<GeneratedResult['outcome']>;
+
+/** `GET /consent/{id}/result` for a request of kind `K`: `requestId`, `status`, and `decidedAt` (Unix seconds; `null` while pending). */
+export interface ConsentResultOf<K extends ConsentKind> extends Omit<GeneratedResult, 'kind' | 'outcome'> {
   kind: K;
-  status: 'pending' | 'approved' | 'declined';
-  /** Unix seconds; `null` while pending. */
-  decidedAt: number | null;
   /** What the approval made, once approved, for the kinds that make something. */
   outcome?: ConsentOutcomes[K];
 }
@@ -299,8 +306,7 @@ export interface ConsentResultOf<K extends ConsentKind> {
  * `if (r.kind === 'createOrg') r.outcome?.orgId`. Read `outcome` only from
  * this sealed answer, never from the page's redirect, which carries none.
  *
- * Typed here by hand: the vendored OpenAPI document does not name the
- * organization kinds (core#5014) yet; the next openapi-sync brings them.
+ * The generated answer, with `outcome` typed by kind.
  */
 export type ConsentResult = { [K in ConsentKind]: ConsentResultOf<K> }[ConsentKind];
 
@@ -505,4 +511,77 @@ export function createInviteConsent(subject: InviteConsentSubject, returnTo: str
 /** The consent request that joins the organization `token` invites to; its outcome names the `org`. */
 export function acceptInviteConsent(token: string, returnTo: string): ConsentRequest & { kind: 'acceptInvite' } {
   return { kind: 'acceptInvite', subject: { token }, returnTo };
+}
+
+/** The consent request that has the person leave `org`. */
+export function leaveOrgConsent(org: string, returnTo: string): ConsentRequest & { kind: 'leaveOrg' } {
+  return { kind: 'leaveOrg', subject: { org }, returnTo };
+}
+
+/** The consent request that removes `account` from `org`. */
+export function removeMemberConsent(org: string, account: string, returnTo: string): ConsentRequest & { kind: 'removeMember' } {
+  return { kind: 'removeMember', subject: { org, account }, returnTo };
+}
+
+/** The consent request that gives the member `account` of `org` the role `role`. */
+export function setMemberRoleConsent(
+  org: string,
+  account: string,
+  role: OrgRole,
+  returnTo: string,
+): ConsentRequest & { kind: 'setMemberRole' } {
+  return { kind: 'setMemberRole', subject: { org, account, role }, returnTo };
+}
+
+/** The consent request that sets the member `account`'s rows in teams of `org`. */
+export function setMemberTeamsConsent(
+  org: string,
+  account: string,
+  teams: MemberTeamConsent[],
+  returnTo: string,
+): ConsentRequest & { kind: 'setMemberTeams' } {
+  return { kind: 'setMemberTeams', subject: { org, account, teams }, returnTo };
+}
+
+/** The consent request that removes the member `account` from `teams` of `org`. */
+export function removeMemberTeamsConsent(
+  org: string,
+  account: string,
+  teams: string[],
+  returnTo: string,
+): ConsentRequest & { kind: 'removeMemberTeams' } {
+  return { kind: 'removeMemberTeams', subject: { org, account, teams }, returnTo };
+}
+
+/** The consent request that revokes the invite `inviteKey` of `org`. */
+export function revokeInviteConsent(org: string, inviteKey: string, returnTo: string): ConsentRequest & { kind: 'revokeInvite' } {
+  return { kind: 'revokeInvite', subject: { org, inviteKey }, returnTo };
+}
+
+/** The consent request that renames `org` to `name`; its outcome is `{ orgId, name }`. */
+export function renameOrgConsent(org: string, name: string, returnTo: string): ConsentRequest & { kind: 'renameOrg' } {
+  return { kind: 'renameOrg', subject: { org, name }, returnTo };
+}
+
+/** The consent request that deletes `org`; its outcome lists the `apps` deleted with it. */
+export function deleteOrgConsent(org: string, returnTo: string): ConsentRequest & { kind: 'deleteOrg' } {
+  return { kind: 'deleteOrg', subject: { org }, returnTo };
+}
+
+/** The consent request that sets capability bits in `subject.org` ({@link CapabilitiesConsentSubject}). */
+export function setCapabilitiesConsent(
+  subject: CapabilitiesConsentSubject,
+  returnTo: string,
+): ConsentRequest & { kind: 'setCapabilities' } {
+  return { kind: 'setCapabilities', subject, returnTo };
+}
+
+/** The consent request that gives the member `account` of `org` every app (`allApps: true`), or takes it back. */
+export function setAllAppsConsent(
+  org: string,
+  account: string,
+  allApps: boolean,
+  returnTo: string,
+): ConsentRequest & { kind: 'setAllApps' } {
+  return { kind: 'setAllApps', subject: { org, account, allApps }, returnTo };
 }

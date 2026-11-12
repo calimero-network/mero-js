@@ -93,3 +93,42 @@ export const openRelease = (c: CalimeroClient, version: string, returnTo: string
   c.consent.pageCreate({ body: releaseConsent({ kind: 'account' }, version, returnTo) });
 export const openWithdraw = (c: CalimeroClient, version: string, returnTo: string) =>
   c.consent.pageCreate({ body: withdrawConsent({ kind: 'account' }, version, returnTo) });
+
+// The organization management kinds (core#5018): each builder's request is what
+// the generated route body takes, and outcomes are typed by kind.
+import {
+  deleteOrgConsent,
+  leaveOrgConsent,
+  removeMemberConsent,
+  removeMemberTeamsConsent,
+  renameOrgConsent,
+  revokeInviteConsent,
+  setAllAppsConsent,
+  setCapabilitiesConsent,
+  setMemberRoleConsent,
+  setMemberTeamsConsent,
+} from '@calimero-network/mero-js';
+
+const back = 'https://kv.apps.example/';
+export const orgKinds = (c: CalimeroClient) => [
+  c.consent.pageCreate({ body: leaveOrgConsent('o', back) }),
+  c.consent.pageCreate({ body: removeMemberConsent('o', 'a', back) }),
+  c.consent.pageCreate({ body: setMemberRoleConsent('o', 'a', 'owner', back) }),
+  c.consent.pageCreate({ body: setMemberTeamsConsent('o', 'a', [{ team: 't', role: 'lead', capabilities: 1 }], back) }),
+  c.consent.pageCreate({ body: removeMemberTeamsConsent('o', 'a', ['t'], back) }),
+  c.consent.pageCreate({ body: revokeInviteConsent('o', 'k', back) }),
+  c.consent.pageCreate({ body: renameOrgConsent('o', 'n', back) }),
+  c.consent.pageCreate({ body: deleteOrgConsent('o', back) }),
+  c.consent.pageCreate({ body: setCapabilitiesConsent({ org: 'o', team: 't', capabilities: 3 }, back) }),
+  c.consent.pageCreate({ body: setAllAppsConsent('o', 'a', true, back) }),
+];
+export const renamedTo = (r: ConsentResult): string | undefined => (r.kind === 'renameOrg' ? r.outcome?.name : undefined);
+export const deletedApps = (r: ConsentResult): string[] | undefined => (r.kind === 'deleteOrg' ? r.outcome?.apps : undefined);
+// @ts-expect-error removeMember makes nothing: its outcome has no orgId
+export const noOutcome = (r: ConsentResult) => (r.kind === 'removeMember' ? r.outcome?.orgId : undefined);
+// @ts-expect-error a member's organization role is guest, member, admin or owner
+export const badOrgRole = () => setMemberRoleConsent('o', 'a', 'lead', back);
+// @ts-expect-error a team role is lead, member or readOnly
+export const badTeamRole = () => setMemberTeamsConsent('o', 'a', [{ team: 't', role: 'admin' }], back);
+// @ts-expect-error capabilities are required
+export const noCaps = () => setCapabilitiesConsent({ org: 'o', team: 't' }, back);

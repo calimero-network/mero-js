@@ -837,9 +837,7 @@ export class CalimeroClient {
         if (!w) throw new Error('no window to open the consent page in; pass `navigate`');
         w.location.assign(url);
       });
-    // The organization kinds (core#5014) are typed by hand in approvals.ts
-    // until the vendored OpenAPI document names them.
-    const started = await this.consent.pageCreate({ body: request as Parameters<Routes['consent']['pageCreate']>[0]['body'] });
+    const started = await this.consent.pageCreate({ body: request });
     if (started.code !== undefined) {
       const expected = await confirmationCode(started.requestId);
       if (started.code !== expected) {
