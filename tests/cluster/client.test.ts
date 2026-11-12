@@ -284,12 +284,14 @@ describe('Calimero 1.0 cluster', () => {
     // Outbound: the release declares no prefixes; approving and revoking them is the owner's.
     await tab.orgs.outboundApproval({ org, package: 'com.mero-js.console' }, { confirm: passkeyConfirm(pk) });
     await tab.orgs.outboundApproval({ org, package: 'com.mero-js.console', prefixes: [], replace: true }, { confirm: passkeyConfirm(pk) });
-    await tab.auth.accountOutboundApproval({ package: 'com.mero-js.console' }, { confirm: passkeyConfirm(pk) });
+    // The account's own apps are its personal organization's, made at sign-up.
+    const mine = (await tab.auth.me()).orgs.find((o) => o.personal)!.orgId;
+    await tab.orgs.outboundApproval({ org: mine, package: 'com.mero-js.console' }, { confirm: passkeyConfirm(pk) });
 
-    // Releases: approve one for the org and for the account, then withdraw it.
+    // Releases: approve one for the org and for the account's personal org, then withdraw it.
     await tab.orgs.releaseApproval({ org, version: '2.3.200', approved: true }, { confirm: passkeyConfirm(pk) });
-    await tab.auth.accountReleaseApproval({ version: '2.3.200', approved: true }, { confirm: passkeyConfirm(pk) });
-    await tab.auth.accountReleaseApproval({ version: '2.3.200', approved: false }, { confirm: passkeyConfirm(pk) });
+    await tab.orgs.releaseApproval({ org: mine, version: '2.3.200', approved: true }, { confirm: passkeyConfirm(pk) });
+    await tab.orgs.releaseApproval({ org: mine, version: '2.3.200', approved: false }, { confirm: passkeyConfirm(pk) });
 
     const { key: apiKey, keyId } = await tab.auth.apikeyCreate({ label: 'console', apps: [app], readOnly: true }, { confirm: passkeyConfirm(pk) });
     expect(apiKey).toBeTruthy();

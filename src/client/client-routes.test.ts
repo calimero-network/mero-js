@@ -290,20 +290,20 @@ describe("the console's passkey actions", () => {
     ]);
   });
 
-  it('approves outbound prefixes and releases, for an org or for the account', async () => {
+  it('approves outbound prefixes and releases for an org, the account\'s own on its personal org', async () => {
     const c = client();
     confirming({});
     await c.orgs.outboundApproval({ org: 'org-1', package: 'com.example.kv', prefixes: 'manifest', replace: false }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/outbound');
     expect(last().body).toMatchObject({ package: 'com.example.kv', prefixes: 'manifest', replace: false });
-    await c.auth.accountOutboundApproval({ package: 'com.example.kv', prefixes: ['https://api.example/'], replace: true }, { confirm: passkeyConfirm(passkey) });
-    expect(last().head.path).toBe('/auth/outbound');
+    await c.orgs.outboundApproval({ org: 'personal-1', package: 'com.example.kv', prefixes: ['https://api.example/'], replace: true }, { confirm: passkeyConfirm(passkey) });
+    expect(last().head.path).toBe('/orgs/personal-1/outbound');
     expect(last().body).toMatchObject({ prefixes: ['https://api.example/'], replace: true, confirm: { challengeId: 'c-1' } });
     await c.orgs.releaseApproval({ org: 'org-1', version: '2.3.120', approved: true }, { confirm: passkeyConfirm(passkey) });
     expect(last().head.path).toBe('/orgs/org-1/releases');
     expect(last().body).toMatchObject({ version: '2.3.120', approved: true });
-    await c.auth.accountReleaseApproval({ version: '2.3.110', approved: false }, { confirm: passkeyConfirm(passkey) });
-    expect(last().head.path).toBe('/auth/releases');
+    await c.orgs.releaseApproval({ org: 'personal-1', version: '2.3.110', approved: false }, { confirm: passkeyConfirm(passkey) });
+    expect(last().head.path).toBe('/orgs/personal-1/releases');
     expect(last().body).toMatchObject({ version: '2.3.110', approved: false });
   });
 
