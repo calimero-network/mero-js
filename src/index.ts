@@ -49,4 +49,26 @@ export * from './agent-gate/index.js';
 export * from './recovery/backup-files.js';
 
 // Building and signing a compute-only pipeline package (.mpk), byte-compatible with core.
-export * from './package/pack.js';
+export {
+  MAX_ARCHIVE_BYTES,
+  MAX_MANIFEST_BYTES,
+  MAX_MPK_BYTES,
+  MAX_PIPELINE_BYTES,
+  MAX_PIPELINES_PER_PACKAGE,
+  canonicalizeManifest,
+  exportPublisherKey,
+  generatePublisherKey,
+  importPublisherKey,
+  isDevPublisherKey,
+  packComputePackage,
+  signerIdOf,
+  signingPayload,
+  webCryptoPublisherKey,
+} from './package/pack.js';
+export type {
+  ComputePackageInput,
+  PackKey,
+  PackageMetadata,
+  PublisherKey,
+  WebCryptoPublisherKey,
+} from './package/pack.js';

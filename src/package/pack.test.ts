@@ -3,22 +3,30 @@ import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import * as root from '../index.js';
 
 import { privateKey, buf } from '../client/recovery-key.js';
 import { b64url } from '../runtime/passkey.js';
 import {
+  MAX_ARCHIVE_BYTES,
   MAX_MANIFEST_BYTES,
+  MAX_MPK_BYTES,
   MAX_PIPELINE_BYTES,
   MAX_PIPELINES_PER_PACKAGE,
   canonicalizeManifest,
+  checkPackage,
   exportPublisherKey,
   generatePublisherKey,
   importPublisherKey,
+  isDevPublisherKey,
   packComputePackage,
   signerIdOf,
   signingPayload,
   verifyManifestSignature,
+  webCryptoPublisherKey,
 } from './pack.js';
 
 const fx = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
@@ -246,3 +254,199 @@ describe('the publisher key', () => {
 function signerIdOfSync(manifest: { signerId: string }) {
   return manifest.signerId;
 }
+
+const tarOf = (mpk: Uint8Array) => new Uint8Array(gunzipSync(mpk));
+const publicOf = async () => (await key()).publicKey;
+
+describe('the signed manifest is the archived manifest', () => {
+  it.each([
+    ['a toJSON that lies', { name: 'n', toJSON: () => 'evil' }, /unknown field 'toJSON'/],
+    ['a Date', new Date(0), /name is required/],
+    ['an undefined name', { name: undefined }, /name is required/],
+    ['a numeric name', { name: 1 }, /name must be a string/],
+    ['tags that are not an array', { name: 'n', tags: 'a' }, /tags must be an array of strings/],
+    ['a non-string tag', { name: 'n', tags: ['a', 2] }, /tags must be an array of strings/],
+    ['an unknown field', { name: 'n', extra: 'x' }, /unknown field 'extra'/],
+    ['a lone surrogate', { name: '\ud800' }, /lone surrogate/],
+  ])('refuses metadata with %s', async (_n, metadata, message) => {
+    await expect(packComputePackage({ ...base, metadata } as never, await key())).rejects.toThrow(message);
+  });
+
+  it('archives the canonical bytes it signed', async () => {
+    const mpk = await packComputePackage({ ...base, metadata: { name: 'n', tags: ['b', 'a'] } }, await key());
+    const text = entries(mpk).get('manifest.json')!.toString('utf8');
+    const sorted = (v: any): any =>
+      Array.isArray(v) ? v.map(sorted) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v;
+    expect(text).toBe(JSON.stringify(sorted(JSON.parse(text))));
+  });
+
+  it('checks the archive it built: digests, file set, signer and duplicates', async () => {
+    const tar = tarOf(await packComputePackage(base, await key()));
+    await expect(checkPackage(tar, await publicOf())).resolves.toBeUndefined();
+    const flip = (needle: string, to: string) => {
+      const c = Buffer.from(tar);
+      const i = c.indexOf(needle);
+      Buffer.from(to).copy(c, i);
+      return new Uint8Array(c);
+    };
+    await expect(checkPackage(flip('fixture compute', 'fixtuRe compute'), await publicOf())).rejects.toThrow(/integrity check/);
+    await expect(checkPackage(tar, (await generatePublisherKey()).publicKey)).rejects.toThrow(/not signed by the publisher key/);
+    await expect(checkPackage(tar.subarray(0, 1024 + 512 * 2), await publicOf())).rejects.toThrow(/exactly the files/);
+  });
+
+  it('refuses an archive with a second manifest.json', async () => {
+    const tar = Buffer.from(tarOf(await packComputePackage(base, await key())));
+    const len = 512 + Math.ceil(entries(await packComputePackage(base, await key())).get('manifest.json')!.length / 512) * 512;
+    const doubled = new Uint8Array(Buffer.concat([tar.subarray(0, len), tar]));
+    await expect(checkPackage(doubled, await publicOf())).rejects.toThrow(/more than one entry at 'manifest.json'/);
+  });
+});
+
+describe('what the caller hands in', () => {
+  it('is copied before any await, so a later write cannot split the hash from the archive', async () => {
+    const mine = Uint8Array.from(compute);
+    const sources = [{ path: 'pipelines/a.yaml', source: 'a: 1' }];
+    const pending = packComputePackage({ ...base, compute: mine, pipelines: sources }, await key());
+    mine[20] ^= 0xff;
+    sources[0].source = 'b: 2';
+    const e = entries(await pending);
+    expect(Buffer.compare(e.get('compute.wasm')!, Buffer.from(compute))).toBe(0);
+    expect(e.get('pipelines/a.yaml')!.toString()).toBe('a: 1');
+  });
+
+  it('refuses a key whose publicKey is not its seed\'s', async () => {
+    const k = await key();
+    const other = await generatePublisherKey();
+    await expect(packComputePackage(base, { seed: k.seed, publicKey: other.publicKey })).rejects.toThrow(/not its seed's/);
+  });
+});
+
+describe('size bounds', () => {
+  it('refuses a compute component past the decompressed cap before copying it', async () => {
+    const huge = new Uint8Array(MAX_ARCHIVE_BYTES + 1);
+    await expect(packComputePackage({ ...base, compute: huge }, await key())).rejects.toThrow(
+      `bundle archive exceeds the ${MAX_ARCHIVE_BYTES} byte decompressed cap`,
+    );
+  }, 60_000);
+
+  it('refuses a package past what a node takes, with core\'s wording', async () => {
+    const noise = new Uint8Array(MAX_MPK_BYTES + 1024 * 1024);
+    let x = 0x9e3779b9;
+    const words = new Uint32Array(noise.buffer);
+    for (let i = 0; i < words.length; i++) {
+      x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+      words[i] = x;
+    }
+    noise.set([0, 0x61, 0x73, 0x6d, 0x0d, 0, 0x01, 0]);
+    await expect(packComputePackage({ ...base, compute: noise }, await key())).rejects.toThrow(
+      `a package is limited to ${MAX_MPK_BYTES >> 20} MiB`,
+    );
+  }, 60_000);
+});
+
+describe('a non-extractable key', () => {
+  it('signs the same package as the seed does', async () => {
+    const k = await key();
+    const web = await webCryptoPublisherKey(k);
+    expect(web.privateKey.extractable).toBe(false);
+    const [a, b] = [await packComputePackage(base, k), await packComputePackage(base, web)];
+    const [ea, eb] = [entries(a), entries(b)];
+    for (const [name, bytes] of ea) expect(Buffer.compare(eb.get(name)!, bytes), name).toBe(0);
+    await checkPackage(tarOf(b), k.publicKey);
+  });
+
+  it('is checked against the public key it is given', async () => {
+    const web = await webCryptoPublisherKey(await key());
+    await expect(packComputePackage(base, { ...web, publicKey: (await generatePublisherKey()).publicKey })).rejects.toThrow(
+      /signature verification failed/,
+    );
+  });
+
+  it('refuses a key that is not an Ed25519 signing key', async () => {
+    const hmac = await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    await expect(packComputePackage(base, { privateKey: hmac, publicKey: new Uint8Array(32) })).rejects.toThrow(
+      /not an Ed25519 signing key/,
+    );
+  });
+});
+
+describe('a runtime without Ed25519', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const message = /this runtime cannot sign Ed25519 packages/;
+
+  it('says so when there is no WebCrypto', async () => {
+    const k = await key();
+    vi.stubGlobal('crypto', undefined);
+    await expect(packComputePackage(base, k)).rejects.toThrow(message);
+    await expect(generatePublisherKey()).rejects.toThrow(message);
+  });
+
+  it('says so when WebCrypto lacks Ed25519', async () => {
+    const k = await key();
+    vi.stubGlobal('crypto', { subtle: { importKey: () => Promise.reject(new Error('NotSupportedError')) } });
+    await expect(packComputePackage(base, k)).rejects.toThrow(message);
+    await expect(verifyManifestSignature({})).rejects.toThrow(message);
+  });
+});
+
+describe('the package root', () => {
+  it('does not export the loose manifest verifier, and does export the dev key check', () => {
+    expect((root as Record<string, unknown>).verifyManifestSignature).toBeUndefined();
+    expect(root.isDevPublisherKey).toBeTypeOf('function');
+    expect(root.packComputePackage).toBeTypeOf('function');
+  });
+});
+
+describe('a backup is strict', () => {
+  const backup = (seed: string, extra: object = {}) => new TextEncoder().encode(JSON.stringify({ private_key: seed, ...extra }));
+  const good = Buffer.from(SEED).toString('base64url');
+
+  it.each([
+    ['padding', `${good}=`],
+    ['standard base64', Buffer.from(SEED).toString('base64').replace(/=+$/, '').replace(/-/g, '+') + '+'],
+    ['a 42 character seed', good.slice(0, 42)],
+    ['non-canonical trailing bits', `${good.slice(0, 42)}${'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'.indexOf(good[42]) + 1) % 64]}`],
+    ['whitespace', ` ${good}`],
+  ])('refuses %s without echoing the seed', async (_n, seed) => {
+    const error = await importPublisherKey(backup(seed)).catch((e) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/unpadded base64url 32-byte seed/);
+    expect(error.message).not.toContain(seed.trim());
+  });
+
+  it('ignores other fields, as mero-sign does', async () => {
+    const k = await importPublisherKey(backup(good, { note: 'x' }));
+    expect(hex(k.seed)).toBe(hex(SEED));
+  });
+});
+
+describe('names', () => {
+  const pack = async (over: object) => packComputePackage({ ...base, ...over } as never, await key());
+
+  it.each(['pipelines/a b.yaml', 'pipelines/é.yaml', 'pipelines/a:b.yaml', 'pipelines/a*.yaml'])('refuses the file name %j', async (path) => {
+    await expect(pack({ pipelines: [{ path, source: 'a: 1' }] })).rejects.toThrow(/must be pipelines\/<name>\.yaml/);
+  });
+
+  it('refuses two names that differ only in case', async () => {
+    const p = (path: string) => ({ path, source: 'a: 1' });
+    await expect(pack({ pipelines: [p('pipelines/A.yaml'), p('pipelines/a.yaml')] })).rejects.toThrow(/same path/);
+  });
+
+  it.each(['v1.0.0', '1.0', '01.0.0', '1.0.0.0', '1.0.0-', 'latest'])('refuses the version %j', async (version) => {
+    await expect(pack({ version })).rejects.toThrow(/not a semantic version/);
+  });
+
+  it.each(['1.0.0', '0.0.1-rc.1', '2.3.4+build.5', '1.0.0-alpha.1+b'])('takes the version %j', async (version) => {
+    await expect(pack({ version })).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe('the development key', () => {
+  it('is recognised by its signer id and its published seed', async () => {
+    const dev = await importSeed(Buffer.from(sha256(new TextEncoder().encode('calimero-dev-signing-key-v1'))).toString('hex'));
+    expect(isDevPublisherKey(dev)).toBe(true);
+    expect(signerIdOf(dev)).toBe('did:key:z6MknF3p5L5FDHJQ7FREUapuX4Wmp4MtF6WrHYaXS2B3eZQd');
+    expect(isDevPublisherKey(await key())).toBe(false);
+    await expect(packComputePackage(base, dev)).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
