@@ -459,7 +459,7 @@ export function releaseConsent(
   version: string,
   returnTo: string,
   options: { withdraw?: boolean } = {},
-): ConsentRequest {
+): ConsentRequest & { kind: 'release' } {
   return {
     kind: 'release',
     scope: scope.kind === 'org' ? { org: scope.org } : 'account',
@@ -475,12 +475,20 @@ export function releaseConsent(
  * last approved release is refused on the page (`400 REJECTED`, the request
  * stays pending), and the page warns before.
  */
-export function withdrawConsent(scope: ReportScope, version: string, returnTo: string): ConsentRequest {
+export function withdrawConsent(
+  scope: ReportScope,
+  version: string,
+  returnTo: string,
+): ConsentRequest & { kind: 'release' } {
   return releaseConsent(scope, version, returnTo, { withdraw: true });
 }
 
 /** The consent request that upgrades `app` to `toVersion`. */
-export function upgradeConsent(app: string, toVersion: string, returnTo: string): ConsentRequest {
+export function upgradeConsent(
+  app: string,
+  toVersion: string,
+  returnTo: string,
+): ConsentRequest & { kind: 'upgrade' } {
   return { kind: 'upgrade', subject: { app, toVersion }, returnTo };
 }
 
