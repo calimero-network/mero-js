@@ -37,15 +37,15 @@
           },
           {
             "type": "chore",
-            "release": "patch"
+            "release": null
           },
           {
             "type": "docs",
-            "release": "patch"
+            "release": null
           },
           {
             "type": "refactor",
-            "release": "patch"
+            "release": null
           },
           {
             "type": "perf",
@@ -61,6 +61,18 @@
           },
           {
             "type": "ci",
+            "release": null
+          },
+          {
+            "type": "style",
+            "release": null
+          },
+          {
+            "type": "revert",
+            "release": null
+          },
+          {
+            "revert": true,
             "release": null
           }
         ]
