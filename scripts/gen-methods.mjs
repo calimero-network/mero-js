@@ -80,7 +80,8 @@ for (const [path, item] of Object.entries(doc.paths)) {
 
     const parts = [];
     if (pathParams.length) parts.push(`${O}['parameters']['path']`);
-    // A query parameter named like a path parameter (`GET /apps/{app}/attestation?app=`)
+    // A query parameter named like a path parameter (none in core 92ac297a1's document;
+    // `GET /apps/{app}/attestation?app=` was one until it documented only `nonce`)
     // cannot be flattened beside it: the query goes whole, under `query`.
     const queryWhole = queryNames.some((n) => pathParams.includes(n));
     if (query.length) {

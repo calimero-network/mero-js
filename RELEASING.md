@@ -29,8 +29,8 @@ section says whether it does), the type picks the version bump:
 | PR title | Release |
 | --- | --- |
 | `feat: ...` | minor |
-| `fix:`, `chore:`, `docs:`, `refactor:`, `perf:` | patch |
-| `test:`, `build:`, `ci:` | none |
+| `fix:`, `perf:` | patch |
+| `docs:`, `chore:`, `refactor:`, `style:`, `test:`, `build:`, `ci:`, `revert:` | none |
 | `<type>!: ...`, or a `BREAKING-CHANGE:` footer | major |
 
 - Only the hyphenated `BREAKING-CHANGE:` footer keyword makes a major (besides
@@ -42,8 +42,11 @@ section says whether it does), the type picks the version bump:
   `["BREAKING-CHANGE"]`, and prose that says "breaking change" does nothing.
 - Prefer `!` in the title over the footer: the title is visible in review,
   while the squash commit's body is whatever the merge dialog fills in.
-- `chore:` and `docs:` release a patch. A change that must not release
-  anything (CI, tests, build tooling) is `ci:`, `test:` or `build:`.
+- Only `feat:`, `fix:` and `perf:` release (plus a major from `!` or the
+  footer); every other type releases nothing. A change to what users read in
+  the package (a README shipped to npm, docstrings) that should reach them is
+  titled `fix(docs):` (a patch). To ship a change that touches no feature or
+  fix (e.g. a dependency bump consumers need), title it `fix(deps): ...`.
 - Choose the type for what the change does to whoever depends on the release,
   not for the size of the diff.
 
@@ -98,7 +101,8 @@ has each SDK re-vendor it on the machine-owned branch `chore/core-openapi` and
 open (or refresh) one pull request. Core's classifier titles that pull request
 from what changed in the generated surface: `feat(api)!:` when something a
 caller uses was removed or changed, `feat(api):` when something was only
-added, `chore(api):` otherwise.
+added, `chore(api):` otherwise (descriptions only), which releases nothing:
+that change reaches consumers with the SDK's next release.
 
 Don't retitle these down: `feat(api)!:` turned into `feat(api):` ships a
 breaking change as a minor to every consumer on a `^` range. Retitle up if the
@@ -118,8 +122,8 @@ major, and expect an accidental major to cut the whole fleet off silently.
 
 ### Pre-release lines
 
-Some repositories also publish pre-releases (core's `X.Y.Z-rc.N`, the `rc`
-channel of calimero-client-py). Which branch makes which kind of release, and
+Some repositories also publish pre-releases (core's `X.Y.Z-rc.N`).
+Which branch makes which kind of release, and
 how a pre-release line becomes a final, is in the repository section. Promoting
 a line is a human's decision.
 
@@ -155,8 +159,12 @@ last tag, using the table in the shared rules. When they call for a release:
 3. The job pushes the release commit and its tag to `master`.
 4. The `fleet-bump` job opens the consumers' bump pull requests (below).
 
-`workflow_dispatch` on `release.yml` re-runs the same steps; it is a human's
-tool, for a release run that failed.
+semantic-release pushes the tag `mero-js-vX` before it creates the GitHub
+Release, so a run that fails after that has already claimed the version. Once
+npm has `@calimero-network/mero-js@X`, a failed run is fixed by the next
+release (a `fix:` pull request), not by re-running `release.yml`: a re-run fails
+on the existing tag. `workflow_dispatch` re-runs the same steps, for a run that
+failed before the tag; it is a human's tool.
 
 ### Version, tags and changelog
 
