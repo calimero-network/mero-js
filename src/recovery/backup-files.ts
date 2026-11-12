@@ -18,13 +18,14 @@
  * DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-256-GCM, `info`
  * {@link HPKE_INFO}, `aad` {@link HPKE_AAD}; the header is JSON signed by the
  * node's Ed25519 receipt key over {@link SIGNING_LABEL} and its bytes. The
- * tests open what core sealed. Checking the header's attestation (that the
- * signing key is an attested node's) is core's `verify_attestation`; this
- * module does not do it yet.
+ * tests open what core sealed. {@link verifyRecoveryAttestation} checks, as
+ * core's `verify_attestation` does, that the signing key is an attested node's
+ * receipt key: give it the quote verifier the client trusts nodes with.
  */
 
 import { concat, fromHex, hex } from '../crypto/internal.js';
 import { dh, x25519KeyPair } from '../sealed/noise.js';
+import type { VerifyTransportQuote } from '../sealed/sealed.js';
 
 export const RECOVERY_FORMAT = 1;
 export const SIGNING_LABEL = new TextEncoder().encode('calimero.recovery-backup.v1\0');
@@ -191,17 +192,19 @@ export interface OpenedRecoveryFile {
 /**
  * The body of `POST /recover/holder` from a holder's listed files: the newest
  * `holder` file, the newest file of each app in `apps` (all of them when
- * absent) and every code file, each checked and opened with `secret`.
+ * absent) and every code file, each checked and opened with `secret`; with
+ * `verifyQuote`, each one's attestation too ({@link verifyRecoveryAttestation}).
  */
 export async function holderRecoveryBody(
   holder: BackupHolder,
   files: ListedRecoveryFile[],
   secret: Uint8Array,
-  apps?: string[],
+  options: { apps?: string[]; verifyQuote?: VerifyTransportQuote } = {},
 ): Promise<{ holder: string; slice: OpenedRecoveryFile; apps: OpenedRecoveryFile[]; code: OpenedRecoveryFile[] }> {
   const checked: { name: string; header: RecoveryHeader }[] = [];
   for (const f of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
     const header = await verifyRecoveryHeader(f);
+    if (options.verifyQuote) await verifyRecoveryAttestation(header, options.verifyQuote);
     if (holderKey(header.holder) !== holderKey(holder)) {
       throw new Error(`${f.name} is ${holderKey(header.holder)}'s, not ${holderKey(holder)}'s`);
     }
@@ -215,7 +218,7 @@ export async function holderRecoveryBody(
   if (!slice) throw new Error(`no holder file of ${holderKey(holder)}`);
   const newestByApp = new Map<string, { name: string; header: RecoveryHeader }>();
   for (const c of checked) {
-    if (c.header.kind === 'app' && c.header.app && (!apps || apps.includes(c.header.app))) {
+    if (c.header.kind === 'app' && c.header.app && (!options.apps || options.apps.includes(c.header.app))) {
       newestByApp.set(c.header.app, c);
     }
   }
@@ -225,4 +228,60 @@ export async function holderRecoveryBody(
     apps: await Promise.all([...newestByApp.values()].map(open)),
     code: await Promise.all(checked.filter((c) => c.header.kind === 'code').map(open)),
   };
+}
+
+async function sha256(data: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+}
+
+/** The nonce a node's recovery attestation binds (core's `recovery::attestation_nonce`), hex. */
+export async function recoveryAttestationNonce(cluster: string, node: number): Promise<string> {
+  const name = utf8(cluster);
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, name.length, false);
+  const id = new Uint8Array(8);
+  new DataView(id.buffer).setBigUint64(0, BigInt(node), false);
+  return hex(await sha256(concat(utf8('calimero.recovery-backup.attest.v1\0'), len, name, id)));
+}
+
+/**
+ * What a receipt-key quote binds after its nonce (core's `receipt_key_binding`),
+ * hex: the key and the cluster's governance, as the node serialized it.
+ */
+export async function receiptKeyBinding(receiptKey: Uint8Array, governance: unknown): Promise<string> {
+  const g = await sha256(utf8(JSON.stringify(governance)));
+  return hex(await sha256(concat(utf8('calimero.tee-attest.receipt-key.v2'), receiptKey, g)));
+}
+
+interface ReceiptAttestation {
+  quote: string;
+  nonce: string;
+  cluster: string;
+  node: number;
+  receiptKey?: string;
+  governance?: unknown;
+}
+
+/**
+ * Check that the key that signed `header` is a node's receipt key, attested
+ * (`purpose=receipts`) by a quote `verifyQuote` accepts: attested hardware
+ * wrote the file. Rejects with the reason.
+ */
+export async function verifyRecoveryAttestation(
+  header: RecoveryHeader,
+  verifyQuote: VerifyTransportQuote,
+): Promise<void> {
+  const doc = header.attestation as ReceiptAttestation | null;
+  if (!doc || typeof doc.quote !== 'string') throw new Error('the file carries no attestation');
+  if (doc.cluster !== header.cluster || doc.node !== header.node) {
+    throw new Error("the attestation is another node's");
+  }
+  if (doc.receiptKey !== header.signingKey) {
+    throw new Error('the attested key is not the one that signed the file');
+  }
+  const nonce = await recoveryAttestationNonce(header.cluster, header.node);
+  if (doc.nonce !== nonce) throw new Error('the attestation is not over the recovery nonce');
+  const reportDataSuffix = await receiptKeyBinding(fromHex(header.signingKey, 'signing key', 32), doc.governance);
+  const ok = await verifyQuote({ quoteB64: doc.quote, nonce, reportDataSuffix });
+  if (!ok) throw new Error('the quote was not accepted');
 }

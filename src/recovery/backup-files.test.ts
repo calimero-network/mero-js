@@ -6,8 +6,12 @@ import {
   holderRecoveryBody,
   newBackupKeyPair,
   openDataKey,
+  receiptKeyBinding,
+  recoveryAttestationNonce,
+  verifyRecoveryAttestation,
   verifyRecoveryHeader,
 } from './backup-files.js';
+import binding from './rust-binding.json';
 import fixture from './rust-fixture.json';
 
 const fromHexStr = (s: string) => new Uint8Array(s.match(/../g)!.map((b) => parseInt(b, 16)));
@@ -46,5 +50,42 @@ describe('recovery files sealed by a node', () => {
     await expect(
       holderRecoveryBody({ kind: 'org', id: 'other' }, listed, fromHexStr(fixture.secret)),
     ).rejects.toThrow(/not org:other/);
+  });
+});
+
+// Core's `attestation_nonce("c", 1)` and `receipt_key_binding` of the fixture's
+// signing key under the default governance.
+describe('a recovery file attestation', () => {
+  it('binds the nonce and the receipt key as core does', async () => {
+    expect(await recoveryAttestationNonce('c', 1)).toBe(binding.nonce);
+    expect(await receiptKeyBinding(fromHexStr(binding.signingKey), binding.governance)).toBe(binding.binding);
+  });
+
+  it('asks the quote verifier for that nonce and binding, and refuses another key', async () => {
+    const header = await verifyRecoveryHeader(fixture);
+    const attested = {
+      ...header,
+      signingKey: binding.signingKey,
+      attestation: {
+        quote: 'cXVvdGU=',
+        nonce: binding.nonce,
+        cluster: 'c',
+        node: 1,
+        receiptKey: binding.signingKey,
+        governance: binding.governance,
+      },
+    };
+    const asked: unknown[] = [];
+    const verifyQuote = async (args: unknown) => {
+      asked.push(args);
+      return true;
+    };
+    await verifyRecoveryAttestation(attested, verifyQuote);
+    expect(asked).toEqual([{ quoteB64: 'cXVvdGU=', nonce: binding.nonce, reportDataSuffix: binding.binding }]);
+    const otherKey = { ...attested, attestation: { ...attested.attestation, receiptKey: '00'.repeat(32) } };
+    await expect(verifyRecoveryAttestation(otherKey, verifyQuote)).rejects.toThrow(/signed/);
+    await expect(verifyRecoveryAttestation({ ...header, attestation: null }, verifyQuote)).rejects.toThrow(
+      /no attestation/,
+    );
   });
 });
