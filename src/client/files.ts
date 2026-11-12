@@ -8,6 +8,7 @@ import { concat, fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
 import { ExportError, SEGMENT_BYTES, SegmentReader, fileId, unwrapExport } from '../sealed/file.js';
 import { x25519KeyPair } from '../sealed/noise.js';
 import { routePath, type Transport } from '../runtime/transport.js';
+import type { AppsRoutes } from '../generated/methods.js';
 
 export { ExportError, type ExportErrorCode } from '../sealed/file.js';
 
@@ -23,7 +24,7 @@ export interface ExportedFile {
   sha256: string;
 }
 
-type ExportTransport = Pick<Transport, 'json' | 'request'>;
+type ExportTransport = Pick<Transport, 'request'> & Pick<AppsRoutes, 'exportsExport'>;
 
 function hexField(value: unknown, label: string, bytes?: number): Uint8Array {
   if (typeof value !== 'string') throw new ExportError('BAD_ANSWER', `the node answered a bad ${label}`);
@@ -121,13 +122,7 @@ async function exportChecked(
   recipientSecret?: Uint8Array,
 ): Promise<ExportedFile> {
   const recipient = await x25519KeyPair(recipientSecret);
-  // shortcut: not in the generated routes until the next openapi sync; they move there then.
-  const answer = checked(
-    await transport.json('POST', routePath('apps/{app}/files/{id}/export', { app, id }), {
-      body: { recipient: hex(recipient.publicKey) },
-      signal,
-    }),
-  );
+  const answer = checked(await transport.exportsExport({ app, id, recipient: hex(recipient.publicKey) }, { signal }));
   const { segments, named } = answer;
   if (segments.length === 0 || hex(await fileId(segments)) !== hex(named) || hex(named) !== id) {
     throw new ExportError('NOT_THE_FILE', `the node answered segments that are not the file ${id}`);
@@ -136,6 +131,7 @@ async function exportChecked(
   const reader = await SegmentReader.create(dataKey, segments);
   for (let k = 0; k < segments.length; k += 1) {
     if (signal?.aborted) throw aborted();
+    // The generated segment method buffers the whole body, so this stays on the streaming request.
     const response = await transport.request('GET', routePath('apps/{app}/files/{id}/segments/{k}', { app, id, k }), {
       signal,
     });

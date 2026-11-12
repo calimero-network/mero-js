@@ -4,6 +4,7 @@ import { fromHex, fromHexUnsized, hex } from '../crypto/internal.js';
 import { SEALED_FILE_VECTORS as V } from '../sealed/fixtures/sealed-file-vectors.js';
 import { fileId } from '../sealed/file.js';
 import type { Transport } from '../runtime/transport.js';
+import type { AppsRoutes } from '../generated/methods.js';
 import { ExportError, exportFile, exportFileTo } from './files.js';
 import { SEGMENT_BYTES } from '../sealed/file.js';
 
@@ -34,10 +35,10 @@ function node(
   };
   change(answer);
   const transport = {
-    json: async (method: string, path: string, options?: { body?: unknown; signal?: unknown }) => {
-      calls.push(`${method} ${path}`);
+    exportsExport: async (args: Record<string, unknown>, options?: { signal?: unknown }) => {
+      calls.push(`POST apps/${String(args.app)}/files/${String(args.id)}/export`);
       signals.push(options?.signal);
-      body = options?.body;
+      body = { recipient: args.recipient };
       return answer;
     },
     request: async (method: string, path: string, options?: { signal?: unknown }) => {
@@ -45,7 +46,7 @@ function node(
       signals.push(options?.signal);
       return respond();
     },
-  } as unknown as Pick<Transport, 'json' | 'request'>;
+  } as unknown as Pick<Transport, 'request'> & Pick<AppsRoutes, 'exportsExport'>;
   return { transport, calls, signals, body: () => body };
 }
 
@@ -275,13 +276,13 @@ describe('error codes', () => {
     ];
     for (const change of bad) expect(await codeOf(run(node(three, change), three))).toBe('BAD_ANSWER');
     const n = node(three);
-    n.transport.json = (async () => null) as never;
+    n.transport.exportsExport = (async () => null) as never;
     expect(await codeOf(run(n, three))).toBe('BAD_ANSWER');
   });
 
   it('leaves the node\'s own refusal as the transport\'s error', async () => {
     const n = node(three);
-    n.transport.json = (async () => {
+    n.transport.exportsExport = (async () => {
       throw new RangeError('refused');
     }) as never;
     expect(await codeOf(run(n, three))).toContain('not an ExportError');
