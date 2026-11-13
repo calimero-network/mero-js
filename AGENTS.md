@@ -13,6 +13,7 @@ calls apps. See [README.md](README.md) and the docs site, whose source is `docs/
 
 - `src/runtime/`: attestation, directory, passkey and transport.
 - `src/sealed/`: the sealed channel (Noise) and release checks.
+- `src/package/`: building and signing a compute-only `.mpk` (golden vectors in `fixtures/` come from core's `calimero-bundle`).
 - `src/routes/`: the route client the generated methods call through.
 - `src/client/`: `CalimeroClient` and its helpers.
 - `src/generated/`: **generated, do not edit** (see below).
