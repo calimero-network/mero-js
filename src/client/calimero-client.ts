@@ -659,20 +659,28 @@ export class CalimeroClient {
     return exportFile(this.exportClient, app, id, signal);
   }
 
+  /** The policy this client attests nodes under; a client without one verifies nothing. */
+  private get attestationPolicy(): NodePolicy {
+    const policy = this.transport.nodePolicy;
+    if (!policy) throw new Error('this client has no attestation policy, so it cannot verify an attestation');
+    return policy;
+  }
+
   /**
-   * Verify every replica of `app` under `policy`: each one's quote binds its receipt key, the cluster's
-   * governance, and its cluster and node id. Answers the attested receipt key per node and the governance.
+   * Verify every replica of `app` under this client's policy: each one's quote binds its receipt key,
+   * the cluster's governance, and its cluster and node id. Answers the attested receipt key per node
+   * and the governance.
    */
-  verifyAppCluster(app: string, policy: NodePolicy): Promise<AttestedCluster> {
-    return verifyAppCluster(this, app, policy);
+  async verifyAppCluster(app: string): Promise<AttestedCluster> {
+    return verifyAppCluster(this, app, this.attestationPolicy);
   }
 
   /**
    * Verify the receipt of a pipeline run (`client.apps.pipelineReceiptReceipt`): signed by the key an
    * attested replica holds, and for `app`. Throws when it is not; answers the receipt.
    */
-  verifyPipelineReceipt(app: string, answer: ReceiptAnswer, policy: NodePolicy): Promise<PipelineReceipt> {
-    return verifyPipelineReceipt(this, app, answer, policy);
+  async verifyPipelineReceipt(app: string, answer: ReceiptAnswer): Promise<PipelineReceipt> {
+    return verifyPipelineReceipt(this, app, answer, this.attestationPolicy);
   }
 
   /**

@@ -101,7 +101,7 @@ export async function verifyAppCluster(
 
 /** The bytes a receipt's signature covers: the domain, then the receipt's canonical JSON (RFC 8785). */
 export function receiptMessage(receipt: unknown): Uint8Array {
-  return concat(utf8(PIPELINE_RECEIPT_DOMAIN), utf8(jcs(receipt as Parameters<typeof jcs>[0])));
+  return concat(utf8(PIPELINE_RECEIPT_DOMAIN), utf8(jcs(receipt as Parameters<typeof jcs>[0], true)));
 }
 
 /** Whether `answer` is signed by `key` (core's `verify_pipeline_receipt`); answers the receipt it carries. */

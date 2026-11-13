@@ -7,6 +7,8 @@ import { fromHex, hex } from '../crypto/internal.js';
 import { MOCK_QUOTE_HEADER, type NodePolicy } from '../runtime/attestation.js';
 import type { Governance } from './approvals.js';
 import { governanceCanonical, receiptKeyBinding } from '../recovery/backup-files.js';
+import binding from '../recovery/rust-binding.json';
+import { CalimeroClient } from './calimero-client.js';
 import {
   verifyAppCluster,
   verifyPipelineReceipt,
@@ -21,7 +23,7 @@ import {
 // and mock-quote attestation docs under a fixed nonce. The program asserts core itself accepts the
 // good doc (`verify_receipt_key`, mock allowed), refuses the unbound `receipt-key.v2` one, another
 // node or cluster, and a policy without mock, and that `verify_pipeline_receipt` accepts the answer
-// under node 1's key only.
+// under node 1's key only. The two `*AnswerText` fields are raw JSON, as the node would send them.
 interface Vectors {
   bindings: { receiptKey: string; governance: Governance; governanceCanonical: string; cluster: string; node: number; binding: string }[];
   nonce: string;
@@ -31,6 +33,9 @@ interface Vectors {
   mockDoc: ReceiptKeyDoc;
   unboundMockDoc: ReceiptKeyDoc;
   receiptAnswer: ReceiptAnswer;
+  /** Raw JSON of answers signed over params with floats, and with an integer past 2^53. */
+  floatAnswerText: string;
+  bigIntAnswerText: string;
 }
 const v = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/receipt-vectors.json', import.meta.url)), 'utf8'),
@@ -216,6 +221,17 @@ describe('verifyPipelineReceipt', () => {
     await expect(verifyPipelineReceipt(both(), APP, { ...v.receiptAnswer, signature: 'abcd' }, MOCK)).rejects.toThrow('signature');
   });
 
+  it('accepts params holding floats as core canonicalizes them', async () => {
+    const answer = JSON.parse(v.floatAnswerText) as ReceiptAnswer;
+    const receipt = await verifyPipelineReceipt(both(), APP, answer, MOCK);
+    expect(receipt.params).toMatchObject({ a: 0.1, b: 1e21, d: 5e-324, e: 1.5 });
+  });
+
+  it('refuses params holding an integer past 2^53, which JSON.parse has already rounded', async () => {
+    const answer = JSON.parse(v.bigIntAnswerText) as ReceiptAnswer;
+    await expect(verifyPipelineReceipt(both(), APP, answer, MOCK)).rejects.toThrow('beyond 2^53');
+  });
+
   it('refuses a receipt for another app', async () => {
     const attestedFor = cluster([{ node: 1 }]);
     await expect(verifyPipelineReceipt(attestedFor, 'app-2', v.receiptAnswer, MOCK)).rejects.toThrow('is for app app-1, not app-2');
@@ -223,5 +239,34 @@ describe('verifyPipelineReceipt', () => {
 
   it('refuses an unattested cluster before looking at the receipt', async () => {
     await expect(verifyPipelineReceipt(cluster([{ node: 1, unbound: true }]), APP, v.receiptAnswer, MOCK)).rejects.toThrow('replica 1');
+  });
+});
+
+describe('governanceCanonical against the code it replaced', () => {
+  // The old binding hashed `JSON.stringify(governance)` of the node's own JSON.
+  const shapes: Governance[] = [binding.governance as Governance, v.governance, ...v.bindings.map((b) => b.governance)];
+
+  it('is byte-identical for every governance the Rust fixtures hold', () => {
+    for (const g of shapes) {
+      expect(governanceCanonical(g)).toEqual(new TextEncoder().encode(JSON.stringify(g)));
+    }
+  });
+});
+
+describe('the client verifies under its own policy', () => {
+  it('fails, never passes, when the client was built with no attestation policy', async () => {
+    const client = new CalimeroClient({ baseUrl: 'http://node.test', policy: undefined as unknown as NodePolicy });
+    await expect(client.verifyAppCluster(APP)).rejects.toThrow('no attestation policy');
+    await expect(client.verifyPipelineReceipt(APP, v.receiptAnswer)).rejects.toThrow('no attestation policy');
+  });
+
+  it('uses the policy the client was built with: a mock quote needs allowMock there', async () => {
+    const refused = new CalimeroClient({ baseUrl: 'http://node.test', policy: {} });
+    // Routes answer through the sealed channel; stand in the attestation route directly.
+    Object.assign(refused, { apps: cluster([{ node: 1 }]).apps });
+    await expect(refused.verifyAppCluster(APP)).rejects.toThrow('mock quote refused');
+    const allowed = new CalimeroClient({ baseUrl: 'http://node.test', policy: MOCK });
+    Object.assign(allowed, { apps: cluster([{ node: 1 }]).apps });
+    expect([...(await allowed.verifyAppCluster(APP)).keys.keys()]).toEqual([1]);
   });
 });

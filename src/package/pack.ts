@@ -163,7 +163,10 @@ export function canonicalizeManifest(manifest: { [key: string]: Json }): Uint8Ar
 
 // Manifests hold only strings, safe integers, arrays and objects, where JSON.stringify's
 // string and integer forms are RFC 8785's; keys sort by UTF-16 code unit, the default order.
-export function jcs(value: Json): string {
+// With `anyNumber` (a node's receipt, which carries user params) every finite number is allowed:
+// RFC 8785 writes numbers as ECMAScript does, which `String` gives. An integer past 2^53 that
+// core's JSON keeps exact (below 2^64) is refused, because JSON.parse has already rounded it.
+export function jcs(value: Json, anyNumber = false): string {
   if (typeof value === 'string') {
     if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) {
       throw new Error('a lone surrogate cannot be canonicalized');
@@ -171,14 +174,20 @@ export function jcs(value: Json): string {
     return JSON.stringify(value);
   }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) throw new Error('only safe integers can be canonicalized');
+    if (!anyNumber) {
+      if (!Number.isSafeInteger(value)) throw new Error('only safe integers can be canonicalized');
+    } else if (!Number.isFinite(value)) {
+      throw new Error('a non-finite number cannot be canonicalized');
+    } else if (Number.isInteger(value) && !Number.isSafeInteger(value) && Math.abs(value) < 2 ** 64) {
+      throw new Error('an integer beyond 2^53 is not exact once parsed, so its canonical form cannot be rebuilt');
+    }
     return String(value);
   }
   if (value === null || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `[${value.map(jcs).join(',')}]`;
+  if (Array.isArray(value)) return `[${value.map((v) => jcs(v, anyNumber)).join(',')}]`;
   return `{${Object.keys(value)
     .sort()
-    .map((k) => `${jcs(k)}:${jcs(value[k])}`)
+    .map((k) => `${jcs(k, anyNumber)}:${jcs(value[k], anyNumber)}`)
     .join(',')}}`;
 }
 
