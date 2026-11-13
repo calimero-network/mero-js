@@ -11,7 +11,7 @@
 export { CalimeroClient, FILE_PART_BYTES, deployerKey, frontendManifest, pageDeployment, presenceState } from './calimero-client.js';
 export { ExportError } from './files.js';
 export { receiptMessage, verifyAppCluster, verifyPipelineReceipt, verifyReceiptKey } from './receipts.js';
-export type { AttestedCluster, PipelineReceipt, ReceiptAnswer, ReceiptKeyDoc } from './receipts.js';
+export type { AttestedCluster, CachedRun, FileRef, PipelineReceipt, StepReceipt, StepRunProof, ReceiptAnswer, ReceiptKeyDoc } from './receipts.js';
 export type { ExportErrorCode, ExportedFile, FileSink } from './files.js';
 export { DEFAULT_DIRECTORY, DirectoryError } from '../runtime/directory.js';
 export type { DirectoryFailure } from '../runtime/directory.js';

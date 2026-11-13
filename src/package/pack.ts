@@ -23,6 +23,7 @@ const DEV_SIGNER_ID = 'did:key:z6MknF3p5L5FDHJQ7FREUapuX4Wmp4MtF6WrHYaXS2B3eZQd'
 
 const MANIFEST_SIGNING_DOMAIN = new TextEncoder().encode('calimero.bundle.manifest.v1\0');
 const MIN_RUNTIME_VERSION = '0.1.0';
+const MAX_CANONICAL_DEPTH = 64; // how deep a value may nest and still be canonicalized
 const ED25519_PUB_MULTICODEC = [0xed, 0x01];
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const COMPONENT_HEADER = [0, 0x61, 0x73, 0x6d, 0x0d, 0, 0x01, 0]; // "\0asm" + component version 13, layer 1
@@ -164,9 +165,10 @@ export function canonicalizeManifest(manifest: { [key: string]: Json }): Uint8Ar
 // Manifests hold only strings, safe integers, arrays and objects, where JSON.stringify's
 // string and integer forms are RFC 8785's; keys sort by UTF-16 code unit, the default order.
 // With `anyNumber` (a node's receipt, which carries user params) every finite number is allowed:
-// RFC 8785 writes numbers as ECMAScript does, which `String` gives. An integer past 2^53 that
-// core's JSON keeps exact (below 2^64) is refused, because JSON.parse has already rounded it.
-export function jcs(value: Json, anyNumber = false): string {
+// RFC 8785 writes numbers as ECMAScript does, which `String` gives, and core's canonicalizer
+// converts every number to f64 first, so a number JSON.parse rounded canonicalizes as core's does.
+export function jcs(value: Json, anyNumber = false, depth = 0): string {
+  if (depth > MAX_CANONICAL_DEPTH) throw new Error(`a value nested deeper than ${MAX_CANONICAL_DEPTH} cannot be canonicalized`);
   if (typeof value === 'string') {
     if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) {
       throw new Error('a lone surrogate cannot be canonicalized');
@@ -174,20 +176,17 @@ export function jcs(value: Json, anyNumber = false): string {
     return JSON.stringify(value);
   }
   if (typeof value === 'number') {
-    if (!anyNumber) {
-      if (!Number.isSafeInteger(value)) throw new Error('only safe integers can be canonicalized');
-    } else if (!Number.isFinite(value)) {
-      throw new Error('a non-finite number cannot be canonicalized');
-    } else if (Number.isInteger(value) && !Number.isSafeInteger(value) && Math.abs(value) < 2 ** 64) {
-      throw new Error('an integer beyond 2^53 is not exact once parsed, so its canonical form cannot be rebuilt');
+    if (anyNumber ? !Number.isFinite(value) : !Number.isSafeInteger(value)) {
+      throw new Error(anyNumber ? 'a non-finite number cannot be canonicalized' : 'only safe integers can be canonicalized');
     }
     return String(value);
   }
   if (value === null || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `[${value.map((v) => jcs(v, anyNumber)).join(',')}]`;
+  if (typeof value !== 'object') throw new Error(`a ${typeof value} cannot be canonicalized`);
+  if (Array.isArray(value)) return `[${value.map((v) => jcs(v, anyNumber, depth + 1)).join(',')}]`;
   return `{${Object.keys(value)
     .sort()
-    .map((k) => `${jcs(k, anyNumber)}:${jcs(value[k], anyNumber)}`)
+    .map((k) => `${jcs(k, anyNumber, depth + 1)}:${jcs(value[k], anyNumber, depth + 1)}`)
     .join(',')}}`;
 }
 

@@ -677,10 +677,10 @@ export class CalimeroClient {
 
   /**
    * Verify the receipt of a pipeline run (`client.apps.pipelineReceiptReceipt`): signed by the key an
-   * attested replica holds, and for `app`. Throws when it is not; answers the receipt.
+   * attested replica holds, and for `app` and `run`. Throws when it is not; answers the receipt.
    */
-  async verifyPipelineReceipt(app: string, answer: ReceiptAnswer): Promise<PipelineReceipt> {
-    return verifyPipelineReceipt(this, app, answer, this.attestationPolicy);
+  async verifyPipelineReceipt(app: string, run: string, answer: ReceiptAnswer): Promise<PipelineReceipt> {
+    return verifyPipelineReceipt(this, app, run, answer, this.attestationPolicy);
   }
 
   /**
