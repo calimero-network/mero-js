@@ -294,6 +294,14 @@ export function createRoutes(api: RouteClient) {
       run: (args: operations['app_run']['parameters']['path'], options?: MethodOptions): Promise<operations['app_run']['responses'][200]['content']['application/json']> =>
         route(api, {"method":"GET","path":"/apps/{app}/runs/{run}","pathParams":["app","run"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_run']['responses'][200]['content']['application/json']>,
       /**
+       * A compute run's attempt logs.
+       *
+       * `GET /apps/{app}/runs/{run}/logs` (`app_run_logs`). **Who:** signed in (a session or an API key).
+       * A `421 WRONG_NODE` moves the client to the next node of the cluster.
+       */
+      runLogs: (args: operations['app_run_logs']['parameters']['path'], options?: MethodOptions): Promise<operations['app_run_logs']['responses'][200]['content']['application/json']> =>
+        route(api, {"method":"GET","path":"/apps/{app}/runs/{run}/logs","pathParams":["app","run"],"query":[],"body":"none","optionalBody":false,"reply":"json"}, args as unknown as Record<string, unknown>, options) as Promise<operations['app_run_logs']['responses'][200]['content']['application/json']>,
+      /**
        * An app's compute runs.
        *
        * `GET /apps/{app}/runs` (`app_runs`). **Who:** whoever the app's access admits (a public app: anyone).

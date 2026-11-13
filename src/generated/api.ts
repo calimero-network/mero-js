@@ -806,6 +806,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/apps/{app}/runs/{run}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A compute run's attempt logs
+         * @description Each attempt's module log, as a sealed file of the app: `{ attempt, id, size, sha256 }`. Only for those who may handle the app's files; the bytes are a files export.
+         *
+         *     **Who:** signed in (a session or an API key).
+         */
+        get: operations["app_run_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/apps/{app}/storage": {
         parameters: {
             query?: never;
@@ -1623,7 +1645,7 @@ export interface paths {
         };
         /**
          * What became of a consent request
-         * @description `decidedAt` (Unix seconds) is `null` while it is pending. `outcome`, once approved, is what the approval made: `{ orgId }` for `createOrg`, `{ token }` for `createInvite`, `{ org }` for `acceptInvite`, `{ orgId, name }` for `renameOrg`, `{ apps }` (the apps deleted) for `deleteOrg`; absent for the other kinds.
+         * @description `decidedAt` (Unix seconds) is `null` while it is pending. `outcome`, once approved, is what the approval made: `{ orgId }` for `createOrg` (with `teamId`, the asking app's own team the organization starts with, when an app's frontend asked on a cluster that makes it), `{ token }` for `createInvite`, `{ org }` for `acceptInvite`, `{ orgId, name }` for `renameOrg`, `{ apps }` (the apps deleted) for `deleteOrg`; absent for the other kinds.
          *
          *     **Who:** a passkey session (an API key is refused).
          */
@@ -7590,6 +7612,65 @@ export interface operations {
             };
         };
     };
+    app_run_logs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        logs: {
+                            /** Format: int64 */
+                            attempt: number;
+                            id: string;
+                            /** Format: int64 */
+                            size: number;
+                            sha256: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description `UNAUTHENTICATED`: no, unknown, expired or revoked credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `NOT_FOUND`: no such object, or one the caller may not see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `WRONG_NODE`: this node runs a release the account's owners have not approved, so it neither issues nor takes the account's sessions; send it to another node of the cluster (no `details`; nothing was spent) */
+            421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     app_storage: {
         parameters: {
             query?: never;
@@ -10365,6 +10446,7 @@ export interface operations {
                         decidedAt: number | null;
                         outcome?: {
                             orgId?: string;
+                            teamId?: string;
                             token?: string;
                             org?: string;
                             name?: string;
