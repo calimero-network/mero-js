@@ -124,13 +124,11 @@ Every generated method, by group (`?` marks an optional argument):
 | Method | Route |
 | --- | --- |
 | `accountApps({ after?, limit? })` | `GET auth/apps` |
-| `accountOutboundApproval({ package, prefixes?, replace? })` (step-up) | `POST auth/outbound` |
 | `accountProofProve({ nonce, audience })` | `POST auth/account-proof` |
 | `accountRecoveryBegin({ code })` | `POST auth/recovery/begin` |
 | `accountRecoveryCancel()` (step-up) | `POST auth/recovery/cancel` |
 | `accountRecoveryFinish({ accountId? })` (step-up) | `POST auth/recovery/finish` |
 | `accountRecoveryStart({ challengeId, code, registration })` | `POST auth/recovery/start` |
-| `accountReleaseApproval({ version, approved? })` (step-up) | `POST auth/releases` |
 | `activityList({ after? })` | `GET auth/activity` |
 | `aliasDelete({ alias })` | `DELETE auth/aliases/{alias}` |
 | `aliasGet({ alias })` | `GET auth/aliases/{alias}` |
@@ -322,7 +320,9 @@ elsewhere.
 `fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
 `DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `withdrawConsent`, `upgradeConsent`,
-`createOrgConsent`, `createInviteConsent`, `acceptInviteConsent`, `withoutConsentReturn`, `CONSENT_STORAGE_KEY`,
+`createOrgConsent`, `createInviteConsent`, `acceptInviteConsent`, `leaveOrgConsent`, `removeMemberConsent`,
+`setMemberRoleConsent`, `setMemberTeamsConsent`, `removeMemberTeamsConsent`, `revokeInviteConsent`, `renameOrgConsent`,
+`deleteOrgConsent`, `setCapabilitiesConsent`, `setAllAppsConsent`, `withoutConsentReturn`, `CONSENT_STORAGE_KEY`,
 `consentReturn`, `confirmationCode`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
 `publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote

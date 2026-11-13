@@ -110,7 +110,7 @@ flows and streams a single route cannot be:
 - **Organization recovery**: `startRecovery(org, seed)` (the seed signs here and never leaves the process); `newRecoverySeed`, `recoveryPublicKey`.
 - **Blobs**: `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` (bytes; `client.apps.blobDownload` answers a `Blob` with its type).
 - **Streams**: `events(app, from?, signal?)`, `presenceStream(app, signal?)`.
-- **Approvals from an app**: `pendingApprovals(org?)`, `appsReportAll(org)`, then `openConsentPage(request, …)` to send the user to the node's consent page, and `waitForConsent(requestId)`; back on `returnTo`, `resumeConsent()` reads the decision on the request this page started from the node (never from the URL) and refuses a return for another request, one still pending, or one a newer request replaced (`CONSENT_REPLACED`: an account has one undecided request per node). Besides releases, upgrades and outbound hosts, `createOrgConsent`, `createInviteConsent` and `acceptInviteConsent` ask for a new organization, an invite or joining with one; the result's `outcome` (`{ orgId }`, `{ token }`, `{ org }`) is typed by `kind`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
+- **Approvals from an app**: `pendingApprovals(org?)`, `appsReportAll(org)`, then `openConsentPage(request, …)` to send the user to the node's consent page, and `waitForConsent(requestId)`; back on `returnTo`, `resumeConsent()` reads the decision on the request this page started from the node (never from the URL) and refuses a return for another request, one still pending, or one a newer request replaced (`CONSENT_REPLACED`: an account has one undecided request per node). Besides releases, upgrades and outbound hosts, `createOrgConsent`, `createInviteConsent` and `acceptInviteConsent` ask for a new organization, an invite or joining with one, and `leaveOrgConsent`, `removeMemberConsent`, `setMemberRoleConsent`, `setMemberTeamsConsent`, `removeMemberTeamsConsent`, `revokeInviteConsent`, `renameOrgConsent`, `deleteOrgConsent`, `setCapabilitiesConsent` and `setAllAppsConsent` for managing one; the result's `outcome` (`{ orgId }`, `{ token }`, `{ org }`, a rename's `{ orgId, name }`, a deletion's `{ apps }`) is typed by `kind`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
 
 Refusals are typed (`LoginRequired`, `PasskeyUnknownHere`, `WrongNode`, `NotFound`, `ConfirmRequired`, `ConfirmCancelled`, `ConfirmPromptBlocked`,
 `ArgsTooLarge`, `IdempotencyMismatch`, `ReleaseDeadlineError`, `RuntimeTooOld`, `ConsentStale`, `AppError`, `TrapError`,
@@ -355,6 +355,7 @@ pnpm test:unit   # unit tests, against a stand-in node over a real sealed channe
 pnpm lint
 pnpm typecheck
 pnpm typecheck:consumer
+pnpm typecheck:tests
 ```
 
 The cluster tests (`tests/cluster`) start three `merod run --dev` nodes and

@@ -16,7 +16,18 @@ import {
   confirmationCode,
   createInviteConsent,
   createOrgConsent,
+  deleteOrgConsent,
+  leaveOrgConsent,
+  removeMemberConsent,
+  removeMemberTeamsConsent,
+  renameOrgConsent,
+  revokeInviteConsent,
+  setAllAppsConsent,
+  setCapabilitiesConsent,
+  setMemberRoleConsent,
+  setMemberTeamsConsent,
   withoutConsentReturn,
+  type ConsentRequest,
   type ConsentResult,
 } from './approvals.js';
 
@@ -107,6 +118,80 @@ describe('organization consent requests', () => {
     const r: ConsentResult = await c.waitForConsent(ID, { intervalMs: 1 });
     if (r.kind === 'createInvite') expect(r.outcome?.token).toBe('inv-1');
     else expect.unreachable();
+  });
+
+  it('sends the organization management kinds (core#5018) as the node takes them', async () => {
+    const c = client();
+    const started = { requestId: ID, url: PAGE, code: await confirmationCode(ID), expiresAt: 9e9 };
+    node.answer = () => ({ status: 200, json: started });
+    const navigate = () => undefined;
+
+    const cases: Array<[ConsentRequest, Record<string, unknown>]> = [
+      [leaveOrgConsent('org-1', RETURN), { kind: 'leaveOrg', subject: { org: 'org-1' } }],
+      [removeMemberConsent('org-1', 'acc-2', RETURN), { kind: 'removeMember', subject: { org: 'org-1', account: 'acc-2' } }],
+      [
+        setMemberRoleConsent('org-1', 'acc-2', 'owner', RETURN),
+        { kind: 'setMemberRole', subject: { org: 'org-1', account: 'acc-2', role: 'owner' } },
+      ],
+      [
+        setMemberTeamsConsent('org-1', 'acc-2', [{ team: 't-1', role: 'readOnly', capabilities: 3 }, { team: 't-2' }], RETURN),
+        {
+          kind: 'setMemberTeams',
+          subject: { org: 'org-1', account: 'acc-2', teams: [{ team: 't-1', role: 'readOnly', capabilities: 3 }, { team: 't-2' }] },
+        },
+      ],
+      [
+        removeMemberTeamsConsent('org-1', 'acc-2', ['t-1'], RETURN),
+        { kind: 'removeMemberTeams', subject: { org: 'org-1', account: 'acc-2', teams: ['t-1'] } },
+      ],
+      [revokeInviteConsent('org-1', 'ik-1', RETURN), { kind: 'revokeInvite', subject: { org: 'org-1', inviteKey: 'ik-1' } }],
+      [renameOrgConsent('org-1', 'Acme Labs', RETURN), { kind: 'renameOrg', subject: { org: 'org-1', name: 'Acme Labs' } }],
+      [deleteOrgConsent('org-1', RETURN), { kind: 'deleteOrg', subject: { org: 'org-1' } }],
+      // A member's, in a team; a member's organization-wide; a team's default; the organization's default.
+      [
+        setCapabilitiesConsent({ org: 'org-1', account: 'acc-2', team: 't-1', capabilities: 3 }, RETURN),
+        { kind: 'setCapabilities', subject: { org: 'org-1', account: 'acc-2', team: 't-1', capabilities: 3 } },
+      ],
+      [
+        setCapabilitiesConsent({ org: 'org-1', account: 'acc-2', capabilities: 1 }, RETURN),
+        { kind: 'setCapabilities', subject: { org: 'org-1', account: 'acc-2', capabilities: 1 } },
+      ],
+      [
+        setCapabilitiesConsent({ org: 'org-1', team: 't-1', capabilities: 0 }, RETURN),
+        { kind: 'setCapabilities', subject: { org: 'org-1', team: 't-1', capabilities: 0 } },
+      ],
+      [
+        setCapabilitiesConsent({ org: 'org-1', capabilities: 2 }, RETURN),
+        { kind: 'setCapabilities', subject: { org: 'org-1', capabilities: 2 } },
+      ],
+      [
+        setAllAppsConsent('org-1', 'acc-2', false, RETURN),
+        { kind: 'setAllApps', subject: { org: 'org-1', account: 'acc-2', allApps: false } },
+      ],
+    ];
+    for (const [request, expected] of cases) {
+      expect(await c.openConsentPage(request, navigate)).toEqual(started);
+      expect(last().head.path).toBe('/consent/requests');
+      expect(last().body).toEqual({ ...expected, returnTo: RETURN });
+    }
+  });
+
+  it("types renameOrg's and deleteOrg's outcomes, and gives the other new kinds none", async () => {
+    const c = client();
+    node.answer = () => ({ status: 200, json: result('approved', 'renameOrg', { orgId: 'org-1', name: 'Acme Labs' }) });
+    const renamed = await c.resumeConsent({ requestId: ID, href: `${RETURN}?request_id=${ID}&result=approved` });
+    if (renamed?.kind === 'renameOrg') expect(renamed.outcome).toEqual({ orgId: 'org-1', name: 'Acme Labs' });
+    else expect.unreachable();
+
+    node.answer = () => ({ status: 200, json: result('approved', 'deleteOrg', { apps: ['a-1', 'a-2'] }) });
+    const deleted: ConsentResult = await c.waitForConsent(ID, { intervalMs: 1 });
+    if (deleted.kind === 'deleteOrg') expect(deleted.outcome?.apps).toEqual(['a-1', 'a-2']);
+    else expect.unreachable();
+
+    node.answer = () => ({ status: 200, json: result('declined', 'removeMember') });
+    const removed: ConsentResult = await c.waitForConsent(ID, { intervalMs: 1 });
+    expect(removed).toEqual({ requestId: ID, kind: 'removeMember', status: 'declined', decidedAt: 7 });
+    expect(removed.outcome).toBeUndefined();
   });
 
   it('stores the started request id for resumeConsent, and nothing of the request', async () => {
