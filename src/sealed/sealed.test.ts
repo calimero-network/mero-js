@@ -394,6 +394,22 @@ describe('createSealedFetch', () => {
     },
   );
 
+  it('opens the session at /sealed/v2/handshake when a sealed-only node answers 403 sealed_required', async () => {
+    // An older node that seals everything refuses an unknown path as unsealed.
+    const node = await StandInNode.start(() => ok());
+    const carrier = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === `${baseUrl}${HANDSHAKE_PATH}`) return refusal(403, 'sealed_required');
+      return node.fetch(url, init);
+    });
+    const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: node.transportKey, fetch: carrier as never });
+    expect((await sealedFetch(`${baseUrl}/admin-api/health`)).status).toBe(200);
+    expect(carrier.mock.calls.map(([url]) => url)).toEqual([
+      `${baseUrl}/sealed/handshake`,
+      `${baseUrl}/sealed/v2/handshake`,
+      `${baseUrl}${SEALED_PATH}`,
+    ]);
+  });
+
   it('reports a 404 from the old handshake path too, without trying again', async () => {
     const carrier = vi.fn(async () => new Response('Not Found', { status: 404 }));
     const sealedFetch = createSealedFetch({ baseUrl, transportPublicKey: transportKey, fetch: carrier });
@@ -405,6 +421,7 @@ describe('createSealedFetch', () => {
 
   it.each([
     [400, 'malformed'],
+    [403, 'forbidden'],
     [409, 'stale_transport_key'],
     [500, 'internal'],
   ])('does not try the old handshake path when the node answers %i', async (status, code) => {

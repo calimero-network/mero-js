@@ -298,10 +298,12 @@ async function handshakeOnce(
 }
 
 /**
- * Post handshake message 1 to {@link HANDSHAKE_PATH}; a node that does not route
- * it (404 or 405: a release from before the path) gets the same message once at
- * {@link LEGACY_HANDSHAKE_PATH}. That node never read the first message, so
- * sending it again opens nothing twice. Any other answer is returned as it is.
+ * Post handshake message 1 to {@link HANDSHAKE_PATH}; a node from before the
+ * path gets the same message once at {@link LEGACY_HANDSHAKE_PATH}. Such a node
+ * routes nothing there (404, 405) or, sealing everything as Cloud nodes do,
+ * refuses it as an unsealed request (403 `sealed_required`). That node never
+ * read the first message, so sending it again opens nothing twice. Any other
+ * answer is returned as it is.
  */
 async function postHandshake(
   baseFetch: typeof fetch,
@@ -315,9 +317,21 @@ async function postHandshake(
       body,
     });
   const response = await post(HANDSHAKE_PATH);
-  if (response.status !== 404 && response.status !== 405) return response;
+  if (!(await predatesHandshakePath(response))) return response;
   await response.body?.cancel();
   return post(LEGACY_HANDSHAKE_PATH);
+}
+
+/** Whether a handshake answer says the node predates {@link HANDSHAKE_PATH} (see `postHandshake`). */
+async function predatesHandshakePath(response: Response): Promise<boolean> {
+  if (response.status === 404 || response.status === 405) return true;
+  if (response.status !== 403) return false;
+  try {
+    const body = (await response.clone().json()) as { error?: { code?: string } };
+    return body?.error?.code === 'sealed_required';
+  } catch {
+    return false;
+  }
 }
 
 /** Finish the handshake with the node's reply. Exported for the published vectors. */
