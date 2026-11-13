@@ -13,10 +13,11 @@ calls apps. See [README.md](README.md) and the docs site, whose source is `docs/
 
 - `src/runtime/`: attestation, directory, passkey and transport.
 - `src/sealed/`: the sealed channel (Noise) and release checks.
+- `src/package/`: building and signing a compute-only `.mpk` (golden vectors in `fixtures/` come from core's `calimero-bundle`).
 - `src/routes/`: the route client the generated methods call through.
 - `src/client/`: `CalimeroClient` and its helpers.
 - `src/generated/`: **generated, do not edit** (see below).
-- `tests/cluster/`: the cluster suite (`vitest.cluster.config.ts`); `tests/consumer/` is what `typecheck:consumer` compiles; unit tests sit beside the code as `src/**/*.test.ts`.
+- `tests/cluster/`: the cluster suite (`vitest.cluster.config.ts`); `tests/consumer/` is what `typecheck:consumer` compiles; unit tests sit beside the code as `src/**/*.test.ts`, and `typecheck:tests` (`tsconfig.test.json`) compiles them with `tests/cluster` and `tests/support`.
 
 ## Build, test, lint
 
@@ -30,6 +31,7 @@ pnpm build
 pnpm test:unit
 pnpm typecheck
 pnpm typecheck:consumer
+pnpm typecheck:tests      # tsconfig.json excludes *.test.ts; this checks them
 pnpm lint                 # eslint; pnpm lint:fix to fix
 ```
 

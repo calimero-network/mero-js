@@ -1,6 +1,6 @@
 {
   "name": "@calimero-network/mero-js",
-  "version": "34.1.0",
+  "version": "35.0.0",
   "description": "JavaScript client for Calimero 1.0: attested TEE nodes, a sealed channel, passkeys and API keys",
   "type": "module",
   "exports": {
@@ -58,9 +58,10 @@
     "eslint": "eslint .",
     "typecheck": "tsc --noEmit",
     "typecheck:consumer": "tsc --noEmit -p tsconfig.consumer.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "tsc": "tsc -b",
     "clean": "pnpm rimraf dist",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer",
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test:unit && pnpm lint && pnpm typecheck && pnpm typecheck:consumer && pnpm typecheck:tests",
     "test:cluster": "vitest run --config vitest.cluster.config.ts",
     "gen:api": "openapi-typescript openapi/core-openapi.json -o src/generated/api.ts && node scripts/gen-methods.mjs",
     "check:api": "pnpm gen:api && git diff --exit-code -- src/generated",

@@ -355,6 +355,7 @@ pnpm test:unit   # unit tests, against a stand-in node over a real sealed channe
 pnpm lint
 pnpm typecheck
 pnpm typecheck:consumer
+pnpm typecheck:tests
 ```
 
 The cluster tests (`tests/cluster`) start three `merod run --dev` nodes and
