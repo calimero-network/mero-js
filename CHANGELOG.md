@@ -1,3 +1,13 @@
+## [35.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v35.1.0...mero-js-v35.2.0) (2026-11-13)
+
+### Features
+
+* **api:** sync with core f0b0a6b9d ([#387](https://github.com/calimero-network/mero-js/issues/387)) ([a0069d6](https://github.com/calimero-network/mero-js/commit/a0069d616d7880577e86d6982367cc19c51ee539))
+
+### Bug Fixes
+
+* **docs:** drop the removed account approvals and fix the cluster fixture path ([#388](https://github.com/calimero-network/mero-js/issues/388)) ([44a0838](https://github.com/calimero-network/mero-js/commit/44a083875a5b8c15756fdcfc17309139948dd0a5))
+
 ## [35.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v35.0.0...mero-js-v35.1.0) (2026-11-13)
 
 ### Features
