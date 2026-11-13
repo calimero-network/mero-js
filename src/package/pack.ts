@@ -163,7 +163,7 @@ export function canonicalizeManifest(manifest: { [key: string]: Json }): Uint8Ar
 
 // Manifests hold only strings, safe integers, arrays and objects, where JSON.stringify's
 // string and integer forms are RFC 8785's; keys sort by UTF-16 code unit, the default order.
-function jcs(value: Json): string {
+export function jcs(value: Json): string {
   if (typeof value === 'string') {
     if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) {
       throw new Error('a lone surrogate cannot be canonicalized');

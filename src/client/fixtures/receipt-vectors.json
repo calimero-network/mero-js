@@ -1,0 +1,293 @@
+{
+  "bindings": [
+    {
+      "receiptKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "owner",
+        "outbound": "owner"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"owner\",\"outbound\":\"owner\"}",
+      "cluster": "eu-shared-1",
+      "node": 1,
+      "binding": "1be9b6ef6797845eefbec7f0496de9026e9ab7724a5b107df21a7fbb7e03a32e"
+    },
+    {
+      "receiptKey": "0202020202020202020202020202020202020202020202020202020202020202",
+      "governance": {
+        "releases": "operator",
+        "appUpgrades": "owner",
+        "outbound": "operator",
+        "deployments": "granted",
+        "deployers": "owner",
+        "signUp": "invite"
+      },
+      "governanceCanonical": "{\"releases\":\"operator\",\"appUpgrades\":\"owner\",\"outbound\":\"operator\",\"deployments\":\"granted\",\"deployers\":\"owner\",\"signUp\":\"invite\"}",
+      "cluster": "eu-shared-1",
+      "node": 1,
+      "binding": "2cd507ceece2e9c46dece9efe63fa693be3090c3acdf439c8f56292c07cc2549"
+    },
+    {
+      "receiptKey": "0303030303030303030303030303030303030303030303030303030303030303",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "operator",
+        "outbound": "owner",
+        "signUp": "closed"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"operator\",\"outbound\":\"owner\",\"signUp\":\"closed\"}",
+      "cluster": "eu-shared-1",
+      "node": 1,
+      "binding": "e15ad9d8b588514c046eec7a0f97da31ce77c99311227a7dfbebde26fbdf2fd4"
+    },
+    {
+      "receiptKey": "0404040404040404040404040404040404040404040404040404040404040404",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "owner",
+        "outbound": "owner"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"owner\",\"outbound\":\"owner\"}",
+      "cluster": "eu-shared-1",
+      "node": 2,
+      "binding": "346bdcb53fef320a94d1d0ecec5ce32f9d2e6d3aa3dc9499c110e03152afbe57"
+    },
+    {
+      "receiptKey": "0505050505050505050505050505050505050505050505050505050505050505",
+      "governance": {
+        "releases": "operator",
+        "appUpgrades": "owner",
+        "outbound": "operator",
+        "deployments": "granted",
+        "deployers": "owner",
+        "signUp": "invite"
+      },
+      "governanceCanonical": "{\"releases\":\"operator\",\"appUpgrades\":\"owner\",\"outbound\":\"operator\",\"deployments\":\"granted\",\"deployers\":\"owner\",\"signUp\":\"invite\"}",
+      "cluster": "eu-shared-1",
+      "node": 2,
+      "binding": "6690e4153ab1633e4831b49a8985252a4f5a76438ded6ecfd7c2ed17afe6ef33"
+    },
+    {
+      "receiptKey": "0606060606060606060606060606060606060606060606060606060606060606",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "operator",
+        "outbound": "owner",
+        "signUp": "closed"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"operator\",\"outbound\":\"owner\",\"signUp\":\"closed\"}",
+      "cluster": "eu-shared-1",
+      "node": 2,
+      "binding": "6c21ee25180703f39aea083c4661222e90609d7ad7ae1a2b1f009e307a0e5afc"
+    },
+    {
+      "receiptKey": "0707070707070707070707070707070707070707070707070707070707070707",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "owner",
+        "outbound": "owner"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"owner\",\"outbound\":\"owner\"}",
+      "cluster": "café-cluster",
+      "node": 300000,
+      "binding": "77bd9dfffef7c27cc3834c9583fc84073a5b5aa1b529d06da88cd6ed8fd5c26c"
+    },
+    {
+      "receiptKey": "0808080808080808080808080808080808080808080808080808080808080808",
+      "governance": {
+        "releases": "operator",
+        "appUpgrades": "owner",
+        "outbound": "operator",
+        "deployments": "granted",
+        "deployers": "owner",
+        "signUp": "invite"
+      },
+      "governanceCanonical": "{\"releases\":\"operator\",\"appUpgrades\":\"owner\",\"outbound\":\"operator\",\"deployments\":\"granted\",\"deployers\":\"owner\",\"signUp\":\"invite\"}",
+      "cluster": "café-cluster",
+      "node": 300000,
+      "binding": "524081a8886d9b3974c080a4e4b1d89337a5ed13baa8b7888d0516e8bb58ac5f"
+    },
+    {
+      "receiptKey": "0909090909090909090909090909090909090909090909090909090909090909",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "operator",
+        "outbound": "owner",
+        "signUp": "closed"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"operator\",\"outbound\":\"owner\",\"signUp\":\"closed\"}",
+      "cluster": "café-cluster",
+      "node": 300000,
+      "binding": "80a4d70843fcfe4b123ad25d9e0be04e2e89ebe464bc44e8e719fd4b83e86431"
+    },
+    {
+      "receiptKey": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "owner",
+        "outbound": "owner"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"owner\",\"outbound\":\"owner\"}",
+      "cluster": "",
+      "node": 0,
+      "binding": "105b4b6d58c74d6711191af507bd05e9b0033b3e396e7b9a62891e2fd49ed5ff"
+    },
+    {
+      "receiptKey": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "governance": {
+        "releases": "operator",
+        "appUpgrades": "owner",
+        "outbound": "operator",
+        "deployments": "granted",
+        "deployers": "owner",
+        "signUp": "invite"
+      },
+      "governanceCanonical": "{\"releases\":\"operator\",\"appUpgrades\":\"owner\",\"outbound\":\"operator\",\"deployments\":\"granted\",\"deployers\":\"owner\",\"signUp\":\"invite\"}",
+      "cluster": "",
+      "node": 0,
+      "binding": "ef342a25b52777902418e8e02ffe02d303fb78cf8910743392d5d13c50237dd9"
+    },
+    {
+      "receiptKey": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "governance": {
+        "releases": "owner",
+        "appUpgrades": "operator",
+        "outbound": "owner",
+        "signUp": "closed"
+      },
+      "governanceCanonical": "{\"releases\":\"owner\",\"appUpgrades\":\"operator\",\"outbound\":\"owner\",\"signUp\":\"closed\"}",
+      "cluster": "",
+      "node": 0,
+      "binding": "a2140571e81b50116712075cdf9d9e418999e22bc64ca70b1b89953dc992c203"
+    }
+  ],
+  "nonce": "0909090909090909090909090909090909090909090909090909090909090909",
+  "cluster": "eu-shared-1",
+  "governance": {
+    "releases": "operator",
+    "appUpgrades": "owner",
+    "outbound": "operator",
+    "deployments": "granted",
+    "deployers": "owner",
+    "signUp": "invite"
+  },
+  "nodes": {
+    "1": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+    "2": "511c34a1a2cb521df16bb246b8de8e7997ce235c7e76b22a3d7503a24819dd8a"
+  },
+  "mockDoc": {
+    "quote": "TU9DS19URFhfUVVPVEVfVjEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCYz7HtFEGXYw47RMsohmRtGAoasWYtqeDFEqVSIdlpps",
+    "transportKey": "0505050505050505050505050505050505050505050505050505050505050505",
+    "appHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "nonce": "0909090909090909090909090909090909090909090909090909090909090909",
+    "release": {
+      "version": "2.3.109",
+      "profile": "locked-read-only"
+    },
+    "cluster": "eu-shared-1",
+    "node": 1,
+    "mock": true,
+    "receiptKey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+    "governance": {
+      "releases": "operator",
+      "appUpgrades": "owner",
+      "outbound": "operator",
+      "deployments": "granted",
+      "deployers": "owner",
+      "signUp": "invite"
+    }
+  },
+  "unboundMockDoc": {
+    "quote": "TU9DS19URFhfUVVPVEVfVjEJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCS/32tfWnPofEwCewnnkUk9/3S3GGoKhdP0Tznnrke09",
+    "transportKey": "0505050505050505050505050505050505050505050505050505050505050505",
+    "appHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "nonce": "0909090909090909090909090909090909090909090909090909090909090909",
+    "release": {
+      "version": "2.3.109",
+      "profile": "locked-read-only"
+    },
+    "cluster": "eu-shared-1",
+    "node": 1,
+    "mock": true,
+    "receiptKey": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+    "governance": {
+      "releases": "operator",
+      "appUpgrades": "owner",
+      "outbound": "operator",
+      "deployments": "granted",
+      "deployers": "owner",
+      "signUp": "invite"
+    }
+  },
+  "receiptAnswer": {
+    "receipt": {
+      "version": 1,
+      "cluster": "abababababababababababababababababababababababababababababababab",
+      "app": "app-1",
+      "run": "run-1",
+      "pipeline": "etl",
+      "release": "1.0.0",
+      "pipelineHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "modules": {
+        "load": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+        "self": "1212121212121212121212121212121212121212121212121212121212121212"
+      },
+      "inputs": {
+        "data": [
+          {
+            "id": "0101010101010101010101010101010101010101010101010101010101010101",
+            "size": 7,
+            "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ]
+      },
+      "params": {
+        "n": 3,
+        "zeta": [
+          true,
+          null,
+          "café"
+        ],
+        "alpha": {
+          "b": "x😀y",
+          "a": 0
+        }
+      },
+      "state": "succeeded",
+      "startTsMs": 1700000000000,
+      "endTsMs": 1700000005000,
+      "steps": {
+        "load": {
+          "status": "succeeded",
+          "runs": [
+            {
+              "run": "run-1.load.0",
+              "step": "load",
+              "index": 0,
+              "outcome": "done",
+              "attempt": 1,
+              "node": 4,
+              "jobKey": "0303030303030303030303030303030303030303030303030303030303030303",
+              "assignmentDigest": "0404040404040404040404040404040404040404040404040404040404040404",
+              "reportSha256": "0505050505050505050505050505050505050505050505050505050505050505",
+              "signature": "06060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606060606",
+              "outputs": [],
+              "usage": {
+                "cpuMicros": "1",
+                "gibMicros": "2",
+                "fuel": "3"
+              }
+            },
+            {
+              "index": 1,
+              "cached": true,
+              "cacheKey": "0707070707070707070707070707070707070707070707070707070707070707"
+            }
+          ]
+        }
+      }
+    },
+    "node": 1,
+    "signature": "861d5a5ec5b9370b31d906552d47c4ffc1aead8fe1e17029f4fca4026afa5c0a58d3437faf6efaebc49695c4e11e26d27e34b89513847f02f3caf030d3071806"
+  }
+}
