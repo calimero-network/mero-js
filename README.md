@@ -52,7 +52,7 @@ for await (const event of client.events(app)) console.log(event);
 await client.apps.upgrade({ app, version: '1.1.0' }, { confirm: passkeyConfirm(browserPasskey()) }); // the owner approves
 ```
 
-A development cluster (`merod local`, `merod run --dev`) sends mock quotes,
+A development cluster (`meroctl local up`, `merod run --dev`) sends mock quotes,
 which pass only with `policy: { allowMock: true }`. Nothing is read from the
 environment.
 
@@ -369,12 +369,12 @@ MEROD_BINARY=/path/to/merod KV_STORE_WASM=/path/to/kv_store.wasm pnpm test:clust
 `KV_STORE_WASM` is core's kv component (`apps/v2-fixtures/kv`, a `calimero:app`
 component for `wasm32-wasip2`). Without the variables they use
 `../core/target/debug/merod` and `../core/target/app-components/kv.wasm` from a
-sibling core checkout, built there as core's `e2e.yml` builds them:
+sibling core checkout (1.0.0-rc.24 or later), built there with core's
+`meroctl`:
 
 ```bash
-cargo build -p merod
-scripts/install-mero-app-build.sh
-mero-app-build apps/v2-fixtures/kv --out target/app-components/kv.wasm
+cargo build -p merod -p meroctl
+target/debug/meroctl app build apps/v2-fixtures/kv --out target/app-components/kv.wasm
 ```
 
 `scripts/download-released-merod.sh` fetches the newest released 1.0 `merod`

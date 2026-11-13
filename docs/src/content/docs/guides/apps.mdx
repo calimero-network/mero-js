@@ -25,6 +25,13 @@ const kv = await client.packages.get({ package: 'com.example.kv' });       // { 
 await client.packages.versionUninstall({ package: 'com.example.kv', version: '1.0.0' }); // refused while an app runs it
 ```
 
+Core's `meroctl` (1.0.0-rc.24 or later) makes the `.mpk`: `meroctl app pack DIR`
+builds an app crate and signs the package (`--key K`; without it, the
+development key, which a public registry refuses), and `meroctl app publish F.mpk`
+sends it to a registry. `meroctl app codegen --abi F --lang ts` writes a typed
+client from the app's ABI (`F` is a component, an `.mpk`, a `manifest.json` or
+ABI JSON).
+
 A cluster without `--registry-url` answers an install with `NO_REGISTRY`.
 `uploadBundle(wasm)` takes raw WASM and answers its hash, on development
 clusters only.
