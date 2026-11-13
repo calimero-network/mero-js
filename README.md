@@ -1,11 +1,29 @@
 # Mero.js — the JavaScript client for Calimero 1.0
 
-The JavaScript/TypeScript client for [Calimero](https://calimero-network.github.io/core/)
-1.0, the confidential cloud. `CalimeroClient` verifies a node's TDX attestation,
-seals every request to it end to end (Noise NK, `calimero/sealed-http/v2`), signs
-people in with WebAuthn passkeys and machines with API keys, and calls apps that
-each run on their own replicated log. It runs in the browser and Node 18+, and is
-byte-compatible with core's `calimero-sealed` and `calimero-client`.
+Your app's whole backend, like Firebase. Except nobody can read your data, not even us.
+[Calimero](https://calimero-network.github.io/core/) gives an app auth (passkeys,
+sessions, scoped API keys), a database (replicated app state), functions (Rust app
+methods, compute jobs, timers, pipelines), realtime (events, presence), sealed file
+and blob storage, search, hosting for its frontend and typed clients, all running
+inside attested Intel TDX hardware. Clients check a node's attestation against
+Sigstore-signed releases before they send it anything, then talk to it over a sealed
+Noise channel.
+
+This package is the JavaScript/TypeScript client, for the browser and Node 18+.
+`CalimeroClient` verifies the node's TDX attestation, seals every request to it end
+to end (Noise NK, `calimero/sealed-http/v2`), signs people in with WebAuthn passkeys
+and machines with API keys, and calls your app. It is byte-compatible with core's
+`calimero-sealed` and `calimero-client`.
+
+What you can do with it:
+
+- Connect to a Calimero Cloud cluster by name, with failover between its nodes.
+- Sign up and sign in with passkeys, use API keys, and ask for passkey consent on sensitive calls.
+- Install packages, create app instances, and call and view their methods.
+- Follow an app's events and presence as streams.
+- Upload and download sealed files and blobs.
+- Manage organizations, teams, invites, deployments and every other route of the node, through methods generated from core's OpenAPI document.
+- Build and sign a compute-only pipeline package (`.mpk`).
 
 > **From version 27 this is the Calimero 1.0 client only.** The v1 SDK for merod 0.x nodes
 > (`MeroJs`, the admin and auth API clients, JSON-RPC, contexts and namespaces)
@@ -109,6 +127,7 @@ flows and streams a single route cannot be:
 - **Credentials**: `signUp(passkey, name, { invite?, origin?, signal? })`, `signIn(passkey, { origin?, signal? })`, `refresh`, `signOut`, `signOutEverywhere`, `useSession`, `useApiKey`, `addPasskey(newPasskey, approver)`.
 - **Account recovery** (core #4844): signed out, `startAccountRecovery(code, passkey)` and, 72 hours later, `finishAccountRecovery(passkey, accountId?)`. The code itself is `client.auth.recoveryCreate({}, { confirm })`.
 - **Organization recovery**: `startRecovery(org, seed)` (the seed signs here and never leaves the process); `newRecoverySeed`, `recoveryPublicKey`.
+- **Files**: `uploadFile(app, data)` (a large file goes up in parts), `exportFile(app, id)` and `exportFileTo(app, id, sink)` (the plaintext, checked against its id, size and hash).
 - **Blobs**: `downloadBlob(app, id)`, `downloadBlobGranted(app, id, grant)` (bytes; `client.apps.blobDownload` answers a `Blob` with its type).
 - **Streams**: `events(app, from?, signal?)`, `presenceStream(app, signal?)`.
 - **Approvals from an app**: `pendingApprovals(org?)`, `appsReportAll(org)`, then `openConsentPage(request, …)` to send the user to the node's consent page, and `waitForConsent(requestId)`; back on `returnTo`, `resumeConsent()` reads the decision on the request this page started from the node (never from the URL) and refuses a return for another request, one still pending, or one a newer request replaced (`CONSENT_REPLACED`: an account has one undecided request per node). Besides releases, upgrades and outbound hosts, `createOrgConsent`, `createInviteConsent` and `acceptInviteConsent` ask for a new organization, an invite or joining with one, and `leaveOrgConsent`, `removeMemberConsent`, `setMemberRoleConsent`, `setMemberTeamsConsent`, `removeMemberTeamsConsent`, `revokeInviteConsent`, `renameOrgConsent`, `deleteOrgConsent`, `setCapabilitiesConsent` and `setAllAppsConsent` for managing one; the result's `outcome` (`{ orgId }`, `{ token }`, `{ org }`, a rename's `{ orgId, name }`, a deletion's `{ apps }`) is typed by `kind`. Show the answer's `code` to the user before sending them to `url` (`openConsentPage`'s `confirm` hook); they should see the same code on the page (`confirmationCode(requestId)` checks it). See [Ask your users to approve node images and app upgrades](https://calimero-network.github.io/mero-js/guides/user-approvals/).
@@ -381,6 +400,15 @@ mero-app-build apps/v2-fixtures/kv --out target/app-components/kv.wasm
 and the `app.wasm` of its `kv-store-test-fixture.mpk` (as `./merod` and
 `./kv_store.wasm`), which is what CI runs them against; core's `e2e.yml` runs
 the same suite against core's own tree.
+
+## Related repositories
+
+- [core](https://github.com/calimero-network/core): the node (`merod`), the Rust SDK and client, `meroctl`, and the [docs](https://calimero-network.github.io/core/).
+- [mero-tee](https://github.com/calimero-network/mero-tee): the TDX node images and the signed releases this client verifies.
+- [app-registry](https://github.com/calimero-network/app-registry): the registry of signed app packages.
+- [mero-react](https://github.com/calimero-network/mero-react): React bindings built on this client.
+- [calimero-client-py](https://github.com/calimero-network/calimero-client-py), [swift-sdk](https://github.com/calimero-network/swift-sdk), [kotlin-sdk](https://github.com/calimero-network/kotlin-sdk): the clients for Python, Swift and Kotlin.
+- [apps](https://github.com/calimero-network/apps): Calimero apps.
 
 ## License
 
