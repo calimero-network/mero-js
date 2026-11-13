@@ -1,3 +1,9 @@
+## [35.2.1](https://github.com/calimero-network/mero-js/compare/mero-js-v35.2.0...mero-js-v35.2.1) (2026-11-13)
+
+### Bug Fixes
+
+* **docs:** open the README with what Calimero is and what mero-js does ([#393](https://github.com/calimero-network/mero-js/issues/393)) ([ac42866](https://github.com/calimero-network/mero-js/commit/ac428664c80554a46c90d0ab3ccbf3bd804e3027))
+
 ## [35.2.0](https://github.com/calimero-network/mero-js/compare/mero-js-v35.1.0...mero-js-v35.2.0) (2026-11-13)
 
 ### Features
