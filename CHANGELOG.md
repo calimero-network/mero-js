@@ -1,3 +1,9 @@
+## [35.1.0](https://github.com/calimero-network/mero-js/compare/mero-js-v35.0.0...mero-js-v35.1.0) (2026-11-13)
+
+### Features
+
+* **packages:** build and sign a compute package with a publisher key ([#379](https://github.com/calimero-network/mero-js/issues/379)) ([6e341b0](https://github.com/calimero-network/mero-js/commit/6e341b0c0d0c025b8dc02aeb8e209ffd0f76191d))
+
 ## [35.0.0](https://github.com/calimero-network/mero-js/compare/mero-js-v34.1.0...mero-js-v35.0.0) (2026-11-12)
 
 ### ⚠ BREAKING CHANGES
