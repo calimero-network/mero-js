@@ -10,7 +10,7 @@ export const BINARY = process.env.MEROD_BINARY ?? resolve(__dirname, '../../../c
 /** `merod run FLAGS`; `MEROD_RUN=0` runs the binary with the flags alone (a wrapper script, say). */
 export const RUN_SUBCOMMAND = process.env.MEROD_RUN !== '0';
 export const KV_STORE_WASM =
-  process.env.KV_STORE_WASM ?? resolve(__dirname, '../../../core/target/wasm32-unknown-unknown/app-release/kv_store.wasm');
+  process.env.KV_STORE_WASM ?? resolve(__dirname, '../../../core/target/app-components/kv.wasm');
 
 async function freePort(): Promise<number> {
   return new Promise((ok, fail) => {

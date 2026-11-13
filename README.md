@@ -7,7 +7,7 @@ people in with WebAuthn passkeys and machines with API keys, and calls apps that
 each run on their own replicated log. It runs in the browser and Node 18+, and is
 byte-compatible with core's `calimero-sealed` and `calimero-client`.
 
-> **Version 27 is the Calimero 1.0 client only.** The v1 SDK for merod 0.x nodes
+> **From version 27 this is the Calimero 1.0 client only.** The v1 SDK for merod 0.x nodes
 > (`MeroJs`, the admin and auth API clients, JSON-RPC, contexts and namespaces)
 > is in 26.x. See [Migrating from v1](https://calimero-network.github.io/mero-js/reference/migrating-from-v1/).
 
@@ -42,6 +42,7 @@ const client = await CalimeroClient.connect({
 
 await client.signUp(browserPasskey(), 'alice'); // or signIn(browserPasskey())
 await client.packages.install({ package: 'com.example.kv', version: '1.0.0' }); // signed .mpk from the registry
+// No `org`: the instance goes in your personal organization, which sign-up made.
 const { appId: app } = await client.apps.create({ name: 'kv', package: 'com.example.kv', version: '1.0.0' });
 
 await client.apps.call({ app, method: 'set', args: { key: 'a', value: '1' } });
@@ -295,9 +296,9 @@ callable (`(await client.packages.list()).packages`).
 | `upgradeOrg(org, target, passkey)` | `client.orgs.upgrade({ org, ...target }, { confirm: passkeyConfirm(passkey) })` |
 | `upgradeRun(org, run)` | `client.orgs.upgradeStatus({ org, run })` |
 | `retryUpgradeRun(org, run, passkey)` | `client.orgs.upgradeRetry({ org, run }, { confirm: passkeyConfirm(passkey) })` |
-| `approveRelease(org, version, passkey, approved)` | `client.auth.accountReleaseApproval({ version, approved }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })` |
-| `approveOutbound(org, pkg, passkey, options)` | `client.auth.accountOutboundApproval({ package: pkg, ...options }, { confirm: passkeyConfirm(passkey) })` or `client.orgs.outboundApproval({ org, package: pkg, ...options }, { confirm: passkeyConfirm(passkey) })` |
-| `appsReport(org, page)` | `client.auth.accountApps({ ...page })` or `client.orgs.apps({ org, ...page })` |
+| `approveRelease(org, version, passkey, approved)` | `client.orgs.releaseApproval({ org, version, approved }, { confirm: passkeyConfirm(passkey) })` (an account's own apps are in its personal organization: approve there; core 1.0.0-rc.20 removed the account-level approval) |
+| `approveOutbound(org, pkg, passkey, options)` | `client.orgs.outboundApproval({ org, package: pkg, ...options }, { confirm: passkeyConfirm(passkey) })` (the personal organization's for the account's own apps, as above) |
+| `appsReport(org, page)` | `client.orgs.apps({ org, ...page })`; `client.auth.accountApps({ ...page })` lists the apps the account owns in any organization |
 | `releaseRules()` | `client.public.releasesPublic()` |
 | `requestConsent(request)` | `client.consent.pageCreate({ body: request })` |
 | `consentResult(requestId)` | `client.consent.pageResult({ request: requestId })` |
@@ -365,11 +366,21 @@ run the client against them:
 MEROD_BINARY=/path/to/merod KV_STORE_WASM=/path/to/kv_store.wasm pnpm test:cluster
 ```
 
-Without the variables they use `../core/target/debug/merod` and
-`../core/target/wasm32-unknown-unknown/app-release/kv_store.wasm` from a sibling
-core checkout. `scripts/download-released-merod.sh` fetches the newest released
-1.0 `merod` and its kv-store fixture, which is what CI runs them against; core's
-`e2e.yml` runs the same suite against core's own tree.
+`KV_STORE_WASM` is core's kv component (`apps/v2-fixtures/kv`, a `calimero:app`
+component for `wasm32-wasip2`). Without the variables they use
+`../core/target/debug/merod` and `../core/target/app-components/kv.wasm` from a
+sibling core checkout, built there as core's `e2e.yml` builds them:
+
+```bash
+cargo build -p merod
+scripts/install-mero-app-build.sh
+mero-app-build apps/v2-fixtures/kv --out target/app-components/kv.wasm
+```
+
+`scripts/download-released-merod.sh` fetches the newest released 1.0 `merod`
+and the `app.wasm` of its `kv-store-test-fixture.mpk` (as `./merod` and
+`./kv_store.wasm`), which is what CI runs them against; core's `e2e.yml` runs
+the same suite against core's own tree.
 
 ## License
 
