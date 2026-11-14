@@ -377,7 +377,7 @@ describe('what the client verified about its node', () => {
   it('is the record of the attestation check, and none before the node is used', async () => {
     const c = client();
     expect(c.verification()).toBeUndefined();
-    expect(await c.verify()).toEqual({ status: 'verified', url: node.url, mock: true, verifiedAt: expect.any(Number) });
+    expect(await c.verify()).toEqual({ status: 'verified', url: node.url, mock: true, checkedAt: expect.any(Number) });
     expect(c.verification()).toMatchObject({ status: 'verified', url: node.url });
   });
 

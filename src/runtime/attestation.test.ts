@@ -316,9 +316,9 @@ describe('verifyNode: the record of what was verified', () => {
       mock: false,
       release: '2.3.87',
       profile: 'locked-read-only',
-      verifiedAt: expect.any(Number),
+      checkedAt: expect.any(Number),
     });
-    expect(verification.verifiedAt).toBeGreaterThanOrEqual(before);
+    expect(verification.checkedAt).toBeGreaterThanOrEqual(before);
   });
 
   it('names the debug profile only when it was allowed and matched', async () => {
@@ -337,7 +337,7 @@ describe('verifyNode: the record of what was verified', () => {
 
   it('marks a mock attestation, with no release or profile', async () => {
     const { verification } = await verifyNode(BASE, { allowMock: true }, mockNode());
-    expect(verification).toEqual({ url: BASE, mock: true, verifiedAt: expect.any(Number) });
+    expect(verification).toEqual({ url: BASE, mock: true, checkedAt: expect.any(Number) });
   });
 
   it('is not produced for a node that fails verification', async () => {

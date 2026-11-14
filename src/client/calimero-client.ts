@@ -432,17 +432,12 @@ export class CalimeroClient {
     return this.transport.nodes;
   }
 
-  /**
-   * What this client's attestation check established about node `url` (default:
-   * the one in use): `checking`, `verified` with the record of what was
-   * verified, or `refused` with the reason. `undefined` before the node is
-   * first used or {@link verify}ed.
-   */
+  /** What the check of node `url` (from {@link nodes}; default: in use) established, or `undefined` before it first ran. */
   verification(url?: string): NodeVerificationState | undefined {
     return this.transport.verification(url);
   }
 
-  /** Check node `url` (default: the one in use) now, without sending a request; a refusal is answered, not thrown. */
+  /** Wait for the check requests wait for, starting it if needed, and answer its outcome (not thrown) without a request. */
   verify(url?: string): Promise<NodeVerificationState> {
     return this.transport.verify(url);
   }
@@ -465,20 +460,12 @@ export class CalimeroClient {
     return this.transport.json<T>(method, path, { body });
   }
 
-  /**
-   * Attest app instance `app` on node `url` (default: the one in use), under
-   * the client's policy: the record's `appHash` is the bundle hash the node
-   * bound from its own record of the app. Throws when the node refuses.
-   */
+  /** Attest `app` on node `url` (from {@link nodes}; default: in use): the record's `appHash` is the one the node bound. */
   attestApp(app: string, url?: string): Promise<NodeVerification> {
     return this.transport.attestApp(app, url);
   }
 
-  /**
-   * The manifest facts and ABI of a package version, for a signed-in caller
-   * (a package-bound frontend session included). Hand-written: the route is
-   * not in the vendored OpenAPI document yet.
-   */
+  /** The manifest facts and ABI of a package version, for a signed-in caller (a package-bound frontend session included). */
   packageCapabilities(pkg: string, version: string): Promise<PackageCapabilities> {
     return this.transport.json<PackageCapabilities>(
       'GET',

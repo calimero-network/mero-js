@@ -54,6 +54,12 @@ export class StandInNode {
     this.url = `http://127.0.0.1:${port}`;
   }
 
+  /** A new transport key, as after a node restart: sessions are gone and the old key is refused. */
+  async rotateKey(): Promise<void> {
+    this.transport = await x25519KeyPair();
+    this.sessions.clear();
+  }
+
   stop(): Promise<void> {
     this.server.closeAllConnections();
     return new Promise((ok) => this.server.close(() => ok()));
@@ -82,6 +88,11 @@ export class StandInNode {
   }
 
   private async handshake(body: Uint8Array, res: ServerResponse): Promise<void> {
+    if (hex(body.slice(1, 33)) !== hex(this.transport.publicKey)) {
+      res.statusCode = 409;
+      res.end(JSON.stringify({ error: { code: 'stale_transport_key', message: 'the transport key changed' } }));
+      return;
+    }
     const message1 = body.slice(33);
     const state = await SymmetricState.initialize();
     await state.mixHash(PROLOGUE);

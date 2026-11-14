@@ -96,18 +96,9 @@ export interface NodePolicy {
    * pinned measurements). Takes precedence over `release`.
    */
   verifyQuote?: VerifyTransportQuote;
-  /**
-   * The app instance whose code the node must attest. The node then binds its
-   * own record of the app's bundle hash into the quote, and that hash (never
-   * all zero) is what the verification record carries. Without it, a node
-   * binds whatever hash the caller sends, which proves nothing about its code.
-   */
+  /** The app whose code the node must attest: it binds its own record of the bundle hash, which the record carries. */
   app?: string;
-  /**
-   * With `app`: the bundle hash (hex) the node must bind, else it is refused.
-   * Alone: sent to the node and bound into the quote, but only echoed back, so
-   * it is not recorded as a verified code hash.
-   */
+  /** With `app`: the hash the node must bind. Alone: sent and bound, but only echoed, so never recorded. */
   appHash?: string;
 }
 
@@ -123,12 +114,8 @@ export interface AttestationDoc {
 }
 
 /**
- * What {@link verifyNode} verified about a node: only facts the check itself
- * established. `release` and `profile` are set when a signed release policy
- * judged the quote (a custom `verifyQuote` or a mock quote proves neither);
- * `appHash` only when the node bound its own record of an app (`policy.app`),
- * which the quote verified. The node's own
- * claims that nothing signs, such as its cluster name, are not here.
+ * Only what the check verified. Sealed means `profile === 'locked-read-only'`; no profile or a mock is not
+ * sealed, and no release means no verifier link. `appHash` is the one the node bound for `policy.app`.
  */
 export interface NodeVerification {
   url: string;
@@ -137,7 +124,7 @@ export interface NodeVerification {
   profile?: string;
   appHash?: string;
   /** When the check passed (ms since the epoch). */
-  verifiedAt: number;
+  checkedAt: number;
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -304,7 +291,7 @@ export async function verifyNode(
     url,
     ...facts,
     ...(boundApp ? { appHash: hex(boundApp) } : {}),
-    verifiedAt: Date.now(),
+    checkedAt: Date.now(),
   });
   if (equal(quote.slice(0, header.length), header)) {
     if (!policy.allowMock) {

@@ -196,7 +196,7 @@ describe('the verification state of a node', () => {
   it('is the record of the check the first request ran, with no second check', async () => {
     const t = transport();
     await t.json('GET', 'apps/app-1');
-    expect(t.verification()).toEqual({ status: 'verified', url: node.url, mock: true, verifiedAt: expect.any(Number) });
+    expect(t.verification()).toEqual({ status: 'verified', url: node.url, mock: true, checkedAt: expect.any(Number) });
     expect(await t.verify()).toBe(t.verification());
   });
 
@@ -232,7 +232,7 @@ describe('attesting one app on a connected node', () => {
       url: node.url,
       mock: true,
       appHash: hex(APP_BUNDLE_HASH),
-      verifiedAt: expect.any(Number),
+      checkedAt: expect.any(Number),
     });
     expect(t.verification()).not.toHaveProperty('appHash');
   });
@@ -252,5 +252,114 @@ describe('attesting one app on a connected node', () => {
     });
     const t = new NodeTransport({ baseUrl: node.url, policy: { verifyQuote: async () => true }, fetch: fetched as typeof fetch });
     await expect(t.attestApp('app-1')).rejects.toThrow(/another transport key/);
+  });
+});
+
+const attestations = (inner: typeof fetch, change: (call: number, response: Response) => Promise<Response> | Response | Error) => {
+  let calls = 0;
+  const seen: string[] = [];
+  const wrapped = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!new URL(String(input)).pathname.endsWith('/attestation')) return inner(input, init);
+    const call = ++calls;
+    const outcome = change(call, await inner(input, init));
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  }) as typeof fetch;
+  return { wrapped, seen };
+};
+const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+describe('a node that cannot be reached is not a node that refused', () => {
+  it('is unreachable, then verified once the next attempt gets through', async () => {
+    const { wrapped } = attestations(fetch, (call, response) => (call === 1 ? new TypeError('fetch failed') : response));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    expect(await t.verify()).toEqual({
+      status: 'unreachable',
+      url: node.url,
+      reason: 'fetch failed',
+      checkedAt: expect.any(Number),
+    });
+    expect(await t.verify()).toMatchObject({ status: 'verified', url: node.url });
+  });
+
+  it('lets the next request attest again, without a reload', async () => {
+    const { wrapped } = attestations(fetch, (call, response) => (call === 1 ? new TypeError('fetch failed') : response));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    await expect(t.json('GET', 'apps/app-1')).rejects.toThrow(/fetch failed/);
+    expect(t.verification()).toMatchObject({ status: 'unreachable' });
+    await t.json('GET', 'apps/app-1');
+    expect(t.verification()).toMatchObject({ status: 'verified' });
+  });
+
+  it('keeps refused for a node that failed the policy', async () => {
+    const t = new NodeTransport({ baseUrl: node.url, policy: {} });
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused' });
+  });
+});
+
+describe('a node that changed its transport key (re-attested on stale_transport_key)', () => {
+  it('is checking while it is attested again, then verified later', async () => {
+    const states: Array<string | undefined> = [];
+    let t!: NodeTransport;
+    const { wrapped } = attestations(fetch, (call, response) => {
+      if (call === 2) states.push(t.verification()?.status);
+      return response;
+    });
+    t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    const first = await t.verify();
+    await sleep(5);
+    await node.rotateKey();
+    await t.json('GET', 'apps/app-1');
+    expect(states).toEqual(['checking']);
+    const second = t.verification();
+    expect(second).toMatchObject({ status: 'verified' });
+    expect((second as { checkedAt: number }).checkedAt).toBeGreaterThan((first as { checkedAt: number }).checkedAt);
+  });
+
+  it('is refused when the new attestation fails, and the request fails with it', async () => {
+    const { wrapped } = attestations(fetch, async (call, response) => {
+      if (call !== 2) return response;
+      const doc = await response.json();
+      return new Response(JSON.stringify({ ...doc, transportKey: hex(new Uint8Array(32).fill(9)) }));
+    });
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    await t.verify();
+    await node.rotateKey();
+    await expect(t.json('GET', 'apps/app-1')).rejects.toThrow(/does not bind/);
+    expect(t.verification()).toMatchObject({ status: 'refused', reason: expect.stringMatching(/does not bind/) });
+  });
+});
+
+describe('verify and attestApp around a restarted node', () => {
+  it('verify answers the settled outcome, not a check a re-key started meanwhile', async () => {
+    const t = transport();
+    await t.verify();
+    await node.rotateKey();
+    const rekey = t.json('GET', 'apps/app-1');
+    while (t.verification()?.status !== 'checking') await sleep(1);
+    expect(await t.verify()).toMatchObject({ status: 'verified' });
+    await rekey;
+  });
+
+  it('attestApp attests the channel again once when the node restarted before any request re-keyed', async () => {
+    const t = transport();
+    await t.verify();
+    await node.rotateKey();
+    expect(await t.attestApp('app-1')).toMatchObject({ appHash: hex(APP_BUNDLE_HASH) });
+  });
+
+  it('attestApp does not hold the client-wide pinned app hash against the app the node binds', async () => {
+    const fetched = (async (input: RequestInfo | URL) => {
+      const key = hex(new Uint8Array(32).fill(1));
+      const bound = new URL(String(input)).searchParams.has('app') ? new Uint8Array(32).fill(7) : new Uint8Array(32);
+      return new Response(JSON.stringify({ quote: btoa('real'), transportKey: key, appHash: hex(bound) }));
+    }) as typeof fetch;
+    const t = new NodeTransport({
+      baseUrl: node.url,
+      policy: { verifyQuote: async () => true, appHash: 'ab'.repeat(32) },
+      fetch: fetched,
+    });
+    expect(await t.attestApp('app-1')).toMatchObject({ appHash: '07'.repeat(32) });
   });
 });

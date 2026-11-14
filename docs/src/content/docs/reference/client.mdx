@@ -29,13 +29,22 @@ new CalimeroClient({
 ```
 
 `client.nodeUrl` is the node in use and `client.nodes` every node the client
-may move to. `client.verification(url?)` is what the client's attestation check
-established about a node: `{ status: 'checking' }`, `{ status: 'verified', url,
-mock, release?, profile?, verifiedAt }` (only facts the check verified;
-`release` and `profile` when a signed release policy judged the quote) or
-`{ status: 'refused', url, reason, checkedAt }`; it is `undefined` before the node
-is first used. `client.verify(url?)` runs that check now, without a request, and
-answers the same state (a refusal is answered, not thrown).
+may move to.
+
+`client.verification(url?)` is where the client's attestation check of a node
+stands, `url` being one of `client.nodes` exactly as listed (default: the node in use):
+
+- `{ status: 'checking', url }`
+- `{ status: 'verified', url, mock, release?, profile?, checkedAt }`, only what the check
+  verified (`release` and `profile` when a signed release policy judged the quote)
+- `{ status: 'refused', url, reason, checkedAt }`, a failed verification
+- `{ status: 'unreachable', url, reason, checkedAt }`, no answer at all; the next
+  `verify()` or request attests again
+
+It is `undefined` before the node's check first ran.
+`client.verify(url?)` starts that check if none runs and answers its settled outcome
+without a request; it waits for the check requests wait for and does not repeat it, and
+`checkedAt` is when that check ran. A failure is answered, not thrown.
 `client.attestApp(app, url?)` attests one app instance on the node under the same
 policy and answers the record with `appHash`, the bundle hash the node bound from
 its own record of the app (never all zero); it throws when the node refuses.
@@ -60,7 +69,7 @@ The hand-written methods: each is more than one route, or a stream.
 | `uploadFile(app, data)` → `FileInfo` | `POST apps/{app}/files`, or a session: `POST .../files/uploads`, `PUT .../uploads/{u}/parts/{k}`, `POST .../uploads/{u}/complete` |
 | `events(app, from?, signal?)`, `presenceStream(app, signal?)` → server-sent events | `GET apps/{app}/events`, `apps/{app}/presence/stream` |
 | `appsReportAll(org)`, `pendingApprovals(org?)` | `GET orgs/{org}/apps` or `auth/apps` (every page), `GET releases` |
-| `packageCapabilities(package, version)` → `PackageCapabilities` (manifest facts and the app's ABI; hand-written until the route is in the vendored OpenAPI document) | `GET packages/{package}/{version}/capabilities` |
+| `packageCapabilities(package, version)` → `PackageCapabilities` (manifest facts and the app's ABI) | `GET packages/{package}/{version}/capabilities` |
 | `openConsentPage(request, navigate \| { navigate?, confirm? })`, `waitForConsent(requestId, { intervalMs?, signal?, expiresAt? })`, `resumeConsent({ requestId?, href? })` | `POST consent/requests`, `GET consent/{request}/result` |
 
 ## The generated methods
