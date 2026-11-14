@@ -5,10 +5,11 @@
  * Synthetic data only.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { StandInNode, type Reply } from '../../tests/support/stand-in-node.js';
+import { APP_BUNDLE_HASH, StandInNode, type Reply } from '../../tests/support/stand-in-node.js';
 import { CalimeroClient } from '../client/calimero-client.js';
+import { hex } from '../crypto/internal.js';
 import {
   CalimeroError,
   ConfirmRequired,
@@ -221,5 +222,35 @@ describe('the verification state of a node', () => {
     const t = transport();
     await t.verify();
     expect(t.verification('http://elsewhere.test')).toBeUndefined();
+  });
+});
+
+describe('attesting one app on a connected node', () => {
+  it('answers the record with the app hash the node bound, on the check the node already passed', async () => {
+    const t = transport();
+    expect(await t.attestApp('app-1')).toEqual({
+      url: node.url,
+      mock: true,
+      appHash: hex(APP_BUNDLE_HASH),
+      verifiedAt: expect.any(Number),
+    });
+    expect(t.verification()).not.toHaveProperty('appHash');
+  });
+
+  it('throws the reason when the node itself was refused', async () => {
+    await expect(new NodeTransport({ baseUrl: node.url, policy: {} }).attestApp('app-1')).rejects.toThrow(/mock quote refused/);
+  });
+
+  it('refuses an app attested under another transport key than the node channel', async () => {
+    const keys = [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)];
+    const fetched = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const key = keys[url.searchParams.has('app') ? 1 : 0];
+      return new Response(
+        JSON.stringify({ quote: btoa('real'), transportKey: hex(key), appHash: hex(new Uint8Array(32).fill(7)) }),
+      );
+    });
+    const t = new NodeTransport({ baseUrl: node.url, policy: { verifyQuote: async () => true }, fetch: fetched as typeof fetch });
+    await expect(t.attestApp('app-1')).rejects.toThrow(/another transport key/);
   });
 });

@@ -23,7 +23,7 @@ import {
   type RetryOptions,
   type HttpMethod,
 } from '../runtime/transport.js';
-import { type NodePolicy } from '../runtime/attestation.js';
+import { type NodePolicy, type NodeVerification } from '../runtime/attestation.js';
 import { DEFAULT_DIRECTORY } from '../runtime/directory.js';
 import { CalimeroError, LoginRequired, NotFound, OriginNotRegistered, UnavailableError, WrongRecoveryCode } from '../runtime/errors.js';
 import { b64url, fromB64url, type PasskeyProvider } from '../runtime/passkey.js';
@@ -463,6 +463,15 @@ export class CalimeroClient {
   /** A JSON request through the transport, to an untyped path. */
   private json<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
     return this.transport.json<T>(method, path, { body });
+  }
+
+  /**
+   * Attest app instance `app` on node `url` (default: the one in use), under
+   * the client's policy: the record's `appHash` is the bundle hash the node
+   * bound from its own record of the app. Throws when the node refuses.
+   */
+  attestApp(app: string, url?: string): Promise<NodeVerification> {
+    return this.transport.attestApp(app, url);
   }
 
   /**

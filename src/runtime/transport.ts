@@ -23,6 +23,7 @@
  */
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
+import { hex } from '../crypto/internal.js';
 import { verifyNode, type NodePolicy, type NodeVerification } from './attestation.js';
 import { orderNodes, readDirectory } from './directory.js';
 import {
@@ -288,6 +289,8 @@ export class NodeTransport implements Transport {
   /** The latest attestation check of each node, and the attempt it came from. */
   private readonly checks = new Map<string, NodeVerificationState>();
   private readonly attempts = new Map<string, Promise<unknown>>();
+  /** The transport key each node's channel was attested to. */
+  private readonly keys = new Map<string, Uint8Array>();
   private readonly policy: NodePolicy;
   /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
   readonly raw: typeof fetch;
@@ -390,6 +393,7 @@ export class NodeTransport implements Transport {
     const attempt = verifyNode(url, this.policy, this.raw).then(
       ({ key, verification }) => {
         this.checks.set(url, { status: 'verified', ...verification });
+        this.keys.set(url, key);
         return key;
       },
       (error: unknown) => {
@@ -407,6 +411,23 @@ export class NodeTransport implements Transport {
   /** What the client's check of node `url` (default: the one in use) established; `undefined` before it is first used. */
   verification(url: string = this.nodeUrl): NodeVerificationState | undefined {
     return this.checks.get(url.replace(/\/+$/, ''));
+  }
+
+  /**
+   * Attest `app` on node `url` (default: the one in use) under the same policy:
+   * the record carries the app hash the node bound from its own record of the
+   * app. Throws the node's refusal, or when the node attests the app under
+   * another transport key than the channel requests go through.
+   */
+  async attestApp(app: string, url: string = this.nodeUrl): Promise<NodeVerification> {
+    const node = url.replace(/\/+$/, '');
+    const state = await this.verify(node);
+    if (state.status === 'refused') throw new Error(state.reason);
+    const { key, verification } = await verifyNode(node, { ...this.policy, app }, this.raw);
+    if (hex(key) !== hex(this.keys.get(node) ?? new Uint8Array())) {
+      throw new Error('The node attested the app under another transport key than its channel');
+    }
+    return verification;
   }
 
   /**

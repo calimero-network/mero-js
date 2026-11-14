@@ -31,11 +31,16 @@ new CalimeroClient({
 `client.nodeUrl` is the node in use and `client.nodes` every node the client
 may move to. `client.verification(url?)` is what the client's attestation check
 established about a node: `{ status: 'checking' }`, `{ status: 'verified', url,
-mock, release?, profile?, appHash?, verifiedAt }` (only facts the check verified;
+mock, release?, profile?, verifiedAt }` (only facts the check verified;
 `release` and `profile` when a signed release policy judged the quote) or
 `{ status: 'refused', url, reason, checkedAt }`; it is `undefined` before the node
 is first used. `client.verify(url?)` runs that check now, without a request, and
-answers the same state (a refusal is answered, not thrown). Every route below is sent inside the sealed channel, but
+answers the same state (a refusal is answered, not thrown).
+`client.attestApp(app, url?)` attests one app instance on the node under the same
+policy and answers the record with `appHash`, the bundle hash the node bound from
+its own record of the app (never all zero); it throws when the node refuses.
+
+Every route below is sent inside the sealed channel, but
 `GET attestation` and `GET health`. `passkey` is a `PasskeyProvider`
 (`browserPasskey()` in a page); a step-up takes `{ confirm: passkeyConfirm(passkey) }`.
 

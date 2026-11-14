@@ -430,3 +430,10 @@ describe('packageCapabilities', () => {
     expect(await failure(client().packageCapabilities('nope', '1.0.0'))).toBeInstanceOf(NotFound);
   });
 });
+
+describe('attestApp', () => {
+  it('answers the record of the app the node bound, through the client', async () => {
+    const record = await client().attestApp('app-1');
+    expect(record).toMatchObject({ url: node.url, mock: true, appHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
+  });
+});

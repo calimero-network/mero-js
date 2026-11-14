@@ -14,6 +14,9 @@ import { MOCK_QUOTE_HEADER } from '../../src/runtime/attestation.js';
 const PROLOGUE = new TextEncoder().encode('calimero/sealed-http/v2');
 const utf8 = new TextEncoder();
 
+/** The bundle hash the stand-in's record holds for any app it is asked to attest. */
+export const APP_BUNDLE_HASH = new Uint8Array(32).fill(0x11);
+
 /** What the stand-in answers one sealed request with. */
 export interface Reply {
   status: number;
@@ -68,13 +71,14 @@ export class StandInNode {
     res.end();
   }
 
-  /** A mock quote binding the asked nonce and the transport key, as a `--dev` node sends. */
+  /** A mock quote binding the asked nonce and the transport key, as a `--dev` node sends; asked for an `app`, it binds its own record's hash. */
   private async attest(url: URL, res: ServerResponse): Promise<void> {
     const nonce = Buffer.from(url.searchParams.get('nonce') ?? '', 'hex');
-    const suffix = await transportKeyBinding(new Uint8Array(32), this.transport.publicKey);
+    const appHash = url.searchParams.has('app') ? APP_BUNDLE_HASH : new Uint8Array(32);
+    const suffix = await transportKeyBinding(appHash, this.transport.publicKey);
     const quote = Buffer.concat([Buffer.from(MOCK_QUOTE_HEADER), nonce, Buffer.from(suffix)]).toString('base64');
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ quote, transportKey: hex(this.transport.publicKey), mock: true }));
+    res.end(JSON.stringify({ quote, transportKey: hex(this.transport.publicKey), appHash: hex(appHash), mock: true }));
   }
 
   private async handshake(body: Uint8Array, res: ServerResponse): Promise<void> {
