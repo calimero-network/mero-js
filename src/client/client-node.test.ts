@@ -386,3 +386,47 @@ describe('what the client verified about its node', () => {
     expect(await c.verify()).toMatchObject({ status: 'refused', url: node.url, reason: expect.stringMatching(/mock quote refused/) });
   });
 });
+
+describe('packageCapabilities', () => {
+  const capabilities = {
+    package: 'com.example.notes',
+    version: '1.2.0',
+    service: null,
+    bundle: 'b1',
+    mpk: 'm1',
+    manifestHash: 'h1',
+    signer: 's1',
+    name: 'Notes',
+    author: null,
+    outbound: ['api.example.com'],
+    abi: {
+      abiVersion: '1',
+      world: 'notes',
+      state: 'State',
+      methods: {
+        add: { kind: 'call', params: [['text', 'string']], returns: null, confirm: false, public: true, allowSystem: false, doc: 'Add a note.' },
+      },
+      errors: [],
+      events: [],
+    },
+  };
+
+  it('reads the package version capabilities, encoding each path segment', async () => {
+    node.answer = () => ({ status: 200, json: capabilities });
+    const answer = await client().packageCapabilities('com.example.notes', '1.2.0');
+    expect(answer).toEqual(capabilities);
+    expect(node.requests[0].head.method).toBe('GET');
+    expect(node.requests[0].head.path).toBe('/packages/com.example.notes/1.2.0/capabilities');
+  });
+
+  it('cannot reach another route through the package or version', async () => {
+    node.answer = () => ({ status: 200, json: capabilities });
+    await client().packageCapabilities('a/../b', '1.0.0?x');
+    expect(node.requests[0].head.path).toBe('/packages/a%2F..%2Fb/1.0.0%3Fx/capabilities');
+  });
+
+  it('throws a refusal as its typed error', async () => {
+    node.answer = () => refused(404, 'NOT_FOUND');
+    expect(await failure(client().packageCapabilities('nope', '1.0.0'))).toBeInstanceOf(NotFound);
+  });
+});

@@ -76,6 +76,7 @@ export type {
   UpgradeRun,
   ViewResult,
 } from './calimero-client.js';
+export type { AppAbi, AppAbiMethod, AppMethodKind, PackageCapabilities } from './package-capabilities.js';
 export { claimedRelease, fetchAttestedKey, freshCollateral, MOCK_QUOTE_HEADER, verifyNode } from '../runtime/attestation.js';
 export type { AttestationDoc, NodePolicy, NodeReleasePolicy, NodeVerification } from '../runtime/attestation.js';
 export { browserPasskey, b64url, fromB64url, passkeyConfirm } from '../runtime/passkey.js';

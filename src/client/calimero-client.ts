@@ -29,6 +29,7 @@ import { CalimeroError, LoginRequired, NotFound, OriginNotRegistered, Unavailabl
 import { b64url, fromB64url, type PasskeyProvider } from '../runtime/passkey.js';
 import { createRouteClient, type RouteClientOptions } from '../routes/route-client.js';
 import type { MethodOptions } from '../routes/method.js';
+import type { PackageCapabilities } from './package-capabilities.js';
 import { createRoutes, type Routes } from '../generated/methods.js';
 import { passkeyConfirm, type PasskeyConfirmOptions } from '../runtime/passkey.js';
 
@@ -462,6 +463,18 @@ export class CalimeroClient {
   /** A JSON request through the transport, to an untyped path. */
   private json<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
     return this.transport.json<T>(method, path, { body });
+  }
+
+  /**
+   * The manifest facts and ABI of a package version, for a signed-in caller
+   * (a package-bound frontend session included). Hand-written: the route is
+   * not in the vendored OpenAPI document yet.
+   */
+  packageCapabilities(pkg: string, version: string): Promise<PackageCapabilities> {
+    return this.transport.json<PackageCapabilities>(
+      'GET',
+      routePath('packages/{package}/{version}/capabilities', { package: pkg, version }),
+    );
   }
 
   // ---------------------------------------------------------------- identity
