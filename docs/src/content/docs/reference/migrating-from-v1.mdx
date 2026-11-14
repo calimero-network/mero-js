@@ -46,7 +46,7 @@ context → **app** (instance), application → signed **package**.
 | `CAPABILITIES`, `CAPABILITY_PRESETS`, `capMask`, `hasCap`, … | `ORG_CAPABILITIES`, `orgCapabilities` (same bit values, 1.0 names) |
 | `HTTPError`, `AuthRevokedError`, `classifyError` | `CalimeroError` and its subclasses |
 | `createBrowserHttpClient`, `createNodeHttpClient`, `withRetry`, … | the generated methods (`client.orgs.get({ org })`, …), sealed |
-| `discoverLocalNodes`, `probeNodeHealth`, `localNodeUrl` | `merod local` prints its node URLs |
+| `discoverLocalNodes`, `probeNodeHealth`, `localNodeUrl` | `meroctl local up` prints its node URLs (`meroctl local status` later) |
 | `fetchAttestedTransportKey`, `createAttestedSealedFetch` (`/admin-api/tee/attest`) | `fetchAttestedKey(baseUrl, policy)` (`/attestation`) |
 | `createSignedReleaseSealedFetch`, `fetchNodeReleaseVersion`, `nodeReleaseVersionFromImage` (`/admin-api/tee/info`) | `CalimeroClient` with `policy.release` (the node names its release in its attestation) |
 
