@@ -4,4 +4,4 @@
 repository=calimero-network/core
 path=docs/public/openapi.json
 ref=master
-commit=f0b0a6b9dcfd3b33f0fbe443aeafc50a93aed228
+commit=f9f06c78914fafb6c6f2b9e327cebb632c6df068
