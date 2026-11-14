@@ -17,6 +17,7 @@ describe('the package root', () => {
       'browserPasskey',
       'fetchAttestedKey',
       'verifyNode',
+      'verifyNodeUrl',
       'claimedRelease',
       'MOCK_QUOTE_HEADER',
       'b64url',

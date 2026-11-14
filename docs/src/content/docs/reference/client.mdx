@@ -29,7 +29,13 @@ new CalimeroClient({
 ```
 
 `client.nodeUrl` is the node in use and `client.nodes` every node the client
-may move to. Every route below is sent inside the sealed channel, but
+may move to. `client.verification(url?)` is what the client's attestation check
+established about a node: `{ status: 'checking' }`, `{ status: 'verified', url,
+mock, release?, profile?, appHash?, verifiedAt }` (only facts the check verified;
+`release` and `profile` when a signed release policy judged the quote) or
+`{ status: 'refused', url, reason, checkedAt }`; it is `undefined` before the node
+is first used. `client.verify(url?)` runs that check now, without a request, and
+answers the same state (a refusal is answered, not thrown). Every route below is sent inside the sealed channel, but
 `GET attestation` and `GET health`. `passkey` is a `PasskeyProvider`
 (`browserPasskey()` in a page); a step-up takes `{ confirm: passkeyConfirm(passkey) }`.
 
@@ -317,14 +323,14 @@ elsewhere.
 
 ## Other exports
 
-`fetchAttestedKey`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
+`fetchAttestedKey`, `verifyNode`, `claimedRelease`, `MOCK_QUOTE_HEADER`, `browserPasskey`,
 `b64url`, `fromB64url`, `errorFrom`, `ORG_CAPABILITIES`, `orgCapabilities`,
 `DEFAULT_ORG_CAPABILITIES`; for approvals `releaseConsent`, `withdrawConsent`, `upgradeConsent`,
 `createOrgConsent`, `createInviteConsent`, `acceptInviteConsent`, `leaveOrgConsent`, `removeMemberConsent`,
 `setMemberRoleConsent`, `setMemberTeamsConsent`, `removeMemberTeamsConsent`, `revokeInviteConsent`, `renameOrgConsent`,
 `deleteOrgConsent`, `setCapabilitiesConsent`, `setAllAppsConsent`, `withoutConsentReturn`, `CONSENT_STORAGE_KEY`,
 `consentReturn`, `confirmationCode`, `pendingApprovalsFrom`, `stalledBy`, `publisherBindingMessage`,
-`publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`; the sealed transport (`createSealedFetch`,
+`publisherBindingBytes`, `releaseNotesUrl`, `verifyReleaseUrl`, `verifyNodeUrl`; the sealed transport (`createSealedFetch`,
 `transportKeyBinding`, `SealedTransportError`, `StaleTransportKeyError`); quote
 and release verification (`createQuoteVerifier`, `trustedMeasurementsFromReleases`,
 `createSignedReleaseVerifier`, `trustSignedRelease`, `verifySignedNodeRelease`,

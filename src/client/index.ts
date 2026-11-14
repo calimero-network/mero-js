@@ -128,6 +128,7 @@ export {
   releaseNotesUrl,
   stalledBy,
   upgradeConsent,
+  verifyNodeUrl,
   verifyReleaseUrl,
   withdrawConsent,
   withoutConsentReturn,
