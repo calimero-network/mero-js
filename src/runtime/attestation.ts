@@ -111,6 +111,23 @@ export interface AttestationDoc {
   mock: boolean;
 }
 
+/**
+ * What {@link verifyNode} verified about a node: only facts the check itself
+ * established. `release` and `profile` are set when a signed release policy
+ * judged the quote (a custom `verifyQuote` or a mock quote proves neither);
+ * `appHash` when the policy pinned one, which the quote binds. The node's own
+ * claims that nothing signs, such as its cluster name, are not here.
+ */
+export interface NodeVerification {
+  url: string;
+  mock: boolean;
+  release?: string;
+  profile?: string;
+  appHash?: string;
+  /** When the check passed (ms since the epoch). */
+  verifiedAt: number;
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -205,12 +222,13 @@ async function verifyRelease(
   args: Parameters<VerifyTransportQuote>[0],
   policy: NodeReleasePolicy,
   fetchImpl: typeof fetch,
-): Promise<boolean> {
+): Promise<Pick<NodeVerification, 'release' | 'profile'> | undefined> {
   // Refuse what no release could admit before reaching for the network.
   const version = claimedRelease(doc, policy.minReleaseVersion);
+  const profile = policy.profile ?? PRODUCTION_PROFILE;
   const trusted = await trustSignedRelease({
     release: await releaseFor(version, policy, fetchImpl),
-    profile: policy.profile ?? PRODUCTION_PROFILE,
+    profile,
     allowDebugProfile: policy.allowDebugProfile,
     minReleaseVersion: policy.minReleaseVersion,
     identity: policy.identity,
@@ -223,7 +241,7 @@ async function verifyRelease(
     now: policy.now,
     ...trusted,
   });
-  return verifier(args);
+  return (await verifier(args)) ? { release: version, profile } : undefined;
 }
 
 /** Fetch the node's attestation and return its transport key once it checks out. */
@@ -232,11 +250,21 @@ export async function fetchAttestedKey(
   policy: NodePolicy,
   fetchImpl: typeof fetch = (input, init) => fetch(input, init),
 ): Promise<Uint8Array> {
+  return (await verifyNode(baseUrl, policy, fetchImpl)).key;
+}
+
+/** {@link fetchAttestedKey}, with the record of what the check verified. */
+export async function verifyNode(
+  baseUrl: string,
+  policy: NodePolicy,
+  fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+): Promise<{ key: Uint8Array; verification: NodeVerification }> {
+  const url = baseUrl.replace(/\/+$/, '');
   const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
-  const url = new URL(`${baseUrl.replace(/\/+$/, '')}/attestation`);
-  url.searchParams.set('nonce', nonce);
-  if (policy.appHash) url.searchParams.set('appHash', policy.appHash);
-  const response = await fetchImpl(url.toString());
+  const attestation = new URL(`${url}/attestation`);
+  attestation.searchParams.set('nonce', nonce);
+  if (policy.appHash) attestation.searchParams.set('appHash', policy.appHash);
+  const response = await fetchImpl(attestation.toString());
   if (!response.ok) throw new Error(`The node refused to attest: HTTP ${response.status}`);
   const doc = (await response.json()) as AttestationDoc;
   const transportKey = fromHex(doc.transportKey, 'transportKey', 32);
@@ -244,6 +272,12 @@ export async function fetchAttestedKey(
   const suffix = await transportKeyBinding(inner, transportKey);
   const quote = base64ToBytes(doc.quote);
   const header = new TextEncoder().encode(MOCK_QUOTE_HEADER);
+  const verification = (facts: Pick<NodeVerification, 'mock' | 'release' | 'profile'>): NodeVerification => ({
+    url,
+    ...facts,
+    ...(policy.appHash ? { appHash: policy.appHash } : {}),
+    verifiedAt: Date.now(),
+  });
   if (equal(quote.slice(0, header.length), header)) {
     if (!policy.allowMock) {
       throw new Error('mock quote refused: this client only trusts real TEEs');
@@ -252,17 +286,17 @@ export async function fetchAttestedKey(
     if (!equal(report.slice(0, 32), fromHex(nonce, 'nonce', 32)) || !equal(report.slice(32), suffix)) {
       throw new Error('the quote does not bind this transport key, app and nonce');
     }
-    return transportKey;
+    return { key: transportKey, verification: verification({ mock: true }) };
   }
   const args = { quoteB64: doc.quote, nonce, reportDataSuffix: hex(suffix) };
-  let ok: boolean;
+  let facts: Pick<NodeVerification, 'release' | 'profile'> | undefined;
   if (policy.verifyQuote) {
-    ok = await policy.verifyQuote(args);
+    facts = (await policy.verifyQuote(args)) ? {} : undefined;
   } else if (policy.release) {
-    ok = await verifyRelease(doc, args, policy.release, fetchImpl);
+    facts = await verifyRelease(doc, args, policy.release, fetchImpl);
   } else {
     throw new Error('real quote refused: this client trusts no TD image (set policy.release)');
   }
-  if (!ok) throw new Error('The attestation did not verify, so its transport key is not trusted');
-  return transportKey;
+  if (!facts) throw new Error('The attestation did not verify, so its transport key is not trusted');
+  return { key: transportKey, verification: verification({ mock: false, ...facts }) };
 }

@@ -76,8 +76,8 @@ export type {
   UpgradeRun,
   ViewResult,
 } from './calimero-client.js';
-export { claimedRelease, fetchAttestedKey, freshCollateral, MOCK_QUOTE_HEADER } from '../runtime/attestation.js';
-export type { AttestationDoc, NodePolicy, NodeReleasePolicy } from '../runtime/attestation.js';
+export { claimedRelease, fetchAttestedKey, freshCollateral, MOCK_QUOTE_HEADER, verifyNode } from '../runtime/attestation.js';
+export type { AttestationDoc, NodePolicy, NodeReleasePolicy, NodeVerification } from '../runtime/attestation.js';
 export { browserPasskey, b64url, fromB64url, passkeyConfirm } from '../runtime/passkey.js';
 export {
   MAX_RECOVERY_NONCE_BYTES,

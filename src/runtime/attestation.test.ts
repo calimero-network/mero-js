@@ -7,7 +7,14 @@ import { fromHex, hex } from '../crypto/internal.js';
 import type { SignedNodeRelease } from '../sealed/release.js';
 import { transportKeyBinding } from '../sealed/sealed.js';
 import type { DcapCollateral, DcapVerifiedReport } from '../sealed/verify.js';
-import { MOCK_QUOTE_HEADER, claimedRelease, fetchAttestedKey, freshCollateral, type NodePolicy } from './attestation.js';
+import {
+  MOCK_QUOTE_HEADER,
+  claimedRelease,
+  fetchAttestedKey,
+  freshCollateral,
+  verifyNode,
+  type NodePolicy,
+} from './attestation.js';
 
 // The quote's collateral source, seen from the library: no test reaches Intel or the mirror.
 const dcapCalls = vi.hoisted(() => ({ getCollateral: [] as unknown[][], getCollateralFromPcs: 0 }));
@@ -109,7 +116,7 @@ function node(td: Td = {}, opts: { claimed?: string; quote?: string } = {}) {
 async function attest(
   td: Td,
   release: Partial<NonNullable<NodePolicy['release']>> = {},
-  opts: { claimed?: string; quote?: string; policy?: Partial<NodePolicy> } = {},
+  opts: { claimed?: string; quote?: string; policy?: Partial<NodePolicy>; verify?: boolean } = {},
 ) {
   const n = node(td, opts);
   // dcap-qvl's verify is synchronous: the report is computed once the doc is served.
@@ -133,7 +140,8 @@ async function attest(
     report = await n.verify();
     return response;
   }) as typeof fetch;
-  return { result: fetchAttestedKey(BASE, policy, wrapped), releaseSource };
+  const result = opts.verify ? verifyNode(BASE, policy, wrapped) : fetchAttestedKey(BASE, policy, wrapped);
+  return { result, releaseSource };
 }
 
 describe('fetchAttestedKey with a release policy (core Measurements::Release)', () => {
@@ -260,5 +268,71 @@ describe("the quote's collateral", () => {
     const stale = async () => ({ tcb_info: JSON.stringify({ issueDate: '2020-01-01T00:00:00Z' }) }) as DcapCollateral;
     const { result } = await attest({}, { fetchCollateral: stale, maxCollateralAgeDays: 30 });
     await expect(result).rejects.toThrow(/more than the 30 this client accepts/);
+  });
+});
+
+describe('verifyNode: the record of what was verified', () => {
+  const verified = async (td: Td = {}, release = {}, opts = {}) => {
+    const { result } = await attest(td, release, { ...opts, verify: true });
+    return (await result) as Awaited<ReturnType<typeof verifyNode>>;
+  };
+
+  it('names the release and profile the quote was checked against, with the transport key it bound', async () => {
+    const before = Date.now();
+    const { key, verification } = await verified();
+    expect(key).toEqual(TRANSPORT_KEY);
+    expect(verification).toEqual({
+      url: BASE,
+      mock: false,
+      release: '2.3.87',
+      profile: 'locked-read-only',
+      verifiedAt: expect.any(Number),
+    });
+    expect(verification.verifiedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it('names the debug profile only when it was allowed and matched', async () => {
+    const { verification } = await verified({ image: DEBUG_IMAGE }, { profile: 'debug', allowDebugProfile: true });
+    expect(verification.profile).toBe('debug');
+  });
+
+  it('carries the app hash the policy pinned, which the quote binds', async () => {
+    const appHash = 'ab'.repeat(32);
+    const n = node({ boundKey: TRANSPORT_KEY });
+    const policy: NodePolicy = {
+      appHash,
+      verifyQuote: async () => true,
+    };
+    const fetchImpl = (async (input: RequestInfo | URL) => n.fetchImpl(input)) as typeof fetch;
+    const { verification } = await verifyNode(BASE, policy, fetchImpl);
+    expect(verification.appHash).toBe(appHash);
+    expect(verification.release).toBeUndefined();
+    expect(verification.profile).toBeUndefined();
+  });
+
+  it('marks a mock attestation, with no release or profile', async () => {
+    const nonceOnly = async (input: RequestInfo | URL) => {
+      const nonce = new URL(String(input)).searchParams.get('nonce') ?? '';
+      const suffix = await transportKeyBinding(new Uint8Array(32), TRANSPORT_KEY);
+      const report = new Uint8Array(64);
+      report.set(fromHex(nonce, 'nonce', 32));
+      report.set(suffix, 32);
+      const quote = new Uint8Array([...new TextEncoder().encode(MOCK_QUOTE_HEADER), ...report]);
+      return new Response(
+        JSON.stringify({
+          quote: btoa(String.fromCharCode(...quote)),
+          transportKey: hex(TRANSPORT_KEY),
+          release: { version: '9.9.9', profile: 'debug' },
+          cluster: 'claimed',
+          mock: true,
+        }),
+      );
+    };
+    const { verification } = await verifyNode(BASE, { allowMock: true }, nonceOnly as typeof fetch);
+    expect(verification).toEqual({ url: BASE, mock: true, verifiedAt: expect.any(Number) });
+  });
+
+  it('is not produced for a node that fails verification', async () => {
+    await expect(verified({ debug: true })).rejects.toThrow(/debug TD/);
   });
 });
