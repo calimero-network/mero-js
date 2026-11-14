@@ -201,7 +201,7 @@ export function freshCollateral(
 
 /** Judge a real quote as core's `Measurements::Release` does. */
 async function verifyRelease(
-  doc: AttestationDoc,
+  doc: Pick<AttestationDoc, 'release'>,
   args: Parameters<VerifyTransportQuote>[0],
   policy: NodeReleasePolicy,
   fetchImpl: typeof fetch,
@@ -226,6 +226,44 @@ async function verifyRelease(
   return verifier(args);
 }
 
+/**
+ * The quote in `doc` is genuine (or an allowed mock), from an image `policy` trusts, and its report
+ * data is `nonce(32) || suffix(32)`. `bound` names what the suffix binds and `trusted` what the check
+ * vouches for, for the refusals.
+ */
+export async function verifyQuoteBinding(
+  doc: Pick<AttestationDoc, 'quote' | 'release'>,
+  nonce: Uint8Array,
+  suffix: Uint8Array,
+  policy: NodePolicy,
+  bound: string,
+  trusted: string,
+  fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+): Promise<void> {
+  const quote = base64ToBytes(doc.quote);
+  const header = new TextEncoder().encode(MOCK_QUOTE_HEADER);
+  if (equal(quote.slice(0, header.length), header)) {
+    if (!policy.allowMock) {
+      throw new Error('mock quote refused: this client only trusts real TEEs');
+    }
+    const report = quote.slice(header.length, header.length + 64);
+    if (!equal(report.slice(0, 32), nonce) || !equal(report.slice(32), suffix)) {
+      throw new Error(`the quote does not bind this ${bound} and nonce`);
+    }
+    return;
+  }
+  const args = { quoteB64: doc.quote, nonce: hex(nonce), reportDataSuffix: hex(suffix) };
+  let ok: boolean;
+  if (policy.verifyQuote) {
+    ok = await policy.verifyQuote(args);
+  } else if (policy.release) {
+    ok = await verifyRelease(doc, args, policy.release, fetchImpl);
+  } else {
+    throw new Error('real quote refused: this client trusts no TD image (set policy.release)');
+  }
+  if (!ok) throw new Error(`The attestation did not verify, so its ${trusted} is not trusted`);
+}
+
 /** Fetch the node's attestation and return its transport key once it checks out. */
 export async function fetchAttestedKey(
   baseUrl: string,
@@ -242,27 +280,6 @@ export async function fetchAttestedKey(
   const transportKey = fromHex(doc.transportKey, 'transportKey', 32);
   const inner = policy.appHash ? fromHex(policy.appHash, 'appHash', 32) : new Uint8Array(32);
   const suffix = await transportKeyBinding(inner, transportKey);
-  const quote = base64ToBytes(doc.quote);
-  const header = new TextEncoder().encode(MOCK_QUOTE_HEADER);
-  if (equal(quote.slice(0, header.length), header)) {
-    if (!policy.allowMock) {
-      throw new Error('mock quote refused: this client only trusts real TEEs');
-    }
-    const report = quote.slice(header.length, header.length + 64);
-    if (!equal(report.slice(0, 32), fromHex(nonce, 'nonce', 32)) || !equal(report.slice(32), suffix)) {
-      throw new Error('the quote does not bind this transport key, app and nonce');
-    }
-    return transportKey;
-  }
-  const args = { quoteB64: doc.quote, nonce, reportDataSuffix: hex(suffix) };
-  let ok: boolean;
-  if (policy.verifyQuote) {
-    ok = await policy.verifyQuote(args);
-  } else if (policy.release) {
-    ok = await verifyRelease(doc, args, policy.release, fetchImpl);
-  } else {
-    throw new Error('real quote refused: this client trusts no TD image (set policy.release)');
-  }
-  if (!ok) throw new Error('The attestation did not verify, so its transport key is not trusted');
+  await verifyQuoteBinding(doc, fromHex(nonce, 'nonce', 32), suffix, policy, 'transport key, app', 'transport key', fetchImpl);
   return transportKey;
 }

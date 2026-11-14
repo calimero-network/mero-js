@@ -33,6 +33,7 @@ import { passkeyConfirm, type PasskeyConfirmOptions } from '../runtime/passkey.j
 
 import { exportFile, exportFileTo, type ExportedFile, type FileSink } from './files.js';
 import { signRecovery } from './recovery-key.js';
+import { verifyAppCluster, verifyPipelineReceipt, type AttestedCluster, type PipelineReceipt, type ReceiptAnswer } from './receipts.js';
 import {
   CONSENT_STORAGE_KEY,
   confirmationCode,
@@ -656,6 +657,30 @@ export class CalimeroClient {
   /** The plaintext of sealed file `id` of component app `app`, in memory; use {@link exportFileTo} for a large one. */
   exportFile(app: string, id: string, signal?: AbortSignal): Promise<Uint8Array> {
     return exportFile(this.exportClient, app, id, signal);
+  }
+
+  /** The policy this client attests nodes under; a client without one verifies nothing. */
+  private get attestationPolicy(): NodePolicy {
+    const policy = this.transport.nodePolicy;
+    if (!policy) throw new Error('this client has no attestation policy, so it cannot verify an attestation');
+    return policy;
+  }
+
+  /**
+   * Verify every replica of `app` under this client's policy: each one's quote binds its receipt key,
+   * the cluster's governance, and its cluster and node id. Answers the attested receipt key per node
+   * and the governance.
+   */
+  async verifyAppCluster(app: string): Promise<AttestedCluster> {
+    return verifyAppCluster(this, app, this.attestationPolicy);
+  }
+
+  /**
+   * Verify the receipt of a pipeline run (`client.apps.pipelineReceiptReceipt`): signed by the key an
+   * attested replica holds, and for `app` and `run`. Throws when it is not; answers the receipt.
+   */
+  async verifyPipelineReceipt(app: string, run: string, answer: ReceiptAnswer): Promise<PipelineReceipt> {
+    return verifyPipelineReceipt(this, app, run, answer, this.attestationPolicy);
   }
 
   /**
