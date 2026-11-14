@@ -41,7 +41,10 @@ import type { components } from '../generated/api.js';
 /** A signed-in session: what sign-up, sign-in and a refresh answer. */
 export type CalimeroSession = components['schemas']['Session'];
 
-/** Where a node stands with the client's check: `refused` failed verification, `unreachable` gave no answer (retried on next use). */
+/**
+ * Where a node stands with the client's check: `refused` failed verification, `unreachable`
+ * gave no answer (retried on next use).
+ */
 export type NodeVerificationState =
   | { status: 'checking'; url: string }
   | ({ status: 'verified' } & NodeVerification)
@@ -373,34 +376,32 @@ export class NodeTransport implements Transport {
   private channel(url: string): typeof fetch {
     let channel = this.channels.get(url);
     if (!channel) {
-      // Each channel drops only itself, and only while it is still the one in use.
-      const drop = () => {
-        if (this.channels.get(url) === sealed) this.channels.delete(url);
-      };
-      let first: Promise<Uint8Array> | undefined = this.attest(url, drop);
+      // A channel that has been dropped records nothing: only the one in use speaks for the node.
+      const live = () => this.channels.get(url) === sealed;
+      let first: Promise<Uint8Array> | undefined;
       const sealed: typeof fetch = createSealedFetch({
         baseUrl: url,
         transportPublicKey: () => {
-          const key = first ?? this.attest(url, drop);
+          const key = first ?? this.attest(url, live);
           first = undefined;
           return key;
         },
         fetch: this.raw,
       });
       this.channels.set(url, sealed);
+      first = this.attest(url, live);
       channel = sealed;
     }
     return channel;
   }
 
-  /** Attest node `url`, keeping what the check verified or why it failed; `drop` retires the channel when no answer came. */
-  private attest(url: string, drop: () => void): Promise<Uint8Array> {
+  /** Attest node `url` for the channel `live` tells is in use, keeping what the check verified or why it failed. */
+  private attest(url: string, live: () => boolean): Promise<Uint8Array> {
+    if (!live()) return verifyNode(url, this.policy, this.raw).then(({ key }) => key);
     this.checks.set(url, { status: 'checking', url });
-    // Only the latest attempt of a node may write its state: a late one is stale.
-    const current = () => this.attempts.get(url) === attempt;
     const attempt: Promise<Uint8Array> = verifyNode(url, this.policy, this.raw).then(
       ({ key, verification }) => {
-        if (current()) {
+        if (live()) {
           this.checks.set(url, { status: 'verified', ...verification });
           this.keys.set(url, key);
         }
@@ -409,10 +410,10 @@ export class NodeTransport implements Transport {
       (error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
         const unreachable = this.isNetworkFailure(error);
-        if (current()) {
+        if (live()) {
           this.checks.set(url, { status: unreachable ? 'unreachable' : 'refused', url, reason, checkedAt: Date.now() });
           // No answer says nothing about the node: the next use attests on a new channel.
-          if (unreachable) drop();
+          if (unreachable) this.channels.delete(url);
         }
         throw error;
       },

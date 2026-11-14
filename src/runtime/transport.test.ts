@@ -465,3 +465,65 @@ describe('a release mirror that cannot be reached', () => {
     expect(state).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 503/) });
   });
 });
+
+describe('a dropped channel never writes the node state', () => {
+  type Internals = { channels: Map<string, typeof fetch>; keys: Map<string, Uint8Array> };
+  const keyOf = (n: number) => new Uint8Array(32).fill(n);
+
+  /** Node-level attestations numbered from 1, each answering key `n`; call `held` waits for `release(outcome)`. */
+  function replicas(held?: number) {
+    let calls = 0;
+    let release!: (outcome: 'unreachable' | 'ok') => void;
+    const gate = new Promise<'unreachable' | 'ok'>((ok) => (release = ok));
+    const fetched = (async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith('/sealed/v2/handshake')) {
+        return new Response(JSON.stringify({ error: { code: 'stale_transport_key' } }), { status: 409 });
+      }
+      const call = ++calls;
+      if (call === held && (await gate) === 'unreachable') throw new TypeError('fetch failed');
+      return new Response(JSON.stringify({ quote: btoa('real'), transportKey: hex(keyOf(call)), appHash: hex(keyOf(9)) }));
+    }) as typeof fetch;
+    const t = new NodeTransport({ baseUrl: node.url, policy: { verifyQuote: async () => true }, fetch: fetched });
+    return { t, release, internals: t as unknown as Internals, calls: () => calls };
+  }
+  const tick = () => sleep(5);
+
+  it('ignores an older attempt that fails after a newer one on a new channel verified', async () => {
+    const { t, release, internals } = replicas(1);
+    const first = t.verify();
+    internals.channels.delete(node.url);
+    expect(await t.verify()).toMatchObject({ status: 'verified' });
+    const second = internals.channels.get(node.url);
+    release('unreachable');
+    await first;
+    await tick();
+    expect(t.verification()).toMatchObject({ status: 'verified', url: node.url });
+    expect(internals.keys.get(node.url)).toEqual(keyOf(2));
+    expect(internals.channels.get(node.url)).toBe(second);
+  });
+
+  it('ignores an older attempt that verifies after a newer one, keeping the newer key', async () => {
+    const { t, release, internals } = replicas(1);
+    const first = t.verify();
+    internals.channels.delete(node.url);
+    await t.verify();
+    release('ok');
+    await first;
+    await tick();
+    expect(internals.keys.get(node.url)).toEqual(keyOf(2));
+  });
+
+  it('keeps the new channel state when the dropped channel re-keys after the drop', async () => {
+    const { t, internals, calls } = replicas();
+    await t.verify();
+    const dropped = internals.channels.get(node.url) as typeof fetch;
+    internals.channels.delete(node.url);
+    await t.verify();
+    await expect(dropped(`${node.url}/apps/app-1`)).rejects.toThrow();
+    await tick();
+    expect(calls()).toBeGreaterThan(2);
+    expect(t.verification()).toMatchObject({ status: 'verified', url: node.url });
+    expect(internals.keys.get(node.url)).toEqual(keyOf(2));
+  });
+});
