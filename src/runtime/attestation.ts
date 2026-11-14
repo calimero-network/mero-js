@@ -172,6 +172,13 @@ export function claimedRelease(doc: Pick<AttestationDoc, 'release'>, minReleaseV
   return version;
 }
 
+/** The release mirror gave no answer; `cause` is the fetch's own rejection. */
+export class ReleaseMirrorUnreachable extends Error {
+  constructor(readonly cause: TypeError) {
+    super(`the release mirror could not be reached: ${cause.message}`);
+  }
+}
+
 async function releaseFor(version: string, policy: NodeReleasePolicy, fetchImpl: typeof fetch) {
   const source = policy.releaseSource;
   if (typeof source === 'function') return source(version);
@@ -225,7 +232,10 @@ async function verifyRelease(
   // Refuse what no release could admit before reaching for the network.
   const version = claimedRelease(doc, policy.minReleaseVersion);
   const profile = policy.profile ?? PRODUCTION_PROFILE;
-  const release = await releaseFor(version, policy, fetchImpl);
+  const release = await releaseFor(version, policy, fetchImpl).catch((error: unknown) => {
+    if (!(error instanceof TypeError)) throw error;
+    throw new ReleaseMirrorUnreachable(error);
+  });
   if (release.version !== version) {
     throw new Error(`The node names mero-tee release ${version}, but the release served is ${release.version}`);
   }

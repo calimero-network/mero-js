@@ -333,12 +333,20 @@ describe('a node that changed its transport key (re-attested on stale_transport_
 
 describe('verify and attestApp around a restarted node', () => {
   it('verify answers the settled outcome, not a check a re-key started meanwhile', async () => {
-    const t = transport();
+    let release!: () => void;
+    const gate = new Promise<void>((ok) => (release = ok));
+    const { wrapped } = attestations(fetch, async (call, response) => {
+      if (call === 2) await gate;
+      return response;
+    });
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
     await t.verify();
     await node.rotateKey();
     const rekey = t.json('GET', 'apps/app-1');
     while (t.verification()?.status !== 'checking') await sleep(1);
-    expect(await t.verify()).toMatchObject({ status: 'verified' });
+    const settled = t.verify();
+    release();
+    expect(await settled).toMatchObject({ status: 'verified' });
     await rekey;
   });
 
@@ -361,5 +369,99 @@ describe('verify and attestApp around a restarted node', () => {
       fetch: fetched,
     });
     expect(await t.attestApp('app-1')).toMatchObject({ appHash: '07'.repeat(32) });
+  });
+});
+
+describe('attestApp and the channel requests go through', () => {
+  it('uses the key the dropped channel is attested to afresh, so the next request goes through it', async () => {
+    const t = transport();
+    await t.json('GET', 'apps/app-1');
+    await node.rotateKey();
+    expect(await t.attestApp('app-1')).toMatchObject({ appHash: hex(APP_BUNDLE_HASH) });
+    await t.json('GET', 'apps/app-1');
+    expect(t.verification()).toMatchObject({ status: 'verified' });
+  });
+
+  it('refuses when the app quote and the channel check keep coming from nodes with different keys', async () => {
+    const calls = { node: 0, app: 0 };
+    const fetched = (async (input: RequestInfo | URL) => {
+      const app = new URL(String(input)).searchParams.has('app');
+      calls[app ? 'app' : 'node'] += 1;
+      const key = hex(new Uint8Array(32).fill(app ? 2 : 1));
+      return new Response(JSON.stringify({ quote: btoa('real'), transportKey: key, appHash: hex(new Uint8Array(32).fill(7)) }));
+    }) as typeof fetch;
+    const t = new NodeTransport({ baseUrl: node.url, policy: { verifyQuote: async () => true }, fetch: fetched });
+    await expect(t.attestApp('app-1')).rejects.toThrow(/another transport key/);
+    expect(calls).toEqual({ node: 2, app: 2 });
+  });
+
+  const pinned = (bound: [number, number]) => {
+    let calls = 0;
+    const fetched = (async () => {
+      const hash = new Uint8Array(32).fill(bound[Math.min(calls++, 1)]);
+      return new Response(JSON.stringify({ quote: btoa('real'), transportKey: hex(new Uint8Array(32).fill(1)), appHash: hex(hash) }));
+    }) as typeof fetch;
+    return new NodeTransport({
+      baseUrl: node.url,
+      policy: { verifyQuote: async () => true, app: 'app-1', appHash: '07'.repeat(32) },
+      fetch: fetched,
+    });
+  };
+
+  it('keeps a pin meant for this app', async () => {
+    await expect(pinned([7, 8]).attestApp('app-1')).rejects.toThrow(/not the pinned/);
+  });
+
+  it('drops a pin meant for another app', async () => {
+    expect(await pinned([7, 8]).attestApp('app-2')).toMatchObject({ appHash: '08'.repeat(32) });
+  });
+});
+
+describe('a release mirror that cannot be reached', () => {
+  const mirrored = (mirror: () => Response) =>
+    new NodeTransport({
+      baseUrl: node.url,
+      policy: { release: { minReleaseVersion: '2.3.87', releaseSource: 'http://mirror.test' } },
+      fetch: (async (input: RequestInfo | URL) => {
+        if (String(input).startsWith('http://mirror.test')) return mirror();
+        return attestation();
+      }) as typeof fetch,
+    });
+  const attestation = () =>
+    new Response(
+      JSON.stringify({
+        quote: btoa('real'),
+        transportKey: hex(new Uint8Array(32).fill(1)),
+        release: { version: '2.3.87', profile: 'locked-read-only' },
+      }),
+    );
+
+  it('is unreachable, named as the mirror and not the node', async () => {
+    const fetched = (async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('http://mirror.test')) throw new TypeError('fetch failed');
+      return new Response(
+        JSON.stringify({
+          quote: btoa('real'),
+          transportKey: hex(new Uint8Array(32).fill(1)),
+          release: { version: '2.3.87', profile: 'locked-read-only' },
+        }),
+      );
+    }) as typeof fetch;
+    const t = new NodeTransport({
+      baseUrl: node.url,
+      policy: { release: { minReleaseVersion: '2.3.87', releaseSource: 'http://mirror.test' } },
+      fetch: fetched,
+    });
+    expect(await t.verify()).toEqual({
+      status: 'unreachable',
+      url: node.url,
+      reason: 'the release mirror could not be reached: fetch failed',
+      checkedAt: expect.any(Number),
+    });
+  });
+
+  it('is refused, not unreachable, when the mirror answers with an error', async () => {
+    const state = await mirrored(() => new Response('', { status: 503 })).verify();
+    expect(state).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 503/) });
   });
 });
