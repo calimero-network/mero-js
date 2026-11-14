@@ -96,7 +96,18 @@ export interface NodePolicy {
    * pinned measurements). Takes precedence over `release`.
    */
   verifyQuote?: VerifyTransportQuote;
-  /** The app bundle hash (hex) the quote must bind, when talking to one app. */
+  /**
+   * The app instance whose code the node must attest. The node then binds its
+   * own record of the app's bundle hash into the quote, and that hash (never
+   * all zero) is what the verification record carries. Without it, a node
+   * binds whatever hash the caller sends, which proves nothing about its code.
+   */
+  app?: string;
+  /**
+   * With `app`: the bundle hash (hex) the node must bind, else it is refused.
+   * Alone: sent to the node and bound into the quote, but only echoed back, so
+   * it is not recorded as a verified code hash.
+   */
   appHash?: string;
 }
 
@@ -115,7 +126,8 @@ export interface AttestationDoc {
  * What {@link verifyNode} verified about a node: only facts the check itself
  * established. `release` and `profile` are set when a signed release policy
  * judged the quote (a custom `verifyQuote` or a mock quote proves neither);
- * `appHash` when the policy pinned one, which the quote binds. The node's own
+ * `appHash` only when the node bound its own record of an app (`policy.app`),
+ * which the quote verified. The node's own
  * claims that nothing signs, such as its cluster name, are not here.
  */
 export interface NodeVerification {
@@ -257,6 +269,16 @@ export async function fetchAttestedKey(
   return (await verifyNode(baseUrl, policy, fetchImpl)).key;
 }
 
+/** The app hash the node chose for `policy.app`, which must be real and the pinned one if any. */
+function nodeBoundAppHash(doc: AttestationDoc, policy: NodePolicy): Uint8Array {
+  const bound = fromHex(doc.appHash, 'appHash', 32);
+  if (bound.every((byte) => byte === 0)) throw new Error('The node bound no app: its app hash is all zero');
+  if (policy.appHash && hex(bound) !== policy.appHash.toLowerCase()) {
+    throw new Error(`The node's app hash ${hex(bound)} is not the pinned ${policy.appHash}`);
+  }
+  return bound;
+}
+
 /** {@link fetchAttestedKey}, with the record of what the check verified. */
 export async function verifyNode(
   baseUrl: string,
@@ -267,19 +289,21 @@ export async function verifyNode(
   const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
   const attestation = new URL(`${url}/attestation`);
   attestation.searchParams.set('nonce', nonce);
-  if (policy.appHash) attestation.searchParams.set('appHash', policy.appHash);
+  if (policy.app) attestation.searchParams.set('app', policy.app);
+  else if (policy.appHash) attestation.searchParams.set('appHash', policy.appHash);
   const response = await fetchImpl(attestation.toString());
   if (!response.ok) throw new Error(`The node refused to attest: HTTP ${response.status}`);
   const doc = (await response.json()) as AttestationDoc;
   const transportKey = fromHex(doc.transportKey, 'transportKey', 32);
-  const inner = policy.appHash ? fromHex(policy.appHash, 'appHash', 32) : new Uint8Array(32);
+  const boundApp = policy.app ? nodeBoundAppHash(doc, policy) : undefined;
+  const inner = boundApp ?? (policy.appHash ? fromHex(policy.appHash, 'appHash', 32) : new Uint8Array(32));
   const suffix = await transportKeyBinding(inner, transportKey);
   const quote = base64ToBytes(doc.quote);
   const header = new TextEncoder().encode(MOCK_QUOTE_HEADER);
   const verification = (facts: Pick<NodeVerification, 'mock' | 'release' | 'profile'>): NodeVerification => ({
     url,
     ...facts,
-    ...(policy.appHash ? { appHash: policy.appHash } : {}),
+    ...(boundApp ? { appHash: hex(boundApp) } : {}),
     verifiedAt: Date.now(),
   });
   if (equal(quote.slice(0, header.length), header)) {
