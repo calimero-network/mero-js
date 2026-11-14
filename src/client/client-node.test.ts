@@ -425,6 +425,16 @@ describe('packageCapabilities', () => {
     expect(node.requests[0].head.path).toBe('/packages/a%2F..%2Fb/1.0.0%3Fx/capabilities');
   });
 
+  it('asks for one service of the release only when it names one', async () => {
+    node.answer = () => ({ status: 200, json: capabilities });
+    await client().packageCapabilities('p', '1.0.0', { service: 'web ui' });
+    await client().packageCapabilities('p', '1.0.0');
+    expect(node.requests.map((r) => r.head.path)).toEqual([
+      '/packages/p/1.0.0/capabilities?service=web+ui',
+      '/packages/p/1.0.0/capabilities',
+    ]);
+  });
+
   it('throws a refusal as its typed error', async () => {
     node.answer = () => refused(404, 'NOT_FOUND');
     expect(await failure(client().packageCapabilities('nope', '1.0.0'))).toBeInstanceOf(NotFound);

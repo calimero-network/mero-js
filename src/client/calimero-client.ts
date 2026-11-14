@@ -465,11 +465,12 @@ export class CalimeroClient {
     return this.transport.attestApp(app, url);
   }
 
-  /** The manifest facts and ABI of a package version, for a signed-in caller (a package-bound frontend session included). */
-  packageCapabilities(pkg: string, version: string): Promise<PackageCapabilities> {
+  /** The manifest facts and ABI of a package version (of `service`, for a multi-service release), for a signed-in caller. */
+  packageCapabilities(pkg: string, version: string, options: { service?: string } = {}): Promise<PackageCapabilities> {
     return this.transport.json<PackageCapabilities>(
       'GET',
       routePath('packages/{package}/{version}/capabilities', { package: pkg, version }),
+      { query: { service: options.service } },
     );
   }
 
