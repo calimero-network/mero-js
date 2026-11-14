@@ -19,6 +19,7 @@ import {
   routePath,
   type CalimeroSession,
   type NodeEvent,
+  type NodeVerificationState,
   type RetryOptions,
   type HttpMethod,
 } from '../runtime/transport.js';
@@ -428,6 +429,21 @@ export class CalimeroClient {
   /** Every node this client may use, in the order it moves through them. */
   get nodes(): string[] {
     return this.transport.nodes;
+  }
+
+  /**
+   * What this client's attestation check established about node `url` (default:
+   * the one in use): `checking`, `verified` with the record of what was
+   * verified, or `refused` with the reason. `undefined` before the node is
+   * first used or {@link verify}ed.
+   */
+  verification(url?: string): NodeVerificationState | undefined {
+    return this.transport.verification(url);
+  }
+
+  /** Check node `url` (default: the one in use) now, without sending a request; a refusal is answered, not thrown. */
+  verify(url?: string): Promise<NodeVerificationState> {
+    return this.transport.verify(url);
   }
 
   /** Authenticate every request with an API key. */

@@ -180,3 +180,46 @@ describe('a route layer of its own shares the client', () => {
     expect(header(0, 'authorization')).toBe('Bearer key-2');
   });
 });
+
+describe('the verification state of a node', () => {
+  it('is unknown until the node is first used', () => {
+    expect(transport().verification()).toBeUndefined();
+  });
+
+  it('is checking while the attestation is in flight', () => {
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: () => new Promise<Response>(() => undefined) });
+    void t.verify();
+    expect(t.verification()).toEqual({ status: 'checking', url: node.url });
+  });
+
+  it('is the record of the check the first request ran, with no second check', async () => {
+    const t = transport();
+    await t.json('GET', 'apps/app-1');
+    expect(t.verification()).toEqual({ status: 'verified', url: node.url, mock: true, verifiedAt: expect.any(Number) });
+    expect(await t.verify()).toBe(t.verification());
+  });
+
+  it('verify starts the check without a request and answers the outcome', async () => {
+    const t = transport();
+    expect(await t.verify()).toMatchObject({ status: 'verified', url: node.url, mock: true });
+    expect(node.requests).toHaveLength(0);
+  });
+
+  it('carries the reason a node was refused, and the request still fails', async () => {
+    const t = new NodeTransport({ baseUrl: node.url, policy: {} });
+    expect(await t.verify()).toEqual({
+      status: 'refused',
+      url: node.url,
+      reason: expect.stringMatching(/mock quote refused/),
+      checkedAt: expect.any(Number),
+    });
+    await expect(t.json('GET', 'apps/app-1')).rejects.toThrow(/mock quote refused/);
+    expect(node.requests).toHaveLength(0);
+  });
+
+  it('is kept per node', async () => {
+    const t = transport();
+    await t.verify();
+    expect(t.verification('http://elsewhere.test')).toBeUndefined();
+  });
+});

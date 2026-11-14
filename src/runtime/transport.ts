@@ -23,7 +23,7 @@
  */
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
-import { fetchAttestedKey, type NodePolicy } from './attestation.js';
+import { verifyNode, type NodePolicy, type NodeVerification } from './attestation.js';
 import { orderNodes, readDirectory } from './directory.js';
 import {
   CalimeroError,
@@ -39,6 +39,12 @@ import type { components } from '../generated/api.js';
 
 /** A signed-in session: what sign-up, sign-in and a refresh answer. */
 export type CalimeroSession = components['schemas']['Session'];
+
+/** Where a node stands with the client's attestation check; `verified` is the record of what it verified. */
+export type NodeVerificationState =
+  | { status: 'checking'; url: string }
+  | ({ status: 'verified' } & NodeVerification)
+  | { status: 'refused'; url: string; reason: string; checkedAt: number };
 
 /** One server-sent event: `data` parsed as JSON when it is. */
 export interface NodeEvent {
@@ -279,6 +285,9 @@ export class NodeTransport implements Transport {
   private at = 0;
   /** A sealed fetch per node, each attesting its own node on first use. */
   private readonly channels = new Map<string, typeof fetch>();
+  /** The latest attestation check of each node, and the attempt it came from. */
+  private readonly checks = new Map<string, NodeVerificationState>();
+  private readonly attempts = new Map<string, Promise<unknown>>();
   private readonly policy: NodePolicy;
   /** The unsealed fetch, for the one route served in the clear (`/attestation`). */
   readonly raw: typeof fetch;
@@ -360,14 +369,56 @@ export class NodeTransport implements Transport {
   private channel(url: string): typeof fetch {
     let sealed = this.channels.get(url);
     if (!sealed) {
+      let first: Promise<Uint8Array> | undefined = this.attest(url);
       sealed = createSealedFetch({
         baseUrl: url,
-        transportPublicKey: () => fetchAttestedKey(url, this.policy, this.raw),
+        transportPublicKey: () => {
+          const key = first ?? this.attest(url);
+          first = undefined;
+          return key;
+        },
         fetch: this.raw,
       });
       this.channels.set(url, sealed);
     }
     return sealed;
+  }
+
+  /** Attest node `url` under the policy, keeping what the check verified, or why it refused. */
+  private attest(url: string): Promise<Uint8Array> {
+    this.checks.set(url, { status: 'checking', url });
+    const attempt = verifyNode(url, this.policy, this.raw).then(
+      ({ key, verification }) => {
+        this.checks.set(url, { status: 'verified', ...verification });
+        return key;
+      },
+      (error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.checks.set(url, { status: 'refused', url, reason, checkedAt: Date.now() });
+        throw error;
+      },
+    );
+    // A refusal surfaces on the request that needed the key, not as an unhandled rejection.
+    attempt.catch(() => undefined);
+    this.attempts.set(url, attempt);
+    return attempt;
+  }
+
+  /** What the client's check of node `url` (default: the one in use) established; `undefined` before it is first used. */
+  verification(url: string = this.nodeUrl): NodeVerificationState | undefined {
+    return this.checks.get(url.replace(/\/+$/, ''));
+  }
+
+  /**
+   * Check node `url` (default: the one in use) now, without sending a request,
+   * and answer the outcome. It is the check every request waits for, not a
+   * second one; a refusal is answered, not thrown.
+   */
+  async verify(url: string = this.nodeUrl): Promise<NodeVerificationState> {
+    const node = url.replace(/\/+$/, '');
+    this.channel(node);
+    await this.attempts.get(node)?.catch(() => undefined);
+    return this.checks.get(node) as NodeVerificationState;
   }
 
   /**

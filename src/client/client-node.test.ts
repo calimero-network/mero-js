@@ -372,3 +372,17 @@ describe('the confirmed attempt is sent exactly once (its challenge is single-us
     expect(new Set(sent.map((r) => r.body.idempotencyKey)).size).toBe(1);
   });
 });
+
+describe('what the client verified about its node', () => {
+  it('is the record of the attestation check, and none before the node is used', async () => {
+    const c = client();
+    expect(c.verification()).toBeUndefined();
+    expect(await c.verify()).toEqual({ status: 'verified', url: node.url, mock: true, verifiedAt: expect.any(Number) });
+    expect(c.verification()).toMatchObject({ status: 'verified', url: node.url });
+  });
+
+  it('is a refusal with its reason when the node fails the policy', async () => {
+    const c = new CalimeroClient({ baseUrl: node.url, policy: {} });
+    expect(await c.verify()).toMatchObject({ status: 'refused', url: node.url, reason: expect.stringMatching(/mock quote refused/) });
+  });
+});
