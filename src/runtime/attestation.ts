@@ -226,8 +226,12 @@ async function verifyRelease(
   // Refuse what no release could admit before reaching for the network.
   const version = claimedRelease(doc, policy.minReleaseVersion);
   const profile = policy.profile ?? PRODUCTION_PROFILE;
+  const release = await releaseFor(version, policy, fetchImpl);
+  if (release.version !== version) {
+    throw new Error(`The node names mero-tee release ${version}, but the release served is ${release.version}`);
+  }
   const trusted = await trustSignedRelease({
-    release: await releaseFor(version, policy, fetchImpl),
+    release,
     profile,
     allowDebugProfile: policy.allowDebugProfile,
     minReleaseVersion: policy.minReleaseVersion,

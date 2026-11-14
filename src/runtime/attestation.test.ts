@@ -177,6 +177,12 @@ describe('fetchAttestedKey with a release policy (core Measurements::Release)', 
     await expect(result).rejects.toThrow(/2\.3\.86, not 2\.3\.87/);
   });
 
+  it('5b. refuses a genuinely signed release other than the one the node names', async () => {
+    const image = JSON.parse(signed('2.3.86').publishedMrtds).profiles['locked-read-only'];
+    const { result } = await attest({ image }, { minReleaseVersion: '2.3.86', releaseSource: async () => signed('2.3.86') });
+    await expect(result).rejects.toThrow(/names mero-tee release 2\.3\.87.*is 2\.3\.86/);
+  });
+
   it('6. refuses a release whose measurements file was tampered with', async () => {
     const tampered = { ...R87, publishedMrtds: fixture('mero-tee-v2.3.87.tampered.published-mrtds.json') };
     const { result } = await attest({}, { releaseSource: async () => tampered });
