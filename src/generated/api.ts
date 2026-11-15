@@ -7165,6 +7165,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description `UNAVAILABLE`: the cluster cannot answer now */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     pipelines_estimate_run: {
@@ -7371,6 +7380,15 @@ export interface operations {
             };
             /** @description `TOO_MANY_PIPELINE_RUNS` */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `UNAVAILABLE`: the cluster cannot answer now */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

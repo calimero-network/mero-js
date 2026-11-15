@@ -3,5 +3,5 @@
 # Refresh it with `scripts/refresh-openapi.sh [<core ref>]`.
 repository=calimero-network/core
 path=docs/public/openapi.json
-ref=feat/receipt-job-reports
-commit=45bdd6754f309083ca9b57586137f74530565223
+ref=84724c0a83da157b43c1b0db19b2fd15ba6c1800
+commit=84724c0a83da157b43c1b0db19b2fd15ba6c1800
