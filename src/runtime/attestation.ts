@@ -188,14 +188,20 @@ function unanswered(host: string, error: unknown): unknown {
   return error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
 }
 
-/** `fetchImpl`, throwing {@link Unanswered} for `host` instead of a rejection or a 5xx. */
+/** A status that is no answer yet: the host is overloaded or failing, not judging the request. */
+const unansweredStatus = (status: number) => status === 429 || status >= 500;
+
+/** `fetchImpl`, throwing {@link Unanswered} for `host` instead of a rejection, a dropped body or a 429/5xx. */
 function answered(fetchImpl: typeof fetch, host: string): typeof fetch {
   return async (input, init) => {
     const response = await fetchImpl(input, init).catch((error: unknown) => {
       throw unanswered(host, error);
     });
-    if (response.status >= 500) throw new Unanswered(host, response.status);
-    return response;
+    if (unansweredStatus(response.status)) throw new Unanswered(host, response.status);
+    const body = await response.arrayBuffer().catch((error: unknown) => {
+      throw unanswered(host, error);
+    });
+    return new Response(body, response);
   };
 }
 
@@ -318,7 +324,7 @@ export async function verifyNode(
   if (policy.app) attestation.searchParams.set('app', policy.app);
   else if (policy.appHash) attestation.searchParams.set('appHash', policy.appHash);
   const response = await fetchImpl(attestation.toString());
-  if (response.status >= 500) throw new Unanswered('the node', response.status);
+  if (unansweredStatus(response.status)) throw new Unanswered('the node', response.status);
   if (!response.ok) throw new Error(`The node refused to attest: HTTP ${response.status}`);
   const doc = (await response.json().catch((error: unknown) => {
     throw unanswered('the node', error);

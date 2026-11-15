@@ -315,6 +315,13 @@ describe('a node that cannot be reached is not a node that refused', () => {
     expect(await t.verify()).toMatchObject({ status: 'refused' });
   });
 
+  it('is unreachable while the node answers its attestation with 429, then verified', async () => {
+    const { wrapped } = attestations(fetch, (call, response) => (call === 1 ? new Response('', { status: 429 }) : response));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    expect(await t.verify()).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/HTTP 429/) });
+    expect(await t.verify()).toMatchObject({ status: 'verified' });
+  });
+
   it('keeps refused for a node that answers its attestation with a 4xx', async () => {
     const { wrapped } = attestations(fetch, () => new Response('', { status: 404 }));
     const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
@@ -542,6 +549,39 @@ describe('a release mirror that cannot be reached', () => {
   it('is unreachable when the mirror answers with a 5xx', async () => {
     const state = await mirrored(() => new Response('', { status: 503 })).verify();
     expect(state).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/HTTP 503/) });
+  });
+
+  const dropped = () => new Response(new ReadableStream({ start: (c) => c.error(new TypeError('terminated')) }));
+  const github = (answer: (url: string) => Response) =>
+    new NodeTransport({
+      baseUrl: node.url,
+      policy: { release: { minReleaseVersion: '2.3.87', releaseSource: 'github' } },
+      fetch: (async (input: RequestInfo | URL) =>
+        String(input).startsWith('https://github.com') ? answer(String(input)) : attestation()) as typeof fetch,
+    });
+
+  it('is unreachable when the mirror answers with 429', async () => {
+    expect(await mirrored(() => new Response('', { status: 429 })).verify()).toMatchObject({
+      status: 'unreachable',
+      reason: expect.stringMatching(/HTTP 429/),
+    });
+  });
+
+  it('is unreachable when the connection drops while the mirror answer is read', async () => {
+    expect(await mirrored(dropped).verify()).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/terminated/) });
+    expect(await github(dropped).verify()).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/terminated/) });
+  });
+
+  it('is refused when the mirror answers malformed JSON', async () => {
+    const t = mirrored(() => new Response('{'));
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused', reason: expect.stringMatching(/did not answer with JSON/) });
+  });
+
+  it("is refused when GitHub answers 403", async () => {
+    const t = github(() => new Response('', { status: 403 }));
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 403/) });
   });
 
   it('is refused when the mirror answers with a 4xx', async () => {
