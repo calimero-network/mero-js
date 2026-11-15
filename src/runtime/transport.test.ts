@@ -291,6 +291,20 @@ describe('a node that cannot be reached is not a node that refused', () => {
     expect(t.verification()).toMatchObject({ status: 'verified' });
   });
 
+  it('is unreachable while the node answers its attestation with a 5xx, then verified', async () => {
+    const { wrapped } = attestations(fetch, (call, response) => (call === 1 ? new Response('', { status: 502 }) : response));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    expect(await t.verify()).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/HTTP 502/) });
+    expect(await t.verify()).toMatchObject({ status: 'verified' });
+  });
+
+  it('keeps refused for a node that answers its attestation with a 4xx', async () => {
+    const { wrapped } = attestations(fetch, () => new Response('', { status: 404 }));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 404/) });
+  });
+
   it('keeps refused for a node that failed the policy', async () => {
     const t = new NodeTransport({ baseUrl: node.url, policy: {} });
     await t.verify();
@@ -460,9 +474,15 @@ describe('a release mirror that cannot be reached', () => {
     });
   });
 
-  it('is refused, not unreachable, when the mirror answers with an error', async () => {
+  it('is unreachable when the mirror answers with a 5xx', async () => {
     const state = await mirrored(() => new Response('', { status: 503 })).verify();
-    expect(state).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 503/) });
+    expect(state).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/HTTP 503/) });
+  });
+
+  it('is refused when the mirror answers with a 4xx', async () => {
+    const t = mirrored(() => new Response('', { status: 404 }));
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused', reason: expect.stringMatching(/HTTP 404/) });
   });
 });
 

@@ -172,28 +172,61 @@ export function claimedRelease(doc: Pick<AttestationDoc, 'release'>, minReleaseV
   return version;
 }
 
-/** The release mirror gave no answer; `cause` is the fetch's own rejection. */
-export class ReleaseMirrorUnreachable extends Error {
-  constructor(readonly cause: TypeError) {
-    super(`the release mirror could not be reached: ${cause.message}`);
+/** `host` gave no answer: its fetch rejected (`cause`) or it answered a 5xx `status`. Says nothing about the quote. */
+export class Unanswered extends Error {
+  constructor(
+    readonly host: string,
+    readonly status?: number,
+    readonly cause?: unknown,
+  ) {
+    super(status ? `${host} answered HTTP ${status}` : `${host} could not be reached: ${(cause as Error)?.message}`);
   }
+}
+
+/** `fetchImpl`, throwing {@link Unanswered} for `host` instead of a rejection or a 5xx. */
+function answered(fetchImpl: typeof fetch, host: string): typeof fetch {
+  return async (input, init) => {
+    let response: Response;
+    try {
+      response = await fetchImpl(input, init);
+    } catch (error) {
+      throw error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
+    }
+    if (response.status >= 500) throw new Unanswered(host, response.status);
+    return response;
+  };
 }
 
 async function releaseFor(version: string, policy: NodeReleasePolicy, fetchImpl: typeof fetch) {
   const source = policy.releaseSource;
   if (typeof source === 'function') return source(version);
-  if (source === 'github') return fetchGithubNodeRelease(version, { fetch: fetchImpl });
-  return fetchNodeRelease(cloudNodeReleaseUrl(source ?? DEFAULT_RELEASE_MIRROR, version), { fetch: fetchImpl });
+  const fetchMirror = answered(fetchImpl, 'the release mirror');
+  if (source === 'github') return fetchGithubNodeRelease(version, { fetch: fetchMirror });
+  return fetchNodeRelease(cloudNodeReleaseUrl(source ?? DEFAULT_RELEASE_MIRROR, version), { fetch: fetchMirror });
+}
+
+/** `fetch`, its `TypeError` read as no answer from `host`: dcap-qvl fetches with its own `fetch`, which cannot be wrapped. */
+function collateralFrom(host: string, fetch: (quote: Uint8Array) => Promise<DcapCollateral>) {
+  return async (quote: Uint8Array) => {
+    try {
+      return await fetch(quote);
+    } catch (error) {
+      throw error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
+    }
+  };
 }
 
 /** The collateral fetch a policy gets unless it brings its own: `@phala/dcap-qvl` against `collateralSource`. */
 function defaultCollateral(policy: NodeReleasePolicy): (quote: Uint8Array) => Promise<DcapCollateral> {
   const source = policy.collateralSource ?? DEFAULT_COLLATERAL_MIRROR;
   if (source === 'intel') {
-    return async (quote) => (await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs'))(quote);
+    return collateralFrom('Intel PCS', async (quote) =>
+      (await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs'))(quote),
+    );
   }
-  return async (quote) =>
-    (await dcap<(url: string, q: Uint8Array) => Promise<DcapCollateral>>('getCollateral'))(source, quote);
+  return collateralFrom(source, async (quote) =>
+    (await dcap<(url: string, q: Uint8Array) => Promise<DcapCollateral>>('getCollateral'))(source, quote),
+  );
 }
 
 /** `fetch`, refusing collateral older than `policy.maxCollateralAgeDays` (by its TCB info's `issueDate`). */
@@ -232,10 +265,7 @@ async function verifyRelease(
   // Refuse what no release could admit before reaching for the network.
   const version = claimedRelease(doc, policy.minReleaseVersion);
   const profile = policy.profile ?? PRODUCTION_PROFILE;
-  const release = await releaseFor(version, policy, fetchImpl).catch((error: unknown) => {
-    if (!(error instanceof TypeError)) throw error;
-    throw new ReleaseMirrorUnreachable(error);
-  });
+  const release = await releaseFor(version, policy, fetchImpl);
   if (release.version !== version) {
     throw new Error(`The node names mero-tee release ${version}, but the release served is ${release.version}`);
   }
@@ -289,6 +319,7 @@ export async function verifyNode(
   if (policy.app) attestation.searchParams.set('app', policy.app);
   else if (policy.appHash) attestation.searchParams.set('appHash', policy.appHash);
   const response = await fetchImpl(attestation.toString());
+  if (response.status >= 500) throw new Unanswered('the node', response.status);
   if (!response.ok) throw new Error(`The node refused to attest: HTTP ${response.status}`);
   const doc = (await response.json()) as AttestationDoc;
   const transportKey = fromHex(doc.transportKey, 'transportKey', 32);

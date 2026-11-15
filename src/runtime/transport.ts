@@ -24,7 +24,7 @@
 
 import { SealedTransportError, createSealedFetch } from '../sealed/sealed.js';
 import { hex } from '../crypto/internal.js';
-import { ReleaseMirrorUnreachable, verifyNode, type NodePolicy, type NodeVerification } from './attestation.js';
+import { Unanswered, verifyNode, type NodePolicy, type NodeVerification } from './attestation.js';
 import { orderNodes, readDirectory } from './directory.js';
 import {
   CalimeroError,
@@ -329,10 +329,9 @@ export class NodeTransport implements Transport {
     this.raw = raw;
   }
 
-  /** Whether `error`, or its cause, is a `fetch` that got no answer: the host could not be reached or dropped the connection. */
+  /** Whether `error` is a host that gave no answer: a `fetch` that failed, or an attestation input left {@link Unanswered}. */
   isNetworkFailure(error: unknown): boolean {
-    const failed = (e: unknown) => e instanceof TypeError && this.networkFailures.has(e);
-    return failed(error) || (error instanceof ReleaseMirrorUnreachable && failed(error.cause));
+    return (error instanceof TypeError && this.networkFailures.has(error)) || error instanceof Unanswered;
   }
 
   /** Re-read the node list from `source` when it is due, and after a failover. */

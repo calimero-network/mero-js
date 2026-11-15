@@ -12,6 +12,7 @@ import {
   claimedRelease,
   fetchAttestedKey,
   freshCollateral,
+  Unanswered,
   verifyNode,
   type NodePolicy,
 } from './attestation.js';
@@ -24,6 +25,8 @@ vi.mock('@phala/dcap-qvl', () => ({
   },
   getCollateral: async (...args: unknown[]) => {
     dcapCalls.getCollateral.push(args);
+    if (args[0] === 'http://down.test') throw new TypeError('fetch failed');
+    if (args[0] === 'http://bad.test') throw new Error('Failed to parse TCB info');
     return {} as DcapCollateral;
   },
   getCollateralFromPcs: async () => {
@@ -270,6 +273,15 @@ describe("the quote's collateral", () => {
     // Unset: the fetch itself, untouched (Intel's nextUpdate is checked by dcap-qvl).
     const fetch = issued('2020-01-01T00:00:00Z');
     expect(freshCollateral(fetch, {})).toBe(fetch);
+  });
+
+  it('is unanswered when its source cannot be reached, and refused when it answers something unusable', async () => {
+    const down = (await attest({}, { fetchCollateral: undefined, collateralSource: 'http://down.test' })).result;
+    await expect(down).rejects.toBeInstanceOf(Unanswered);
+    await expect(down).rejects.toMatchObject({ host: 'http://down.test', status: undefined });
+    const bad = (await attest({}, { fetchCollateral: undefined, collateralSource: 'http://bad.test' })).result;
+    await expect(bad).rejects.toThrow(/Failed to parse TCB info/);
+    await expect(bad).rejects.not.toBeInstanceOf(Unanswered);
   });
 
   it('is checked for age on the path a node is attested through', async () => {
