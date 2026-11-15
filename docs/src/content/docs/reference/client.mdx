@@ -43,6 +43,8 @@ stands, `url` being one of `client.nodes` exactly as listed (default: the node i
   mirror or the collateral source could not be reached, or the node or the release
   mirror answered a `5xx`; the next `verify()` or request attests again
 
+A `5xx` from the default collateral source reads as `refused`: `@phala/dcap-qvl` reports it only as a message.
+
 It is `undefined` before the node's check first ran.
 `client.verify(url?)` starts that check if none runs and answers its settled outcome
 without a request; it waits for the check requests wait for and does not repeat it, and

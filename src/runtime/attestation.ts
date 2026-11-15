@@ -183,15 +183,17 @@ export class Unanswered extends Error {
   }
 }
 
+/** `error` as {@link Unanswered} from `host` when it is a fetch's `TypeError`: no connection, or one dropped mid-body. */
+function unanswered(host: string, error: unknown): unknown {
+  return error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
+}
+
 /** `fetchImpl`, throwing {@link Unanswered} for `host` instead of a rejection or a 5xx. */
 function answered(fetchImpl: typeof fetch, host: string): typeof fetch {
   return async (input, init) => {
-    let response: Response;
-    try {
-      response = await fetchImpl(input, init);
-    } catch (error) {
-      throw error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
-    }
+    const response = await fetchImpl(input, init).catch((error: unknown) => {
+      throw unanswered(host, error);
+    });
     if (response.status >= 500) throw new Unanswered(host, response.status);
     return response;
   };
@@ -205,28 +207,25 @@ async function releaseFor(version: string, policy: NodeReleasePolicy, fetchImpl:
   return fetchNodeRelease(cloudNodeReleaseUrl(source ?? DEFAULT_RELEASE_MIRROR, version), { fetch: fetchMirror });
 }
 
-/** `fetch`, its `TypeError` read as no answer from `host`: dcap-qvl fetches with its own `fetch`, which cannot be wrapped. */
-function collateralFrom(host: string, fetch: (quote: Uint8Array) => Promise<DcapCollateral>) {
-  return async (quote: Uint8Array) => {
-    try {
-      return await fetch(quote);
-    } catch (error) {
-      throw error instanceof TypeError ? new Unanswered(host, undefined, error) : error;
-    }
-  };
-}
-
 /** The collateral fetch a policy gets unless it brings its own: `@phala/dcap-qvl` against `collateralSource`. */
 function defaultCollateral(policy: NodeReleasePolicy): (quote: Uint8Array) => Promise<DcapCollateral> {
   const source = policy.collateralSource ?? DEFAULT_COLLATERAL_MIRROR;
+  // dcap-qvl fetches with its own `fetch`: only its call's `TypeError` is no answer, never a bad URL or bundle.
   if (source === 'intel') {
-    return collateralFrom('Intel PCS', async (quote) =>
-      (await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs'))(quote),
-    );
+    return async (quote) => {
+      const get = await dcap<(q: Uint8Array) => Promise<DcapCollateral>>('getCollateralFromPcs');
+      return get(quote).catch((error: unknown) => {
+        throw unanswered('Intel PCS', error);
+      });
+    };
   }
-  return collateralFrom(source, async (quote) =>
-    (await dcap<(url: string, q: Uint8Array) => Promise<DcapCollateral>>('getCollateral'))(source, quote),
-  );
+  new URL(source);
+  return async (quote) => {
+    const get = await dcap<(url: string, q: Uint8Array) => Promise<DcapCollateral>>('getCollateral');
+    return get(source, quote).catch((error: unknown) => {
+      throw unanswered(source, error);
+    });
+  };
 }
 
 /** `fetch`, refusing collateral older than `policy.maxCollateralAgeDays` (by its TCB info's `issueDate`). */
@@ -321,7 +320,9 @@ export async function verifyNode(
   const response = await fetchImpl(attestation.toString());
   if (response.status >= 500) throw new Unanswered('the node', response.status);
   if (!response.ok) throw new Error(`The node refused to attest: HTTP ${response.status}`);
-  const doc = (await response.json()) as AttestationDoc;
+  const doc = (await response.json().catch((error: unknown) => {
+    throw unanswered('the node', error);
+  })) as AttestationDoc;
   const transportKey = fromHex(doc.transportKey, 'transportKey', 32);
   const boundApp = policy.app ? nodeBoundAppHash(doc, policy) : undefined;
   const inner = boundApp ?? (policy.appHash ? fromHex(policy.appHash, 'appHash', 32) : new Uint8Array(32));

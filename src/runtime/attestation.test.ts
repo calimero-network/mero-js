@@ -18,8 +18,9 @@ import {
 } from './attestation.js';
 
 // The quote's collateral source, seen from the library: no test reaches Intel or the mirror.
-const dcapCalls = vi.hoisted(() => ({ getCollateral: [] as unknown[][], getCollateralFromPcs: 0 }));
+const dcapCalls = vi.hoisted(() => ({ getCollateral: [] as unknown[][], getCollateralFromPcs: 0, unbundled: false }));
 vi.mock('@phala/dcap-qvl', () => ({
+  default: undefined,
   verify: () => {
     throw new Error('each test passes its own dcapVerify');
   },
@@ -29,9 +30,12 @@ vi.mock('@phala/dcap-qvl', () => ({
     if (args[0] === 'http://bad.test') throw new Error('Failed to parse TCB info');
     return {} as DcapCollateral;
   },
-  getCollateralFromPcs: async () => {
-    dcapCalls.getCollateralFromPcs += 1;
-    return {} as DcapCollateral;
+  get getCollateralFromPcs() {
+    if (dcapCalls.unbundled) return undefined;
+    return async () => {
+      dcapCalls.getCollateralFromPcs += 1;
+      return {} as DcapCollateral;
+    };
   },
 }));
 
@@ -282,6 +286,25 @@ describe("the quote's collateral", () => {
     const bad = (await attest({}, { fetchCollateral: undefined, collateralSource: 'http://bad.test' })).result;
     await expect(bad).rejects.toThrow(/Failed to parse TCB info/);
     await expect(bad).rejects.not.toBeInstanceOf(Unanswered);
+  });
+
+  it('is refused, not unanswered, for a collateral source that is not a URL', async () => {
+    const calls = dcapCalls.getCollateral.length;
+    const { result } = await attest({}, { fetchCollateral: undefined, collateralSource: 'not a url' });
+    await expect(result).rejects.toThrow(TypeError);
+    await expect(result).rejects.not.toBeInstanceOf(Unanswered);
+    expect(dcapCalls.getCollateral.length).toBe(calls);
+  });
+
+  it('is refused, not unanswered, when the bundle carries no collateral fetch', async () => {
+    dcapCalls.unbundled = true;
+    try {
+      const { result } = await attest({}, { fetchCollateral: undefined, collateralSource: 'intel' });
+      await expect(result).rejects.toThrow(/loaded without getCollateralFromPcs/);
+      await expect(result).rejects.not.toBeInstanceOf(Unanswered);
+    } finally {
+      dcapCalls.unbundled = false;
+    }
   });
 
   it('is checked for age on the path a node is attested through', async () => {

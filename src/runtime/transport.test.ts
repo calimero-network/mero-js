@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APP_BUNDLE_HASH, StandInNode, type Reply } from '../../tests/support/stand-in-node.js';
-import { CalimeroClient } from '../client/calimero-client.js';
+import { CalimeroClient, FILE_PART_BYTES } from '../client/calimero-client.js';
 import { hex } from '../crypto/internal.js';
 import {
   CalimeroError,
@@ -21,6 +21,7 @@ import {
   type PasskeyProvider,
   type Transport,
 } from './index.js';
+import { Unanswered } from './attestation.js';
 
 const node = new StandInNode();
 beforeAll(() => node.start());
@@ -298,6 +299,22 @@ describe('a node that cannot be reached is not a node that refused', () => {
     expect(await t.verify()).toMatchObject({ status: 'verified' });
   });
 
+  it('is unreachable when the connection drops while the attestation is read, then verified', async () => {
+    const dropped = () =>
+      new Response(new ReadableStream({ start: (c) => c.error(new TypeError('terminated')) }), { status: 200 });
+    const { wrapped } = attestations(fetch, (call, response) => (call === 1 ? dropped() : response));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    expect(await t.verify()).toMatchObject({ status: 'unreachable', reason: expect.stringMatching(/terminated/) });
+    expect(await t.verify()).toMatchObject({ status: 'verified' });
+  });
+
+  it('keeps refused for a node that answers its attestation with malformed JSON', async () => {
+    const { wrapped } = attestations(fetch, () => new Response('{', { status: 200 }));
+    const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
+    await t.verify();
+    expect(await t.verify()).toMatchObject({ status: 'refused' });
+  });
+
   it('keeps refused for a node that answers its attestation with a 4xx', async () => {
     const { wrapped } = attestations(fetch, () => new Response('', { status: 404 }));
     const t = new NodeTransport({ baseUrl: node.url, policy: { allowMock: true }, fetch: wrapped });
@@ -309,6 +326,54 @@ describe('a node that cannot be reached is not a node that refused', () => {
     const t = new NodeTransport({ baseUrl: node.url, policy: {} });
     await t.verify();
     expect(await t.verify()).toMatchObject({ status: 'refused' });
+  });
+});
+
+describe('an attestation left unanswered', () => {
+  const unanswered = (ok: (call: number) => boolean) => {
+    const other: string[] = [];
+    let calls = 0;
+    const fetched = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.origin === 'http://other.test') {
+        other.push(url.pathname);
+        throw new TypeError('fetch failed');
+      }
+      if (url.pathname.endsWith('/attestation') && !ok(++calls)) return new Response('', { status: 503 });
+      return fetch(input, init);
+    }) as typeof fetch;
+    return { fetched, other, calls: () => calls };
+  };
+
+  it('does not move the transport to another node', async () => {
+    const { fetched, other } = unanswered(() => false);
+    const t = new NodeTransport({
+      baseUrl: node.url,
+      nodes: ['http://other.test'],
+      policy: { allowMock: true },
+      fetch: fetched,
+      retry: { baseDelayMs: 1 },
+    });
+    await expect(t.json('GET', 'apps/app-1', { retry: true })).rejects.toBeInstanceOf(Unanswered);
+    expect(t.nodeUrl).toBe(node.url);
+    expect(other).toEqual([]);
+  });
+
+  it('is retried by the client until the attestation is answered', async () => {
+    const { fetched, calls } = unanswered((call) => call > 2);
+    node.answer = () => refused(404, 'NOT_FOUND');
+    const client = new CalimeroClient({ baseUrl: node.url, policy: { allowMock: true }, fetch: fetched, retry: { baseDelayMs: 1, maxDelayMs: 2 } });
+    await expect(client.uploadFile('app', new Uint8Array(FILE_PART_BYTES + 1))).rejects.toBeInstanceOf(NotFound);
+    expect(calls()).toBe(3);
+    expect(node.requests).toHaveLength(1);
+  });
+
+  it('is retried by the client only up to its limit', async () => {
+    const { fetched, calls } = unanswered(() => false);
+    const client = new CalimeroClient({ baseUrl: node.url, policy: { allowMock: true }, fetch: fetched, retry: { baseDelayMs: 1, maxDelayMs: 2 } });
+    await expect(client.uploadFile('app', new Uint8Array(FILE_PART_BYTES + 1))).rejects.toBeInstanceOf(Unanswered);
+    expect(calls()).toBeGreaterThan(1);
+    expect(node.requests).toHaveLength(0);
   });
 });
 
