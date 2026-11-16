@@ -10450,7 +10450,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_REQUEST`: the request is malformed */
+            /** @description `BAD_REQUEST`: the request is malformed; `UNKNOWN_CAPABILITIES` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10468,7 +10468,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            /** @description `CANNOT_GRANT_UNHELD`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14088,7 +14088,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `BAD_REQUEST`: the request is malformed */
+            /** @description `BAD_REQUEST`: the request is malformed; `UNKNOWN_CAPABILITIES` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14916,7 +14916,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CHALLENGE`; `WRONG_CHALLENGE` */
+            /** @description `EXPIRED_CHALLENGE`; `UNKNOWN_CAPABILITIES`; `UNKNOWN_CHALLENGE`; `WRONG_CHALLENGE` */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14934,7 +14934,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
+            /** @description `CANNOT_GRANT_UNHELD`; `FORBIDDEN`: the credential may not do this (scope, role, governance, read-only) */
             403: {
                 headers: {
                     [name: string]: unknown;
